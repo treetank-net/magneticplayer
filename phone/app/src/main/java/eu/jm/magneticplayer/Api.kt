@@ -55,6 +55,9 @@ class Settings(ctx: Context) {
         .appendQueryParameter("token", token).apply { if (mac.isNotEmpty()) appendQueryParameter("mac", mac) }
         .build().toString()
 
+    /** Klient webowy (laptop/tablet): token w #t= zapisze się w przeglądarce i zniknie z paska adresu. */
+    fun webUri(): String = "http://$host:$port/#t=" + Uri.encode(token)
+
     fun applyPairUri(uri: Uri): Boolean {
         val t = uri.getQueryParameter("token") ?: return false
         uri.getQueryParameter("host")?.let { host = it }

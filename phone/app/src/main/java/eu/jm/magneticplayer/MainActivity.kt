@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.layout.Arrangement
@@ -831,6 +832,12 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, onSaved: (
                 catch (e: Exception) { snack.showSnackbar("Nie udało się: ${e.message}") }
             }
         }) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text("Wyślij apkę (WhatsApp itp.)") }
+        OutlinedButton({
+            copyText(ctx, "MagneticPlayer — wersja webowa", s.webUri())
+            scope.launch { snack.showSnackbar("Skopiowano link do wersji webowej — otwórz go na laptopie/tablecie w domowej sieci") }
+        }, enabled = s.configured) { Icon(Icons.Filled.Language, null); Spacer(Modifier.width(6.dp)); Text("Kopiuj link do wersji webowej") }
+        Text("Wersja webowa: torrenty, biblioteka, pilot i napisy w przeglądarce, na laptopie albo tablecie bez apki.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         HorizontalDivider()
         OpenSubsSettings(api, snack)
@@ -839,12 +846,12 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, onSaved: (
             "Działa też „Udostępnij” z dowolnej apki.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (afterDialog) AfterDialog(after, { afterDialog = false }) { after = it; s.afterDefault = it; afterDialog = false }
-    if (pairDialog) PairDialog(s.pairUri()) { pairDialog = false }
+    if (pairDialog) PairDialog(s.pairUri(), s.webUri()) { pairDialog = false }
 }
 
 /** QR z linkiem parowania: drugi telefon skanuje aparatem (albo dostaje link przez „Udostępnij”). */
 @Composable
-private fun PairDialog(link: String, onDismiss: () -> Unit) {
+private fun PairDialog(link: String, webLink: String, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val qr = remember(link) { qrBitmap(link, 720) }
     AlertDialog(
@@ -859,6 +866,13 @@ private fun PairDialog(link: String, onDismiss: () -> Unit) {
                     "Jeśli aparat nie da otworzyć linku: Udostępnij → skopiuj tam → w apce Ustawienia → „Wklej link parowania”. " +
                     "Kod zawiera token do komputera — pokazuj go tylko domownikom.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Text("Laptop albo tablet bez Androida: otwórz w przeglądarce", style = MaterialTheme.typography.labelMedium)
+                Text(webLink, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        copyText(ctx, "MagneticPlayer — wersja webowa", webLink)
+                        android.widget.Toast.makeText(ctx, "Skopiowano", android.widget.Toast.LENGTH_SHORT).show()
+                    })
             }
         },
         confirmButton = { TextButton(onDismiss) { Text("Zamknij") } },
@@ -869,6 +883,11 @@ private fun PairDialog(link: String, onDismiss: () -> Unit) {
             }) { Text("Udostępnij link") }
         },
     )
+}
+
+fun copyText(ctx: Context, label: String, text: String) {
+    (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+        .setPrimaryClip(android.content.ClipData.newPlainText(label, text))
 }
 
 private fun qrBitmap(text: String, size: Int): android.graphics.Bitmap {
