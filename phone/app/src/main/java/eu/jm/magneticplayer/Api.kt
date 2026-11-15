@@ -81,6 +81,14 @@ data class Job(
 data class LibRoot(val index: Int, val name: String, val path: String, val exists: Boolean)
 data class LibFile(val name: String, val size: Long, val media: String?, val subs: List<String>)
 data class LibDir(val root: Int, val path: String, val dirs: List<String>, val files: List<LibFile>)
+/** Postęp wyszukiwania napisów na komputerze (każde źródło osobno). */
+data class SubsProvider(val name: String, val state: String, val count: Int?, val error: String?, val secs: Double?)
+data class SubsFound(val query: String, val title: String, val year: Int?, val results: List<SubResult>, val hidden: Int)
+data class SubsProgress(
+    val phase: String, val round: Int, val query: String?, val matched: Int, val total: Int,
+    val providers: List<SubsProvider>, val elapsed: Double, val done: Boolean, val error: String?, val found: SubsFound?,
+)
+
 data class SubResult(
     val id: String, val provider: String, val lang: String, val release: String, val score: Int,
     val hashMatch: Boolean, val hi: Boolean,
@@ -294,19 +302,39 @@ class Api(val s: Settings) {
 
     fun subUrl(ref: MediaRef, name: String) = "$base/sub?${ref.query()}&name=${Uri.encode(name)}&token=${Uri.encode(s.token)}"
 
-    fun subsSearch(ref: MediaRef): Pair<String, List<SubResult>> {
-        val o = JSONObject(call("POST", "/api/subs/search", ref.json().put("languages", s.subLanguages), 90000))
-        val a = o.getJSONArray("results")
-        return o.optString("query") to List(a.length()) { i ->
-            val r = a.getJSONObject(i)
-            SubResult(r.getString("id"), r.optString("provider"), r.optString("lang"), r.optString("release"),
-                r.optInt("score"), r.optBoolean("hash_match"), r.optBoolean("hi"))
-        }
+    private fun subsBody(ref: MediaRef, title: String?, year: Int?) = ref.json().put("languages", s.subLanguages).apply {
+        if (!title.isNullOrBlank()) put("title", title.trim())
+        if (year != null) put("year", year)
     }
 
-    fun subsDownload(ref: MediaRef, r: SubResult): String =
+    /** Startuje wyszukiwanie w tle; postęp przez [subsJob]. */
+    fun subsSearchStart(ref: MediaRef, title: String? = null, year: Int? = null): String =
+        JSONObject(call("POST", "/api/subs/search", subsBody(ref, title, year).put("async", true))).getString("job")
+
+    fun subsJob(id: String): SubsProgress {
+        val o = JSONObject(call("GET", "/api/subs/job?id=$id"))
+        val pr = o.optJSONObject("providers") ?: JSONObject()
+        val providers = pr.keys().asSequence().map { k ->
+            val p = pr.getJSONObject(k)
+            SubsProvider(k, p.optString("state"), if (p.has("count")) p.optInt("count") else null,
+                p.optString("error").takeIf { it.isNotEmpty() }, if (p.has("secs")) p.optDouble("secs") else null)
+        }.toList()
+        val found = o.optJSONObject("result")?.let { r ->
+            val a = r.getJSONArray("results")
+            SubsFound(r.optString("query"), r.optString("title"), r.optInt("year").takeIf { it > 0 }, List(a.length()) { i ->
+                val x = a.getJSONObject(i)
+                SubResult(x.getString("id"), x.optString("provider"), x.optString("lang"), x.optString("release"),
+                    x.optInt("score"), x.optBoolean("hash_match"), x.optBoolean("hi"))
+            }, r.optInt("hidden"))
+        }
+        return SubsProgress(o.optString("phase"), o.optInt("round", 1), o.optString("query").takeIf { it.isNotEmpty() && it != "null" },
+            o.optInt("matched"), o.optInt("total"), providers, o.optDouble("elapsed"), o.optBoolean("done"),
+            o.optString("error").takeIf { it.isNotEmpty() }, found)
+    }
+
+    fun subsDownload(ref: MediaRef, r: SubResult, title: String? = null, year: Int? = null): String =
         JSONObject(call("POST", "/api/subs/download",
-            ref.json().put("id", r.id).put("provider", r.provider).put("languages", s.subLanguages), 90000))
+            subsBody(ref, title, year).put("id", r.id).put("provider", r.provider), 90000))
             .optString("name")
 
     fun openSubsConfig(): JSONObject = JSONObject(call("GET", "/api/config/opensubtitles"))

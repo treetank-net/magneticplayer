@@ -61,8 +61,17 @@ obejrzeć.
   DBus) agent bierze z `/proc/<cinnamon-session>/environ`. Pilot steruje mpv przez JSON IPC.
 
 ### Napisy
-`search` wywołuje kolejno `scan_video`, `refine` (hash i metadane) i `ProviderPool.list_subtitles`. Wyniki sortuje
-po kolejności języków z ustawień, potem po score, a obiekty trzyma w cache przez godzinę. `download` pobiera
+`search` wywołuje `scan_video` i `refine` (hash i metadane), potem odpytuje każde źródło w osobnym wątku
+(`list_subtitles_provider`) i zapisuje postęp, który apka czyta z `/api/subs/job`.
+- **Filtr złych tytułów:** wyniki bez zgodnego tytułu (albo serialu) i bez zgodnego hasha są ukryte. Apka podaje
+  tylko ich liczbę. Bez tego OpenSubtitles przy braku trafień oddaje „podobne” filmy, np. dla Der Golem
+  podsuwało zupełnie inny film.
+- **Druga runda:** gdy nic nie pasuje, a nazwa pliku ma tytuł w `[nawiasie]` (np. `Der Golem [The Golem]`),
+  agent szuka jeszcze raz pod tym tytułem. Źródła szukające tylko po hashu (BSPlayer, NapiProjekt) są wtedy pomijane.
+- **Ręczna poprawka:** apka może podać `title` i `year`.
+- OpenSubtitles jest ograniczone do 3 stron wyników.
+
+Wyniki sortuje po kolejności języków z ustawień, potem po score, a obiekty trzyma w cache przez godzinę. `download` pobiera
 wybrane napisy i zapisuje je obok filmu. Jeśli ten film gra w mpv, dokłada je od razu poleceniem `sub-add`.
 
 OpenSubtitles bez loginu: subliminal wymaga logowania (`@requires_auth`) przed pobraniem, a API pozwala pobierać

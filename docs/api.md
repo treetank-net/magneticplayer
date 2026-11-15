@@ -60,7 +60,8 @@ Polecenia:
 |---|---|
 | `GET /api/subs/list?<ref>` | napisy leżące obok filmu: `name`, `lang`, `ext` |
 | `GET /sub?<ref>&name=` | plik napisów |
-| `POST /api/subs/search` | `ref` + `languages: "en,pl"` → `query`, `providers`, `results[]` (`id`, `provider`, `lang`, `release`, `score`, `hash_match`, `hi`) |
-| `POST /api/subs/download` | `ref` + `id`, `provider`, `languages` → `{"name", "provider"}`. Jeśli film gra w mpv, napisy włączają się od razu |
+| `POST /api/subs/search` | `ref` + `languages: "en,pl"`, opcjonalnie `title` i `year` (ręczna poprawka) → `query`, `title`, `year`, `providers`, `results[]` (`id`, `provider`, `lang`, `release`, `score`, `hash_match`, `hi`, `title_match`), `hidden`. Z `"async": true` zwraca od razu `{"job"}` |
+| `GET /api/subs/job?id=` | postęp: `phase` (`file`/`search`/`match`/`done`), `round` (2 = tytuł z `[nawiasu]`), `query`, `matched`/`total`, `providers` (`state`: `pending`/`running`/`done`/`skip`/`error`, `count`, `error`, `secs`), `elapsed`, `done`, `result` albo `error` |
+| `POST /api/subs/download` | `ref` + `id`, `provider`, `languages` (i te same `title`/`year` co przy szukaniu) → `{"name", "provider"}`. Jeśli film gra w mpv, napisy włączają się od razu |
 | `GET /api/config/opensubtitles` | `api_key` (czy ustawiony), `username`, `password` (czy ustawione) |
 | `POST /api/config/opensubtitles` | `{"api_key"?, "username"?, "password"?}`; puste pola nie nadpisują zapisanych |

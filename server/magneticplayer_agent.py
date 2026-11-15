@@ -848,12 +848,18 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/subs/search" and method == "POST":
                 b = self.body()
                 langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
-                return self.send_json(a.subs.search(a.resolve_ref(b), langs))
+                args = (a.resolve_ref(b), langs, (b.get("title") or "").strip() or None, b.get("year") or None)
+                if b.get("async"):  # apka pokazuje postęp, odpytując /api/subs/job
+                    return self.send_json({"job": a.subs.start_search(*args)})
+                return self.send_json(a.subs.search(*args))
+            if p == "/api/subs/job" and method == "GET":
+                return self.send_json(a.subs.job(qd.get("id", "")))
             if p == "/api/subs/download" and method == "POST":
                 b = self.body()
                 full = a.resolve_ref(b)
                 langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
-                res = a.subs.download(full, str(b["id"]), b["provider"], langs)
+                res = a.subs.download(full, str(b["id"]), b["provider"], langs, (b.get("title") or "").strip() or None,
+                                      b.get("year") or None)
                 if res.get("name") and a.mpv.running() and a.mpv.prop("path") == full:  # gra właśnie ten film — od razu włączamy
                     try:
                         a.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), res["name"]), "select")
