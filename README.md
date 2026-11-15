@@ -28,6 +28,8 @@ docs/     dokumentacja
   - zapisywane obok filmu jako `<film>.<język>.srt`;
   - jeśli film właśnie gra w mpv, napisy włączają się od razu.
 - **Usypianie i budzenie komputera** przyciskami w apce. Komputer nie zaśnie sam, gdy coś się pobiera albo gra.
+- **Klient webowy** dla laptopa albo tabletu bez Androida, pod adresem `http://<komputer>:8765/`: torrenty, biblioteka,
+  pilot (także z klawiatury), napisy, odtwarzanie w przeglądarce i link do VLC.
 - **Kolejne telefony:**
   - QR „Sparuj kolejne urządzenie” i „Wyślij apkę” (WhatsApp itp.);
   - aktualizacje publikowane na komputerze, które apki same proponują.

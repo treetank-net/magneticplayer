@@ -104,6 +104,29 @@ phone/tools/publish.sh          # out/MagneticPlayer.apk + version.json → jmpc
 Gdy magnety otwiera inna apka (np. Flud), wejdź w Ustawienia Androida → Aplikacje → tamta apka →
 „Otwieraj domyślnie” i wyczyść domyślne. Przy następnym magnecie wybierz MagneticPlayer → „Zawsze”.
 
+## Klient webowy (laptop, tablet)
+
+Otwórz `http://192.168.100.100:8765/#t=<token>`. Token zapisze się w przeglądarce i zniknie z paska adresu, więc
+później wystarczy samo `http://192.168.100.100:8765/`. Dodatek `#tab=remote` (albo `library`, `torrents`)
+otwiera od razu wybraną zakładkę.
+
+| zakładka | co umie |
+|---|---|
+| Torrenty | dodawanie magnetu, „po pobraniu”, wstrzymaj i wznów, pliki z „ile da się obejrzeć”, wcześniejsze zlecenia |
+| Biblioteka | przeglądanie katalogów (dodaje się je w apce) |
+| Pilot | to samo co w apce, plus klawisze: spacja, ← →, ↑ ↓, `f`, `m` |
+
+Przy każdym filmie: „Na komputerze”, „W przeglądarce”, „Link do VLC” i „Napisy…”.
+
+Ograniczenia przeglądarki:
+- **Odtwarzanie:** przeglądarka odtworzy H.264 z AAC, czasem AV1. Nie odtworzy HEVC/x265 ani dźwięku
+  E-AC3/DTS. Wtedy zostaje „Na komputerze” albo VLC.
+- **Napisy:** agent zamienia je w locie z SRT na WebVTT (`/sub?…&vtt=1`).
+- **Budzenie:** przeglądarka nie wyśle magic packetu, więc uśpiony komputer budzisz z telefonu.
+
+Strona to jeden plik `server/web/index.html` (bez zależności). `install.sh` kopiuje go do
+`~/.local/share/magneticplayer/web/`.
+
 ## Typowe problemy
 
 | objaw | przyczyna i rozwiązanie |

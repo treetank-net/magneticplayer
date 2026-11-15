@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MagneticPlayer</title>
+<meta name="color-scheme" content="light dark">
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --fg: #1b1d22; --muted: #646a75; --line: #e2e5ea;
+  --accent: #3d5afe; --accent-fg: #fff; --ok: #2e9d5b; --warn: #c77700; --err: #c62828; --chip: #eef0f4;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121317; --card: #1c1e24; --fg: #e8e9ec; --muted: #9aa0ab; --line: #2c2f37;
+          --accent: #8c9eff; --accent-fg: #0d1030; --ok: #5cc98a; --warn: #f0a640; --err: #ff6b6b; --chip: #262932; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line);
+         display: flex; align-items: center; gap: 12px; padding: 10px 16px; flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0; }
+#status { font-size: 13px; color: var(--muted); }
+#status.on { color: var(--ok); } #status.off { color: var(--err); }
+nav { display: flex; gap: 4px; margin-left: auto; }
+nav button { background: none; border: 0; color: var(--muted); padding: 8px 12px; border-radius: 8px; font: inherit; cursor: pointer; }
+nav button.active { background: var(--chip); color: var(--fg); font-weight: 600; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--muted); font-size: 13px; }
+.name { font-weight: 600; overflow-wrap: anywhere; }
+button, select, input { font: inherit; color: inherit; }
+.btn { background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.big { font-size: 22px; padding: 10px 18px; min-width: 64px; }
+.btn:disabled { opacity: .5; cursor: default; }
+input[type=text], input[type=password], input[type=number], select { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+input[type=text] { width: 100%; }
+.row > input[type=text] { flex: 1; width: auto; min-width: 0; }
+.bar { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin: 6px 0 2px; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+.bar.ok > i { background: var(--ok); }
+.list-item { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.list-item:last-child { border-bottom: 0; }
+.dir { cursor: pointer; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.dir:hover { background: var(--chip); }
+.crumbs { margin-bottom: 10px; }
+.crumbs a { color: var(--accent); cursor: pointer; text-decoration: none; }
+.tag { display: inline-block; font-size: 12px; background: var(--chip); border-radius: 6px; padding: 1px 7px; margin-left: 6px; }
+.ok { color: var(--ok); } .err { color: var(--err); } .warn { color: var(--warn); }
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--fg); padding: 0; width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+dialog::backdrop { background: rgba(0,0,0,.5); }
+dialog .head { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); gap: 8px; }
+dialog .head h2 { font-size: 16px; margin: 0; flex: 1; }
+dialog .body { padding: 12px 16px; overflow: auto; max-height: calc(100vh - 140px); }
+.sub { cursor: pointer; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.sub:hover { background: var(--chip); }
+.prov { display: flex; gap: 8px; font-size: 13px; padding: 2px 0; }
+.prov b { font-weight: 500; flex: 1; }
+video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
+#remote .controls { justify-content: center; margin: 14px 0; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg);
+         padding: 10px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+#toast.show { opacity: 1; }
+.kbd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--chip); border-radius: 4px; padding: 0 5px; }
+@media (max-width: 600px) { nav { margin-left: 0; width: 100%; } nav button { flex: 1; } main { padding: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>MagneticPlayer</h1>
+  <span id="status">…</span>
+  <button class="btn" id="btnSuspend" title="Uśpij komputer">Uśpij</button>
+  <button class="btn" id="btnScreen" title="Włącz ekran komputera">Ekran</button>
+  <nav>
+    <button data-tab="torrents" class="active">Torrenty</button>
+    <button data-tab="library">Biblioteka</button>
+    <button data-tab="remote">Pilot</button>
+  </nav>
+</header>
+<main>
+  <section id="login" hidden class="card">
+    <p class="name">Podaj token</p>
+    <p class="muted">Token jest w linku parowania (<span class="kbd">token=…</span>) albo w apce: Ustawienia. Zapamiętam go w tej przeglądarce.</p>
+    <div class="row"><input type="password" id="tokenInput" class="grow" placeholder="token"><button class="btn primary" id="tokenSave">Zaloguj</button></div>
+  </section>
+  <section id="torrents"></section>
+  <section id="library" hidden></section>
+  <section id="remote" hidden></section>
+</main>
+<dialog id="dlg"><div class="head"><h2 id="dlgTitle"></h2><button class="btn" id="dlgClose">Zamknij</button></div><div class="body" id="dlgBody"></div></dialog>
+<div id="toast"></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- stan i API
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+let token = "";
+(() => {
+  const m = location.hash.match(/(?:^#|&)t(?:oken)?=([^&]+)/);
+  if (m) {
+    token = decodeURIComponent(m[1]); store.set("mp_token", token);
+    // token znika z paska adresu (i z historii), reszta (#tab=…) zostaje
+    const rest = location.hash.slice(1).split("&").filter(x => x && !/^t(oken)?=/.test(x)).join("&");
+    history.replaceState(null, "", location.pathname + (rest ? "#" + rest : ""));
+  }
+  else token = store.get("mp_token") || "";
+})();
+const AFTER = { none: "nic", stop: "zatrzymaj torrent", suspend: "uśpij komputer" };
+const PROVIDERS = { opensubtitlescom: "OpenSubtitles", podnapisi: "Podnapisi", bsplayer: "BSPlayer",
+  gestdown: "Gestdown (Addic7ed)", napiprojekt: "NapiProjekt", tvsubtitles: "TVsubtitles" };
+const subLangs = () => store.get("mp_sublangs") || "en,pl";
+
+class ApiError extends Error { constructor(m, code) { super(m); this.code = code; } }
+async function api(path, body, opts = {}) {
+  let r;
+  try {
+    r = await fetch(path, {
+      method: body !== undefined ? "POST" : "GET",
+      headers: { "Authorization": "Bearer " + token, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: opts.signal,
+    });
+  } catch (e) { throw new ApiError("Komputer nie odpowiada", 0); }
+  const txt = await r.text();
+  let j = null; try { j = JSON.parse(txt); } catch {}
+  if (!r.ok) {
+    if (r.status === 401) showLogin();
+    throw new ApiError((j && j.error) || "HTTP " + r.status, r.status);
+  }
+  return j;
+}
+const q = o => Object.entries(o).map(([k, v]) => k + "=" + encodeURIComponent(v)).join("&");
+const refQuery = ref => q(ref.playing ? { playing: 1 } : ref.torrent_id ? { torrent_id: ref.torrent_id, file_index: ref.file_index } : { root: ref.root, path: ref.path });
+const mediaUrl = ref => (ref.torrent_id
+  ? `/media/${ref.torrent_id}/${ref.file_index}/${encodeURIComponent(ref.title || "plik")}`
+  : `/lib/${ref.root}/${ref.path.split("/").map(encodeURIComponent).join("/")}`) + "?token=" + encodeURIComponent(token);
+const subUrl = (ref, name, vtt) => `/sub?${refQuery(ref)}&name=${encodeURIComponent(name)}${vtt ? "&vtt=1" : ""}&token=${encodeURIComponent(token)}`;
+
+// ---------------------------------------------------------------- drobiazgi
+const $ = s => document.querySelector(s);
+function h(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "class") e.className = v;
+    else if (k === "style") e.style.cssText = v;
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return e;
+}
+let toastT;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 3500); }
+async function act(fn, ok) { try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message); } }
+const bytes = n => { if (!n) return "0 B"; const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return n.toFixed(i > 1 ? 1 : 0) + " " + u[i]; };
+const clock = s => { if (s == null || isNaN(s)) return "–"; s = Math.max(0, Math.round(s)); const hh = Math.floor(s / 3600), mm = Math.floor(s % 3600 / 60), ss = s % 60;
+  return (hh ? hh + ":" + String(mm).padStart(2, "0") : mm) + ":" + String(ss).padStart(2, "0"); };
+const eta = s => s > 0 && s < 8640000 ? (s > 3600 ? Math.round(s / 3600) + " h" : Math.max(1, Math.round(s / 60)) + " min") : "";
+function bar(frac, ok) { return h("div", { class: "bar" + (ok ? " ok" : "") }, h("i", { style: `width:${Math.round(Math.min(1, Math.max(0, frac)) * 100)}%` })); }
+
+// ---------------------------------------------------------------- dialog
+function openDialog(title, body, onClose) {
+  const d = $("#dlg");
+  $("#dlgTitle").textContent = title;
+  $("#dlgBody").replaceChildren(body);
+  d._onClose = onClose;
+  if (!d.open) d.showModal();
+}
+$("#dlgClose").onclick = () => $("#dlg").close();
+$("#dlg").addEventListener("close", () => { const d = $("#dlg"); if (d._onClose) d._onClose(); d._onClose = null; $("#dlgBody").replaceChildren(); });
+
+// ---------------------------------------------------------------- nagłówek, zakładki
+let online = false, tab = (location.hash.match(/tab=(torrents|library|remote)/) || [])[1] || store.get("mp_tab") || "torrents";
+function showLogin() { $("#login").hidden = false; for (const s of ["torrents", "library", "remote"]) $("#" + s).hidden = true; }
+$("#tokenSave").onclick = () => { token = $("#tokenInput").value.trim(); store.set("mp_token", token); $("#login").hidden = true; setTab(tab); };
+$("#tokenInput").addEventListener("keydown", e => { if (e.key === "Enter") $("#tokenSave").click(); });
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
+function setTab(t) {
+  tab = t; store.set("mp_tab", t);
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === t));
+  for (const s of ["torrents", "library", "remote"]) $("#" + s).hidden = s !== t;
+  if (!token) return showLogin();
+  ({ torrents: Torrents.show, library: Library.show, remote: Remote.show })[t]();
+}
+$("#btnSuspend").onclick = () => { if (confirm("Uśpić komputer? Obudzisz go z apki na telefonie.")) act(() => api("/api/system/suspend", {}), "Usypiam komputer"); };
+$("#btnScreen").onclick = () => act(() => api("/api/system/screen_on", {}), "Ekran włączony");
+let hostname = "";
+async function ping() {
+  try {
+    const r = await fetch("/api/ping", { cache: "no-store" });
+    online = r.ok;
+    if (online && !hostname && token) { try { hostname = (await api("/api/info")).hostname; } catch {} }
+  } catch { online = false; }
+  const s = $("#status");
+  s.textContent = online ? "● " + (hostname || location.hostname) + " — działa" : "● komputer nie odpowiada (śpi?) — obudź go z apki na telefonie";
+  s.className = online ? "on" : "off";
+}
+setInterval(ping, 5000);
+
+// ---------------------------------------------------------------- akcje dla pliku
+function mediaActions(ref, isVideo = true) {
+  return h("div", { class: "row", style: "margin-top:6px" },
+    h("button", { class: "btn primary", onclick: () => act(async () => { await api("/api/player/open", ref); setTab("remote"); }, "Gra na komputerze") }, "▶ Na komputerze"),
+    isVideo && h("button", { class: "btn", onclick: () => Player.open(ref) }, "W przeglądarce"),
+    h("button", { class: "btn", onclick: () => { const u = new URL(mediaUrl(ref), location.href).href;
+      navigator.clipboard?.writeText(u).then(() => toast("Link skopiowany — wklej w VLC: Media → Otwórz strumień sieciowy"), () => prompt("Link do VLC:", u)); } }, "Link do VLC"),
+    isVideo && h("button", { class: "btn", onclick: () => Subs.open(ref) }, "Napisy…"),
+  );
+}
+
+// ---------------------------------------------------------------- Torrenty
+const Torrents = (() => {
+  let timer, openId = null;
+  const root = $("#torrents");
+  function form() {
+    const inp = h("input", { type: "text", placeholder: "magnet:?xt=urn:btih:…" });
+    const seq = h("input", { type: "checkbox", checked: store.get("mp_seq") !== "0" });
+    const after = h("select", {}, Object.entries(AFTER).map(([k, v]) => h("option", { value: k }, v)));
+    after.value = store.get("mp_after") || "none";
+    const add = async () => {
+      const magnet = inp.value.trim();
+      if (!magnet.startsWith("magnet:?")) return toast("To nie jest magnet link");
+      store.set("mp_seq", seq.checked ? "1" : "0"); store.set("mp_after", after.value);
+      await act(() => api("/api/torrents", { magnet, sequential: seq.checked, after: after.value }), "Dodano do pobierania");
+      inp.value = ""; refresh();
+    };
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") add(); });
+    return h("div", { class: "card" },
+      h("div", { class: "row" }, inp, h("button", { class: "btn primary", onclick: add }, "Pobierz")),
+      h("div", { class: "row muted", style: "margin-top:8px" },
+        h("label", {}, seq, " pobieranie po kolei (można oglądać w trakcie)"),
+        h("span", { style: "margin-left:auto" }, "po pobraniu: "), after));
+  }
+  function card(t) {
+    const done = t.progress >= 100;
+    const after = h("select", { title: "Po pobraniu", onchange: e => act(() => api(`/api/torrents/${t.id}/after`, { after: e.target.value }), "Zapisano") },
+      Object.entries(AFTER).map(([k, v]) => h("option", { value: k, selected: t.after === k }, "po pobraniu: " + v)));
+    const paused = /pause/i.test(t.state);
+    return h("div", { class: "card" },
+      h("div", { class: "row" },
+        h("div", { class: "grow name", style: "cursor:pointer", onclick: () => { openId = openId === t.id ? null : t.id; refresh(); } },
+          (t.mine ? "📱 " : "") + t.name),
+        h("button", { class: "btn", onclick: () => act(() => api(`/api/torrents/${t.id}/action`, { action: paused ? "resume" : "pause" })).then(refresh) }, paused ? "Wznów" : "Wstrzymaj")),
+      bar(t.progress / 100, done),
+      h("div", { class: "row muted" },
+        h("span", { class: "grow" }, `${t.progress.toFixed(1)}% · ${bytes(t.size)} · ${t.state}`,
+          t.down_rate ? ` · ↓ ${bytes(t.down_rate)}/s` : "", t.peers ? ` · ${t.peers} peerów` : "", eta(t.eta) ? ` · zostało ${eta(t.eta)}` : ""),
+        after),
+      openId === t.id ? files(t) : null);
+  }
+  function files(t) {
+    const box = h("div", { style: "margin-top:8px;border-top:1px solid var(--line);padding-top:4px" }, h("p", { class: "muted" }, "Wczytuję pliki…"));
+    api(`/api/torrents/${t.id}/files`).then(list => {
+      const media = list.filter(f => f.media);
+      box.replaceChildren(...(media.length ? media : list).map(f => {
+        const frac = f.size ? f.ready / f.size : 0;
+        const ref = { torrent_id: t.id, file_index: f.index, title: f.path.split("/").pop() };
+        const info = frac >= 0.999 ? "do obejrzenia całość" + (f.duration ? ` (${clock(f.duration)})` : "")
+          : f.ready <= 0 ? "jeszcze nie da się oglądać — początek się nie pobrał"
+          : f.ready_sec != null ? `do obejrzenia: ok. ${clock(f.ready_sec)} z ${clock(f.duration)} (${Math.round(frac * 100)}%)`
+          : `do obejrzenia: ${Math.round(frac * 100)}% od początku`;
+        return h("div", { class: "list-item" },
+          h("div", { class: "name" }, f.path), h("div", { class: "muted" }, bytes(f.size)),
+          f.media === "video" ? [bar(frac, frac >= 0.999), h("div", { class: "muted" }, info)] : null,
+          f.media && f.ready > 0 ? mediaActions(ref, f.media === "video") : null);
+      }));
+    }).catch(e => box.replaceChildren(h("p", { class: "err" }, e.message)));
+    return box;
+  }
+  async function refresh() {
+    try {
+      const list = await api("/api/torrents");
+      const keepScroll = scrollY;
+      root.replaceChildren(form(), ...(list.length ? list.map(card) : [h("p", { class: "muted" }, "Brak torrentów.")]), await history(list));
+      scrollTo(0, keepScroll);
+    } catch (e) { root.replaceChildren(form(), h("p", { class: "err" }, e.message)); }
+  }
+  async function history(present) {
+    let jobs = [];
+    try { jobs = await api("/api/jobs"); } catch { return null; }
+    const gone = jobs.filter(j => !j.in_client && j.magnet);
+    if (!gone.length) return null;
+    return h("details", { class: "card" }, h("summary", {}, `Wcześniejsze zlecenia z telefonu (${gone.length})`),
+      gone.slice(0, 40).map(j => h("div", { class: "list-item row" },
+        h("span", { class: "grow" }, j.name, h("span", { class: "muted" }, " · " + new Date(j.added * 1000).toLocaleDateString("pl"))),
+        h("button", { class: "btn", onclick: () => act(() => api("/api/torrents", { magnet: j.magnet, sequential: true, after: j.after }), "Pobieram znowu").then(refresh) }, "Pobierz znowu"))));
+  }
+  return {
+    show() {
+      clearInterval(timer); refresh();
+      // odświeżanie tylko gdy nikt nie pisze w polu magnetu i lista plików nie jest otwarta
+      timer = setInterval(() => { if (tab === "torrents" && !openId && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "SELECT") refresh(); }, 5000);
+    },
+  };
+})();
+
+// ---------------------------------------------------------------- Biblioteka
+const Library = (() => {
+  const root = $("#library");
+  let cur = null; // {root, path}
+  async function roots() {
+    const list = await api("/api/library");
+    root.replaceChildren(h("div", { class: "card" },
+      h("p", { class: "muted" }, "Katalogi dodajesz i usuwasz w apce na telefonie."),
+      list.map(r => h("div", { class: "dir", onclick: () => r.exists && open(r.index, "") },
+        "📁 ", h("b", {}, r.name), h("span", { class: "muted" }, " " + r.path + (r.exists ? "" : " — niedostępny"))))));
+  }
+  async function open(r, path) {
+    cur = { root: r, path };
+    const d = await api(`/api/library/browse?${q({ root: r, path })}`);
+    const parts = path ? path.split("/") : [];
+    const crumbs = h("div", { class: "crumbs" }, h("a", { onclick: () => { cur = null; roots(); } }, "Katalogi"),
+      parts.map((p, i) => [" / ", h("a", { onclick: () => open(r, parts.slice(0, i + 1).join("/")) }, p)]));
+    root.replaceChildren(h("div", { class: "card" }, crumbs,
+      d.dirs.map(n => h("div", { class: "dir", onclick: () => open(r, path ? path + "/" + n : n) }, "📁 " + n)),
+      d.files.map(f => {
+        const ref = { root: r, path: path ? path + "/" + f.name : f.name };
+        return h("div", { class: "list-item" },
+          h("div", { class: "name" }, (f.media === "audio" ? "🎵 " : "🎬 ") + f.name),
+          h("div", { class: "muted" }, bytes(f.size), f.subs.length ? " · napisy: " + f.subs.join(", ") : ""),
+          mediaActions(ref, f.media === "video"));
+      }),
+      !d.dirs.length && !d.files.length ? h("p", { class: "muted" }, "Brak filmów w tym katalogu.") : null));
+  }
+  return { show() { (cur ? open(cur.root, cur.path) : roots()).catch(e => root.replaceChildren(h("p", { class: "err" }, e.message))); } };
+})();
+
+// ---------------------------------------------------------------- Pilot
+const Remote = (() => {
+  const root = $("#remote");
+  let timer, st = null, dragging = false, built = false, els = {};
+  const cmd = (c, value) => act(() => api("/api/player/cmd", value === undefined ? { cmd: c } : { cmd: c, value })).then(poll);
+  function build() {
+    const seek = h("input", { type: "range", min: 0, max: 1, step: 1, value: 0 });
+    seek.addEventListener("input", () => { dragging = true; els.pos.textContent = clock(+seek.value); });
+    seek.addEventListener("change", () => { dragging = false; cmd("seek_to", +seek.value); });
+    const trackSel = type => {
+      const s = h("select", { onchange: e => cmd("track", { type, id: e.target.value === "no" ? "no" : +e.target.value }) });
+      return s;
+    };
+    els = { title: h("div", { class: "name", style: "font-size:17px" }), seek, pos: h("span"), dur: h("span"),
+      play: h("button", { class: "btn big primary", onclick: () => cmd("toggle_pause") }, "⏯"),
+      vol: h("span", { class: "muted" }), fs: h("button", { class: "btn", onclick: () => cmd("fullscreen") }, "Pełny ekran"),
+      audio: trackSel("audio"), sub: trackSel("sub"), video: trackSel("video"), videoBox: h("label", { class: "muted" }),
+      idle: h("div", { class: "card", hidden: true }, h("p", { class: "name" }, "Na komputerze nic nie gra."),
+        h("p", { class: "muted" }, "Wybierz film w Torrentach albo Bibliotece → „Na komputerze”.")),
+    };
+    els.videoBox.append("wideo ", els.video);
+    els.panel = h("div", { class: "card" },
+      els.title, h("div", { style: "margin-top:12px" }, seek),
+      h("div", { class: "row muted" }, els.pos, h("span", { class: "grow" }), els.dur),
+      h("div", { class: "row controls" },
+        h("button", { class: "btn big", onclick: () => cmd("seek", -60), title: "-60 s" }, "⏪"),
+        h("button", { class: "btn big", onclick: () => cmd("seek", -10), title: "-10 s" }, "↺10"),
+        els.play,
+        h("button", { class: "btn big", onclick: () => cmd("seek", 10), title: "+10 s" }, "10↻"),
+        h("button", { class: "btn big", onclick: () => cmd("seek", 60), title: "+60 s" }, "⏩")),
+      h("div", { class: "row controls" },
+        h("button", { class: "btn", onclick: () => cmd("volume_rel", -5) }, "🔉 ciszej"),
+        h("button", { class: "btn", onclick: () => cmd("mute") }, "🔇"),
+        h("button", { class: "btn", onclick: () => cmd("volume_rel", 5) }, "🔊 głośniej"), els.vol),
+      h("div", { class: "row controls" }, els.fs, h("button", { class: "btn", onclick: () => cmd("stop") }, "⏹ Zakończ")),
+      h("div", { class: "row", style: "justify-content:center;margin-top:6px" },
+        h("label", { class: "muted" }, "audio ", els.audio), h("label", { class: "muted" }, "napisy ", els.sub), els.videoBox),
+      h("div", { class: "row", style: "justify-content:center;margin-top:10px" },
+        h("button", { class: "btn", onclick: () => cmd("sub_delay", -0.1) }, "napisy −0,1 s"),
+        h("button", { class: "btn", onclick: () => cmd("sub_delay", 0.1) }, "napisy +0,1 s"),
+        h("button", { class: "btn", onclick: () => Subs.open({ playing: true, title: st?.title || "" }) }, "Szukaj napisów…")),
+      h("p", { class: "muted", style: "text-align:center;margin:12px 0 0" },
+        "Klawisze: ", h("span", { class: "kbd" }, "spacja"), " pauza · ", h("span", { class: "kbd" }, "← →"), " 10 s · ",
+        h("span", { class: "kbd" }, "↑ ↓"), " głośność · ", h("span", { class: "kbd" }, "f"), " pełny ekran · ", h("span", { class: "kbd" }, "m"), " wycisz"));
+    root.replaceChildren(els.idle, els.panel);
+    built = true;
+  }
+  const CODECS = { hdmv_pgs_subtitle: "PGS", dvd_subtitle: "VobSub", subrip: "SRT", ass: "ASS", eac3: "E-AC3", ac3: "AC3", aac: "AAC", dts: "DTS", truehd: "TrueHD", hevc: "HEVC", h264: "H.264", av1: "AV1" };
+  function fillTracks(sel, type, tracks) {
+    const list = tracks.filter(t => t.type === type);
+    const opts = (type === "sub" ? [h("option", { value: "no" }, "wyłączone")] : []).concat(list.map(t => {
+      const name = [t.lang && t.lang.toUpperCase(), t.external ? (t.title || "").split("/").pop().slice(-24) : t.title,
+        CODECS[t.codec] || t.codec, t["demux-channel-count"] ? t["demux-channel-count"] + "ch" : null, t.external ? "z pliku" : null].filter(Boolean).join(" · ");
+      return h("option", { value: t.id }, name || "ścieżka " + t.id);
+    }));
+    const sig = JSON.stringify(list.map(t => [t.id, t.title, t.lang]));
+    if (sel._sig !== sig) { sel.replaceChildren(...opts); sel._sig = sig; }
+    if (document.activeElement !== sel) { const s = list.find(t => t.selected); sel.value = s ? s.id : (type === "sub" ? "no" : sel.value); }
+    return list.length;
+  }
+  async function poll() {
+    try { st = await api("/api/player/status"); } catch (e) { st = null; }
+    if (!built) build();
+    const running = st && st.running && !st.idle;
+    els.idle.hidden = running; els.panel.hidden = !running;
+    if (!running) return;
+    els.title.textContent = st.title || "";
+    const dur = st.duration || 0;
+    els.seek.max = Math.max(1, Math.round(dur));
+    if (!dragging) { els.seek.value = Math.round(st.pos || 0); els.pos.textContent = clock(st.pos); }
+    els.dur.textContent = clock(dur);
+    els.play.textContent = st.paused ? "▶" : "⏸";
+    els.vol.textContent = `${Math.round(st.volume || 0)}%${st.muted ? " (wyciszone)" : ""}`;
+    els.fs.textContent = st.fullscreen ? "Wyjdź z pełnego ekranu" : "Pełny ekran";
+    const tracks = st.tracks || [];
+    fillTracks(els.audio, "audio", tracks); fillTracks(els.sub, "sub", tracks);
+    els.videoBox.hidden = fillTracks(els.video, "video", tracks) < 2;
+  }
+  document.addEventListener("keydown", e => {
+    if (tab !== "remote" || $("#dlg").open || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) return;
+    const k = { " ": ["toggle_pause"], ArrowLeft: ["seek", -10], ArrowRight: ["seek", 10], ArrowUp: ["volume_rel", 5], ArrowDown: ["volume_rel", -5], f: ["fullscreen"], m: ["mute"] }[e.key];
+    if (k) { e.preventDefault(); cmd(...k); }
+  });
+  return { show() { clearInterval(timer); poll(); timer = setInterval(() => tab === "remote" && poll(), 1000); } };
+})();
+
+// ---------------------------------------------------------------- Napisy
+const Subs = (() => {
+  let ctl = null;
+  function open(ref) {
+    ctl?.abort(); ctl = new AbortController();
+    const signal = ctl.signal;
+    const have = h("div", { class: "ok", style: "font-size:13px" });
+    const status = h("div");
+    const results = h("div");
+    const title = h("input", { type: "text", placeholder: "tytuł (np. angielski)" });
+    const year = h("input", { type: "number", placeholder: "rok", style: "width:90px", min: 1900, max: 2100 });
+    const langs = h("input", { type: "text", value: subLangs(), style: "width:90px", title: "języki, po przecinku" });
+    const again = h("button", { class: "btn", onclick: () => run(title.value.trim() || null, +year.value || null) }, "Szukaj z tym tytułem");
+    const fix = h("div", { class: "row", style: "margin-top:12px", hidden: true }, h("span", { class: "grow" }, title), year, langs, again);
+    openDialog("Napisy — " + (ref.title || ref.path?.split("/").pop() || "to, co gra"),
+      h("div", {}, have, status, results, fix), () => ctl?.abort());
+    const listHave = () => api("/api/subs/list?" + refQuery(ref)).then(l => have.textContent = l.length ? "Już są: " + l.map(s => s.name.slice(-34)).join(", ") : "").catch(() => {});
+    listHave();
+    let override = [null, null];
+    async function run(t, y) {
+      override = [t, y];
+      store.set("mp_sublangs", langs.value.trim() || "en,pl");
+      results.replaceChildren(); fix.hidden = true;
+      const body = { ...refBody(ref), languages: subLangs(), async: true };
+      if (t) body.title = t; if (y) body.year = y;
+      let job;
+      try { job = (await api("/api/subs/search", body, { signal })).job; } catch (e) { return status.replaceChildren(h("p", { class: "err" }, e.message)); }
+      let stopping = false;
+      while (!signal.aborted) {
+        let p;
+        try { p = await api("/api/subs/job?id=" + job, undefined, { signal }); } catch (e) { if (!signal.aborted) status.replaceChildren(h("p", { class: "err" }, e.message)); return; }
+        if (p.done) return finish(p);
+        const phase = p.phase === "file" ? "Liczę hash pliku i rozpoznaję tytuł…"
+          : p.phase === "match" ? `Porównuję wyniki z plikiem: ${p.matched}/${p.total}`
+          : p.round === 2 ? `Nic pasującego — druga runda z tytułem z nazwy: „${p.query}”` : `Szukam: „${p.query || "…"}”`;
+        const running = Object.values(p.providers || {}).some(v => v.state === "running" || v.state === "pending");
+        status.replaceChildren(
+          h("div", { class: "row" }, h("span", { class: "grow" }, "⏳ " + phase), h("span", { class: "muted" }, Math.round(p.elapsed) + " s")),
+          p.phase === "match" && p.total ? bar(p.matched / p.total) : null,
+          provRows(p.providers),
+          p.phase === "search" && running ? h("button", { class: "btn", style: "margin-top:8px", disabled: stopping,
+            onclick: e => { stopping = true; e.target.disabled = true; e.target.textContent = "Kończę…"; api("/api/subs/job/stop", { id: job }).catch(() => {}); } },
+            "⏹ Wystarczy — pokaż, co już jest") : null);
+        await new Promise(r => setTimeout(r, 700));
+      }
+    }
+    function finish(p) {
+      const f = p.result;
+      status.replaceChildren(provRows(p.providers));
+      fix.hidden = false;
+      if (p.error) return results.replaceChildren(h("p", { class: "err" }, p.error));
+      if (!title.value) title.value = f.title || ""; if (!year.value && f.year) year.value = f.year;
+      results.replaceChildren(
+        f.hidden ? h("p", { class: "muted" }, `Ukryto ${f.hidden} wyników do innych filmów (inny tytuł, hash się nie zgadza).`) : null,
+        f.results.length ? null : h("p", {}, `Nic nie znaleziono dla „${f.query}” (${subLangs()}). Jeśli plik ma tytuł w innym języku, wpisz niżej tytuł angielski albo oryginalny.`),
+        f.results.map(r => {
+          const row = h("div", { class: "sub", onclick: async () => {
+            if (row._busy) return; row._busy = true; row.style.opacity = .6;
+            const b = { ...refBody(ref), id: r.id, provider: r.provider, languages: subLangs() };
+            if (override[0]) b.title = override[0]; if (override[1]) b.year = override[1];
+            try { const res = await api("/api/subs/download", b); toast("Pobrano: " + res.name); listHave(); }
+            catch (e) { toast(e.message); } finally { row._busy = false; row.style.opacity = 1; }
+          } },
+            h("div", { class: "row" }, h("b", {}, r.lang.toUpperCase()), r.hash_match ? h("span", { class: "ok" }, "✔ pasuje do pliku") : null,
+              h("span", { class: "grow" }), h("span", { class: "muted" }, PROVIDERS[r.provider] || r.provider)),
+            h("div", { style: "font-size:13px;overflow-wrap:anywhere" }, r.release), r.hi ? h("div", { class: "muted" }, "dla niesłyszących") : null);
+          return row;
+        }));
+    }
+    run(null, null);
+  }
+  function provRows(prov) {
+    return h("div", { style: "margin-top:6px" }, Object.entries(prov || {}).map(([k, v]) => {
+      const icon = { running: "⏳", done: "✔", error: "✖", skip: "–" }[v.state] || "…";
+      const info = v.state === "running" ? "szukam…" : v.state === "done" ? `${v.count || 0} wyn. · ${Math.round(v.secs || 0)} s` : v.state === "pending" ? "czeka" : (v.error || v.state);
+      return h("div", { class: "prov" }, h("span", { class: v.state === "done" ? "ok" : v.state === "error" ? "err" : "muted" }, icon), h("b", {}, PROVIDERS[k] || k),
+        h("span", { class: v.state === "error" ? "err" : "muted" }, info));
+    }));
+  }
+  const refBody = ref => ref.playing ? { playing: true } : ref.torrent_id ? { torrent_id: ref.torrent_id, file_index: ref.file_index } : { root: ref.root, path: ref.path };
+  return { open };
+})();
+
+// ---------------------------------------------------------------- Odtwarzacz w przeglądarce
+const Player = (() => {
+  async function open(ref) {
+    const v = h("video", { controls: true, autoplay: true, preload: "auto", crossorigin: "anonymous" });
+    v.src = mediaUrl(ref);
+    let subs = [];
+    try { subs = await api("/api/subs/list?" + refQuery(ref)); } catch {}
+    const pref = subLangs().split(",");
+    subs.sort((a, b) => (pref.indexOf(a.lang) + 1 || 99) - (pref.indexOf(b.lang) + 1 || 99));
+    subs.forEach((s, i) => v.append(h("track", { kind: "subtitles", src: subUrl(ref, s.name, true), srclang: s.lang || "und", label: s.name.slice(-30), default: i === 0 })));
+    const key = "mp_pos_" + (ref.torrent_id ? ref.torrent_id + "/" + ref.file_index : ref.root + "/" + ref.path);
+    const saved = +store.get(key) || 0;
+    v.addEventListener("loadedmetadata", () => { if (saved > 10 && saved < v.duration - 30) v.currentTime = saved; });
+    let lastSave = 0;
+    v.addEventListener("timeupdate", () => { if (Date.now() - lastSave > 5000) { lastSave = Date.now(); store.set(key, String(Math.floor(v.currentTime))); } });
+    const err = h("p", { class: "err", hidden: true }, "Przeglądarka nie umie odtworzyć tego pliku (zwykle HEVC/x265, AV1 albo dźwięk E-AC3/DTS). Użyj „Na komputerze” albo „Link do VLC”.");
+    v.addEventListener("error", () => err.hidden = false);
+    openDialog(ref.title || ref.path.split("/").pop(), h("div", {}, v, err,
+      h("div", { class: "row", style: "margin-top:10px" },
+        h("button", { class: "btn", onclick: () => { const t = v.currentTime; $("#dlg").close();
+          act(async () => { await api("/api/player/open", { ...ref, start: t }); setTab("remote"); }, "Gra na komputerze od " + clock(t)); } }, "▶ Na komputer od tego miejsca"),
+        h("span", { class: "muted" }, subs.length ? `napisy: ${subs.length} (menu odtwarzacza)` : "bez napisów obok pliku"))),
+      () => { store.set(key, String(Math.floor(v.currentTime || 0))); v.pause(); v.removeAttribute("src"); v.load(); });
+  }
+  return { open };
+})();
+
+ping();
+setTab(tab);
+</script>
+</body>
+</html>

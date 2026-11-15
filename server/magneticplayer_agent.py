@@ -33,6 +33,7 @@ from mp_subs import Subtitles, SubsError
 VERSION = "1.0.0"
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
+WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")  # klient webowy (server/web)
 APK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apk")  # tu publish.sh wrzuca apkę
 
 
@@ -729,6 +730,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if p == "/api/ping":
                 return self.send_json({"ok": True, "app": "magneticplayer", "version": VERSION})
+            if p in ("", "/index.html") and method in ("GET", "HEAD"):
+                # klient webowy (laptop/tablet bez apki); statyczny plik, dane z API i tak wymagają tokenu
+                return self.send_static(os.path.join(WEB_DIR, "index.html"), "text/html; charset=utf-8", method == "HEAD")
             if not self.authorized(q):
                 raise ApiError("zły token", 401)
             a = self.app
@@ -844,6 +848,8 @@ class Handler(BaseHTTPRequestHandler):
                 names = {s["name"]: s for s in sidecar_subs(full)}
                 if qd.get("name") not in names:
                     raise ApiError("nie ma takich napisów", 404)
+                if qd.get("vtt") == "1":  # przeglądarki (<track>) rozumieją tylko WebVTT
+                    return self.send_vtt(os.path.join(os.path.dirname(full), qd["name"]))
                 return self.stream(os.path.join(os.path.dirname(full), qd["name"]), method == "HEAD")
             if p == "/api/subs/search" and method == "POST":
                 b = self.body()
@@ -890,6 +896,39 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": repr(e)}, 500)
             except OSError:
                 pass
+
+    def send_static(self, path, ctype, head_only=False):
+        try:
+            with open(path, "rb") as f:
+                body = f.read()
+        except OSError:
+            raise ApiError("brak pliku strony — uruchom ponownie install.sh", 404)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(body)
+
+    def send_vtt(self, path):
+        with open(path, "rb") as f:
+            raw = f.read()
+        for enc in ("utf-8-sig", "cp1250", "latin-1"):
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        if not path.lower().endswith(".vtt"):
+            text = re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", text.replace("\r\n", "\n"))
+            text = "WEBVTT\n\n" + text
+        body = text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/vtt; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def stream(self, full, head_only):
         if not os.path.isfile(full):

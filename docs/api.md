@@ -8,6 +8,12 @@ a błędy mają postać `{"error": "..."}` z kodem 4xx lub 5xx.
 (zob. [architektura](architektura.md#wskazanie-pliku-ref)). W GET przekazuje się je jako parametry zapytania,
 w POST w treści JSON.
 
+## Klient webowy
+
+| metoda i ścieżka | opis |
+|---|---|
+| `GET /` | strona `web/index.html`, bez tokenu (dane i tak idą przez API z tokenem) |
+
 ## System
 
 | metoda i ścieżka | opis |
@@ -59,8 +65,9 @@ Polecenia:
 | metoda i ścieżka | opis |
 |---|---|
 | `GET /api/subs/list?<ref>` | napisy leżące obok filmu: `name`, `lang`, `ext` |
-| `GET /sub?<ref>&name=` | plik napisów |
+| `GET /sub?<ref>&name=[&vtt=1]` | plik napisów. Z `vtt=1` agent zamienia SRT na WebVTT (dla `<track>` w przeglądarce) |
 | `POST /api/subs/search` | `ref` + `languages: "en,pl"`, opcjonalnie `title` i `year` (ręczna poprawka) → `query`, `title`, `year`, `providers`, `results[]` (`id`, `provider`, `lang`, `release`, `score`, `hash_match`, `hi`, `title_match`), `hidden`. Z `"async": true` zwraca od razu `{"job"}` |
+| `POST /api/subs/job/stop` | `{"id"}`: „Wystarczy”, nie czekaj na wolne źródła i pomiń drugą rundę |
 | `GET /api/subs/job?id=` | postęp: `phase` (`file`/`search`/`match`/`done`), `round` (2 = tytuł z `[nawiasu]`), `query`, `matched`/`total`, `providers` (`state`: `pending`/`running`/`done`/`skip`/`error`, `count`, `error`, `secs`), `elapsed`, `done`, `result` albo `error` |
 | `POST /api/subs/download` | `ref` + `id`, `provider`, `languages` (i te same `title`/`year` co przy szukaniu) → `{"name", "provider"}`. Jeśli film gra w mpv, napisy włączają się od razu |
 | `GET /api/config/opensubtitles` | `api_key` (czy ustawiony), `username`, `password` (czy ustawione) |

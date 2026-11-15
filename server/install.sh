@@ -21,6 +21,7 @@ echo "== agent -> $DEST"
 mkdir -p "$DEST" "$UNITS"
 install -m 755 "$SRC/magneticplayer_agent.py" "$DEST/"
 install -m 644 "$SRC"/mp_*.py "$DEST/"
+install -d "$DEST/web" && install -m 644 "$SRC"/web/* "$DEST/web/"
 
 echo "== napisy: subliminal w venv ($DEST/venv)"
 [ -x "$DEST/venv/bin/python" ] || python3 -m venv "$DEST/venv"
