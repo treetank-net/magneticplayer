@@ -1,63 +1,55 @@
 # MagneticPlayer
 
-Magnet link na telefonie → pobieranie w Deluge na komputerze (z budzeniem przez Wake-on-LAN) → oglądanie
-na telefonie albo na komputerze, z telefonem jako pilotem.
+Magnet link na telefonie → pobieranie w Deluge na domowym komputerze (budzonym przez Wake-on-LAN) → oglądanie
+na telefonie albo na komputerze, z telefonem jako pilotem. Działa w sieci domowej (LAN).
 
 ```
-server/   agent na komputer (Linux Mint, Python bez zależności) + instalator
-phone/    apka na Androida (Kotlin, Compose, Media3/ExoPlayer + FFmpeg do AC3/DTS)
+server/   agent na komputer z Linux Mint (Python ze standardową biblioteką + subliminal w venv) i instalatory
+phone/    apka na Androida 8+ (Kotlin, Jetpack Compose, Media3/ExoPlayer + dekoder FFmpeg do AC3/E-AC3/DTS)
+docs/     dokumentacja
 ```
 
-## Komputer (`server/`)
+## Co umie
 
-```
-bash server/install.sh          # lokalnie: część rootowa przez pkexec
-# przez SSH część rootowa przez sudo (pkexec nie ma tam sesji polkit):
-ssh -t jmpc sudo bash .local/src/MagneticPlayer/server/install-root.sh jm
-ssh jmpc 'SKIP_ROOT=1 bash .local/src/MagneticPlayer/server/install.sh'
-```
+- **Magnety:** kliknięty `magnet:` albo „Udostępnij” z dowolnej apki trafia do Deluge. Śpiący komputer jest
+  najpierw budzony (WoL). Domyślnie pobieranie sekwencyjne, żeby dało się oglądać w trakcie.
+- **Ile da się już obejrzeć:** dla każdego filmu część pobrana ciągiem od początku, w procentach i minutach.
+- **Akcja po pobraniu** (przy zleceniu albo później): nic, zatrzymaj torrent albo uśpij komputer.
+  Do tego historia zleceń wysłanych z telefonu z opcją „Pobierz znowu”.
+- **Biblioteka:** wybrane katalogi komputera, tylko filmy i muzyka.
+- **Odtwarzanie:**
+  - na telefonie (ExoPlayer, napisy obok filmu i wbudowane), w VLC na telefonie albo w mpv na komputerze;
+  - przekazanie filmu z telefonu na komputer od tego samego miejsca.
+- **Pilot do mpv:**
+  - pauza, przewijanie, pełny ekran, głośność (też klawiszami telefonu), stop;
+  - wybór ścieżek audio, napisów i wideo, przesunięcie napisów, włączenie ekranu komputera.
+- **Napisy:** wyszukiwanie po hashu pliku i po nazwie przez subliminal:
+  - źródła: OpenSubtitles.com (sam klucz API wystarcza), BSPlayer, Podnapisi, Gestdown/Addic7ed, NapiProjekt;
+  - zapisywane obok filmu jako `<film>.<język>.srt`;
+  - jeśli film właśnie gra w mpv, napisy włączają się od razu.
+- **Usypianie i budzenie komputera** przyciskami w apce. Komputer nie zaśnie sam, gdy coś się pobiera albo gra.
+- **Kolejne telefony:**
+  - QR „Sparuj kolejne urządzenie” i „Wyślij apkę” (WhatsApp itp.);
+  - aktualizacje publikowane na komputerze, które apki same proponują.
 
-- `install-root.sh`: deluged, deluge-web, mpv; reguła polkit (blokada usypiania, uśpienie, wyłączenie z usługi
-  w tle); Wake-on-LAN (NetworkManager `802-3-ethernet.wake-on-lan magic` + udev dla `power/wakeup`).
-- `install.sh`: usługi `systemd --user` (deluged, deluge-web na 127.0.0.1:8112, magneticplayer na :8765),
-  Deluge GTK w trybie klienta (łączy się z deluged), na końcu link parowania dla telefonu.
-- Konfiguracja: `~/.config/magneticplayer/config.json` (token, backend deluge/transmission, katalogi biblioteki,
-  konto OpenSubtitles); zlecenia z telefonu: `~/.config/magneticplayer/jobs.json`.
-- Logi: `journalctl --user -u magneticplayer -f`.
+## Szybki start
 
-Agent:
-- dodaje magnety (domyślnie pobieranie sekwencyjne + pierwszy/ostatni kawałek pierwsze),
-- strumieniuje pliki z obsługą Range (`/media/<torrent>/<plik>`, `/lib/<katalog>/<ścieżka>`),
-- liczy, ile filmu da się obejrzeć (kawałki pobrane ciągiem od początku pliku; długość z mpv),
-- steruje mpv przez JSON IPC (fullscreen, przewijanie, głośność, napisy, ścieżki),
-- trzyma `systemd-inhibit` podczas pobierania i odtwarzania; po pobraniu może zatrzymać torrent albo uśpić
-  komputer,
-- szuka i pobiera napisy przez subliminal (venv w `~/.local/share/magneticplayer/venv`): BSPlayer, Podnapisi,
-  Gestdown/Addic7ed, NapiProjekt bez kont; OpenSubtitles (opensubtitles.com, nie .org) po podaniu
-  klucza API w apce (login opcjonalny). Napisy zapisuje obok filmu jako `<film>.<język>.srt` (mpv łapie je sam).
-
-## Telefon (`phone/`)
-
-```
-phone/tools/build-apk.sh     # build w kontenerze Android SDK → phone/out/MagneticPlayer.apk
-adb install -r phone/out/MagneticPlayer.apk
+```bash
+# komputer (lokalnie; część rootowa przez pkexec)
+bash server/install.sh
+# telefon
+phone/tools/build-apk.sh && adb install -r phone/out/MagneticPlayer.apk
 ```
 
-Kolejny telefon: w apce Ustawienia → „Sparuj kolejne urządzenie” pokazuje QR z linkiem parowania (i „Udostępnij link”).
-„Wyślij apkę” wysyła zainstalowany plik APK dowolnym komunikatorem.
+`install.sh` na końcu wypisuje link parowania `magneticplayer://pair?...`. Otwórz go na telefonie albo wklej
+w apce: Ustawienia → „Wklej link parowania”.
 
-Aktualizacje dla innych telefonów (np. domowników): przetestuj u siebie, potem
+## Dokumentacja
 
-```
-phone/tools/publish.sh       # wrzuca out/MagneticPlayer.apk + version.json do ~/.local/share/magneticplayer/apk/ na jmpc
-```
-
-Apki połączone z tym komputerem pokażą pasek „Jest aktualizacja” (`/api/app/version`, plik `/app/MagneticPlayer.apk`,
-oba za tokenem). Android poprosi o potwierdzenie, a za pierwszym razem o zgodę na instalowanie z MagneticPlayera.
-`versionCode` rośnie przy każdym buildzie (minuty od 2025-01-01).
-
-Klucz podpisu: `phone/magneticplayer.keystore` + `keystore.properties` (poza gitem). Nie gub go, bo aktualizacje
-apki muszą być podpisane tym samym kluczem.
-
-Magnet linki: gdy inna apka (np. Flud) jest domyślna, w Ustawieniach Androida → Aplikacje → ta apka →
-„Otwieraj domyślnie” → wyczyść, potem przy magnecie wybierz MagneticPlayer → „Zawsze”.
+- [docs/instalacja-i-utrzymanie.md](docs/instalacja-i-utrzymanie.md): instalacja przez SSH, aktualizacje
+  agenta i apki, kolejne telefony, klucz podpisu, logi, typowe problemy.
+- [docs/architektura.md](docs/architektura.md): komponenty, przepływy (magnet, oglądanie, napisy, usypianie),
+  pliki i konfiguracja.
+- [docs/api.md](docs/api.md): HTTP API agenta.
+- [docs/siec-i-bezpieczenstwo.md](docs/siec-i-bezpieczenstwo.md): założenie „tylko LAN”, token oraz opcje
+  na zdalny dostęp w przyszłości.
