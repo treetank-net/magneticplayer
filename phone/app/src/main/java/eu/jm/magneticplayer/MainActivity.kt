@@ -243,7 +243,7 @@ private fun MainScreen(api: Api, tab: MutableIntState, settingsVersion: MutableI
                     Box {
                         IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "menu") }
                         DropdownMenu(menu, { menu = false }) {
-                            DropdownMenuItem({ Text("Włącz ekran komputera") }, {
+                            DropdownMenuItem({ Text("Włącz i odblokuj ekran") }, {
                                 menu = false; scope.io(snack) { api.screenOn() }
                             }, leadingIcon = { Icon(Icons.Filled.LightMode, null) })
                         }
@@ -618,7 +618,7 @@ private fun RemoteTab(api: Api, online: Boolean, snack: SnackbarHostState) {
             Spacer(Modifier.height(8.dp))
             Text("Wybierz film w zakładce Torrenty → „Na komputerze”.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
-            OutlinedButton({ scope.io(snack) { api.screenOn() } }) { Icon(Icons.Filled.LightMode, null); Spacer(Modifier.width(6.dp)); Text("Włącz ekran") }
+            OutlinedButton({ scope.io(snack) { api.screenOn() } }) { Icon(Icons.Filled.LightMode, null); Spacer(Modifier.width(6.dp)); Text("Włącz i odblokuj ekran") }
         }
         return
     }

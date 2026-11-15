@@ -21,7 +21,8 @@ w POST w treści JSON.
 | `GET /api/ping` | `{"ok": true, "app": "magneticplayer", "version"}`, bez tokenu |
 | `GET /api/info` | `hostname`, `version`, `backend`, `keep_awake` (powód blokady usypiania), `iface`, `ip`, `mac`, `wake_on`, `wireless` |
 | `POST /api/system/suspend` | zamyka mpv i usypia komputer |
-| `POST /api/system/screen_on` | budzi ekran komputera |
+| `POST /api/system/screen_on` | budzi ekran komputera, a przy `auto_unlock` zdejmuje też ekran blokady → `{"unlocked"}` |
+| `POST /api/system/unlock` | budzi ekran i zdejmuje blokadę niezależnie od `auto_unlock` |
 | `GET /api/app/version` | `{"version_code", "version_name"}` opublikowanej apki albo `{"version_code": 0}` |
 | `GET /app/MagneticPlayer.apk` | plik opublikowanej apki |
 

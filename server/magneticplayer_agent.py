@@ -62,6 +62,8 @@ DEFAULT_CONFIG = {
     "transmission_user": "",
     "transmission_password": "",
     "keep_awake": True,
+    # odblokowanie ekranu blokady przy "Na komputerze" i "Włącz ekran"; każdy z tokenem odblokuje wtedy pulpit
+    "auto_unlock": True,
     "mpv_args": ["--fs", "--save-position-on-quit"],
 }
 
@@ -386,12 +388,39 @@ def graphical_env():
     return env
 
 
-def wake_screen():
+AUTO_UNLOCK = True  # nadpisywane z configu w App.__init__
+
+
+def unlock_screen():
+    """Zdejmuje ekran blokady przez logind (sygnał Unlock); cinnamon-screensaver, GNOME i KDE go słuchają.
+    polkit pozwala na to właścicielowi sesji bez hasła. Zwraca True, gdy się udało."""
+    try:
+        sid = subprocess.run(["loginctl", "show-user", str(os.getuid()), "-p", "Display", "--value"],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+        if not sid:
+            return False
+        r = subprocess.run(["loginctl", "unlock-session", sid], capture_output=True, text=True, timeout=5)
+        if r.returncode:
+            log("unlock-session:", r.stderr.strip())
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError) as e:
+        log("unlock-session:", e)
+        return False
+
+
+def wake_screen(unlock=None):
     env = graphical_env()
-    for cmd in (["xset", "dpms", "force", "on"], ["cinnamon-screensaver-command", "--deactivate"],
-                ["xdg-screensaver", "reset"]):
+    # bez "cinnamon-screensaver-command --deactivate": w Cinnamon 5.4 wywala wygaszacz (brak grab_helper)
+    # i wisi; ekran blokady zdejmuje unlock_screen() przez logind
+    for cmd in (["xset", "dpms", "force", "on"], ["xdg-screensaver", "reset"]):
         if shutil.which(cmd[0]):
-            subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            try:
+                subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+            except (OSError, subprocess.SubprocessError) as e:
+                log("ekran:", cmd[0], e)
+    if AUTO_UNLOCK if unlock is None else unlock:
+        return unlock_screen()
+    return False
 
 
 class Mpv:
@@ -640,7 +669,9 @@ def net_info(client_ip):
 
 class App:
     def __init__(self, cfg):
+        global AUTO_UNLOCK
         self.cfg = cfg
+        AUTO_UNLOCK = bool(cfg.get("auto_unlock", True))
         self.backend = DelugeBackend(cfg) if cfg["backend"] == "deluge" else TransmissionBackend(cfg)
         self.mpv = Mpv(cfg)
         self.guard = SleepGuard(self)
@@ -819,8 +850,9 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Timer(1.0, lambda: suspend(a.guard)).start()
                 return
             if p == "/api/system/screen_on" and method == "POST":
-                wake_screen()
-                return self.send_json({"ok": True})
+                return self.send_json({"ok": True, "unlocked": wake_screen()})
+            if p == "/api/system/unlock" and method == "POST":
+                return self.send_json({"ok": True, "unlocked": wake_screen(unlock=True)})
             # ---- biblioteka
             qd = {k: v[0] for k, v in q.items()}
             if p == "/api/library" and method == "GET":

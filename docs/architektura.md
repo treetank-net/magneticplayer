@@ -59,6 +59,10 @@ obejrzeć.
 - **VLC:** ten sam URL plus extra `subtitles_location`.
 - **Komputer:** `POST /api/player/open` uruchamia mpv w sesji graficznej. Środowisko (`DISPLAY`, `WAYLAND_DISPLAY`,
   DBus) agent bierze z `/proc/<cinnamon-session>/environ`. Pilot steruje mpv przez JSON IPC.
+- **Ekran blokady:** przed odtworzeniem agent budzi monitor (`xset dpms force on`) i, gdy `auto_unlock` jest włączone
+  (domyślnie), woła `loginctl unlock-session <sesja Display>`. Logind wysyła sygnał Unlock, na który
+  cinnamon-screensaver (i GNOME, KDE) zdejmuje blokadę. Polkit pozwala na to właścicielowi sesji bez hasła.
+  Nie używamy `cinnamon-screensaver-command --deactivate`, bo w Cinnamon 5.4 wywala wygaszacz i wisi.
 
 ### Napisy
 `search` wywołuje `scan_video` i `refine` (hash i metadane), potem odpytuje każde źródło w osobnym wątku

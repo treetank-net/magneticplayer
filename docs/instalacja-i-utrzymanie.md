@@ -35,7 +35,7 @@ scp server/*.py jmpc:.local/share/magneticplayer/ && ssh jmpc systemctl --user r
 
 | ścieżka | zawartość |
 |---|---|
-| `~/.config/magneticplayer/config.json` | token, port, backend (`deluge`/`transmission`), hasło deluge-web, katalogi biblioteki, klucz OpenSubtitles i opcjonalny login, `mpv_args` |
+| `~/.config/magneticplayer/config.json` | token, port, backend (`deluge`/`transmission`), hasło deluge-web, katalogi biblioteki, klucz OpenSubtitles i opcjonalny login, `mpv_args`, `auto_unlock` |
 | `~/.config/magneticplayer/jobs.json` | zlecenia z telefonu: magnet, akcja po pobraniu, czy wykonana |
 | `~/.local/share/magneticplayer/` | agent (`magneticplayer_agent.py`, `mp_*.py`) i `venv/` z subliminal |
 | `~/.local/share/magneticplayer/apk/` | opublikowana apka i `version.json`, z których korzystają aktualizacje telefonów |
@@ -133,7 +133,8 @@ Strona to jeden plik `server/web/index.html` (bez zależności). `install.sh` ko
 |---|---|
 | „Komputer nie odpowiada” u nowego telefonu | brak tokenu, sparuj kodem QR; albo telefon nie jest w domowym Wi-Fi |
 | WoL nie budzi | komputer musi być na kablu<br>sprawdź `nmcli -g 802-3-ethernet.wake-on-lan c show <połączenie>` (powinno być `magic`) i `cat /sys/class/net/<if>/device/power/wakeup` (`enabled`)<br>przy pełnym wyłączeniu (S5) potrzebne jest też WoL w BIOS-ie |
-| nie widać mpv na komputerze | ekran zablokowany: w apce menu → „Włącz ekran komputera”, ale sesję trzeba odblokować |
+| nie widać mpv na komputerze | ekran zablokowany: „Na komputerze” i menu → „Włącz i odblokuj ekran” zdejmują blokadę (`auto_unlock`). Gdy nie, sprawdź `loginctl show-user $USER -p Display` (sesja graficzna) |
+| „Na komputerze” wisi 5 s i zwraca błąd z `cinnamon-screensaver-command` | stara wersja agenta: `--deactivate` w Cinnamon 5.4 wywala wygaszacz (`grab_helper`). Zaktualizuj agenta |
 | OpenSubtitles: „dzienny limit pobrań” | klucz „Under development” daje 100 pobrań na dobę, a anonimowe pobrania mają limit konta. Pomaga podanie loginu w apce albo inne źródło |
 | `pkexec` przez SSH: „No session for cookie” | użyj wariantu z `sudo`, opisanego wyżej |
 | torrent „wstrzymany”, choć nikt nie klikał | akcja „zatrzymaj po pobraniu” albo pauza z Deluge GTK, sprawdź w historii zleceń |

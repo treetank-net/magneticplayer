@@ -7,6 +7,9 @@ MagneticPlayer jest pomyślany do domowej sieci:
   akceptowalne, w obcej sieci już nie.
 - **Jeden wspólny token.** Kto go ma, może dodawać torrenty, sterować mpv, usypiać komputer i czytać pliki z
   katalogów biblioteki oraz pobierania (tylko filmy, muzykę i napisy; agent nie wychodzi poza te katalogi).
+- **Odblokowanie ekranu.** Przy `auto_unlock: true` (domyślnie) każdy z tokenem zdejmie ekran blokady komputera,
+  a wtedy osoba siedząca przy nim ma otwarty pulpit. Żeby tego nie było, ustaw `"auto_unlock": false` w
+  `config.json` i zrestartuj usługę. Został wtedy tylko jawny `POST /api/system/unlock`, którego apka nie używa.
 - **Token jest w kodzie QR.** QR „Sparuj kolejne urządzenie” i link parowania pokazuj tylko domownikom.
   Zmiana tokenu: nowa wartość `token` w `~/.config/magneticplayer/config.json`, restart usługi i ponowne
   sparowanie telefonów.
