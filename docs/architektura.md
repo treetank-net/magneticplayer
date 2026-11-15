@@ -94,6 +94,16 @@ z samym kluczem. Dlatego `_oscom_anonymous` woła `download_subtitle.__wrapped__
 Apka porównuje wersje i pobiera nowszą prosto do sesji `PackageInstaller`. `UpdateReceiver` uruchamia systemowe
 okno potwierdzenia.
 
+## Klient webowy (`server/web/index.html`)
+
+Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i tak idą przez API z tokenem.
+- Token przychodzi w `#t=`, trafia do `localStorage` i znika z paska adresu. `#tab=` wybiera zakładkę.
+- Zakładki: Torrenty, Biblioteka i Pilot (odpytywanie `/api/player/status`, ścieżki, klawisze).
+- Okno napisów działa jak w apce (asynchroniczne zlecenie, postęp, „Wystarczy”).
+- Odtwarzacz to `<video>` z napisami WebVTT (`/sub?…&vtt=1`).
+- DOM buduje helper `put(el, ...dzieci)`, który spłaszcza tablice i pomija `null`. Gołe `replaceChildren` z tablicą
+  wypisywało „null[object HTMLDivElement]”.
+
 ## Apka (`phone/`)
 
 | plik | co jest w środku |
