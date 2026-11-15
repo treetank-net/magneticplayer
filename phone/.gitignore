@@ -1,0 +1,9 @@
+.gradle/
+.gradle-home/
+build/
+app/build/
+local.properties
+keystore.properties
+*.keystore
+out/
+.kotlin/

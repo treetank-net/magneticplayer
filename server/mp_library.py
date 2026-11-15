@@ -1,0 +1,128 @@
+"""Biblioteka: przeglądanie wybranych katalogów komputera (tylko filmy/muzyka + napisy obok)."""
+import os
+
+VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}
+AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
+SUB_EXT = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
+
+
+class LibError(Exception):
+    def __init__(self, msg, status=400):
+        super().__init__(msg)
+        self.status = status
+
+
+def media_kind(name):
+    ext = os.path.splitext(name)[1].lower()
+    return "video" if ext in VIDEO_EXT else "audio" if ext in AUDIO_EXT else None
+
+
+def sidecar_subs(full):
+    """Napisy leżące obok filmu: <nazwa>.srt, <nazwa>.pl.srt itd."""
+    d, base = os.path.split(full)
+    stem = os.path.splitext(base)[0]
+    out = []
+    try:
+        for n in sorted(os.listdir(d)):
+            s, ext = os.path.splitext(n)
+            if ext.lower() in SUB_EXT and (s == stem or s.startswith(stem + ".")):
+                lang = s[len(stem) + 1:] if s != stem else ""
+                out.append({"name": n, "lang": lang, "ext": ext.lower()[1:]})
+    except OSError:
+        pass
+    return out
+
+
+def safe_join(base, rel):
+    base = os.path.realpath(base)
+    full = os.path.realpath(os.path.join(base, rel.lstrip("/")))
+    if full != base and not full.startswith(base + os.sep):
+        raise LibError("ścieżka poza biblioteką", 403)
+    return full
+
+
+class Library:
+    def __init__(self, cfg, save_cfg, default_dirs):
+        self.cfg = cfg
+        self.save_cfg = save_cfg
+        self.default_dirs = default_dirs  # () -> lista katalogów (z klienta torrentów)
+
+    def roots(self):
+        lib = self.cfg.get("library")
+        if not lib:  # pierwsze uruchomienie: katalogi pobierania + ~/Wideo
+            seen, lib = set(), []
+            cands = list(self.default_dirs()) + [os.path.expanduser(p) for p in ("~/Wideo", "~/Videos", "~/Filmy")]
+            for p in cands:
+                if p and os.path.isdir(p) and os.path.realpath(p) not in seen:
+                    seen.add(os.path.realpath(p))
+                    lib.append({"name": os.path.basename(p.rstrip("/")) or p, "path": p})
+            self.cfg["library"] = lib
+            self.save_cfg()
+        return [dict(r, index=i, exists=os.path.isdir(r["path"])) for i, r in enumerate(lib)]
+
+    def root(self, i):
+        roots = self.roots()
+        if not 0 <= i < len(roots):
+            raise LibError("nie ma takiego katalogu biblioteki", 404)
+        if not roots[i]["exists"]:
+            raise LibError(f"katalog {roots[i]['path']} niedostępny (dysk odłączony?)", 404)
+        return roots[i]["path"]
+
+    def resolve(self, i, rel):
+        return safe_join(self.root(i), rel or "")
+
+    def browse(self, i, rel, show_all=False):
+        full = self.resolve(i, rel)
+        if not os.path.isdir(full):
+            raise LibError("to nie katalog", 400)
+        dirs, files = [], []
+        for e in os.scandir(full):
+            if e.name.startswith("."):
+                continue
+            try:
+                if e.is_dir():
+                    dirs.append(e.name)
+                elif e.is_file():
+                    kind = media_kind(e.name)
+                    if kind or show_all:
+                        st = e.stat()
+                        files.append({"name": e.name, "size": st.st_size, "mtime": st.st_mtime, "media": kind,
+                                      "subs": [s["lang"] or s["ext"] for s in sidecar_subs(e.path)] if kind == "video" else []})
+            except OSError:
+                continue
+        dirs.sort(key=str.lower)
+        files.sort(key=lambda f: f["name"].lower())
+        return {"root": i, "path": (rel or "").strip("/"), "dirs": dirs, "files": files}
+
+    def add_root(self, path, name=None):
+        path = os.path.realpath(os.path.expanduser(path))
+        if not os.path.isdir(path):
+            raise LibError("nie ma takiego katalogu", 404)
+        self.roots()
+        if any(os.path.realpath(r["path"]) == path for r in self.cfg["library"]):
+            raise LibError("ten katalog już jest w bibliotece", 409)
+        self.cfg["library"].append({"name": name or os.path.basename(path) or path, "path": path})
+        self.save_cfg()
+
+    def remove_root(self, i):
+        self.roots()
+        if not 0 <= i < len(self.cfg["library"]):
+            raise LibError("nie ma takiego katalogu", 404)
+        del self.cfg["library"][i]
+        self.save_cfg()
+
+    @staticmethod
+    def fs_dirs(path):
+        """Lista podkatalogów do wybierania nowego katalogu biblioteki."""
+        if not path:
+            user = os.environ.get("USER", "")
+            starts = [os.path.expanduser("~")] + [os.path.join(b, n) for b in (f"/media/{user}", "/mnt")
+                                                  if os.path.isdir(b) for n in sorted(os.listdir(b))]
+            return {"path": "", "parent": None, "dirs": [p for p in starts if os.path.isdir(p)]}
+        path = os.path.realpath(path)
+        try:
+            dirs = sorted((os.path.join(path, e.name) for e in os.scandir(path)
+                           if e.is_dir() and not e.name.startswith(".")), key=str.lower)
+        except OSError as e:
+            raise LibError(f"nie da się otworzyć: {e.strerror}", 403)
+        return {"path": path, "parent": os.path.dirname(path) if path != "/" else "", "dirs": dirs}

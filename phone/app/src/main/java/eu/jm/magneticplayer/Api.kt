@@ -1,0 +1,414 @@
+package eu.jm.magneticplayer
+
+import android.content.Context
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.URL
+import java.net.URLDecoder
+
+class ApiException(msg: String, val code: Int = 0) : Exception(msg)
+
+class Settings(ctx: Context) {
+    private val p = ctx.applicationContext.getSharedPreferences("magneticplayer", Context.MODE_PRIVATE)
+
+    var host: String
+        get() = p.getString("host", "192.168.100.100")!!
+        set(v) = p.edit().putString("host", v.trim()).apply()
+    var port: Int
+        get() = p.getInt("port", 8765)
+        set(v) = p.edit().putInt("port", v).apply()
+    var token: String
+        get() = p.getString("token", "")!!
+        set(v) = p.edit().putString("token", v.trim()).apply()
+    var mac: String
+        get() = p.getString("mac", "")!!
+        set(v) = p.edit().putString("mac", v.trim().lowercase()).apply()
+    var sequential: Boolean
+        get() = p.getBoolean("sequential", true)
+        set(v) = p.edit().putBoolean("sequential", v).apply()
+    /** domyślna akcja po pobraniu: none | stop | suspend */
+    var afterDefault: String
+        get() = p.getString("after", "none")!!
+        set(v) = p.edit().putString("after", v).apply()
+    var subLanguages: String
+        get() = p.getString("sub_langs", "en,pl")!!
+        set(v) = p.edit().putString("sub_langs", v.replace(" ", "").lowercase()).apply()
+
+    val configured get() = host.isNotBlank() && token.isNotBlank()
+
+    fun position(key: String): Long = p.getLong("pos:$key", 0)
+    fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).apply()
+
+    /** magneticplayer://pair?host=…&port=…&token=…&mac=… */
+    /** Link do sparowania kolejnego telefonu z tym samym komputerem (QR w Ustawieniach). */
+    fun pairUri(): String = Uri.Builder().scheme("magneticplayer").authority("pair")
+        .appendQueryParameter("host", host).appendQueryParameter("port", port.toString())
+        .appendQueryParameter("token", token).apply { if (mac.isNotEmpty()) appendQueryParameter("mac", mac) }
+        .build().toString()
+
+    fun applyPairUri(uri: Uri): Boolean {
+        val t = uri.getQueryParameter("token") ?: return false
+        uri.getQueryParameter("host")?.let { host = it }
+        uri.getQueryParameter("port")?.toIntOrNull()?.let { port = it }
+        uri.getQueryParameter("mac")?.let { mac = it }
+        token = t
+        return true
+    }
+}
+
+data class Torrent(
+    val id: String, val name: String, val progress: Double, val state: String,
+    val downRate: Long, val upRate: Long, val eta: Long, val size: Long,
+    val sequential: Boolean, val peers: Int,
+    /** dodany z apki */
+    val mine: Boolean, val after: String,
+)
+
+data class Job(
+    val id: String, val name: String, val added: Double, val after: String, val afterDone: Boolean,
+    val magnet: String?, val inClient: Boolean, val progress: Double?,
+)
+
+data class LibRoot(val index: Int, val name: String, val path: String, val exists: Boolean)
+data class LibFile(val name: String, val size: Long, val media: String?, val subs: List<String>)
+data class LibDir(val root: Int, val path: String, val dirs: List<String>, val files: List<LibFile>)
+data class SubResult(
+    val id: String, val provider: String, val lang: String, val release: String, val score: Int,
+    val hashMatch: Boolean, val hi: Boolean,
+) {
+    val key get() = "$provider:$id"
+}
+data class SubFile(val name: String, val lang: String, val ext: String)
+
+val AFTER_LABELS = linkedMapOf(
+    "none" to "nic (seeduje dalej)",
+    "stop" to "zatrzymaj torrent",
+    "suspend" to "uśpij komputer",
+)
+
+/** Wskazanie pliku na komputerze: z torrenta, z biblioteki albo „to, co gra teraz w mpv”. */
+sealed class MediaRef {
+    abstract val title: String
+    abstract fun json(o: JSONObject = JSONObject()): JSONObject
+    abstract fun query(): String
+    abstract fun key(): String
+
+    data class InTorrent(val torrentId: String, val index: Int, override val title: String) : MediaRef() {
+        override fun json(o: JSONObject) = o.put("torrent_id", torrentId).put("file_index", index)
+        override fun query() = "torrent_id=$torrentId&file_index=$index"
+        override fun key() = "$torrentId/$index"
+    }
+
+    data class InLibrary(val root: Int, val path: String) : MediaRef() {
+        override val title get() = path.substringAfterLast('/')
+        override fun json(o: JSONObject) = o.put("root", root).put("path", path)
+        override fun query() = "root=$root&path=${Uri.encode(path)}"
+        override fun key() = "lib$root/$path"
+    }
+
+    data class Playing(override val title: String) : MediaRef() {
+        override fun json(o: JSONObject) = o.put("playing", true)
+        override fun query() = "playing=1"
+        override fun key() = "playing"
+    }
+
+    fun encode(): String = json().put("title", title).toString()
+
+    companion object {
+        fun decode(s: String): MediaRef {
+            val o = JSONObject(s)
+            return when {
+                o.has("torrent_id") -> InTorrent(o.getString("torrent_id"), o.getInt("file_index"), o.optString("title"))
+                o.has("root") -> InLibrary(o.getInt("root"), o.getString("path"))
+                else -> Playing(o.optString("title"))
+            }
+        }
+    }
+}
+
+data class TFile(
+    val index: Int, val path: String, val size: Long, val progress: Double, val media: String?,
+    /** bajty pobrane ciągiem od początku pliku — tyle da się obejrzeć */
+    val ready: Long, val readySec: Double?, val duration: Double?,
+) {
+    val name get() = path.substringAfterLast('/')
+}
+
+object Wol {
+    private fun packet(mac: String): ByteArray {
+        val b = mac.split(':', '-').map { it.toInt(16).toByte() }
+        require(b.size == 6) { "zły MAC: $mac" }
+        return ByteArray(6) { 0xFF.toByte() } + ByteArray(16 * 6) { b[it % 6] }
+    }
+
+    /** Magic packet na broadcast ogólny i podsieci /24 komputera, porty 9 i 7. */
+    fun send(mac: String, host: String) {
+        val data = packet(mac)
+        val targets = mutableListOf("255.255.255.255")
+        Regex("""^(\d+\.\d+\.\d+)\.\d+$""").find(host)?.let { targets += it.groupValues[1] + ".255" }
+        DatagramSocket().use { s ->
+            s.broadcast = true
+            for (t in targets) for (port in listOf(9, 7)) {
+                runCatching { s.send(DatagramPacket(data, data.size, InetAddress.getByName(t), port)) }
+            }
+        }
+    }
+}
+
+class Api(val s: Settings) {
+    val base get() = "http://${s.host}:${s.port}"
+
+    private fun call(method: String, path: String, body: JSONObject? = null, timeout: Int = 8000): String {
+        if (!s.configured) throw ApiException("Uzupełnij ustawienia (adres i token)")
+        val c = URL(base + path).openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = method
+            c.connectTimeout = timeout
+            c.readTimeout = timeout
+            c.setRequestProperty("Authorization", "Bearer ${s.token}")
+            if (body != null) {
+                c.doOutput = true
+                c.setRequestProperty("Content-Type", "application/json")
+                c.outputStream.use { it.write(body.toString().toByteArray()) }
+            }
+            val code = c.responseCode
+            val text = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            if (code >= 400) {
+                val msg = runCatching { JSONObject(text).getString("error") }.getOrDefault("HTTP $code")
+                throw ApiException(msg, code)
+            }
+            return text
+        } catch (e: IOException) {
+            throw ApiException("Komputer nie odpowiada (${e.javaClass.simpleName})")
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    fun get(path: String): String = call("GET", path)
+
+    fun ping(timeout: Int = 1500): Boolean = runCatching {
+        JSONObject(call("GET", "/api/ping", timeout = timeout)).optBoolean("ok")
+    }.getOrDefault(false)
+
+    /** Info o komputerze; przy okazji zapamiętuje MAC do Wake-on-LAN. */
+    fun info(): JSONObject {
+        val j = JSONObject(call("GET", "/api/info"))
+        val mac = j.optString("mac")
+        if (mac.matches(Regex("([0-9a-f]{2}:){5}[0-9a-f]{2}")) && mac != "00:00:00:00:00:00") s.mac = mac
+        return j
+    }
+
+    fun torrents(): List<Torrent> {
+        val a = JSONArray(call("GET", "/api/torrents"))
+        return List(a.length()) { i ->
+            val t = a.getJSONObject(i)
+            Torrent(
+                t.getString("id"), t.getString("name"), t.optDouble("progress", 0.0), t.optString("state"),
+                t.optLong("down_rate"), t.optLong("up_rate"), t.optLong("eta"), t.optLong("size"),
+                t.optBoolean("sequential"), t.optInt("peers"),
+                t.optBoolean("mine"), t.optString("after", "none"),
+            )
+        }
+    }
+
+    fun files(id: String): List<TFile> {
+        val a = JSONArray(call("GET", "/api/torrents/$id/files"))
+        return List(a.length()) { i ->
+            val f = a.getJSONObject(i)
+            TFile(f.getInt("index"), f.getString("path"), f.optLong("size"), f.optDouble("progress"),
+                f.optString("media").takeIf { it.isNotEmpty() && it != "null" },
+                f.optLong("ready"),
+                f.optDouble("ready_sec").takeIf { !it.isNaN() },
+                f.optDouble("duration").takeIf { !it.isNaN() })
+        }
+    }
+
+    fun addMagnet(uri: String, sequential: Boolean, after: String = s.afterDefault): String? =
+        JSONObject(call("POST", "/api/torrents",
+            JSONObject().put("magnet", uri).put("sequential", sequential).put("after", after), 20000))
+            .optString("id").takeIf { it.isNotEmpty() && it != "null" }
+
+    fun setAfter(id: String, after: String) {
+        call("POST", "/api/torrents/$id/after", JSONObject().put("after", after))
+    }
+
+    fun jobs(): List<Job> {
+        val a = JSONArray(call("GET", "/api/jobs"))
+        return List(a.length()) { i ->
+            val j = a.getJSONObject(i)
+            Job(j.getString("id"), j.optString("name"), j.optDouble("added", 0.0), j.optString("after", "none"),
+                j.optBoolean("after_done"), j.optString("magnet").takeIf { it.startsWith("magnet:") },
+                j.optBoolean("in_client"), j.optDouble("progress").takeIf { !it.isNaN() })
+        }
+    }
+
+    // ---- biblioteka
+    private fun roots(a: JSONArray) = List(a.length()) { i ->
+        val r = a.getJSONObject(i)
+        LibRoot(r.getInt("index"), r.getString("name"), r.getString("path"), r.optBoolean("exists"))
+    }
+
+    fun libraryRoots(): List<LibRoot> = roots(JSONArray(call("GET", "/api/library")))
+    fun libraryAdd(path: String): List<LibRoot> =
+        roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "add").put("path", path))))
+    fun libraryRemove(index: Int): List<LibRoot> =
+        roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "remove").put("index", index))))
+
+    fun browse(root: Int, path: String, all: Boolean = false): LibDir {
+        val o = JSONObject(call("GET", "/api/library/browse?root=$root&path=${Uri.encode(path)}&all=${if (all) 1 else 0}"))
+        val d = o.getJSONArray("dirs")
+        val f = o.getJSONArray("files")
+        return LibDir(root, o.optString("path"), List(d.length()) { d.getString(it) }, List(f.length()) { i ->
+            val x = f.getJSONObject(i)
+            val subs = x.optJSONArray("subs") ?: JSONArray()
+            LibFile(x.getString("name"), x.optLong("size"), x.optString("media").takeIf { it.isNotEmpty() && it != "null" },
+                List(subs.length()) { subs.getString(it) })
+        })
+    }
+
+    /** Katalogi komputera do wyboru nowego katalogu biblioteki; path "" = punkty startowe. */
+    fun fsDirs(path: String): Pair<String?, List<String>> {
+        val o = JSONObject(call("GET", "/api/fs?path=${Uri.encode(path)}"))
+        val d = o.getJSONArray("dirs")
+        return o.optString("parent").takeIf { !o.isNull("parent") } to List(d.length()) { d.getString(it) }
+    }
+
+    // ---- napisy
+    fun subsList(ref: MediaRef): List<SubFile> {
+        val a = JSONArray(call("GET", "/api/subs/list?${ref.query()}"))
+        return List(a.length()) { i ->
+            val o = a.getJSONObject(i)
+            SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"))
+        }
+    }
+
+    fun subUrl(ref: MediaRef, name: String) = "$base/sub?${ref.query()}&name=${Uri.encode(name)}&token=${Uri.encode(s.token)}"
+
+    fun subsSearch(ref: MediaRef): Pair<String, List<SubResult>> {
+        val o = JSONObject(call("POST", "/api/subs/search", ref.json().put("languages", s.subLanguages), 90000))
+        val a = o.getJSONArray("results")
+        return o.optString("query") to List(a.length()) { i ->
+            val r = a.getJSONObject(i)
+            SubResult(r.getString("id"), r.optString("provider"), r.optString("lang"), r.optString("release"),
+                r.optInt("score"), r.optBoolean("hash_match"), r.optBoolean("hi"))
+        }
+    }
+
+    fun subsDownload(ref: MediaRef, r: SubResult): String =
+        JSONObject(call("POST", "/api/subs/download",
+            ref.json().put("id", r.id).put("provider", r.provider).put("languages", s.subLanguages), 90000))
+            .optString("name")
+
+    fun openSubsConfig(): JSONObject = JSONObject(call("GET", "/api/config/opensubtitles"))
+    fun setOpenSubsConfig(apiKey: String?, user: String?, password: String?) {
+        val o = JSONObject()
+        if (apiKey != null) o.put("api_key", apiKey)
+        if (user != null) o.put("username", user)
+        if (!password.isNullOrEmpty()) o.put("password", password)
+        call("POST", "/api/config/opensubtitles", o)
+    }
+
+    fun action(id: String, action: String) {
+        call("POST", "/api/torrents/$id/action", JSONObject().put("action", action))
+    }
+
+    fun playerStatus(): JSONObject = JSONObject(call("GET", "/api/player/status", timeout = 3000))
+
+    fun playerCmd(cmd: String, value: Any? = null) {
+        val b = JSONObject().put("cmd", cmd)
+        if (value != null) b.put("value", value)
+        call("POST", "/api/player/cmd", b, 4000)
+    }
+
+    fun playerOpen(ref: MediaRef, startSec: Double? = null) {
+        val b = ref.json()
+        if (startSec != null) b.put("start", startSec)
+        call("POST", "/api/player/open", b, 15000)
+    }
+
+    fun suspendPc() { call("POST", "/api/system/suspend") }
+    fun screenOn() { call("POST", "/api/system/screen_on") }
+
+    fun mediaUrl(ref: MediaRef): String = when (ref) {
+        is MediaRef.InTorrent -> "$base/media/${ref.torrentId}/${ref.index}/${Uri.encode(ref.title)}?token=${Uri.encode(s.token)}"
+        is MediaRef.InLibrary -> "$base/lib/${ref.root}/${ref.path.split('/').joinToString("/") { Uri.encode(it) }}?token=${Uri.encode(s.token)}"
+        is MediaRef.Playing -> throw ApiException("nie da się strumieniować „tego, co gra”")
+    }
+
+    /** Jeśli komputer śpi: Wake-on-LAN i czekanie, aż agent odpowie (do 2 min). */
+    suspend fun ensureAwake(onStatus: (String) -> Unit): Unit = withContext(Dispatchers.IO) {
+        if (ping()) return@withContext
+        val mac = s.mac
+        if (mac.isBlank()) throw ApiException(
+            "Komputer nie odpowiada, a nie znam jego MAC. Połącz się raz, gdy jest włączony (Ustawienia → Testuj)."
+        )
+        val start = System.currentTimeMillis()
+        var lastWol = 0L
+        while (System.currentTimeMillis() - start < 120_000) {
+            val now = System.currentTimeMillis()
+            if (now - lastWol > 15_000) {
+                runCatching { Wol.send(mac, s.host) }
+                lastWol = now
+            }
+            onStatus("Budzę komputer… ${(now - start) / 1000} s")
+            if (ping(1500)) return@withContext
+            delay(1500)
+        }
+        throw ApiException("Komputer nie wstał w 2 minuty. Sprawdź Wake-on-LAN w BIOS-ie i kabel sieciowy.")
+    }
+
+    /** Dodanie magneta z ponawianiem — po wybudzeniu deluged/deluge-web potrzebują chwili. */
+    suspend fun addMagnetRetrying(uri: String, sequential: Boolean, after: String, onStatus: (String) -> Unit): String? =
+        withContext(Dispatchers.IO) {
+            var last: ApiException? = null
+            repeat(12) { attempt ->
+                try {
+                    return@withContext addMagnet(uri, sequential, after)
+                } catch (e: ApiException) {
+                    if (e.code != 502 && e.code != 0) throw e
+                    last = e
+                    onStatus("Czekam na Deluge… (${attempt + 1})")
+                    delay(3000)
+                }
+            }
+            throw last ?: ApiException("Nie udało się dodać")
+        }
+}
+
+fun magnetName(magnet: String): String? =
+    magnet.substringAfter('?', "").split('&').firstOrNull { it.startsWith("dn=") }
+        ?.let { runCatching { URLDecoder.decode(it.substring(3), "UTF-8") }.getOrNull() }
+
+fun humanBytes(b: Long): String {
+    if (b < 1024) return "$b B"
+    val units = listOf("KB", "MB", "GB", "TB")
+    var v = b / 1024.0
+    var i = 0
+    while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
+    return String.format(java.util.Locale.ROOT, if (v < 10) "%.1f %s" else "%.0f %s", v, units[i])
+}
+
+fun humanTime(sec: Long): String = when {
+    sec <= 0 -> ""
+    sec < 60 -> "${sec} s"
+    sec < 3600 -> "${sec / 60} min"
+    sec < 86400 -> "${sec / 3600} h ${(sec % 3600) / 60} min"
+    else -> "${sec / 86400} d"
+}
+
+fun clock(sec: Double?): String {
+    if (sec == null || sec.isNaN()) return "--:--"
+    val s = sec.toLong()
+    return if (s >= 3600) String.format(java.util.Locale.ROOT, "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
+    else String.format(java.util.Locale.ROOT, "%d:%02d", s / 60, s % 60)
+}
