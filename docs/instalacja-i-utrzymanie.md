@@ -67,6 +67,15 @@ adb install -r phone/out/MagneticPlayer.apk
 Trzymaj kopię zapasową: bez tego klucza żadna nowa wersja nie zainstaluje się jako aktualizacja.
 Trzeba by wtedy odinstalować apkę na każdym telefonie i sparować go od nowa.
 
+**Kopia zapasowa** jest na `ovh-vps` w `~/backup/MagneticPlayer/` (katalog 700, pliki 600). Obok leży `README.txt`
+z instrukcją odtworzenia i sumami sha256. Odtworzenie:
+
+```bash
+scp 'ovh-vps:backup/MagneticPlayer/{magneticplayer.keystore,keystore.properties}' phone/
+```
+
+Kod repo jest też na `ovh-vps` w `~/git/MagneticPlayer.git` (remote `ovh`).
+
 ### Kolejne telefony (domownicy)
 
 1. U siebie: Ustawienia → **„Wyślij apkę (WhatsApp itp.)”** wysyła zainstalowany plik APK. W WhatsAppie wyślij go
