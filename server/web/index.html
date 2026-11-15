@@ -157,6 +157,8 @@ function h(tag, attrs = {}, ...kids) {
   for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(String(c)));
   return e;
 }
+// replaceChildren nie spłaszcza list i wypisuje null jako tekst — put() to robi jak h()
+function put(el, ...kids) { el.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false)); return el; }
 let toastT;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 3500); }
 async function act(fn, ok) { try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message); } }
@@ -170,12 +172,12 @@ function bar(frac, ok) { return h("div", { class: "bar" + (ok ? " ok" : "") }, h
 function openDialog(title, body, onClose) {
   const d = $("#dlg");
   $("#dlgTitle").textContent = title;
-  $("#dlgBody").replaceChildren(body);
+  put($("#dlgBody"), body);
   d._onClose = onClose;
   if (!d.open) d.showModal();
 }
 $("#dlgClose").onclick = () => $("#dlg").close();
-$("#dlg").addEventListener("close", () => { const d = $("#dlg"); if (d._onClose) d._onClose(); d._onClose = null; $("#dlgBody").replaceChildren(); });
+$("#dlg").addEventListener("close", () => { const d = $("#dlg"); if (d._onClose) d._onClose(); d._onClose = null; put($("#dlgBody")); });
 
 // ---------------------------------------------------------------- nagłówek, zakładki
 let online = false, tab = (location.hash.match(/tab=(torrents|library|remote)/) || [])[1] || store.get("mp_tab") || "torrents";
@@ -260,7 +262,7 @@ const Torrents = (() => {
     const box = h("div", { style: "margin-top:8px;border-top:1px solid var(--line);padding-top:4px" }, h("p", { class: "muted" }, "Wczytuję pliki…"));
     api(`/api/torrents/${t.id}/files`).then(list => {
       const media = list.filter(f => f.media);
-      box.replaceChildren(...(media.length ? media : list).map(f => {
+      put(box, ...(media.length ? media : list).map(f => {
         const frac = f.size ? f.ready / f.size : 0;
         const ref = { torrent_id: t.id, file_index: f.index, title: f.path.split("/").pop() };
         const info = frac >= 0.999 ? "do obejrzenia całość" + (f.duration ? ` (${clock(f.duration)})` : "")
@@ -272,16 +274,16 @@ const Torrents = (() => {
           f.media === "video" ? [bar(frac, frac >= 0.999), h("div", { class: "muted" }, info)] : null,
           f.media && f.ready > 0 ? mediaActions(ref, f.media === "video") : null);
       }));
-    }).catch(e => box.replaceChildren(h("p", { class: "err" }, e.message)));
+    }).catch(e => put(box, h("p", { class: "err" }, e.message)));
     return box;
   }
   async function refresh() {
     try {
       const list = await api("/api/torrents");
       const keepScroll = scrollY;
-      root.replaceChildren(form(), ...(list.length ? list.map(card) : [h("p", { class: "muted" }, "Brak torrentów.")]), await history(list));
+      put(root, form(), ...(list.length ? list.map(card) : [h("p", { class: "muted" }, "Brak torrentów.")]), await history(list));
       scrollTo(0, keepScroll);
-    } catch (e) { root.replaceChildren(form(), h("p", { class: "err" }, e.message)); }
+    } catch (e) { put(root, form(), h("p", { class: "err" }, e.message)); }
   }
   async function history(present) {
     let jobs = [];
@@ -308,7 +310,7 @@ const Library = (() => {
   let cur = null; // {root, path}
   async function roots() {
     const list = await api("/api/library");
-    root.replaceChildren(h("div", { class: "card" },
+    put(root, h("div", { class: "card" },
       h("p", { class: "muted" }, "Katalogi dodajesz i usuwasz w apce na telefonie."),
       list.map(r => h("div", { class: "dir", onclick: () => r.exists && open(r.index, "") },
         "📁 ", h("b", {}, r.name), h("span", { class: "muted" }, " " + r.path + (r.exists ? "" : " — niedostępny"))))));
@@ -319,7 +321,7 @@ const Library = (() => {
     const parts = path ? path.split("/") : [];
     const crumbs = h("div", { class: "crumbs" }, h("a", { onclick: () => { cur = null; roots(); } }, "Katalogi"),
       parts.map((p, i) => [" / ", h("a", { onclick: () => open(r, parts.slice(0, i + 1).join("/")) }, p)]));
-    root.replaceChildren(h("div", { class: "card" }, crumbs,
+    put(root, h("div", { class: "card" }, crumbs,
       d.dirs.map(n => h("div", { class: "dir", onclick: () => open(r, path ? path + "/" + n : n) }, "📁 " + n)),
       d.files.map(f => {
         const ref = { root: r, path: path ? path + "/" + f.name : f.name };
@@ -330,7 +332,7 @@ const Library = (() => {
       }),
       !d.dirs.length && !d.files.length ? h("p", { class: "muted" }, "Brak filmów w tym katalogu.") : null));
   }
-  return { show() { (cur ? open(cur.root, cur.path) : roots()).catch(e => root.replaceChildren(h("p", { class: "err" }, e.message))); } };
+  return { show() { (cur ? open(cur.root, cur.path) : roots()).catch(e => put(root, h("p", { class: "err" }, e.message))); } };
 })();
 
 // ---------------------------------------------------------------- Pilot
@@ -377,7 +379,7 @@ const Remote = (() => {
       h("p", { class: "muted", style: "text-align:center;margin:12px 0 0" },
         "Klawisze: ", h("span", { class: "kbd" }, "spacja"), " pauza · ", h("span", { class: "kbd" }, "← →"), " 10 s · ",
         h("span", { class: "kbd" }, "↑ ↓"), " głośność · ", h("span", { class: "kbd" }, "f"), " pełny ekran · ", h("span", { class: "kbd" }, "m"), " wycisz"));
-    root.replaceChildren(els.idle, els.panel);
+    put(root, els.idle, els.panel);
     built = true;
   }
   const CODECS = { hdmv_pgs_subtitle: "PGS", dvd_subtitle: "VobSub", subrip: "SRT", ass: "ASS", eac3: "E-AC3", ac3: "AC3", aac: "AAC", dts: "DTS", truehd: "TrueHD", hevc: "HEVC", h264: "H.264", av1: "AV1" };
@@ -389,7 +391,7 @@ const Remote = (() => {
       return h("option", { value: t.id }, name || "ścieżka " + t.id);
     }));
     const sig = JSON.stringify(list.map(t => [t.id, t.title, t.lang]));
-    if (sel._sig !== sig) { sel.replaceChildren(...opts); sel._sig = sig; }
+    if (sel._sig !== sig) { put(sel, ...opts); sel._sig = sig; }
     if (document.activeElement !== sel) { const s = list.find(t => t.selected); sel.value = s ? s.id : (type === "sub" ? "no" : sel.value); }
     return list.length;
   }
@@ -441,21 +443,21 @@ const Subs = (() => {
     async function run(t, y) {
       override = [t, y];
       store.set("mp_sublangs", langs.value.trim() || "en,pl");
-      results.replaceChildren(); fix.hidden = true;
+      put(results); fix.hidden = true;
       const body = { ...refBody(ref), languages: subLangs(), async: true };
       if (t) body.title = t; if (y) body.year = y;
       let job;
-      try { job = (await api("/api/subs/search", body, { signal })).job; } catch (e) { return status.replaceChildren(h("p", { class: "err" }, e.message)); }
+      try { job = (await api("/api/subs/search", body, { signal })).job; } catch (e) { return put(status, h("p", { class: "err" }, e.message)); }
       let stopping = false;
       while (!signal.aborted) {
         let p;
-        try { p = await api("/api/subs/job?id=" + job, undefined, { signal }); } catch (e) { if (!signal.aborted) status.replaceChildren(h("p", { class: "err" }, e.message)); return; }
+        try { p = await api("/api/subs/job?id=" + job, undefined, { signal }); } catch (e) { if (!signal.aborted) put(status, h("p", { class: "err" }, e.message)); return; }
         if (p.done) return finish(p);
         const phase = p.phase === "file" ? "Liczę hash pliku i rozpoznaję tytuł…"
           : p.phase === "match" ? `Porównuję wyniki z plikiem: ${p.matched}/${p.total}`
           : p.round === 2 ? `Nic pasującego — druga runda z tytułem z nazwy: „${p.query}”` : `Szukam: „${p.query || "…"}”`;
         const running = Object.values(p.providers || {}).some(v => v.state === "running" || v.state === "pending");
-        status.replaceChildren(
+        put(status, 
           h("div", { class: "row" }, h("span", { class: "grow" }, "⏳ " + phase), h("span", { class: "muted" }, Math.round(p.elapsed) + " s")),
           p.phase === "match" && p.total ? bar(p.matched / p.total) : null,
           provRows(p.providers),
@@ -467,11 +469,11 @@ const Subs = (() => {
     }
     function finish(p) {
       const f = p.result;
-      status.replaceChildren(provRows(p.providers));
+      put(status, provRows(p.providers));
       fix.hidden = false;
-      if (p.error) return results.replaceChildren(h("p", { class: "err" }, p.error));
+      if (p.error) return put(results, h("p", { class: "err" }, p.error));
       if (!title.value) title.value = f.title || ""; if (!year.value && f.year) year.value = f.year;
-      results.replaceChildren(
+      put(results, 
         f.hidden ? h("p", { class: "muted" }, `Ukryto ${f.hidden} wyników do innych filmów (inny tytuł, hash się nie zgadza).`) : null,
         f.results.length ? null : h("p", {}, `Nic nie znaleziono dla „${f.query}” (${subLangs()}). Jeśli plik ma tytuł w innym języku, wpisz niżej tytuł angielski albo oryginalny.`),
         f.results.map(r => {
