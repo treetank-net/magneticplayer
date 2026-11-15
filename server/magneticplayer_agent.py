@@ -854,6 +854,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.subs.search(*args))
             if p == "/api/subs/job" and method == "GET":
                 return self.send_json(a.subs.job(qd.get("id", "")))
+            if p == "/api/subs/job/stop" and method == "POST":
+                a.subs.stop(self.body().get("id", ""))
+                return self.send_json({"ok": True})
             if p == "/api/subs/download" and method == "POST":
                 b = self.body()
                 full = a.resolve_ref(b)

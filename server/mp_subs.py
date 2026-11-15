@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 
 VENV = os.path.expanduser("~/.local/share/magneticplayer/venv")
 BY_HASH_ONLY = {"bsplayer", "napiprojekt"}  # szukają po hashu pliku — zmiana tytułu nic im nie da
@@ -114,7 +114,12 @@ class Subtitles:
             prov[n] = {"state": "skip", "error": "szuka po hashu — bez zmian"} if n in skip else {"state": "pending"}
         names = [n for n in names if n not in skip]
 
+        stopped = {"przerwane"}
+
         def one(name):
+            if (progress or {}).get("stop"):
+                prov[name] = {"state": "skip", "error": "przerwane"}
+                return []
             prov[name] = {"state": "running"}
             t0 = time.time()
             try:
@@ -126,15 +131,27 @@ class Subtitles:
                          "OUTAGE": "error", "FAILURE": "error"}.get(status, "done")
                 why = {"UNSUPPORTED_VIDEO": "nie dla tego typu wideo", "UNSUPPORTED_LANGUAGES": "nie ma tych języków",
                        "OUTAGE": "serwis nie działa", "FAILURE": "błąd lub brak połączenia"}.get(status)
-                prov[name] = {"state": state, "count": len(subs), "secs": round(time.time() - t0, 1),
-                              **({"error": why} if why else {})}
+                if prov[name].get("error") not in stopped:  # „Wystarczy” — wynik już nikogo nie obchodzi
+                    prov[name] = {"state": state, "count": len(subs), "secs": round(time.time() - t0, 1),
+                                  **({"error": why} if why else {})}
                 return subs
             except Exception as e:  # noqa: BLE001
-                prov[name] = {"state": "error", "error": str(e)[:120], "secs": round(time.time() - t0, 1)}
+                if prov[name].get("error") not in stopped:
+                    prov[name] = {"state": "error", "error": str(e)[:120], "secs": round(time.time() - t0, 1)}
                 return []
 
-        with ThreadPoolExecutor(max_workers=len(names)) as ex:
-            subs = [s for lst in ex.map(one, names) for s in lst]
+        ex = ThreadPoolExecutor(max_workers=max(1, len(names)))
+        futs = {ex.submit(one, n): n for n in names}
+        pending, subs = set(futs), []
+        while pending:
+            done, pending = wait(pending, timeout=0.4)
+            for f in done:
+                subs += f.result()
+            if pending and (progress or {}).get("stop"):
+                for f in pending:  # wątki dobiegną w tle, ale już na nie nie czekamy
+                    prov[futs[f]] = {"state": "skip", "error": "przerwane"}
+                break
+        ex.shutdown(wait=False)
         found, results = {}, []
         if progress is not None:
             progress.update(phase="match", matched=0, total=len(subs))
@@ -177,6 +194,13 @@ class Subtitles:
         threading.Thread(target=run, daemon=True).start()
         return jid
 
+    def stop(self, jid):
+        """„Wystarczy”: nie czekaj na wolne źródła, pokaż to, co już jest (bez drugiej rundy)."""
+        j = self.jobs.get(jid)
+        if not j:
+            raise SubsError("nie ma takiego wyszukiwania", 404)
+        j["stop"] = True
+
     def job(self, jid):
         j = self.jobs.get(jid)
         if not j:
@@ -204,7 +228,7 @@ class Subtitles:
         progress["phase"] = "search"
         progress["round"] = 1
         found, results = self._list(v, langs, progress)
-        alt = None if title else self._alt_title(full)
+        alt = None if title or progress.get("stop") else self._alt_title(full)
         if alt and not any(r["title_match"] for r in results):
             orig = v.series if self._is_episode(v) else v.title
             self._set_title(v, alt, None)

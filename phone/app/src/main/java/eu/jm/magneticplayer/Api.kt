@@ -311,6 +311,11 @@ class Api(val s: Settings) {
     fun subsSearchStart(ref: MediaRef, title: String? = null, year: Int? = null): String =
         JSONObject(call("POST", "/api/subs/search", subsBody(ref, title, year).put("async", true))).getString("job")
 
+    /** „Wystarczy”: agent przestaje czekać na wolne źródła i oddaje to, co już ma. */
+    fun subsStop(id: String) {
+        call("POST", "/api/subs/job/stop", JSONObject().put("id", id))
+    }
+
     fun subsJob(id: String): SubsProgress {
         val o = JSONObject(call("GET", "/api/subs/job?id=$id"))
         val pr = o.optJSONObject("providers") ?: JSONObject()

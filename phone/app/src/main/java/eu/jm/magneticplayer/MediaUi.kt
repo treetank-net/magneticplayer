@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.mutableIntStateOf
@@ -121,15 +122,18 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
     var year by remember { mutableStateOf("") }
     var override by remember { mutableStateOf<Pair<String?, Int?>>(null to null) }
     var nonce by remember { mutableIntStateOf(0) }
+    var jobId by remember { mutableStateOf<String?>(null) }
+    var stopping by remember { mutableStateOf(false) }
 
     LaunchedEffect(ref) {
         have = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
     }
     LaunchedEffect(ref, nonce) {
-        found = null; error = null; progress = null
+        found = null; error = null; progress = null; stopping = false
         try {
             val (t, y) = override
             val job = withContext(Dispatchers.IO) { api.subsSearchStart(ref, t, y) }
+            jobId = job
             while (true) {
                 val p = withContext(Dispatchers.IO) { api.subsJob(job) }
                 progress = p
@@ -166,7 +170,20 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
                 val f = found
                 when {
                     error != null -> Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    f == null -> SearchProgress(progress)
+                    f == null -> {
+                        SearchProgress(progress)
+                        val p = progress
+                        // jedne źródło już coś ma, a inne jeszcze mieli — pozwól nie czekać
+                        if (p != null && p.phase == "search" && p.providers.any { it.state == "running" || it.state == "pending" }) {
+                            TextButton({
+                                stopping = true
+                                jobId?.let { id -> scope.launch { withContext(Dispatchers.IO) { runCatching { api.subsStop(id) } } } }
+                            }, enabled = !stopping) {
+                                Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                                Text(if (stopping) "Kończę…" else "Wystarczy — pokaż, co już jest")
+                            }
+                        }
+                    }
                     else -> {
                         if (f.hidden > 0) Text("Ukryto ${f.hidden} wyników do innych filmów (inny tytuł, hash się nie zgadza).",
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
