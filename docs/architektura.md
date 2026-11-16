@@ -54,10 +54,11 @@ obejrzeć.
 ### Oglądanie
 - **Telefon:** ExoPlayer strumieniuje `/media/<torrent>/<plik>` albo `/lib/<katalog>/<ścieżka>` (Range). W pamięci
   ExoPlayer trzyma domyślne ~50 s. Dalszy zapas jest na dysku telefonu (`MediaCache.kt`, `SimpleCache` w cacheDir):
-  `PlayerActivity.prefetch` dociąga N minut od bieżącej pozycji (Ustawienia, 1–30, domyślnie 5), ale tylko do
+  `PlayerActivity.prefetch` dociąga N minut od bieżącej pozycji (Ustawienia, 1–999, domyślnie 5; 999 = cały film na drogę), ale tylko do
   `X-Ready-End` z agenta, więc tylko pobrane bajty. Odtwarzacz z bufora tylko czyta, nie zapisuje.
   - Sprzątanie: koniec filmu albo wyjście z odtwarzacza po ≥80% kasuje plik od razu. Przy starcie apki i odtwarzacza
-    `MediaCache.sweep` usuwa obejrzane ≥80% (np. gdy apkę ubito) i nieoglądane od 48 h. Limit 4 GB (LRU).
+    `MediaCache.sweep` usuwa obejrzane ≥80% (np. gdy apkę ubito) i nieoglądane od 48 h. Limit LRU: 60% wolnego
+    miejsca, 1–64 GB (`MediaCache.maxBytes`).
     Zablokowanie ekranu niczego nie kasuje.
   - Zapas na dysku widać na pasku przewijania jako niebieski odcinek (`DiskAheadOverlay`, nakładka na `DefaultTimeBar`);
     szary od ExoPlayera to bufor w pamięci.

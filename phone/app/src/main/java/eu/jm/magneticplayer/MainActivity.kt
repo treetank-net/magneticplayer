@@ -905,19 +905,23 @@ private fun qrBitmap(text: String, size: Int): android.graphics.Bitmap {
 @Composable
 private fun BufferSettings(s: Settings) {
     var text by remember { mutableStateOf(s.bufferMinutes.toString()) }
+    val ctx = LocalContext.current
+    val maxGb = remember { MediaCache.maxBytes(ctx) shr 30 }
     Text("Bufor w odtwarzaczu", style = MaterialTheme.typography.titleMedium)
     Text("Ile filmu telefon pobiera do przodu na swój dysk, żeby oglądać mimo zrywów Wi-Fi. Tylko to, co komputer " +
-        "już pobrał. Obejrzane filmy (od 80%) i nieoglądane od 2 dni są kasowane, razem maks. 4 GB. " +
+        "już pobrał. Na samolot czy autobus wpisz 999: pobierze cały film, ale apka musi zostać otwarta, dopóki " +
+        "niebieski pasek nie dojdzie do końca. Obejrzane filmy (od 80%) i nieoglądane od 2 dni są kasowane, " +
+        "razem maks. $maxGb GB (60% wolnego miejsca). " +
         "Działa od następnego otwarcia filmu.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    // zapis od razu przy każdej poprawnej wartości 1–30; przy błędnej zostaje poprzednia
+    // zapis od razu przy każdej poprawnej wartości 1–999; przy błędnej zostaje poprzednia
     val v = text.toIntOrNull()
-    val ok = v != null && v in 1..30
+    val ok = v != null && v in 1..999
     OutlinedTextField(text, { t ->
-        text = t.filter { it.isDigit() }.take(2)
-        text.toIntOrNull()?.takeIf { it in 1..30 }?.let { s.bufferMinutes = it }
-    }, Modifier.fillMaxWidth(), label = { Text("Bufor do przodu, minuty (1–30)") }, singleLine = true, isError = !ok,
-        supportingText = if (ok) null else ({ Text("Wpisz od 1 do 30, zostaje ${s.bufferMinutes} min") }),
+        text = t.filter { it.isDigit() }.take(3)
+        text.toIntOrNull()?.takeIf { it in 1..999 }?.let { s.bufferMinutes = it }
+    }, Modifier.fillMaxWidth(), label = { Text("Bufor do przodu, minuty (1–999)") }, singleLine = true, isError = !ok,
+        supportingText = if (ok) null else ({ Text("Wpisz od 1 do 999, zostaje ${s.bufferMinutes} min") }),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
 }
 

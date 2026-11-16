@@ -12,12 +12,20 @@ import java.io.File
  * bajty, które agent zgłosił jako pobrane (X-Ready-End), więc nie trafią tu zera z niepobranego torrenta.
  *
  * Sprzątanie: film obejrzany do końca od razu wylatuje, wyjście z odtwarzacza po ≥80% też. Gdy apkę ubito w trakcie,
- * [sweep] przy następnym starcie usuwa obejrzane ≥80% i wszystko, czego nie oglądano od [MAX_AGE_MS]. Ponad [MAX_BYTES]
+ * [sweep] przy następnym starcie usuwa obejrzane ≥80% i wszystko, czego nie oglądano od [MAX_AGE_MS]. Ponad [maxBytes]
  * LRU wyrzuca najdawniej używane.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 object MediaCache {
-    private const val MAX_BYTES = 4L shl 30
+    /**
+     * Limit bufora: 60% wolnego miejsca (licząc to, co bufor już zajmuje), od 1 GB do 64 GB. Wystarcza na cały film
+     * przed podróżą, a nie zapcha telefonu. Liczony raz, przy pierwszym użyciu w procesie.
+     */
+    fun maxBytes(ctx: Context): Long {
+        val dir = File(ctx.applicationContext.cacheDir, "media")
+        val used = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        return ((dir.parentFile!!.usableSpace + used) * 0.6).toLong().coerceIn(1L shl 30, 64L shl 30)
+    }
     private const val MAX_AGE_MS = 48 * 3600_000L
     const val WATCHED = 0.8
 
@@ -25,7 +33,7 @@ object MediaCache {
 
     fun get(ctx: Context): SimpleCache = cache ?: synchronized(this) {
         cache ?: ctx.applicationContext.let { app ->
-            SimpleCache(File(app.cacheDir, "media"), LeastRecentlyUsedCacheEvictor(MAX_BYTES), StandaloneDatabaseProvider(app))
+            SimpleCache(File(app.cacheDir, "media"), LeastRecentlyUsedCacheEvictor(maxBytes(app)), StandaloneDatabaseProvider(app))
         }.also { cache = it }
     }
 
