@@ -5,7 +5,8 @@ jako pilotem. Opis dla ludzi jest w `README.md` i `docs/`. Przeczytaj je przed w
 - `docs/architektura.md`: komponenty, przepływy, napisy, ekran blokady, klient webowy;
 - `docs/api.md`: każdy endpoint agenta;
 - `docs/instalacja-i-utrzymanie.md`: deploy, aktualizacje apki, klucz podpisu, typowe problemy;
-- `docs/siec-i-bezpieczenstwo.md`: założenie „tylko LAN”, token, `auto_unlock`.
+- `docs/siec-i-bezpieczenstwo.md`: założenie „tylko LAN”, token, `auto_unlock`;
+- `docs/plan-wiele-serwerow.md`: plan etapu 1 (wiele serwerów, pliki vs ekran, parowanie), jeszcze niewdrożony.
 
 Odpowiadaj po polsku.
 
