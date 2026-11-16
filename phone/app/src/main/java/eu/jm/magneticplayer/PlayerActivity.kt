@@ -39,6 +39,38 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Nakładka na pasek przewijania ExoPlayera (ViewOverlay, rysuje się nad nim i znika razem z nim): niebieskawy odcinek
+ * od bieżącej pozycji do końca ciągłego zapasu na dysku. Szary od ExoPlayera to dalej bufor w pamięci (~50 s).
+ * Geometria jak w DefaultTimeBar w stylu ExoStyledControls.TimeBar (media3-ui 1.8): pasek 2 dp przy dolnej krawędzi
+ * obszaru 48 dp, z boków margines na kulkę (14 dp / 2).
+ */
+class DiskAheadOverlay(private val bar: android.view.View) : android.graphics.drawable.Drawable() {
+    var positionMs = 0L
+    var aheadEndMs = 0L
+    var durationMs = 0L
+    private val dp = bar.resources.displayMetrics.density
+    private val paint = android.graphics.Paint().apply { color = 0xCC4FC3F7.toInt() }
+
+    override fun draw(canvas: android.graphics.Canvas) {
+        if (durationMs <= 0 || aheadEndMs <= positionMs) return
+        val pad = 7 * dp
+        val left = bar.paddingLeft + pad
+        val width = bar.width - bar.paddingRight - pad - left
+        if (width <= 0) return
+        val h = 2 * dp
+        val bottom = bar.height - bar.paddingBottom - pad + h / 2
+        val x1 = left + width * positionMs.toFloat() / durationMs
+        val x2 = left + width * minOf(aheadEndMs, durationMs).toFloat() / durationMs
+        canvas.drawRect(x1, bottom - h, x2, bottom, paint)
+    }
+
+    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+    override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+    @Deprecated("Drawable API")
+    override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+}
+
 const val VLC_PACKAGE = "org.videolan.vlc"
 
 /** Otwiera strumień w VLC (jeśli jest), inaczej wybór aplikacji. Napisy przekazuje przez extra VLC. */
@@ -70,6 +102,8 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var url: String
     private var subs: List<SubFile> = emptyList()
     private var prefetchJob: Job? = null
+    private var fileSize = 0L  // z prefetch (HEAD), do przeliczania bajtów na czas w nakładce
+    private var diskOverlay: DiskAheadOverlay? = null
     private val key get() = ref.key()
     // agent czeka do 20 s na kolejne kawałki torrenta, więc timeout odczytu musi być dłuższy
     private val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(8_000).setReadTimeoutMs(30_000)
@@ -101,6 +135,12 @@ class PlayerActivity : ComponentActivity() {
             })
         }
         view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> buttons.visibility = v })
+        view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_progress)?.let { bar ->
+            val o = DiskAheadOverlay(bar)
+            diskOverlay = o
+            bar.overlay.add(o)
+            bar.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> o.setBounds(0, 0, v.width, v.height) }
+        }
 
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -167,6 +207,7 @@ class PlayerActivity : ComponentActivity() {
             p.prepare()
             p.playWhenReady = true
             prefetchJob = prefetch(p)
+            showDiskAhead(p)
         }
         settings.touchCache(key, settings.cacheWatched(key))
         Thread { MediaCache.sweep(this, keep = key) }.start()
@@ -208,6 +249,7 @@ class PlayerActivity : ComponentActivity() {
             if (dur <= 0) { delay(2_000); continue }
             val worked = runCatching {
                 val size = probe(0).first
+                fileSize = size
                 val perMs = size.toDouble() / dur
                 val from = ((pos - 30_000).coerceAtLeast(0) * perMs).toLong().coerceIn(0, size - 1)
                 val readyEnd = probe(from).second
@@ -224,6 +266,26 @@ class PlayerActivity : ComponentActivity() {
                 false
             }.getOrElse { false }
             if (!worked) delay(3_000)
+        }
+    }
+
+    /** Co sekundę: ile ciągłego zapasu leży na dysku od bieżącej pozycji (przeliczone średnim bitrate na czas). */
+    private fun showDiskAhead(p: ExoPlayer) = lifecycleScope.launch {
+        val cache = MediaCache.get(this@PlayerActivity)
+        while (isActive) {
+            val o = diskOverlay
+            val dur = p.duration
+            val size = fileSize
+            if (o != null && dur > 0 && size > 0) {
+                val pos = p.currentPosition
+                val from = (pos.toDouble() / dur * size).toLong().coerceIn(0, size - 1)
+                val cached = withContext(Dispatchers.IO) { runCatching { cache.getCachedLength(key, from, size - from) }.getOrDefault(0) }
+                o.positionMs = pos
+                o.durationMs = dur
+                o.aheadEndMs = if (cached > 0) pos + (cached.toDouble() / size * dur).toLong() else 0
+                o.invalidateSelf()
+            }
+            delay(1_000)
         }
     }
 

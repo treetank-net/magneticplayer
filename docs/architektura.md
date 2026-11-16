@@ -59,6 +59,8 @@ obejrzeć.
   - Sprzątanie: koniec filmu albo wyjście z odtwarzacza po ≥80% kasuje plik od razu. Przy starcie apki i odtwarzacza
     `MediaCache.sweep` usuwa obejrzane ≥80% (np. gdy apkę ubito) i nieoglądane od 48 h. Limit 4 GB (LRU).
     Zablokowanie ekranu niczego nie kasuje.
+  - Zapas na dysku widać na pasku przewijania jako niebieski odcinek (`DiskAheadOverlay`, nakładka na `DefaultTimeBar`);
+    szary od ExoPlayera to bufor w pamięci.
   - Agent dla torrentów oddaje tylko pobrane kawałki (`ready_end`). Gdy dojdzie do niepobranego, czeka do 20 s na
     Deluge, potem zrywa połączenie, a ExoPlayer ponawia (do 60 razy). Zer z niepobranego pliku nikt nie dostaje.
   - Napisy obok filmu dochodzą jako `SubtitleConfiguration` z `/sub`.
