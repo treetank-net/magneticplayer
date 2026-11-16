@@ -36,7 +36,7 @@ w POST w treści JSON.
 | `POST /api/torrents/<id>/action` | `{"action": "pause\|resume\|remove\|remove_data\|sequential_on\|sequential_off"}` (zależnie od backendu) |
 | `POST /api/torrents/<id>/after` | `{"after": "none\|stop\|suspend"}` |
 | `GET /api/jobs` | historia zleceń: `id`, `name`, `added`, `after`, `after_done`, `magnet`, `in_client`, `progress`, `state` |
-| `GET /media/<id>/<index>[/nazwa]` | strumień pliku z torrenta (Range) |
+| `GET /media/<id>/<index>[/nazwa]` | strumień pliku z torrenta (Range), tylko pobrane kawałki: przy brakującym czeka do 20 s, potem zrywa. Nagłówek `X-Ready-End` (też w `HEAD` i `/lib`): do którego bajtu da się czytać od początku zakresu |
 
 ## Biblioteka
 

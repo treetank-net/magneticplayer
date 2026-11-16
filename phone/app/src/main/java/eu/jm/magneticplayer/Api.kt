@@ -43,7 +43,7 @@ class Settings(ctx: Context) {
         get() = p.getString("sub_langs", "en,pl")!!
         set(v) = p.edit().putString("sub_langs", v.replace(" ", "").lowercase()).apply()
 
-    /** ile minut filmu odtwarzacz w apce trzyma do przodu (w pamięci telefonu) */
+    /** ile minut filmu apka pobiera do przodu na dysk telefonu (MediaCache) */
     var bufferMinutes: Int
         get() = p.getInt("buffer_min", 5)
         set(v) = p.edit().putInt("buffer_min", v).apply()
@@ -52,6 +52,13 @@ class Settings(ctx: Context) {
 
     fun position(key: String): Long = p.getLong("pos:$key", 0)
     fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).apply()
+
+    // bufor na dysku: ile filmu obejrzano (0–1) i kiedy ostatnio oglądano, do sprzątania w MediaCache.sweep
+    fun cacheWatched(key: String): Float = p.getFloat("cw:$key", 0f)
+    fun cacheUsed(key: String): Long = p.getLong("cu:$key", 0)
+    fun touchCache(key: String, watched: Float) =
+        p.edit().putFloat("cw:$key", watched).putLong("cu:$key", System.currentTimeMillis()).apply()
+    fun forgetCache(key: String) = p.edit().remove("cw:$key").remove("cu:$key").apply()
 
     /** magneticplayer://pair?host=…&port=…&token=…&mac=… */
     /** Link do sparowania kolejnego telefonu z tym samym komputerem (QR w Ustawieniach). */

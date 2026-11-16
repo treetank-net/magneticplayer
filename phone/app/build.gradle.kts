@@ -61,6 +61,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-ui:1.8.0")
+    implementation("androidx.media3:media3-datasource:1.8.0")
+    implementation("androidx.media3:media3-database:1.8.0")
     implementation("com.google.zxing:core:3.5.3") // QR parowania
     // FFmpeg: dźwięk AC3/E-AC3/DTS/TrueHD, którego telefony nie dekodują same (build Jellyfina)
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1")

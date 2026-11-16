@@ -23,33 +23,21 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheWriter
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-/** Limit bajtów bufora: ~60% sterty apki (manifest: largeHeap), 64–512 MB. */
-fun bufferLimitBytes(): Long = (Runtime.getRuntime().maxMemory() * 0.6).toLong().coerceIn(64L shl 20, 512L shl 20)
-
-/**
- * Bufor do przodu z Ustawień (domyślnie 5 min; sam ExoPlayer trzyma ~50 s), żeby przeżyć zrywy Wi-Fi albo przejście
- * do innego pokoju. Bufor siedzi w pamięci apki, więc przy gęstych plikach (remuksy 4K) skończy się na limicie
- * bajtów, a nie na zadanym czasie.
- */
-@androidx.annotation.OptIn(UnstableApi::class)
-fun bigBuffer(minutes: Int): DefaultLoadControl {
-    val ms = minutes.coerceIn(1, 30) * 60_000
-    val bytes = bufferLimitBytes().toInt()
-    return DefaultLoadControl.Builder()
-        // min == max: dociąga cały czas do pełnego bufora, zamiast czekać, aż bufor spadnie do minimum
-        .setBufferDurationsMs(ms, ms, 2_500, 5_000)
-        .setTargetBufferBytes(bytes)
-        .setPrioritizeTimeOverSizeThresholds(false)
-        .build()
-}
 
 const val VLC_PACKAGE = "org.videolan.vlc"
 
@@ -81,6 +69,10 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var ref: MediaRef
     private lateinit var url: String
     private var subs: List<SubFile> = emptyList()
+    private var prefetchJob: Job? = null
+    private val key get() = ref.key()
+    // agent czeka do 20 s na kolejne kawałki torrenta, więc timeout odczytu musi być dłuższy
+    private val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(8_000).setReadTimeoutMs(30_000)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,10 +111,26 @@ class PlayerActivity : ComponentActivity() {
         // najpierw dekodery telefonu, FFmpeg gdy telefon nie umie (AC3/E-AC3/DTS…)
         val renderers = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        val p = ExoPlayer.Builder(this, renderers).setLoadControl(bigBuffer(settings.bufferMinutes)).build()
+        // w pamięci zostaje domyślne ~50 s; dalszy zapas jest na dysku (prefetch). Odtwarzacz czyta z bufora na dysku,
+        // a czego tam nie ma, bierze z sieci, ale sam do niego nie zapisuje.
+        val source = CacheDataSource.Factory().setCache(MediaCache.get(this))
+            .setUpstreamDataSourceFactory(http)
+            .setCacheWriteDataSinkFactory(null)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        // torrent się dociąga: agent zrywa po 20 s bez nowych kawałków, a my ponawiamy zamiast pokazać błąd
+        val sources = DefaultMediaSourceFactory(source).setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(60))
+        val p = ExoPlayer.Builder(this, renderers).setMediaSourceFactory(sources).build()
         player = p
         view.player = p
         p.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) {
+                    prefetchJob?.cancel()
+                    val k = key
+                    Thread { MediaCache.remove(this@PlayerActivity, k) }.start()
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 Toast.makeText(this@PlayerActivity,
                     "Nie da się odtworzyć: ${error.errorCodeName}. Spróbuj VLC albo poczekaj, aż się więcej pobierze.",
@@ -151,14 +159,17 @@ class PlayerActivity : ComponentActivity() {
                     .setSelectionFlags(if (s == subs.first()) C.SELECTION_FLAG_DEFAULT else 0)
                     .build()
             }
-            p.setMediaItem(MediaItem.Builder().setUri(url)
+            p.setMediaItem(MediaItem.Builder().setUri(url).setCustomCacheKey(key)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(ref.title).build())
                 .setSubtitleConfigurations(subConfigs)
                 .build())
             p.seekTo(start)
             p.prepare()
             p.playWhenReady = true
+            prefetchJob = prefetch(p)
         }
+        settings.touchCache(key, settings.cacheWatched(key))
+        Thread { MediaCache.sweep(this, keep = key) }.start()
     }
 
     private fun smallButton(text: String, onClick: () -> Unit) = Button(this).apply {
@@ -185,6 +196,54 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Dociąga na dysk do [Settings.bufferMinutes] minut od bieżącej pozycji, ale tylko do X-Ready-End (bajty, które
+     * komputer już ma). Pozycję w bajtach liczy z czasu i średniego bitrate pliku, z zapasem 30 s wstecz.
+     */
+    private fun prefetch(p: ExoPlayer): Job = lifecycleScope.launch(Dispatchers.IO) {
+        val cache = MediaCache.get(this@PlayerActivity)
+        val writer = CacheDataSource(cache, http.createDataSource())
+        while (isActive) {
+            val (pos, dur) = withContext(Dispatchers.Main) { p.currentPosition to p.duration }
+            if (dur <= 0) { delay(2_000); continue }
+            val worked = runCatching {
+                val size = probe(0).first
+                val perMs = size.toDouble() / dur
+                val from = ((pos - 30_000).coerceAtLeast(0) * perMs).toLong().coerceIn(0, size - 1)
+                val readyEnd = probe(from).second
+                val target = minOf(readyEnd, size, from + (settings.bufferMinutes * 60_000L * perMs).toLong())
+                var at = from
+                while (at < target) {
+                    val cached = cache.getCachedLength(key, at, target - at)
+                    if (cached > 0) { at += cached; continue }
+                    val len = minOf(-cached, 8L shl 20, target - at)
+                    CacheWriter(writer, DataSpec.Builder().setUri(url).setKey(key).setPosition(at).setLength(len).build(),
+                        null, null).cache()
+                    return@runCatching true  // po każdym kawałku od nowa: widz mógł przewinąć
+                }
+                false
+            }.getOrElse { false }
+            if (!worked) delay(3_000)
+        }
+    }
+
+    /** HEAD z Range od `from`: (rozmiar pliku, X-Ready-End). */
+    private fun probe(from: Long): Pair<Long, Long> {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        try {
+            c.requestMethod = "HEAD"
+            c.connectTimeout = 8_000; c.readTimeout = 8_000
+            c.setRequestProperty("Range", "bytes=$from-")
+            if (c.responseCode !in 200..299) throw java.io.IOException("HTTP ${c.responseCode}")
+            val size = c.getHeaderField("Content-Range")?.substringAfter('/')?.toLongOrNull()
+                ?: c.getHeaderField("Content-Length")!!.toLong()
+            val ready = c.getHeaderField("X-Ready-End")?.toLongOrNull() ?: size
+            return size to ready
+        } finally {
+            c.disconnect()
+        }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         player?.let { outState.putLong("pos", it.currentPosition) }
@@ -198,6 +257,14 @@ class PlayerActivity : ComponentActivity() {
             // pod koniec filmu zaczynamy następnym razem od początku
             if (it.playbackState != Player.STATE_IDLE) {
                 settings.setPosition(ref.key(), if (dur > 0 && pos > dur - 60_000) 0 else pos)
+                // ekran zablokowany: nic nie kasujemy; wyjście z odtwarzacza po ≥80%: kasujemy od razu
+                val watched = if (dur > 0) pos.toFloat() / dur else 0f
+                settings.touchCache(key, watched)
+                if (isFinishing && watched >= MediaCache.WATCHED) {
+                    prefetchJob?.cancel()
+                    val k = key
+                    Thread { MediaCache.remove(this, k) }.start()
+                }
             }
             it.pause()
         }

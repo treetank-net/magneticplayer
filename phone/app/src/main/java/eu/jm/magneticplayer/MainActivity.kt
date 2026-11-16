@@ -138,6 +138,8 @@ class MainActivity : ComponentActivity() {
         settings = Settings(this)
         api = Api(settings)
         if (!settings.configured) tab.intValue = TAB_SETTINGS
+        // bufor na dysku: obejrzane i stare filmy, także po ubiciu apki w trakcie oglądania
+        Thread { MediaCache.sweep(this) }.start()
         handleIntent(intent)
         setContent { AppTheme { MainScreen(api, tab, settingsVersion) } }
     }
@@ -899,14 +901,14 @@ private fun qrBitmap(text: String, size: Int): android.graphics.Bitmap {
     return android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888)
 }
 
-/** Bufor odtwarzacza w apce (PlayerActivity.bigBuffer); działa od następnego otwarcia filmu. */
+/** Bufor na dysku (PlayerActivity.prefetch, MediaCache); działa od następnego otwarcia filmu. */
 @Composable
 private fun BufferSettings(s: Settings) {
     var text by remember { mutableStateOf(s.bufferMinutes.toString()) }
-    val mb = bufferLimitBytes() shr 20
     Text("Bufor w odtwarzaczu", style = MaterialTheme.typography.titleMedium)
-    Text("Ile filmu telefon pobiera do przodu, żeby oglądać mimo zrywów Wi-Fi. Bufor trzymany w pamięci, " +
-        "maks. ok. $mb MB: przy bardzo dużych plikach (4K) będzie go mniej. Działa od następnego otwarcia filmu.",
+    Text("Ile filmu telefon pobiera do przodu na swój dysk, żeby oglądać mimo zrywów Wi-Fi. Tylko to, co komputer " +
+        "już pobrał. Obejrzane filmy (od 80%) i nieoglądane od 2 dni są kasowane, razem maks. 4 GB. " +
+        "Działa od następnego otwarcia filmu.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // zapis od razu przy każdej poprawnej wartości 1–30; przy błędnej zostaje poprzednia
     val v = text.toIntOrNull()

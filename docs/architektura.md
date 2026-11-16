@@ -52,9 +52,15 @@ w tle, najwyżej 2 naraz, a wynik trafia do cache. Z tych danych wychodzi `ready
 obejrzeć.
 
 ### Oglądanie
-- **Telefon:** ExoPlayer strumieniuje `/media/<torrent>/<plik>` albo `/lib/<katalog>/<ścieżka>` (Range). Bufor do przodu
-  ustawia się w Ustawieniach (1–30 min, domyślnie 5). Trzymany w pamięci apki (`largeHeap`), z limitem ~60% sterty
-  (64–512 MB), więc przy gęstych plikach kończy się na limicie bajtów (`bigBuffer()` w `PlayerActivity.kt`).
+- **Telefon:** ExoPlayer strumieniuje `/media/<torrent>/<plik>` albo `/lib/<katalog>/<ścieżka>` (Range). W pamięci
+  ExoPlayer trzyma domyślne ~50 s. Dalszy zapas jest na dysku telefonu (`MediaCache.kt`, `SimpleCache` w cacheDir):
+  `PlayerActivity.prefetch` dociąga N minut od bieżącej pozycji (Ustawienia, 1–30, domyślnie 5), ale tylko do
+  `X-Ready-End` z agenta, więc tylko pobrane bajty. Odtwarzacz z bufora tylko czyta, nie zapisuje.
+  - Sprzątanie: koniec filmu albo wyjście z odtwarzacza po ≥80% kasuje plik od razu. Przy starcie apki i odtwarzacza
+    `MediaCache.sweep` usuwa obejrzane ≥80% (np. gdy apkę ubito) i nieoglądane od 48 h. Limit 4 GB (LRU).
+    Zablokowanie ekranu niczego nie kasuje.
+  - Agent dla torrentów oddaje tylko pobrane kawałki (`ready_end`). Gdy dojdzie do niepobranego, czeka do 20 s na
+    Deluge, potem zrywa połączenie, a ExoPlayer ponawia (do 60 razy). Zer z niepobranego pliku nikt nie dostaje.
   - Napisy obok filmu dochodzą jako `SubtitleConfiguration` z `/sub`.
   - Dekoder FFmpeg (Jellyfin media3-ffmpeg) obsługuje dźwięk AC3, E-AC3 i DTS.
   - „Na komputer” przekazuje bieżącą pozycję.

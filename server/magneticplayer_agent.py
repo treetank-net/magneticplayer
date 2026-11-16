@@ -108,6 +108,20 @@ def is_media(path):
     return "video" if ext in VIDEO_EXT else "audio" if ext in AUDIO_EXT else None
 
 
+def ready_end(pieces, start, size):
+    """Do którego bajtu (wyłącznie) plik jest pobrany ciągiem od `start`. pieces = (offset pliku w torrencie,
+    rozmiar kawałka, lista pobranych kawałków albo None, gdy torrent kompletny)."""
+    if pieces is None or pieces[2] is None:
+        return size
+    offset, piece_len, have = pieces
+    if start >= size:
+        return size
+    k = (offset + start) // piece_len
+    while k < len(have) and have[k]:
+        k += 1
+    return max(start, min(size, k * piece_len - offset))
+
+
 def contiguous_ready(have, piece_len, offset, size):
     """Ile bajtów pliku jest pobrane ciągiem od jego początku (tyle da się obejrzeć bez dziur)."""
     if size <= 0:
@@ -250,7 +264,8 @@ class DelugeBackend:
             ready = f["size"] if pr >= 1 or have is None else \
                 contiguous_ready(have, st["piece_length"], f["offset"], f["size"])
             files.append({"index": i, "path": f["path"], "size": f["size"],
-                          "progress": round(100 * pr, 1), "ready": ready, "media": is_media(f["path"])})
+                          "progress": round(100 * pr, 1), "ready": ready, "media": is_media(f["path"]),
+                          "_pieces": (f["offset"], st["piece_length"], None if ready >= f["size"] else have)})
         return st["save_path"], files
 
     def action(self, tid, action):
@@ -343,6 +358,7 @@ class TransmissionBackend:
                 "progress": round(100 * f["bytesCompleted"] / f["length"], 1) if f["length"] else 100,
                 "ready": f["length"] if done else contiguous_ready(have, t["pieceSize"], offset, f["length"]),
                 "media": is_media(f["name"]),
+                "_pieces": (offset, t["pieceSize"], None if done else have),
             })
             offset += f["length"]
         return t["downloadDir"], out
@@ -820,15 +836,18 @@ class Handler(BaseHTTPRequestHandler):
                         if dur:
                             f["duration"] = dur
                             f["ready_sec"] = dur * f["ready"] / f["size"]
-                return self.send_json(files)
+                return self.send_json([{k: v for k, v in f.items() if not k.startswith("_")} for f in files])
             m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/action", p)
             if m and method == "POST":
                 a.backend.action(m.group(1), self.body().get("action"))
                 return self.send_json({"ok": True})
             m = re.fullmatch(r"/media/([0-9a-fA-F]+)/(\d+)(/.*)?", p)
             if m and method in ("GET", "HEAD"):
-                full, _ = a.resolve_file(m.group(1), int(m.group(2)))
-                return self.stream(full, method == "HEAD")
+                tid, idx = m.group(1), int(m.group(2))
+                full, f = a.resolve_file(tid, idx)
+                # tylko pobrane kawałki: zamiast zer z niepobranego pliku czekamy na Deluge (patrz stream())
+                return self.stream(full, method == "HEAD", f.get("_pieces"),
+                                   lambda: a.resolve_file(tid, idx)[1].get("_pieces"))
             if p == "/api/player/open" and method == "POST":
                 b = self.body()
                 full = a.resolve_ref(b)
@@ -962,7 +981,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def stream(self, full, head_only):
+    STALL_WAIT = 20  # s czekania na kolejne kawałki, potem zrywamy połączenie (odtwarzacz ponowi)
+
+    def stream(self, full, head_only, pieces=None, refresh=None):
         if not os.path.isfile(full):
             raise ApiError("pliku jeszcze nie ma na dysku", 404)
         size = os.path.getsize(full)
@@ -997,18 +1018,30 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        # do którego bajtu da się czytać od `start` bez czekania (bufor na dysku w apce dociąga tylko tyle)
+        self.send_header("X-Ready-End", str(ready_end(pieces, start, size)))
         self.end_headers()
         if head_only:
             return
+        pos, stop = start, end + 1
         with open(full, "rb") as f:
             f.seek(start)
-            left = length
-            while left > 0:
-                chunk = f.read(min(1 << 20, left))
+            while pos < stop:
+                avail = ready_end(pieces, pos, size)
+                waited = 0
+                while avail <= pos and refresh and waited < self.STALL_WAIT:
+                    time.sleep(1)
+                    waited += 1
+                    pieces = refresh()
+                    avail = ready_end(pieces, pos, size)
+                if avail <= pos:
+                    self.close_connection = True  # krócej niż Content-Length: klient wie, że ma ponowić
+                    return
+                chunk = f.read(min(1 << 20, avail - pos, stop - pos))
                 if not chunk:
                     break
                 self.wfile.write(chunk)
-                left -= len(chunk)
+                pos += len(chunk)
 
 
 class QuietServer(ThreadingHTTPServer):
