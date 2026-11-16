@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Forward10
@@ -125,6 +126,7 @@ const val TAB_TORRENTS = 0
 const val TAB_LIBRARY = 1
 const val TAB_REMOTE = 2
 const val TAB_SETTINGS = 3
+const val TAB_OFFLINE = 4
 
 class MainActivity : ComponentActivity() {
     private lateinit var settings: Settings
@@ -257,6 +259,7 @@ private fun MainScreen(api: Api, tab: MutableIntState, settingsVersion: MutableI
             NavigationBar {
                 NavigationBarItem(tab.intValue == TAB_TORRENTS, { tab.intValue = TAB_TORRENTS }, { Icon(Icons.Filled.Download, null) }, label = { Text("Torrenty") })
                 NavigationBarItem(tab.intValue == TAB_LIBRARY, { tab.intValue = TAB_LIBRARY }, { Icon(Icons.Filled.VideoLibrary, null) }, label = { Text("Biblioteka") })
+                NavigationBarItem(tab.intValue == TAB_OFFLINE, { tab.intValue = TAB_OFFLINE }, { Icon(Icons.Filled.DownloadForOffline, null) }, label = { Text("Na telefonie", maxLines = 1) })
                 NavigationBarItem(tab.intValue == TAB_REMOTE, { tab.intValue = TAB_REMOTE }, { Icon(Icons.Filled.SmartDisplay, null) }, label = { Text("Pilot") })
                 NavigationBarItem(tab.intValue == TAB_SETTINGS, { tab.intValue = TAB_SETTINGS }, { Icon(Icons.Filled.Settings, null) }, label = { Text("Ustawienia") })
             }
@@ -289,6 +292,7 @@ private fun MainScreen(api: Api, tab: MutableIntState, settingsVersion: MutableI
                 TAB_TORRENTS -> TorrentsTab(api, online == true, snack) { tab.intValue = TAB_REMOTE }
                 TAB_LIBRARY -> LibraryTab(api, online == true, snack) { tab.intValue = TAB_REMOTE }
                 TAB_REMOTE -> RemoteTab(api, online == true, snack)
+                TAB_OFFLINE -> OfflineTab()
                 else -> SettingsTab(api, ver, snack) { settingsVersion.intValue++; hostname = null }
             }
           }
@@ -909,8 +913,8 @@ private fun BufferSettings(s: Settings) {
     val maxGb = remember { MediaCache.maxBytes(ctx) shr 30 }
     Text("Bufor w odtwarzaczu", style = MaterialTheme.typography.titleMedium)
     Text("Ile filmu telefon pobiera do przodu na swój dysk, żeby oglądać mimo zrywów Wi-Fi. Tylko to, co komputer " +
-        "już pobrał. Na samolot czy autobus wpisz 999: pobierze cały film, ale apka musi zostać otwarta, dopóki " +
-        "niebieski pasek nie dojdzie do końca. Obejrzane filmy (od 80%) i nieoglądane od 2 dni są kasowane, " +
+        "już pobrał. Na drogę lepiej użyć „Pobierz na telefon” w menu ⋮ filmu (pobiera w tle, lista w zakładce " +
+        "„Na telefonie”). Bufor z oglądania: obejrzane filmy (od 80%) i nieoglądane od 2 dni są kasowane, " +
         "razem maks. $maxGb GB (60% wolnego miejsca). " +
         "Działa od następnego otwarcia filmu.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

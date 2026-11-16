@@ -69,6 +69,15 @@ obejrzeć.
     blokowałoby to dociąganie filmu z bufora na dysku i obraz by się ciął.
   - Dekoder FFmpeg (Jellyfin media3-ffmpeg) obsługuje dźwięk AC3, E-AC3 i DTS.
   - „Na komputer” przekazuje bieżącą pozycję.
+- **Na telefonie (offline):** „Pobierz na telefon” w menu ⋮ filmu → `DownloadService` (usługa pierwszoplanowa
+  `dataSync`, blokada Wi-Fi i CPU) pobiera cały plik do tego samego `MediaCache`, tylko do `X-Ready-End` (przy torrencie
+  w trakcie czeka na komputer, po ~5 min bez połączenia „Przerwane”). Napisy zapisuje do `filesDir/offline/<sha1>/`.
+  - Lista w zakładce „Na telefonie” (`OfflineTab.kt`, `OfflineStore` w `Offline.kt`): pobrane i bufor z oglądania,
+    odtwarzanie bez sieci, wznawianie, usuwanie.
+  - Pobrane (`pinned`) kasują się wg zasady wybranej przy filmie: po obejrzeniu (domyślnie), po 2/7/30 dniach od
+    pobrania albo zmiany zasady, albo tylko ręcznie. `PinnedAwareLruEvictor` nie wyrzuca ich przy braku miejsca.
+  - Długość pliku trafia do metadanych cache (`MediaCache.setLength`), żeby odtwarzacz bez sieci znał koniec pliku.
+  - Wersja webowa tego nie ma: gra prosto z PC; oglądanie spoza domu to osobny temat (Tailscale/WireGuard).
 - **VLC:** ten sam URL plus extra `subtitles_location`.
 - **Komputer:** `POST /api/player/open` uruchamia mpv w sesji graficznej. Środowisko (`DISPLAY`, `WAYLAND_DISPLAY`,
   DBus) agent bierze z `/proc/<cinnamon-session>/environ`. Pilot steruje mpv przez JSON IPC.

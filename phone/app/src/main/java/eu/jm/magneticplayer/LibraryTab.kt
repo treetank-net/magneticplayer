@@ -58,7 +58,7 @@ import kotlinx.coroutines.withContext
 fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
     var root by rememberSaveable { mutableStateOf<Int?>(null) }
     var path by rememberSaveable { mutableStateOf("") }
-    if (!online) return Hint("Komputer nie odpowiada.")
+    if (!online) return Hint("Komputer nie odpowiada. Pobrane filmy są w zakładce „Na telefonie”.")
     val r = root
     if (r == null) {
         RootsScreen(api, snack) { root = it; path = "" }

@@ -168,7 +168,7 @@ class PlayerActivity : ComponentActivity() {
                 if (state == Player.STATE_ENDED) {
                     prefetchJob?.cancel()
                     val k = key
-                    Thread { MediaCache.remove(this@PlayerActivity, k) }.start()
+                    Thread { MediaCache.onWatched(this@PlayerActivity, k) }.start()
                 }
             }
 
@@ -183,10 +183,21 @@ class PlayerActivity : ComponentActivity() {
             .setPreferredTextLanguages(*settings.subLanguages.split(',').filter { it.isNotBlank() }.toTypedArray())
             .build()
         val start = savedInstanceState?.getLong("pos") ?: settings.position(ref.key())
+        // pobrany (albo buforowany) film: rozmiar znany bez sieci, dla nakładki zapasu na pasku
+        val offline = OfflineStore.get(this, key)
+        if (offline != null && offline.size > 0) fileSize = offline.size
 
         lifecycleScope.launch {
-            subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
-            val local = withContext(Dispatchers.IO) { localSubs(subs) }
+            // pobrany film: napisy zapisane razem z nim (działa bez sieci); inaczej z komputera, kopiowane lokalnie
+            val saved = offline?.subs.orEmpty().filter { java.io.File(it.file).exists() }
+            val local: Map<String, Uri>
+            if (saved.isNotEmpty()) {
+                subs = saved.map { it.toSubFile() }
+                local = saved.associate { it.name to Uri.fromFile(java.io.File(it.file)) }
+            } else {
+                subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
+                local = withContext(Dispatchers.IO) { localSubs(subs) }
+            }
             val subConfigs = subs.mapNotNull { s ->
                 val mime = when (s.ext) {
                     "srt" -> MimeTypes.APPLICATION_SUBRIP
@@ -212,7 +223,7 @@ class PlayerActivity : ComponentActivity() {
             showDiskAhead(p)
         }
         settings.touchCache(key, settings.cacheWatched(key))
-        Thread { MediaCache.sweep(this, keep = key) }.start()
+        Thread { OfflineStore.ensure(this, ref); MediaCache.sweep(this, keep = key) }.start()
     }
 
     private fun smallButton(text: String, onClick: () -> Unit) = Button(this).apply {
@@ -250,11 +261,13 @@ class PlayerActivity : ComponentActivity() {
             val (pos, dur) = withContext(Dispatchers.Main) { p.currentPosition to p.duration }
             if (dur <= 0) { delay(2_000); continue }
             val worked = runCatching {
-                val size = probe(0).first
+                val size = headProbe(url, 0).first
                 fileSize = size
+                OfflineStore.update(this@PlayerActivity, key) { it.copy(size = size) }
+                MediaCache.setLength(this@PlayerActivity, key, size)
                 val perMs = size.toDouble() / dur
                 val from = ((pos - 30_000).coerceAtLeast(0) * perMs).toLong().coerceIn(0, size - 1)
-                val readyEnd = probe(from).second
+                val readyEnd = headProbe(url, from).second
                 val target = minOf(readyEnd, size, from + (settings.bufferMinutes * 60_000L * perMs).toLong())
                 var at = from
                 while (at < target) {
@@ -283,18 +296,8 @@ class PlayerActivity : ComponentActivity() {
         dir.mkdirs()
         val out = mutableMapOf<String, Uri>()
         list.forEachIndexed { i, s ->
-            runCatching {
-                val f = java.io.File(dir, "$i.${s.ext}")
-                val c = java.net.URL(api.subUrl(ref, s.name)).openConnection() as java.net.HttpURLConnection
-                try {
-                    c.connectTimeout = 8_000; c.readTimeout = 15_000
-                    if (c.responseCode != 200) throw java.io.IOException("HTTP ${c.responseCode}")
-                    c.inputStream.use { inp -> f.outputStream().use { inp.copyTo(it) } }
-                } finally {
-                    c.disconnect()
-                }
-                out[s.name] = Uri.fromFile(f)
-            }
+            val f = java.io.File(dir, "$i.${s.ext}")
+            runCatching { download(api.subUrl(ref, s.name), f); out[s.name] = Uri.fromFile(f) }
         }
         return out
     }
@@ -319,23 +322,6 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    /** HEAD z Range od `from`: (rozmiar pliku, X-Ready-End). */
-    private fun probe(from: Long): Pair<Long, Long> {
-        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-        try {
-            c.requestMethod = "HEAD"
-            c.connectTimeout = 8_000; c.readTimeout = 8_000
-            c.setRequestProperty("Range", "bytes=$from-")
-            if (c.responseCode !in 200..299) throw java.io.IOException("HTTP ${c.responseCode}")
-            val size = c.getHeaderField("Content-Range")?.substringAfter('/')?.toLongOrNull()
-                ?: c.getHeaderField("Content-Length")!!.toLong()
-            val ready = c.getHeaderField("X-Ready-End")?.toLongOrNull() ?: size
-            return size to ready
-        } finally {
-            c.disconnect()
-        }
-    }
-
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         player?.let { outState.putLong("pos", it.currentPosition) }
@@ -352,10 +338,11 @@ class PlayerActivity : ComponentActivity() {
                 // ekran zablokowany: nic nie kasujemy; wyjście z odtwarzacza po ≥80%: kasujemy od razu
                 val watched = if (dur > 0) pos.toFloat() / dur else 0f
                 settings.touchCache(key, watched)
+                if (dur > 0) OfflineStore.update(this, key) { o -> o.copy(durationMs = dur) }
                 if (isFinishing && watched >= MediaCache.WATCHED) {
                     prefetchJob?.cancel()
                     val k = key
-                    Thread { MediaCache.remove(this, k) }.start()
+                    Thread { MediaCache.onWatched(this, k) }.start()
                 }
             }
             it.pause()

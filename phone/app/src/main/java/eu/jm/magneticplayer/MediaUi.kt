@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OndemandVideo
@@ -68,6 +69,9 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
     var subsDialog by remember { mutableStateOf(false) }
+    // powiadomienie z postępem pobierania (Android 13+ pyta o zgodę; bez niej pobieranie i tak działa)
+    val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         FilledTonalButton({ ctx.startActivity(PlayerActivity.intent(ctx, ref)) }) {
             Icon(Icons.Filled.Smartphone, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Telefon")
@@ -96,6 +100,15 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
                 }, leadingIcon = { Icon(Icons.Filled.OndemandVideo, null) })
                 DropdownMenuItem({ Text("Napisy…") }, { menu = false; subsDialog = true },
                     leadingIcon = { Icon(Icons.Filled.Subtitles, null) })
+                DropdownMenuItem({ Text("Pobierz na telefon") }, {
+                    menu = false
+                    if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx,
+                            android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    DownloadService.start(ctx, ref)
+                    scope.launch { snack.showSnackbar("Pobieram na telefon — postęp w zakładce „Na telefonie”") }
+                }, leadingIcon = { Icon(Icons.Filled.DownloadForOffline, null) })
             }
         }
     }
