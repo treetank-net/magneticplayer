@@ -5,14 +5,24 @@
 MagneticPlayer jest pomyślany do domowej sieci:
 - **HTTP bez TLS.** Token i strumienie idą otwartym tekstem, a apka ma `usesCleartextTraffic`. W domowym Wi-Fi to
   akceptowalne, w obcej sieci już nie.
-- **Jeden wspólny token.** Kto go ma, może dodawać torrenty, sterować mpv, usypiać komputer i czytać pliki z
-  katalogów biblioteki oraz pobierania (tylko filmy, muzykę i napisy; agent nie wychodzi poza te katalogi).
+- **Token na urządzenie.** Każdy telefon i przeglądarka dostaje przy parowaniu własny token. Agent trzyma tylko
+  jego skrót SHA-256 (`~/.config/magneticplayer/devices.json`). Wszystkie urządzenia mają te same prawa: dodawanie
+  torrentów, sterowanie mpv, usypianie i czytanie plików z katalogów biblioteki oraz pobierania (tylko filmy,
+  muzykę i napisy; agent nie wychodzi poza te katalogi).
+- **Parowanie.** Kod parowania (6 znaków, jednorazowy, 10 minut) tworzy tylko już sparowane urządzenie albo ktoś
+  z dostępem do komputera (`--pair`, a po instalacji `install.sh`). Samo bycie w sieci nie wystarczy. Po 10
+  złych próbach w minutę agent odmawia.
+- **Zgubiony telefon.** Z dowolnego innego urządzenia: Ustawienia → serwer → urządzenie → „Odbierz”. Albo na
+  komputerze `magneticplayer_agent.py --devices` i `--revoke ID`.
+- **Stary wspólny token** z `config.json` działa dalej (urządzenie „legacy”), żeby starsze apki nie straciły
+  dostępu. Gdy wszystkie urządzenia są sparowane na nowo, wyłącz go („Wyłącz” na liście urządzeń).
+- **Bilety.** Ekran (mpv na innym komputerze) dostaje adres filmu z biletem HMAC na jeden plik, ważnym 12 h,
+  zamiast tokenu. Bilet nie działa na API.
 - **Odblokowanie ekranu.** Przy `auto_unlock: true` (domyślnie) każdy z tokenem zdejmie ekran blokady komputera,
   a wtedy osoba siedząca przy nim ma otwarty pulpit. Żeby tego nie było, ustaw `"auto_unlock": false` w
   `config.json` i zrestartuj usługę. Został wtedy tylko jawny `POST /api/system/unlock`, którego apka nie używa.
-- **Token jest w kodzie QR.** QR „Sparuj kolejne urządzenie” i link parowania pokazuj tylko domownikom.
-  Zmiana tokenu: nowa wartość `token` w `~/.config/magneticplayer/config.json`, restart usługi i ponowne
-  sparowanie telefonów.
+- **Kod parowania jest w kodzie QR.** QR „Sparuj kolejne urządzenie” działa raz i wygasa po 10 minutach, ale
+  w tym czasie pokazuj go tylko domownikom.
 - **Firewall.** `install-root.sh` otwiera port 8765 w ufw tylko dla `192.168.0.0/16` i `10.0.0.0/8`.
 - **deluge-web** słucha tylko na `127.0.0.1:8112`, więc z sieci jest dostępny wyłącznie przez agenta.
 - **Wake-on-LAN** to broadcast w lokalnej sieci, więc spoza niej nie zadziała.

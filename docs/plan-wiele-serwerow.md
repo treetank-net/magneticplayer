@@ -1,7 +1,9 @@
 # Plan: wiele serwerów (etap 1)
 
-Stan: plan, nic z tego nie jest jeszcze zrobione. Po wdrożeniu kawałka opis przechodzi do `architektura.md`
-i `api.md`, a stąd znika.
+Stan (2026-11-16): etap 1 zrobiony. Agent 1.1.0 (API 2) działa na jmpc; apka zbudowana, do przetestowania na telefonie
+użytkownika przed publikacją domownikom. Opis działania jest w `architektura.md`, `api.md` i
+`siec-i-bezpieczenstwo.md`; ten plik zostaje jako zapis decyzji i przypadków. Odkładamy: wykrywanie (mDNS),
+Docker, Windows/Mac (adaptery w `mp_platform.py`), telefon jako serwer.
 
 Makiety ekranów apki: [ux-wiele-serwerow.html](ux-wiele-serwerow.html) (otwórz w przeglądarce).
 

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -62,13 +63,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Przyciski dla filmu: telefon, komputer, a w menu VLC i napisy. */
+/** Przyciski dla filmu: telefon, ekran (mpv na którymś serwerze), a w menu VLC, napisy, pobieranie. */
 @Composable
 fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
     var subsDialog by remember { mutableStateOf(false) }
+    var chooser by remember { mutableStateOf(false) }
+    var opening by remember { mutableStateOf<String?>(null) }
+    val screens = remember { Servers.screens(ctx) }
+    fun playOn(key: String) = scope.launch {
+        opening = "Otwieram…"
+        try {
+            Screens.play(ctx, ref, key, null) { opening = it }
+            onPlayingOnPc()
+        } catch (e: ApiException) {
+            snack.showSnackbar(e.message ?: "Błąd")
+        } finally {
+            opening = null
+        }
+    }
     // powiadomienie z postępem pobierania (Android 13+ pyta o zgodę; bez niej pobieranie i tak działa)
     val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
@@ -76,17 +91,12 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
         FilledTonalButton({ ctx.startActivity(PlayerActivity.intent(ctx, ref)) }) {
             Icon(Icons.Filled.Smartphone, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Telefon")
         }
-        FilledTonalButton({
-            scope.launch {
-                try {
-                    withContext(Dispatchers.IO) { api.playerOpen(ref) }
-                    onPlayingOnPc()
-                } catch (e: ApiException) {
-                    snack.showSnackbar(e.message ?: "Błąd")
-                }
-            }
+        if (screens.isNotEmpty()) FilledTonalButton({
+            // jeden ekran i to ten sam serwer: od razu, jak dawniej; inaczej wybór ekranu
+            if (screens.size == 1 && screens[0].key == ref.srv) playOn(screens[0].key) else chooser = true
         }) {
-            Icon(Icons.Filled.Computer, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Komputer")
+            Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+            Text(if (screens.size == 1) screens[0].name.take(14) else "Na ekranie…")
         }
         Box {
             IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "więcej") }
@@ -113,6 +123,14 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
         }
     }
     if (subsDialog) SubsDialog(api, ref) { subsDialog = false }
+    if (chooser) ScreenChooser(ref, onPhone = null, onPick = { chooser = false; playOn(it) }) { chooser = false }
+    opening?.let { msg ->
+        AlertDialog(onDismissRequest = {}, confirmButton = {}, text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(24.dp)); Spacer(Modifier.width(16.dp)); Text(msg)
+            }
+        })
+    }
 }
 
 private val PROVIDER_NAMES = mapOf(

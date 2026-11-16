@@ -48,11 +48,11 @@ object Updater {
         val c = URL(api.base + "/app/MagneticPlayer.apk").openConnection() as HttpURLConnection
         c.connectTimeout = 8000
         c.readTimeout = 30000
-        c.setRequestProperty("Authorization", "Bearer ${api.s.token}")
+        c.setRequestProperty("Authorization", "Bearer ${api.srv.token}")
         val installer = ctx.packageManager.packageInstaller
         var sessionId = -1
         try {
-            if (c.responseCode != 200) throw ApiException("Komputer nie oddał apki (HTTP ${c.responseCode})")
+            if (c.responseCode != 200) throw ApiException("Serwer nie oddał apki (HTTP ${c.responseCode})")
             val total = c.contentLengthLong
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
             params.setAppPackageName(ctx.packageName)

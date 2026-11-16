@@ -1,8 +1,13 @@
 # HTTP API agenta
 
-Adres: `http://<komputer>:8765`. Wszystko poza `/api/ping` wymaga tokenu w nagłówku `Authorization: Bearer <token>`
-albo w parametrze `?token=` (to drugie dla odtwarzaczy, które nie ustawiają nagłówków). Odpowiedzi są w JSON,
-a błędy mają postać `{"error": "..."}` z kodem 4xx lub 5xx.
+Adres: `http://<komputer>:8765`. Wszystko poza `/api/ping` i `/api/pair` wymaga tokenu urządzenia w nagłówku
+`Authorization: Bearer <token>` albo w parametrze `?token=` (to drugie dla odtwarzaczy, które nie ustawiają
+nagłówków). Token urządzenia daje parowanie (niżej); stary wspólny `token` z `config.json` działa dalej jako
+urządzenie „legacy”, dopóki ktoś go nie wyłączy. Odpowiedzi są w JSON, a błędy mają postać `{"error": "..."}`
+z kodem 4xx lub 5xx.
+
+`/media`, `/lib` i `/sub` przyjmują zamiast tokenu `?ticket=` z `POST /api/media/ticket`: podpis na jeden plik,
+ważny 12 h. Tak inny serwer (ekran) dostaje film, nie będąc sparowany z serwerem plików. Bilet na API nie działa.
 
 `ref` oznacza wskazanie pliku: `torrent_id` + `file_index`, `root` + `path` albo `playing: true`
 (zob. [architektura](architektura.md#wskazanie-pliku-ref)). W GET przekazuje się je jako parametry zapytania,
@@ -18,13 +23,31 @@ w POST w treści JSON.
 
 | metoda i ścieżka | opis |
 |---|---|
-| `GET /api/ping` | `{"ok": true, "app": "magneticplayer", "version"}`, bez tokenu |
-| `GET /api/info` | `hostname`, `version`, `backend`, `keep_awake` (powód blokady usypiania), `iface`, `ip`, `mac`, `wake_on`, `wireless` |
+| `GET /api/ping` | `{"ok": true, "app": "magneticplayer", "version", "id"}`, bez tokenu. `id` pozwala apce sprawdzić, że pod adresem jest ten sam serwer, zanim wyśle token |
+| `GET /api/info` | `id`, `name`, `api` (poziom API, teraz 2), `hostname`, `version`, `backend`, `keep_awake` (powód blokady usypiania), `iface`, `ip`, `mac`, `wake_on`, `wireless`, `device` (kto pyta), `features` i `power` (niżej) |
+| `POST /api/wake` | `{"mac", "ip"?}`: wysyła magic packet z tego serwera (budzenie innego serwera, gdy telefon go nie dosięga) |
 | `POST /api/system/suspend` | zamyka mpv i usypia komputer |
 | `POST /api/system/screen_on` | budzi ekran komputera, a przy `auto_unlock` zdejmuje też ekran blokady → `{"unlocked"}` |
 | `POST /api/system/unlock` | budzi ekran i zdejmuje blokadę niezależnie od `auto_unlock` |
 | `GET /api/app/version` | `{"version_code", "version_name"}` opublikowanej apki albo `{"version_code": 0}` |
 | `GET /app/MagneticPlayer.apk` | plik opublikowanej apki |
+
+`features`: `torrent` (`"deluge"`, `"transmission"` albo `null`), `library`, `player` (mpv + sesja graficzna),
+`subs_search`, `unlock`, `apk`, `wake_others`. `power`: `suspend`, `poweroff`, `wake`
+(`{"method": "wol"|null, "mac", "confidence": "maybe"|"no", "reason"}`). `yes` w `confidence` wie tylko apka,
+gdy budzenie raz się udało.
+
+## Parowanie i urządzenia
+
+| metoda i ścieżka | opis |
+|---|---|
+| `POST /api/pair` | bez tokenu: `{"code", "name"}` → `{"token", "device_id"}`. Kod działa raz, 10 min; po 10 złych próbach w minutę odmowa |
+| `POST /api/pair/code` | nowy kod dla kolejnego urządzenia → `{"code", "expires_in", "host", "port", "id", "name"}` |
+| `GET /api/devices` | `[{id, name, created, last_seen, current, legacy?}]` |
+| `POST /api/devices/revoke` | `{"id"}`; `"legacy"` wyłącza stary wspólny token |
+| `POST /api/media/ticket` | `ref` → `{"url", "subs": [{name, lang, url}], "title", "expires"}`; adresy z biletem, host z nagłówka `Host` |
+
+Z konsoli: `magneticplayer_agent.py --pair` (kod + QR w terminalu), `--devices`, `--revoke ID`.
 
 ## Torrenty i zlecenia
 
@@ -52,7 +75,7 @@ w POST w treści JSON.
 
 | metoda i ścieżka | opis |
 |---|---|
-| `POST /api/player/open` | `ref` + opcjonalnie `start` (sekundy) |
+| `POST /api/player/open` | `ref` + opcjonalnie `start` (sekundy); albo film z innego serwera: `{"url", "subs": [url…], "title", "start"?}` |
 | `GET /api/player/status` | `running`, `title`, `path`, `pos`, `duration`, `paused`, `volume`, `muted`, `fullscreen`, `sub`, `audio`, `tracks[]` (`id`, `type`, `title`, `lang`, `codec`, `selected`, `external`, `default`, `forced`, `demux-channel-count`, `demux-w`, `demux-h`) |
 | `POST /api/player/cmd` | `{"cmd", "value"?}`, polecenia poniżej |
 

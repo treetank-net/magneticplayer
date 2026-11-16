@@ -6,7 +6,12 @@ Wymagania: Linux Mint lub Ubuntu z sesją graficzną (Cinnamon), Python 3.10+, k
 
 ```bash
 bash server/install.sh                 # przy komputerze: część rootowa przez pkexec (okno z hasłem)
+BACKEND=none bash server/install.sh    # komputer tylko jako ekran (albo tylko biblioteka): bez Deluge
 ```
+
+Na końcu skrypt pokazuje kod parowania i QR. Zeskanuj go aparatem telefonu (otworzy apkę) albo w apce:
+Ustawienia → Dodaj serwer → adres i kod. Nowy kod: `~/.local/share/magneticplayer/venv/bin/python
+~/.local/share/magneticplayer/magneticplayer_agent.py --pair`, albo z już sparowanego telefonu.
 
 Przez SSH `pkexec` nie działa, bo nie ma sesji polkit. Część rootową robisz wtedy przez `sudo`:
 
@@ -20,8 +25,8 @@ Co robią skrypty:
 
 | skrypt | co robi |
 |---|---|
-| `install-root.sh <user>` | instaluje pakiety `deluged deluge-web mpv ethtool`<br>wyłącza systemowe usługi Deluge (chodzą jako usługi użytkownika)<br>dodaje regułę polkit `/etc/polkit-1/rules.d/49-magneticplayer.rules`, żeby usługa w tle mogła blokować usypianie i usypiać<br>włącza Wake-on-LAN: NetworkManager `802-3-ethernet.wake-on-lan magic`, udev `81-magneticplayer-wol.rules`, ethtool<br>otwiera port 8765 w ufw dla sieci prywatnych |
-| `install.sh` | kopiuje agenta do `~/.local/share/magneticplayer/`<br>tworzy venv z `subliminal`<br>zakłada usługi `systemd --user`: `deluged`, `deluge-web` (127.0.0.1:8112) i `magneticplayer` (:8765)<br>przełącza Deluge GTK w tryb klienta, łączącego się z `deluged`<br>wypisuje link parowania |
+| `install-root.sh <user> [port] [backend]` | instaluje pakiety `mpv ethtool qrencode`, a przy backendzie Deluge też `deluged deluge-web`<br>wyłącza systemowe usługi Deluge (chodzą jako usługi użytkownika)<br>dodaje regułę polkit `/etc/polkit-1/rules.d/49-magneticplayer.rules`, żeby usługa w tle mogła blokować usypianie i usypiać<br>włącza Wake-on-LAN: NetworkManager `802-3-ethernet.wake-on-lan magic`, udev `81-magneticplayer-wol.rules`, ethtool<br>otwiera port 8765 w ufw dla sieci prywatnych |
+| `install.sh` | kopiuje agenta do `~/.local/share/magneticplayer/`<br>tworzy venv z `subliminal`<br>zakłada usługi `systemd --user`: `deluged`, `deluge-web` (127.0.0.1:8112) i `magneticplayer` (:8765)<br>przełącza Deluge GTK w tryb klienta, łączącego się z `deluged`<br>wypisuje kod parowania z QR (`--pair`) |
 
 Ponowne uruchomienie `install.sh` aktualizuje agenta i nie rusza konfiguracji ani tokenu.
 
@@ -35,7 +40,8 @@ scp server/*.py jmpc:.local/share/magneticplayer/ && ssh jmpc systemctl --user r
 
 | ścieżka | zawartość |
 |---|---|
-| `~/.config/magneticplayer/config.json` | token, port, backend (`deluge`/`transmission`), hasło deluge-web, katalogi biblioteki, klucz OpenSubtitles i opcjonalny login, `mpv_args`, `auto_unlock` |
+| `~/.config/magneticplayer/config.json` | `id` i `name` serwera, stary wspólny token, port, backend (`deluge`/`transmission`/`none`), hasło deluge-web, katalogi biblioteki, klucz OpenSubtitles i opcjonalny login, `mpv_args`, `auto_unlock` |
+| `~/.config/magneticplayer/devices.json` | sparowane urządzenia (skróty tokenów), aktywne kody parowania, klucz biletów |
 | `~/.config/magneticplayer/jobs.json` | zlecenia z telefonu: magnet, akcja po pobraniu, czy wykonana |
 | `~/.local/share/magneticplayer/` | agent (`magneticplayer_agent.py`, `mp_*.py`) i `venv/` z subliminal |
 | `~/.local/share/magneticplayer/apk/` | opublikowana apka i `version.json`, z których korzystają aktualizacje telefonów |
@@ -81,9 +87,20 @@ Kod repo jest też na `ovh-vps` w `~/git/MagneticPlayer.git` (remote `ovh`).
 1. U siebie: Ustawienia → **„Wyślij apkę (WhatsApp itp.)”** wysyła zainstalowany plik APK. W WhatsAppie wyślij go
    jako dokument.
 2. Druga osoba instaluje APK, a Android zapyta o zgodę na instalowanie z komunikatora.
-3. U siebie: Ustawienia → **„Sparuj kolejne urządzenie”** pokazuje QR z linkiem parowania. Druga osoba skanuje
-   go aparatem. Jeśli link się nie otworzy, wyślij go przez „Udostępnij link”, a druga osoba w apce wybiera
-   „Wklej link parowania”.
+3. U siebie: Ustawienia → **„Sparuj kolejne urządzenie”**, zaznacz serwery → QR z jednorazowymi kodami (10 min).
+   Druga osoba skanuje go aparatem i od razu ma wszystkie zaznaczone serwery. Jeśli link się nie otworzy:
+   „Udostępnij link”, a w apce Ustawienia → Dodaj serwer → „Wklej link parowania”. Albo wpisuje adres i kod ręcznie.
+
+### Kilka serwerów
+
+- Każdy komputer z agentem to osobny serwer: „pliki” (torrenty i/lub biblioteka) i/lub „ekran” (mpv).
+  Komputer tylko do oglądania: `BACKEND=none bash server/install.sh`.
+- Nazwa serwera u góry apki; ▾ (gdy serwerów jest kilka) przełącza, z którego są Torrenty i Biblioteka.
+- Przycisk ekranu przy filmie odtwarza na wybranym komputerze. Gdy film jest na innym serwerze, ekran dostaje
+  adres z biletem i ciągnie film przez sieć. Pilot ma własny wybór ekranu.
+- Uśpiony serwer budzi telefon, a po kilku sekundach także inny działający serwer (gdy telefon go nie dosięga).
+  Okno „Uśpij” ostrzega, gdy budzenie przez sieć jest niepewne albo niemożliwe (Wi-Fi, brak WoL).
+- Stary serwer z jednego tokenu przechodzi do listy sam, z zachowaniem pozycji, bufora i pobranych filmów.
 
 ### Aktualizacje dla domowników
 
@@ -106,8 +123,10 @@ Gdy magnety otwiera inna apka (np. Flud), wejdź w Ustawienia Androida → Aplik
 
 ## Klient webowy (laptop, tablet)
 
-Otwórz `http://192.168.100.100:8765/#t=<token>`. Token zapisze się w przeglądarce i zniknie z paska adresu, więc
-później wystarczy samo `http://192.168.100.100:8765/`. Dodatek `#tab=remote` (albo `library`, `torrents`)
+Link z kodem daje telefon: Ustawienia → „Sparuj kolejne urządzenie” → adres `http://192.168.100.100:8765/#p=<KOD>`.
+Przeglądarka wymienia kod na własny token (urządzenie „Przeglądarka · system” na liście), kod znika z paska adresu,
+więc później wystarczy samo `http://192.168.100.100:8765/`. Na stronie logowania można też wpisać kod ręcznie.
+Stary sposób `#t=<token>` działa, dopóki stary wspólny token jest włączony. Dodatek `#tab=remote` (albo `library`, `torrents`)
 otwiera od razu wybraną zakładkę.
 
 | zakładka | co umie |

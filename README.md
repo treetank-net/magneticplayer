@@ -55,5 +55,5 @@ w apce: Ustawienia → „Wklej link parowania”.
 - [docs/api.md](docs/api.md): HTTP API agenta.
 - [docs/siec-i-bezpieczenstwo.md](docs/siec-i-bezpieczenstwo.md): założenie „tylko LAN”, token oraz opcje
   na zdalny dostęp w przyszłości.
-- [docs/plan-wiele-serwerow.md](docs/plan-wiele-serwerow.md): plan (niewdrożony): kilka serwerów, osobne
+- [docs/plan-wiele-serwerow.md](docs/plan-wiele-serwerow.md): etap 1 (wdrożony): kilka serwerów, osobne
   serwery plików i ekranu, tokeny per urządzenie.

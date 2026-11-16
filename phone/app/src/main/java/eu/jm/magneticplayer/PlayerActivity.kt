@@ -111,8 +111,9 @@ class PlayerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = Settings(this)
-        api = Api(settings)
         ref = intent.getStringExtra("ref")?.let { MediaRef.decode(it) } ?: return finish()
+        // serwer mógł zniknąć z apki: pobrany film i tak gra z dysku telefonu (klucz bufora się nie zmienia)
+        api = Api.of(this, ref.srv) ?: Api(settings, Server.NONE.copy(key = ref.srv))
         url = try { api.mediaUrl(ref) } catch (e: ApiException) { return finish() }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -128,7 +129,7 @@ class PlayerActivity : ComponentActivity() {
         }
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(smallButton("Na komputer") { handOffToPc() })
+            if (Servers.screens(this@PlayerActivity).isNotEmpty()) addView(smallButton("Na ekran") { handOffToPc() })
             addView(smallButton("VLC") {
                 player?.pause()
                 openInVlc(this@PlayerActivity, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
@@ -233,14 +234,25 @@ class PlayerActivity : ComponentActivity() {
         setOnClickListener { onClick() }
     }
 
+    /** „Na ekran”: jeden ekran od razu, kilka: wybór (ostatnio używany oznaczony). */
     private fun handOffToPc() {
+        val screens = Servers.screens(this)
+        if (screens.size == 1) return handOffTo(screens[0])
+        val last = Servers.screenKey(this)
+        android.app.AlertDialog.Builder(this).setTitle("Na którym ekranie?")
+            .setItems(screens.map { it.name + if (it.key == last) " · ostatnio" else "" }.toTypedArray()) { _, i -> handOffTo(screens[i]) }
+            .show()
+    }
+
+    private fun handOffTo(screen: Server) {
         val p = player ?: return
         val pos = p.currentPosition
         p.pause()
+        Toast.makeText(this, "Otwieram na ${screen.name}…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             try {
-                withContext(Dispatchers.IO) { api.playerOpen(ref, pos / 1000.0) }
-                Toast.makeText(this@PlayerActivity, "Gra na komputerze", Toast.LENGTH_SHORT).show()
+                Screens.play(this@PlayerActivity, ref, screen.key, pos / 1000.0) { }
+                Toast.makeText(this@PlayerActivity, "Gra na ${screen.name}", Toast.LENGTH_SHORT).show()
                 startActivity(Intent(this@PlayerActivity, MainActivity::class.java).putExtra("tab", TAB_REMOTE)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                 finish()

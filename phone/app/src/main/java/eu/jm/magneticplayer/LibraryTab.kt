@@ -213,7 +213,7 @@ private fun DirScreen(
                 }
             }
             items(d.files, key = { "f/${it.name}" }) { f ->
-                val ref = MediaRef.InLibrary(root, if (path.isEmpty()) f.name else "$path/${f.name}")
+                val ref = MediaRef.InLibrary(root, if (path.isEmpty()) f.name else "$path/${f.name}", api.srv.key)
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (f.media == "audio") Icons.Filled.MusicNote else Icons.Filled.Movie, null,

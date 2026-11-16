@@ -94,7 +94,7 @@ fun OfflineTab() {
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("Usunąć z telefonu?") },
-            text = { Text("${item.title}\n\nNa komputerze zostaje.") },
+            text = { Text("${item.title}\n\nNa serwerze zostaje.") },
             confirmButton = {
                 TextButton({
                     confirmDelete = null
@@ -127,6 +127,10 @@ private fun OfflineCard(
                 else -> humanBytes(r.cached)
             }
             Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // z którego serwera (gdy jest ich kilka): tam idzie „Wznów” i stamtąd są napisy
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val from = remember(i.ref.srv) { if (Servers.all(ctx).size > 1) Servers.get(ctx, i.ref.srv)?.name ?: "usunięty serwer" else null }
+            if (from != null) Text("z: $from", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             if (!done && i.size > 0) LinearProgressIndicator({ frac.toFloat() }, Modifier.fillMaxWidth())
             // ile da się obejrzeć od początku bez sieci (szacunek ze średniego bitrate)
             if (i.durationMs > 0 && i.size > 0 && !done && r.fromStart > 0) {

@@ -147,7 +147,7 @@ class DownloadService : Service() {
 
     private suspend fun downloadOne(item: OfflineItem) {
         val key = item.key
-        val api = Api(Settings(this))
+        val api = Api.forRef(this, item.ref)
         val url = api.mediaUrl(item.ref)
         val cache = MediaCache.get(this)
         val writer = CacheDataSource(cache, DefaultHttpDataSource.Factory().setConnectTimeoutMs(8_000).setReadTimeoutMs(30_000).createDataSource())

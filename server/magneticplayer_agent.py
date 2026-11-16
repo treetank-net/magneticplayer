@@ -26,11 +26,14 @@ import urllib.request
 from http.cookiejar import CookieJar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import mp_platform as platform
+from mp_devices import Devices
 from mp_jobs import AFTER, Jobs
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+API_LEVEL = 2  # /api/info: id, features, power; tokeny urządzeń, bilety, player/open z url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")  # klient webowy (server/web)
@@ -55,7 +58,9 @@ AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 DEFAULT_CONFIG = {
     "port": 8765,
     "token": "",
-    "backend": "deluge",  # deluge | transmission
+    "id": "",  # stały identyfikator serwera (apka rozpoznaje po nim serwer, nie po IP)
+    "name": "",  # nazwa w apce; puste = hostname
+    "backend": "deluge",  # deluge | transmission | none (serwer bez torrentów, np. tylko ekran)
     "deluge_url": "http://127.0.0.1:8112/json",
     "deluge_password": "deluge",
     "transmission_url": "http://127.0.0.1:9091/transmission/rpc",
@@ -77,8 +82,9 @@ def load_config():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH) as f:
             cfg.update(json.load(f))
-    if not cfg["token"]:
-        cfg["token"] = secrets.token_urlsafe(18)
+    if not cfg["token"] or not cfg["id"]:
+        cfg["token"] = cfg["token"] or secrets.token_urlsafe(18)
+        cfg["id"] = cfg["id"] or secrets.token_hex(8)
         os.makedirs(CONFIG_DIR, exist_ok=True)
         with open(CONFIG_PATH, "w") as f:
             json.dump(cfg, f, indent=2)
@@ -375,68 +381,36 @@ class TransmissionBackend:
         self.call(method, dict(args, ids=[tid]))
 
 
+class NoBackend:
+    """backend: none, serwer bez klienta torrentów (np. tylko ekran albo tylko biblioteka)."""
+
+    def __init__(self, cfg):
+        pass
+
+    def default_dirs(self):
+        return []
+
+    def list(self):
+        return []
+
+    def add_magnet(self, uri, sequential):
+        raise ApiError("ten serwer nie pobiera torrentów", 409)
+
+    def files(self, tid):
+        raise ApiError("ten serwer nie pobiera torrentów", 409)
+
+    def action(self, tid, action):
+        raise ApiError("ten serwer nie pobiera torrentów", 409)
+
+
 # ---------------------------------------------------------------- sesja graficzna, mpv
 
-def graphical_env():
-    """Zmienne środowiskowe sesji graficznej użytkownika (usługa systemd ich nie ma)."""
-    env = dict(os.environ)
-    wanted = ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_SESSION_TYPE")
-    sessions = ("cinnamon-session", "cinnamon", "xfce4-session", "mate-session", "gnome-shell", "plasmashell")
-    uid = os.getuid()
-    for pid in filter(str.isdigit, os.listdir("/proc")):
-        try:
-            if os.stat(f"/proc/{pid}").st_uid != uid:
-                continue
-            with open(f"/proc/{pid}/comm") as f:
-                if f.read().strip() not in sessions:
-                    continue
-            with open(f"/proc/{pid}/environ", "rb") as f:
-                penv = dict(kv.split("=", 1) for kv in f.read().decode(errors="ignore").split("\0") if "=" in kv)
-            for k in wanted:
-                if k in penv:
-                    env[k] = penv[k]
-            break
-        except OSError:
-            continue
-    env.setdefault("DISPLAY", ":0")
-    if "XAUTHORITY" not in env and os.path.exists(os.path.expanduser("~/.Xauthority")):
-        env["XAUTHORITY"] = os.path.expanduser("~/.Xauthority")
-    return env
-
-
+graphical_env = platform.graphical_env
 AUTO_UNLOCK = True  # nadpisywane z configu w App.__init__
 
 
-def unlock_screen():
-    """Zdejmuje ekran blokady przez logind (sygnał Unlock); cinnamon-screensaver, GNOME i KDE go słuchają.
-    polkit pozwala na to właścicielowi sesji bez hasła. Zwraca True, gdy się udało."""
-    try:
-        sid = subprocess.run(["loginctl", "show-user", str(os.getuid()), "-p", "Display", "--value"],
-                             capture_output=True, text=True, timeout=5).stdout.strip()
-        if not sid:
-            return False
-        r = subprocess.run(["loginctl", "unlock-session", sid], capture_output=True, text=True, timeout=5)
-        if r.returncode:
-            log("unlock-session:", r.stderr.strip())
-        return r.returncode == 0
-    except (OSError, subprocess.SubprocessError) as e:
-        log("unlock-session:", e)
-        return False
-
-
 def wake_screen(unlock=None):
-    env = graphical_env()
-    # bez "cinnamon-screensaver-command --deactivate": w Cinnamon 5.4 wywala wygaszacz (brak grab_helper)
-    # i wisi; ekran blokady zdejmuje unlock_screen() przez logind
-    for cmd in (["xset", "dpms", "force", "on"], ["xdg-screensaver", "reset"]):
-        if shutil.which(cmd[0]):
-            try:
-                subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
-            except (OSError, subprocess.SubprocessError) as e:
-                log("ekran:", cmd[0], e)
-    if AUTO_UNLOCK if unlock is None else unlock:
-        return unlock_screen()
-    return False
+    return platform.wake_screen(AUTO_UNLOCK if unlock is None else unlock)
 
 
 class Mpv:
@@ -484,12 +458,35 @@ class Mpv:
         except ApiError:
             return default
 
-    def open(self, path):
+    def open(self, path, title=None, subs=(), start=None):
+        """Plik lokalny albo URL (film z innego serwera, z biletem). `subs`: URL-e napisów, pierwsze wybrane."""
         wake_screen()
         if self.running():
+            self.cmd("set_property", "force-media-title", title or "")
             self.cmd("loadfile", path, "replace")
             self.cmd("set_property", "pause", False)
-            return
+        else:
+            self._start(path, title)
+        if subs or start:
+            self._after_load(path, subs, start)
+
+    def _after_load(self, path, subs, start):
+        """Czeka, aż mpv wczyta plik (po sieci to potrwa), potem napisy i przewinięcie."""
+        for _ in range(150):
+            if self.prop("path") == path and self.prop("duration") is not None:
+                break
+            if not self.running():
+                return
+            time.sleep(0.1)
+        for i, u in enumerate(subs):
+            try:
+                self.cmd("sub-add", u, "select" if i == 0 else "auto", timeout=15)
+            except ApiError as e:
+                log("napisy z", u.split("?")[0], e)
+        if start:
+            self.cmd("seek", float(start), "absolute")
+
+    def _start(self, path, title):
         if not shutil.which("mpv"):
             raise ApiError("brak mpv na komputerze (sudo apt install mpv)", 500)
         try:
@@ -497,8 +494,8 @@ class Mpv:
         except FileNotFoundError:
             pass
         argv = ["mpv", f"--input-ipc-server={MPV_SOCKET}", "--force-window=yes", "--idle=once",
-                "--keep-open=yes", *self.args, path]
-        log("start:", " ".join(argv))
+                "--keep-open=yes", *self.args, *([f"--force-media-title={title}"] if title else []), path]
+        log("start:", " ".join(re.sub(r"(ticket|token)=[^&\s]+", r"\1=…", a) for a in argv))
         self.proc = subprocess.Popen(argv, env=graphical_env(), stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         for _ in range(50):
@@ -590,14 +587,8 @@ class SleepGuard(threading.Thread):
     def hold(self, why):
         if self.proc and self.proc.poll() is None:
             return
-        self.proc = subprocess.Popen(
-            ["systemd-inhibit", "--what=sleep", "--who=MagneticPlayer", f"--why={why}", "--mode=block",
-             "sleep", "infinity"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        time.sleep(0.5)
-        if self.proc.poll() is not None:
-            log("systemd-inhibit odmówił:", self.proc.stderr.read().decode().strip(),
-                "(brak reguły polkit? uruchom install.sh)")
-        else:
+        self.proc = platform.inhibit_sleep(why)
+        if self.proc:
             log("blokada usypiania:", why)
 
     def release(self):
@@ -633,52 +624,17 @@ class SleepGuard(threading.Thread):
 def poweroff(guard):
     guard.paused_until = time.time() + 120
     guard.release()
-    r = subprocess.run(["systemctl", "poweroff"], capture_output=True, text=True, timeout=15)
-    if r.returncode != 0:
-        raise ApiError(f"wyłączanie nie wyszło: {r.stderr.strip()} (reguła polkit z install-root.sh?)", 500)
+    err = platform.power("poweroff")
+    if err:
+        raise ApiError(f"wyłączanie nie wyszło: {err}", 500)
 
 
 def suspend(guard):
     guard.paused_until = time.time() + 120
     guard.release()
-    r = subprocess.run(["systemctl", "suspend"], capture_output=True, text=True, timeout=15)
-    if r.returncode != 0:
-        raise ApiError(f"usypianie nie wyszło: {r.stderr.strip()} (reguła polkit z install.sh?)", 500)
-
-
-# ---------------------------------------------------------------- informacje o sieci
-
-def net_info(client_ip):
-    dev, src = None, None
-    try:
-        out = subprocess.run(["ip", "-o", "route", "get", client_ip], capture_output=True, text=True).stdout
-        m = re.search(r"\bdev (\S+)", out)
-        dev = m.group(1) if m else None
-        m = re.search(r"\bsrc (\S+)", out)
-        src = m.group(1) if m else None
-    except OSError:
-        pass
-    mac = None
-    if dev:
-        try:
-            with open(f"/sys/class/net/{dev}/address") as f:
-                mac = f.read().strip()
-        except OSError:
-            pass
-    wol = None
-    if dev and shutil.which("ethtool"):
-        out = subprocess.run(["ethtool", dev], capture_output=True, text=True).stdout
-        m = re.search(r"^\s*Wake-on:\s*(\S+)", out, re.M)
-        wol = m.group(1) if m else None
-    if dev and not wol and shutil.which("nmcli"):  # ethtool bez roota nie czyta Wake-on
-        out = subprocess.run(["nmcli", "-t", "-f", "GENERAL.CONNECTION", "device", "show", dev],
-                             capture_output=True, text=True).stdout
-        con = out.strip().partition(":")[2]
-        if con:
-            v = subprocess.run(["nmcli", "-g", "802-3-ethernet.wake-on-lan", "connection", "show", con],
-                               capture_output=True, text=True).stdout.strip()
-            wol = "g" if "magic" in v else (v or None)
-    return {"iface": dev, "ip": src, "mac": mac, "wake_on": wol, "wireless": bool(dev and os.path.isdir(f"/sys/class/net/{dev}/wireless"))}
+    err = platform.power("suspend")
+    if err:
+        raise ApiError(f"usypianie nie wyszło: {err}", 500)
 
 
 # ---------------------------------------------------------------- HTTP
@@ -688,12 +644,60 @@ class App:
         global AUTO_UNLOCK
         self.cfg = cfg
         AUTO_UNLOCK = bool(cfg.get("auto_unlock", True))
-        self.backend = DelugeBackend(cfg) if cfg["backend"] == "deluge" else TransmissionBackend(cfg)
+        self.backend = {"deluge": DelugeBackend, "transmission": TransmissionBackend}.get(cfg["backend"], NoBackend)(cfg)
         self.mpv = Mpv(cfg)
         self.guard = SleepGuard(self)
         self.library = Library(cfg, lambda: save_config(cfg), self._default_dirs)
         self.subs = Subtitles(cfg, lambda: save_config(cfg))
         self.jobs = Jobs(os.path.join(CONFIG_DIR, "jobs.json"), log)
+        self.devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
+        self._subs_ok = None
+
+    def name(self):
+        return self.cfg.get("name") or socket.gethostname()
+
+    def subs_available(self):
+        if self._subs_ok is None:
+            try:
+                from mp_subs import _subliminal
+                _subliminal()
+                self._subs_ok = True
+            except Exception:  # noqa: BLE001 — brak venv/subliminal
+                self._subs_ok = False
+        return self._subs_ok
+
+    def info(self, client_ip, device):
+        """Kim jest ten serwer i co umie (apka chowa to, czego nie ma)."""
+        net = platform.net_info(client_ip)
+        has_torrent = not isinstance(self.backend, NoBackend)
+        try:
+            library = bool(self.library.roots())
+        except LibError:
+            library = False
+        return {
+            "id": self.cfg["id"], "name": self.name(), "hostname": socket.gethostname(), "version": VERSION,
+            "api": API_LEVEL, "backend": self.cfg["backend"], "keep_awake": self.guard.reason, "device": device,
+            **net,
+            "features": {
+                "torrent": self.cfg["backend"] if has_torrent else None,
+                "library": library,
+                "player": platform.has_display(),
+                "subs_search": self.subs_available(),
+                "unlock": AUTO_UNLOCK and platform.can_unlock(),
+                "apk": apk_version().get("version_code", 0) > 0,
+                "wake_others": True,
+            },
+            "power": {"suspend": platform.can_power(), "poweroff": platform.can_power(),
+                      "wake": platform.wake_info(net)},
+        }
+
+    def ref_scope(self, d):
+        """Zakres biletu dla wskazania pliku (ten sam dla filmu i jego napisów)."""
+        if d.get("torrent_id"):
+            return f"t:{d['torrent_id'].lower()}/{int(d['file_index'])}"
+        if d.get("root") is not None and d.get("root") != "":
+            return f"l:{int(d['root'])}/{d.get('path', '')}"
+        return None
 
     def _default_dirs(self):
         try:
@@ -705,8 +709,10 @@ class App:
         """Plik wskazany przez torrent (torrent_id + file_index) albo bibliotekę (root + path)."""
         if d.get("playing") in (True, "1", "true"):  # plik, który właśnie gra w mpv
             path = self.mpv.prop("path") if self.mpv.running() else None
-            if not path or not os.path.isfile(path):
+            if not path:
                 raise ApiError("na komputerze nic nie gra", 409)
+            if not os.path.isfile(path):
+                raise ApiError("film gra z innego serwera, napisy szukaj tam (w Bibliotece albo przy torrencie)", 409)
             return path
         if d.get("torrent_id"):
             return self.resolve_file(d["torrent_id"], int(d["file_index"]))[0]
@@ -741,7 +747,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         if not self.path.startswith(("/api/player/status", "/api/torrents?")):
-            log(self.client_address[0], re.sub(r"token=[^&\s\"]+", "token=…", fmt % args))
+            log(self.client_address[0], re.sub(r"(token|ticket)=[^&\s\"]+", r"\1=…", fmt % args))
 
     def send_json(self, obj, status=200):
         body = json.dumps(obj, ensure_ascii=False).encode()
@@ -752,10 +758,31 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def authorized(self, query):
-        tok = self.app.cfg["token"]
+        """Id sparowanego urządzenia (albo "legacy" dla starego wspólnego tokenu) lub None."""
         h = self.headers.get("Authorization", "")
         given = h[7:] if h.startswith("Bearer ") else (query.get("token") or [""])[0]
-        return secrets.compare_digest(given, tok)
+        return self.app.devices.check(given)
+
+    def ticket_ok(self, p, q):
+        """Bilet (?ticket=) otwiera tylko jeden plik i jego napisy: /media, /lib, /sub."""
+        t = (q.get("ticket") or [""])[0]
+        if not t:
+            return False
+        m = re.fullmatch(r"/media/([0-9a-fA-F]+)/(\d+)(/.*)?", p)
+        if m:
+            scope = self.app.ref_scope({"torrent_id": m.group(1), "file_index": m.group(2)})
+        elif (m := re.fullmatch(r"/lib/(\d+)/(.+)", p)):
+            scope = self.app.ref_scope({"root": m.group(1), "path": urllib.parse.unquote(m.group(2))})
+        elif p == "/sub":
+            scope = self.app.ref_scope({k: v[0] for k, v in q.items()})
+        else:
+            return False
+        return bool(scope) and self.app.devices.check_ticket(t, scope)
+
+    def base_url(self):
+        """Adres tego serwera tak, jak widzi go klient (do URL-i dla innego ekranu w tej samej sieci)."""
+        host = self.headers.get("Host") or f"{self.server.server_address[0]}:{self.server.server_address[1]}"
+        return "http://" + host
 
     def body(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -776,17 +803,65 @@ class Handler(BaseHTTPRequestHandler):
         p = u.path.rstrip("/")
         try:
             if p == "/api/ping":
-                return self.send_json({"ok": True, "app": "magneticplayer", "version": VERSION})
+                # id: apka sprawdza, czy pod znanym adresem jest ten sam serwer, zanim wyśle mu token
+                return self.send_json({"ok": True, "app": "magneticplayer", "version": VERSION, "id": self.app.cfg["id"]})
             if p in ("", "/index.html") and method in ("GET", "HEAD"):
                 # klient webowy (laptop/tablet bez apki); statyczny plik, dane z API i tak wymagają tokenu
                 return self.send_static(os.path.join(WEB_DIR, "index.html"), "text/html; charset=utf-8", method == "HEAD")
-            if not self.authorized(q):
-                raise ApiError("zły token", 401)
             a = self.app
+            if p == "/api/pair" and method == "POST":
+                # bez tokenu: jednorazowy kod (z apki innego urządzenia albo --pair na komputerze) → token urządzenia
+                b = self.body()
+                res, err = a.devices.pair(b.get("code"), b.get("name"))
+                if err:
+                    raise ApiError(err, 403)
+                log("sparowano urządzenie:", (b.get("name") or "?")[:60])
+                return self.send_json({**res, "id": a.cfg["id"], "name": a.name()})
+            self.device = self.authorized(q)
+            if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
+                raise ApiError("zły token", 401)
             if p == "/api/info" and method == "GET":
-                return self.send_json({"hostname": socket.gethostname(), "version": VERSION,
-                                       "backend": a.cfg["backend"], "keep_awake": a.guard.reason,
-                                       **net_info(self.client_address[0])})
+                return self.send_json(a.info(self.client_address[0], self.device))
+            if p == "/api/pair/code" and method == "POST":
+                code, ttl = a.devices.new_code()
+                host, _, port = (self.headers.get("Host") or "").rpartition(":")
+                return self.send_json({"code": code, "expires_in": ttl, "host": host or None,
+                                       "port": int(port) if port.isdigit() else a.cfg["port"],
+                                       "id": a.cfg["id"], "name": a.name()})
+            if p == "/api/devices" and method == "GET":
+                return self.send_json(a.devices.list(self.device))
+            if p == "/api/devices/revoke" and method == "POST":
+                dev = str(self.body().get("id") or "")
+                if not a.devices.revoke(dev):
+                    raise ApiError("nie ma takiego urządzenia", 404)
+                log("odebrano dostęp urządzeniu", dev)
+                return self.send_json({"ok": True})
+            if p == "/api/wake" and method == "POST":
+                b = self.body()
+                try:
+                    platform.send_wol(str(b.get("mac") or ""), b.get("ip"))
+                except ValueError as e:
+                    raise ApiError(str(e), 400)
+                return self.send_json({"ok": True})
+            if p == "/api/media/ticket" and method == "POST":
+                b = self.body()
+                full = a.resolve_ref(b)
+                scope = a.ref_scope(b)
+                if not scope:
+                    raise ApiError("bilet tylko na plik z torrenta albo biblioteki", 400)
+                ticket, exp = a.devices.ticket(scope)
+                base = self.base_url()
+                tq = "ticket=" + urllib.parse.quote(ticket)
+                if b.get("torrent_id"):
+                    url = f"{base}/media/{b['torrent_id']}/{int(b['file_index'])}/{urllib.parse.quote(os.path.basename(full))}?{tq}"
+                    rq = f"torrent_id={b['torrent_id']}&file_index={int(b['file_index'])}"
+                else:
+                    path = b.get("path", "")
+                    url = f"{base}/lib/{int(b['root'])}/{urllib.parse.quote(path)}?{tq}"
+                    rq = f"root={int(b['root'])}&path={urllib.parse.quote(path)}"
+                subs = [{"name": x["name"], "lang": x.get("lang"),
+                         "url": f"{base}/sub?{rq}&name={urllib.parse.quote(x['name'])}&{tq}"} for x in sidecar_subs(full)]
+                return self.send_json({"url": url, "subs": subs, "title": os.path.basename(full), "expires": exp})
             if p == "/api/app/version" and method == "GET":
                 return self.send_json(apk_version())
             if p == "/app/MagneticPlayer.apk" and method in ("GET", "HEAD"):
@@ -850,11 +925,14 @@ class Handler(BaseHTTPRequestHandler):
                                    lambda: a.resolve_file(tid, idx)[1].get("_pieces"))
             if p == "/api/player/open" and method == "POST":
                 b = self.body()
-                full = a.resolve_ref(b)
-                a.mpv.open(full)
-                if b.get("start"):
-                    time.sleep(0.8)
-                    a.mpv.cmd("seek", float(b["start"]), "absolute")
+                if b.get("url"):  # film z innego serwera (URL z biletem z /api/media/ticket)
+                    url = str(b["url"])
+                    subs = [str(u) for u in b.get("subs") or [] if str(u).startswith(("http://", "https://"))]
+                    if not url.startswith(("http://", "https://")):
+                        raise ApiError("url musi być http(s)", 400)
+                    a.mpv.open(url, b.get("title"), subs, b.get("start"))
+                else:
+                    a.mpv.open(a.resolve_ref(b), start=b.get("start"))
                 return self.send_json({"ok": True})
             if p == "/api/player/status" and method == "GET":
                 return self.send_json(a.mpv.status())
@@ -1065,10 +1143,51 @@ class QuietServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def lan_ip():
+    """Adres w sieci lokalnej (bez wysyłania czegokolwiek: connect na UDP tylko wybiera trasę)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.168.0.1", 9))
+            return s.getsockname()[0]
+    except OSError:
+        return socket.gethostbyname(socket.gethostname())
+
+
+def cli_pair(cfg, devices):
+    """Kod parowania dla pierwszego telefonu (albo gdy nie ma pod ręką sparowanego): QR w terminalu."""
+    code, ttl = devices.new_code()
+    host = lan_ip()
+    name = cfg.get("name") or socket.gethostname()
+    link = "magneticplayer://pair?" + urllib.parse.urlencode(
+        {"host": host, "port": cfg["port"], "code": code, "id": cfg["id"], "name": name})
+    print(f"Sparuj telefon z „{name}”: w apce MagneticPlayer Ustawienia → „Dodaj serwer”,")
+    print(f"zeskanuj kod aparatem albo wpisz ręcznie. Kod działa raz, przez {ttl // 60} min.\n")
+    if shutil.which("qrencode"):
+        subprocess.run(["qrencode", "-t", "ANSIUTF8", link])
+    else:
+        print("(QR w terminalu po: sudo apt install qrencode)")
+    print(f"  adres: {host}   port: {cfg['port']}   kod: {code[:3]}-{code[3:]}")
+    print(f"  link:  {link}")
+    print(f"  przeglądarka: http://{host}:{cfg['port']}/#p={code}")
+
+
 def main():
     cfg = load_config()
     if "--print-token" in sys.argv:
         print(cfg["token"])
+        return
+    devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
+    if "--pair" in sys.argv:
+        return cli_pair(cfg, devices)
+    if "--devices" in sys.argv:
+        for d in devices.list():
+            seen = time.strftime("%Y-%m-%d %H:%M", time.localtime(d["last_seen"])) if d.get("last_seen") else "nigdy"
+            print(f"{d['id']:14} {d['name']:30} ostatnio: {seen}")
+        return
+    if "--revoke" in sys.argv:
+        i = sys.argv.index("--revoke")
+        dev = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+        print("odebrano dostęp" if devices.revoke(dev) else f"nie ma urządzenia {dev!r} (lista: --devices)")
         return
     app = App(cfg)
     Handler.app = app

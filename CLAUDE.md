@@ -6,7 +6,7 @@ jako pilotem. Opis dla ludzi jest w `README.md` i `docs/`. Przeczytaj je przed w
 - `docs/api.md`: każdy endpoint agenta;
 - `docs/instalacja-i-utrzymanie.md`: deploy, aktualizacje apki, klucz podpisu, typowe problemy;
 - `docs/siec-i-bezpieczenstwo.md`: założenie „tylko LAN”, token, `auto_unlock`;
-- `docs/plan-wiele-serwerow.md`: plan etapu 1 (wiele serwerów, pliki vs ekran, parowanie), jeszcze niewdrożony.
+- `docs/plan-wiele-serwerow.md`: decyzje etapu 1 (wiele serwerów, pliki vs ekran, parowanie, tokeny per urządzenie), wdrożony.
 
 Odpowiadaj po polsku.
 

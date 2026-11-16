@@ -4,10 +4,13 @@
 set -euo pipefail
 U=${1:?podaj użytkownika}
 PORT=${2:-8765}
+BACKEND=${3:-deluge}
 
 echo "== pakiety"
 need=()
-for p in deluged deluge-web mpv ethtool; do
+pkgs=(mpv ethtool qrencode)
+[ "$BACKEND" = deluge ] && pkgs+=(deluged deluge-web)
+for p in "${pkgs[@]}"; do
   dpkg -s "$p" >/dev/null 2>&1 || need+=("$p")
 done
 if [ ${#need[@]} -gt 0 ]; then

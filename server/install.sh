@@ -2,18 +2,21 @@
 # Instalacja agenta MagneticPlayer na komputerze (Linux Mint). Uruchom jako zwykły użytkownik:
 #   bash install.sh            # pełna instalacja (część rootowa przez pkexec)
 #   SKIP_ROOT=1 bash install.sh  # tylko część użytkownika (gdy install-root.sh puszczony osobno)
+#   BACKEND=none bash install.sh # serwer bez torrentów (tylko ekran z mpv i/lub biblioteka), bez Deluge
 set -euo pipefail
 SRC=$(cd "$(dirname "$0")" && pwd)
 DEST=~/.local/share/magneticplayer
 UNITS=~/.config/systemd/user
 PORT=8765
+BACKEND_SET=${BACKEND+x}
+BACKEND=${BACKEND:-deluge}
 
 if [ -z "${SKIP_ROOT:-}" ]; then
   # pkexec tylko w lokalnej sesji graficznej; przez SSH polkit nie ma sesji ("No session for cookie")
   if [ -z "${SSH_CONNECTION:-}" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && ! sudo -n true 2>/dev/null; then
-    pkexec bash "$SRC/install-root.sh" "$USER" "$PORT"
+    pkexec bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND"
   else
-    sudo bash "$SRC/install-root.sh" "$USER" "$PORT"
+    sudo bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND"
   fi
 fi
 
@@ -27,6 +30,20 @@ echo "== napisy: subliminal w venv ($DEST/venv)"
 [ -x "$DEST/venv/bin/python" ] || python3 -m venv "$DEST/venv"
 "$DEST/venv/bin/pip" install --isolated -q --upgrade subliminal || echo "UWAGA: subliminal się nie zainstalował — napisy nie zadziałają"
 
+if [ -n "$BACKEND_SET" ]; then
+  echo "== backend: $BACKEND"
+  python3 - "$BACKEND" <<'EOF'
+import json, os, sys
+p = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
+cfg = json.load(open(p)) if os.path.exists(p) else {}
+cfg["backend"] = sys.argv[1]
+os.makedirs(os.path.dirname(p), exist_ok=True)
+json.dump(cfg, open(p, "w"), indent=2, ensure_ascii=False)
+os.chmod(p, 0o600)
+EOF
+fi
+
+if [ "$BACKEND" = deluge ]; then
 echo "== Deluge: tryb klient-serwer (GTK łączy się z deluged zamiast trzymać torrenty w sobie)"
 pkill -x deluge-gtk 2>/dev/null && { echo "zamknięto okno Deluge"; sleep 2; } || true
 pkill -f "bin/deluge$" 2>/dev/null || true
@@ -73,6 +90,7 @@ Restart=on-failure
 [Install]
 WantedBy=default.target
 EOF
+fi
 
 cat > "$UNITS/magneticplayer.service" <<EOF
 [Unit]
@@ -89,23 +107,16 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now deluged deluge-web
+[ "$BACKEND" = deluge ] && systemctl --user enable --now deluged deluge-web
 systemctl --user enable magneticplayer
 systemctl --user restart magneticplayer
 sleep 2
-
-TOKEN=$(python3 "$DEST/magneticplayer_agent.py" --print-token)
-DEV=$(ip -o route get 1.1.1.1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')
-IP=$(ip -o route get 1.1.1.1 | sed -n 's/.* src \([^ ]*\).*/\1/p')
-MAC=$(cat "/sys/class/net/$DEV/address")
-URL="magneticplayer://pair?host=$IP&port=$PORT&token=$TOKEN&mac=$MAC"
 
 echo
 systemctl --user --no-pager --lines=5 status magneticplayer | head -12 || true
 echo
 echo "================ MagneticPlayer ================"
-echo " komputer: $IP:$PORT   MAC: $MAC ($DEV)"
-echo " token:    $TOKEN"
-echo " parowanie: $URL"
-command -v qrencode >/dev/null && qrencode -t ansiutf8 "$URL"
+python3 "$DEST/magneticplayer_agent.py" --pair
+echo " kolejny kod: python3 $DEST/magneticplayer_agent.py --pair"
+echo " urządzenia:  python3 $DEST/magneticplayer_agent.py --devices / --revoke <id>"
 echo "==============================================="

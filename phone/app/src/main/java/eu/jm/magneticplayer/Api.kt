@@ -18,20 +18,10 @@ import java.net.URLDecoder
 class ApiException(msg: String, val code: Int = 0) : Exception(msg)
 
 class Settings(ctx: Context) {
+    val ctx: Context = ctx.applicationContext
     private val p = ctx.applicationContext.getSharedPreferences("magneticplayer", Context.MODE_PRIVATE)
 
-    var host: String
-        get() = p.getString("host", "192.168.100.100")!!
-        set(v) = p.edit().putString("host", v.trim()).apply()
-    var port: Int
-        get() = p.getInt("port", 8765)
-        set(v) = p.edit().putInt("port", v).apply()
-    var token: String
-        get() = p.getString("token", "")!!
-        set(v) = p.edit().putString("token", v.trim()).apply()
-    var mac: String
-        get() = p.getString("mac", "")!!
-        set(v) = p.edit().putString("mac", v.trim().lowercase()).apply()
+    // adres, token i MAC serwerów: Servers (dawne pola host/port/token/mac czyta tylko migracja)
     var sequential: Boolean
         get() = p.getBoolean("sequential", true)
         set(v) = p.edit().putBoolean("sequential", v).apply()
@@ -48,7 +38,6 @@ class Settings(ctx: Context) {
         get() = p.getInt("buffer_min", 5)
         set(v) = p.edit().putInt("buffer_min", v).apply()
 
-    val configured get() = host.isNotBlank() && token.isNotBlank()
 
     fun position(key: String): Long = p.getLong("pos:$key", 0)
     fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).apply()
@@ -60,24 +49,6 @@ class Settings(ctx: Context) {
         p.edit().putFloat("cw:$key", watched).putLong("cu:$key", System.currentTimeMillis()).apply()
     fun forgetCache(key: String) = p.edit().remove("cw:$key").remove("cu:$key").apply()
 
-    /** magneticplayer://pair?host=…&port=…&token=…&mac=… */
-    /** Link do sparowania kolejnego telefonu z tym samym komputerem (QR w Ustawieniach). */
-    fun pairUri(): String = Uri.Builder().scheme("magneticplayer").authority("pair")
-        .appendQueryParameter("host", host).appendQueryParameter("port", port.toString())
-        .appendQueryParameter("token", token).apply { if (mac.isNotEmpty()) appendQueryParameter("mac", mac) }
-        .build().toString()
-
-    /** Klient webowy (laptop/tablet): token w #t= zapisze się w przeglądarce i zniknie z paska adresu. */
-    fun webUri(): String = "http://$host:$port/#t=" + Uri.encode(token)
-
-    fun applyPairUri(uri: Uri): Boolean {
-        val t = uri.getQueryParameter("token") ?: return false
-        uri.getQueryParameter("host")?.let { host = it }
-        uri.getQueryParameter("port")?.toIntOrNull()?.let { port = it }
-        uri.getQueryParameter("mac")?.let { mac = it }
-        token = t
-        return true
-    }
 }
 
 data class Torrent(
@@ -118,45 +89,55 @@ val AFTER_LABELS = linkedMapOf(
     "suspend" to "uśpij komputer",
 )
 
-/** Wskazanie pliku na komputerze: z torrenta, z biblioteki albo „to, co gra teraz w mpv”. */
+/**
+ * Wskazanie pliku na serwerze `srv` (klucz z [Servers]): z torrenta, z biblioteki albo „to, co gra teraz w mpv”.
+ * [key] (bufor na dysku, pozycja oglądania) ma prefiks serwera, poza serwerem [LEGACY] (dawne klucze zostają).
+ */
 sealed class MediaRef {
     abstract val title: String
+    abstract val srv: String
+    /** wskazanie dla API serwera (bez `srv`) */
     abstract fun json(o: JSONObject = JSONObject()): JSONObject
     abstract fun query(): String
-    abstract fun key(): String
+    protected abstract fun localKey(): String
+    fun key() = Servers.prefixOf(srv) + localKey()
 
-    data class InTorrent(val torrentId: String, val index: Int, override val title: String) : MediaRef() {
+    data class InTorrent(val torrentId: String, val index: Int, override val title: String, override val srv: String = LEGACY) : MediaRef() {
         override fun json(o: JSONObject) = o.put("torrent_id", torrentId).put("file_index", index)
         override fun query() = "torrent_id=$torrentId&file_index=$index"
-        override fun key() = "$torrentId/$index"
+        override fun localKey() = "$torrentId/$index"
     }
 
-    data class InLibrary(val root: Int, val path: String) : MediaRef() {
+    data class InLibrary(val root: Int, val path: String, override val srv: String = LEGACY) : MediaRef() {
         override val title get() = path.substringAfterLast('/')
         override fun json(o: JSONObject) = o.put("root", root).put("path", path)
         override fun query() = "root=$root&path=${Uri.encode(path)}"
-        override fun key() = "lib$root/$path"
+        override fun localKey() = "lib$root/$path"
     }
 
-    data class Playing(override val title: String) : MediaRef() {
+    data class Playing(override val title: String, override val srv: String = LEGACY) : MediaRef() {
         override fun json(o: JSONObject) = o.put("playing", true)
         override fun query() = "playing=1"
-        override fun key() = "playing"
+        override fun localKey() = "playing"
     }
 
-    fun encode(): String = json().put("title", title).toString()
+    fun encode(): String = json().put("title", title).put("srv", srv).toString()
 
     companion object {
         fun decode(s: String): MediaRef {
             val o = JSONObject(s)
+            val srv = o.optString("srv").ifEmpty { LEGACY }
             return when {
-                o.has("torrent_id") -> InTorrent(o.getString("torrent_id"), o.getInt("file_index"), o.optString("title"))
-                o.has("root") -> InLibrary(o.getInt("root"), o.getString("path"))
-                else -> Playing(o.optString("title"))
+                o.has("torrent_id") -> InTorrent(o.getString("torrent_id"), o.getInt("file_index"), o.optString("title"), srv)
+                o.has("root") -> InLibrary(o.getInt("root"), o.getString("path"), srv)
+                else -> Playing(o.optString("title"), srv)
             }
         }
     }
 }
+
+/** Film z innego serwera dla ekranu: URL i napisy z biletem (POST /api/media/ticket). */
+data class Ticket(val url: String, val subs: List<String>, val title: String)
 
 data class TFile(
     val index: Int, val path: String, val size: Long, val progress: Double, val media: String?,
@@ -173,7 +154,7 @@ object Wol {
         return ByteArray(6) { 0xFF.toByte() } + ByteArray(16 * 6) { b[it % 6] }
     }
 
-    /** Magic packet na broadcast ogólny i podsieci /24 komputera, porty 9 i 7. */
+    /** Magic packet na broadcast ogólny i podsieci /24 serwera, porty 9 i 7. */
     fun send(mac: String, host: String) {
         val data = packet(mac)
         val targets = mutableListOf("255.255.255.255")
@@ -187,17 +168,28 @@ object Wol {
     }
 }
 
-class Api(val s: Settings) {
-    val base get() = "http://${s.host}:${s.port}"
+/** API jednego serwera. `srv` to migawka z [Servers]; zmiany (MAC, info) zapisuje z powrotem. */
+class Api(val s: Settings, val srv: Server) {
+    val base get() = "http://${srv.host}:${srv.port}"
+    val configured get() = srv.host.isNotBlank() && srv.token.isNotBlank()
+    private val ctx get() = s.ctx
+
+    companion object {
+        fun active(ctx: Context) = Api(Settings(ctx), Servers.active(ctx))
+        fun of(ctx: Context, key: String?): Api? = Servers.get(ctx, key)?.let { Api(Settings(ctx), it) }
+        /** Serwer, z którego pochodzi film. */
+        fun forRef(ctx: Context, ref: MediaRef): Api =
+            of(ctx, ref.srv) ?: throw ApiException("Nie ma już serwera, z którego był ten film")
+    }
 
     private fun call(method: String, path: String, body: JSONObject? = null, timeout: Int = 8000): String {
-        if (!s.configured) throw ApiException("Uzupełnij ustawienia (adres i token)")
+        if (!configured) throw ApiException("Dodaj serwer (Ustawienia → Dodaj serwer)")
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {
             c.requestMethod = method
             c.connectTimeout = timeout
             c.readTimeout = timeout
-            c.setRequestProperty("Authorization", "Bearer ${s.token}")
+            c.setRequestProperty("Authorization", "Bearer ${srv.token}")
             if (body != null) {
                 c.doOutput = true
                 c.setRequestProperty("Content-Type", "application/json")
@@ -211,7 +203,7 @@ class Api(val s: Settings) {
             }
             return text
         } catch (e: IOException) {
-            throw ApiException("Komputer nie odpowiada (${e.javaClass.simpleName})")
+            throw ApiException("${srv.name.ifEmpty { "Serwer" }} nie odpowiada (${e.javaClass.simpleName})")
         } finally {
             c.disconnect()
         }
@@ -219,16 +211,48 @@ class Api(val s: Settings) {
 
     fun get(path: String): String = call("GET", path)
 
-    fun ping(timeout: Int = 1500): Boolean = runCatching {
-        JSONObject(call("GET", "/api/ping", timeout = timeout)).optBoolean("ok")
-    }.getOrDefault(false)
+    /**
+     * Czy serwer odpowiada. Bez tokenu (/api/ping), a gdy pod adresem jest inny serwer (inne id), to tak jakby
+     * nie odpowiadał: wtedy [wrongServer] = true i nie wysyłamy mu tokenu.
+     */
+    fun ping(timeout: Int = 1500): Boolean {
+        if (srv.host.isBlank()) return false
+        val c = runCatching { URL("$base/api/ping").openConnection() as HttpURLConnection }.getOrNull() ?: return false
+        return try {
+            c.connectTimeout = timeout; c.readTimeout = timeout
+            val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+            val id = j.optString("id")
+            wrongServer = srv.uid != null && id.isNotEmpty() && id != srv.uid
+            j.optBoolean("ok") && !wrongServer
+        } catch (e: Exception) {
+            false
+        } finally {
+            c.disconnect()
+        }
+    }
 
-    /** Info o komputerze; przy okazji zapamiętuje MAC do Wake-on-LAN. */
+    @Volatile var wrongServer = false
+
+    fun infoRaw(): JSONObject = JSONObject(call("GET", "/api/info"))
+
+    /** Info o serwerze; zapisuje możliwości, id i MAC do Wake-on-LAN. */
     fun info(): JSONObject {
-        val j = JSONObject(call("GET", "/api/info"))
-        val mac = j.optString("mac")
-        if (mac.matches(Regex("([0-9a-f]{2}:){5}[0-9a-f]{2}")) && mac != "00:00:00:00:00:00") s.mac = mac
+        val j = infoRaw()
+        val mac = j.optString("mac").takeIf { it.matches(Regex("([0-9a-f]{2}:){5}[0-9a-f]{2}")) && it != "00:00:00:00:00:00" }
+        val uid = j.optString("id").takeIf { it.isNotEmpty() }
+        Servers.update(ctx, srv.key) { it.copy(info = j, mac = mac ?: it.mac, uid = it.uid ?: uid) }
         return j
+    }
+
+    fun pairCode(): JSONObject = JSONObject(call("POST", "/api/pair/code", JSONObject()))
+    fun devices(): JSONArray = JSONArray(call("GET", "/api/devices"))
+    fun revoke(id: String) { call("POST", "/api/devices/revoke", JSONObject().put("id", id)) }
+    fun wakeOther(mac: String, host: String) { call("POST", "/api/wake", JSONObject().put("mac", mac).put("ip", host), 4000) }
+
+    fun ticket(ref: MediaRef): Ticket {
+        val o = JSONObject(call("POST", "/api/media/ticket", ref.json()))
+        val a = o.optJSONArray("subs") ?: JSONArray()
+        return Ticket(o.getString("url"), List(a.length()) { a.getJSONObject(it).getString("url") }, o.optString("title"))
     }
 
     fun torrents(): List<Torrent> {
@@ -315,7 +339,7 @@ class Api(val s: Settings) {
         }
     }
 
-    fun subUrl(ref: MediaRef, name: String) = "$base/sub?${ref.query()}&name=${Uri.encode(name)}&token=${Uri.encode(s.token)}"
+    fun subUrl(ref: MediaRef, name: String) = "$base/sub?${ref.query()}&name=${Uri.encode(name)}&token=${Uri.encode(srv.token)}"
 
     private fun subsBody(ref: MediaRef, title: String?, year: Int?) = ref.json().put("languages", s.subLanguages).apply {
         if (!title.isNullOrBlank()) put("title", title.trim())
@@ -381,38 +405,62 @@ class Api(val s: Settings) {
     fun playerOpen(ref: MediaRef, startSec: Double? = null) {
         val b = ref.json()
         if (startSec != null) b.put("start", startSec)
-        call("POST", "/api/player/open", b, 15000)
+        call("POST", "/api/player/open", b, 20000)
+    }
+
+    /** Film z innego serwera (URL z biletem). */
+    fun playerOpenUrl(t: Ticket, startSec: Double? = null) {
+        val b = JSONObject().put("url", t.url).put("subs", JSONArray(t.subs)).put("title", t.title)
+        if (startSec != null && startSec > 0) b.put("start", startSec)
+        call("POST", "/api/player/open", b, 25000)
     }
 
     fun suspendPc() { call("POST", "/api/system/suspend") }
     fun screenOn() { call("POST", "/api/system/screen_on") }
 
     fun mediaUrl(ref: MediaRef): String = when (ref) {
-        is MediaRef.InTorrent -> "$base/media/${ref.torrentId}/${ref.index}/${Uri.encode(ref.title)}?token=${Uri.encode(s.token)}"
-        is MediaRef.InLibrary -> "$base/lib/${ref.root}/${ref.path.split('/').joinToString("/") { Uri.encode(it) }}?token=${Uri.encode(s.token)}"
+        is MediaRef.InTorrent -> "$base/media/${ref.torrentId}/${ref.index}/${Uri.encode(ref.title)}?token=${Uri.encode(srv.token)}"
+        is MediaRef.InLibrary -> "$base/lib/${ref.root}/${ref.path.split('/').joinToString("/") { Uri.encode(it) }}?token=${Uri.encode(srv.token)}"
         is MediaRef.Playing -> throw ApiException("nie da się strumieniować „tego, co gra”")
     }
 
-    /** Jeśli komputer śpi: Wake-on-LAN i czekanie, aż agent odpowie (do 2 min). */
+    /**
+     * Jeśli serwer śpi: Wake-on-LAN i czekanie, aż agent odpowie (do 2 min). Pakiet idzie z telefonu, a po kilku
+     * sekundach także przez inne działające serwery (`wake_others`), bo z telefonu nie przejdzie do innej podsieci.
+     * Udane budzenie zapamiętujemy (`wakeOk`), wtedy „Uśpij” nie ostrzega.
+     */
     suspend fun ensureAwake(onStatus: (String) -> Unit): Unit = withContext(Dispatchers.IO) {
         if (ping()) return@withContext
-        val mac = s.mac
+        if (wrongServer) throw ApiException("Pod adresem ${srv.host} odpowiada inny serwer. Sparuj ${srv.name} ponownie.")
+        val mac = Servers.get(ctx, srv.key)?.mac.orEmpty().ifBlank { srv.mac }
         if (mac.isBlank()) throw ApiException(
-            "Komputer nie odpowiada, a nie znam jego MAC. Połącz się raz, gdy jest włączony (Ustawienia → Testuj)."
+            "${srv.name} nie odpowiada, a nie znam jego MAC. Połącz się raz, gdy działa (Ustawienia → serwer → Testuj)."
         )
+        val name = srv.name.ifEmpty { "serwer" }
         val start = System.currentTimeMillis()
         var lastWol = 0L
+        var via: String? = null
         while (System.currentTimeMillis() - start < 120_000) {
             val now = System.currentTimeMillis()
             if (now - lastWol > 15_000) {
-                runCatching { Wol.send(mac, s.host) }
+                runCatching { Wol.send(mac, srv.host) }
                 lastWol = now
             }
-            onStatus("Budzę komputer… ${(now - start) / 1000} s")
-            if (ping(1500)) return@withContext
+            if (via == null && now - start > 6_000) {
+                // pakiet z telefonu nie zadziałał (może inna podsieć): prosimy działający serwer
+                via = Servers.all(ctx).filter { it.key != srv.key && it.canWakeOthers }.firstNotNullOfOrNull { o ->
+                    val a = Api(s, o)
+                    if (a.ping(1000) && runCatching { a.wakeOther(mac, srv.host) }.isSuccess) o.name else null
+                } ?: ""
+            }
+            onStatus(if (!via.isNullOrEmpty()) "Budzę $name przez $via… ${(now - start) / 1000} s" else "Budzę $name… ${(now - start) / 1000} s")
+            if (ping(1500)) {
+                Servers.update(ctx, srv.key) { it.copy(wakeOk = true) }
+                return@withContext
+            }
             delay(1500)
         }
-        throw ApiException("Komputer nie wstał w 2 minuty. Sprawdź Wake-on-LAN w BIOS-ie i kabel sieciowy.")
+        throw ApiException("$name nie wstał w 2 minuty. Sprawdź Wake-on-LAN w BIOS-ie i kabel sieciowy.")
     }
 
     /** Dodanie magneta z ponawianiem — po wybudzeniu deluged/deluge-web potrzebują chwili. */

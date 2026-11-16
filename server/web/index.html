@@ -83,9 +83,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 </header>
 <main>
   <section id="login" hidden class="card">
-    <p class="name">Podaj token</p>
-    <p class="muted">Token jest w linku parowania (<span class="kbd">token=…</span>) albo w apce: Ustawienia. Zapamiętam go w tej przeglądarce.</p>
-    <div class="row"><input type="password" id="tokenInput" class="grow" placeholder="token"><button class="btn primary" id="tokenSave">Zaloguj</button></div>
+    <p class="name">Sparuj tę przeglądarkę</p>
+    <p class="muted">Kod parowania (np. <span class="kbd">7KQ-M4X</span>) da apka na telefonie: Ustawienia → serwer → „Sparuj kolejne”, albo komputer: <span class="kbd">magneticplayer_agent.py --pair</span>. Działa też stary token. Zapamiętam dostęp w tej przeglądarce.</p>
+    <div class="row"><input type="text" id="tokenInput" class="grow" placeholder="kod parowania albo token" autocomplete="off"><button class="btn primary" id="tokenSave">Połącz</button></div>
   </section>
   <section id="torrents"></section>
   <section id="library" hidden></section>
@@ -101,17 +101,29 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
-let token = "";
+let token = "", pairCode = null;
 (() => {
   const m = location.hash.match(/(?:^#|&)t(?:oken)?=([^&]+)/);
-  if (m) {
-    token = decodeURIComponent(m[1]); store.set("mp_token", token);
-    // token znika z paska adresu (i z historii), reszta (#tab=…) zostaje
-    const rest = location.hash.slice(1).split("&").filter(x => x && !/^t(oken)?=/.test(x)).join("&");
+  const p = location.hash.match(/(?:^#|&)p=([^&]+)/);
+  if (m) { token = decodeURIComponent(m[1]); store.set("mp_token", token); }
+  else token = store.get("mp_token") || "";
+  if (p) pairCode = decodeURIComponent(p[1]);
+  if (m || p) {
+    // token i kod znikają z paska adresu (i z historii), reszta (#tab=…) zostaje
+    const rest = location.hash.slice(1).split("&").filter(x => x && !/^(t(oken)?|p)=/.test(x)).join("&");
     history.replaceState(null, "", location.pathname + (rest ? "#" + rest : ""));
   }
-  else token = store.get("mp_token") || "";
 })();
+const isCode = v => /^[A-Za-z0-9]{3}-?[A-Za-z0-9]{3}$/.test(v.trim());
+/** Jednorazowy kod parowania → własny token tej przeglądarki. */
+async function pairWith(code) {
+  const ua = navigator.userAgent, os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
+  const r = await fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, name: "Przeglądarka" + (os ? " · " + os : "") }) });
+  let j = null; try { j = await r.json(); } catch {}
+  if (!r.ok) throw new Error((j && j.error) || "HTTP " + r.status);
+  token = j.token; store.set("mp_token", token);
+}
 const AFTER = { none: "nic", stop: "zatrzymaj torrent", suspend: "uśpij komputer" };
 const PROVIDERS = { opensubtitlescom: "OpenSubtitles", podnapisi: "Podnapisi", bsplayer: "BSPlayer",
   gestdown: "Gestdown (Addic7ed)", napiprojekt: "NapiProjekt", tvsubtitles: "TVsubtitles" };
@@ -182,7 +194,13 @@ $("#dlg").addEventListener("close", () => { const d = $("#dlg"); if (d._onClose)
 // ---------------------------------------------------------------- nagłówek, zakładki
 let online = false, tab = (location.hash.match(/tab=(torrents|library|remote)/) || [])[1] || store.get("mp_tab") || "torrents";
 function showLogin() { $("#login").hidden = false; for (const s of ["torrents", "library", "remote"]) $("#" + s).hidden = true; }
-$("#tokenSave").onclick = () => { token = $("#tokenInput").value.trim(); store.set("mp_token", token); $("#login").hidden = true; setTab(tab); };
+$("#tokenSave").onclick = async () => {
+  const v = $("#tokenInput").value.trim();
+  if (isCode(v)) {
+    try { await pairWith(v); } catch (e) { return toast(e.message); }
+  } else { token = v; store.set("mp_token", token); }
+  $("#login").hidden = true; setTab(tab);
+};
 $("#tokenInput").addEventListener("keydown", e => { if (e.key === "Enter") $("#tokenSave").click(); });
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
 function setTab(t) {
@@ -532,7 +550,8 @@ const Player = (() => {
 })();
 
 ping();
-setTab(tab);
+if (pairCode) pairWith(pairCode).then(() => setTab(tab), e => { toast("Parowanie: " + e.message); setTab(tab); });
+else setTab(tab);
 </script>
 </body>
 </html>

@@ -97,6 +97,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -129,21 +130,17 @@ const val TAB_SETTINGS = 3
 const val TAB_OFFLINE = 4
 
 class MainActivity : ComponentActivity() {
-    private lateinit var settings: Settings
-    private lateinit var api: Api
     private val tab = mutableIntStateOf(0)
     private val settingsVersion = mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        settings = Settings(this)
-        api = Api(settings)
-        if (!settings.configured) tab.intValue = TAB_SETTINGS
+        if (Servers.all(this).isEmpty()) tab.intValue = TAB_SETTINGS
         // bufor na dysku: obejrzane i stare filmy, także po ubiciu apki w trakcie oglądania
         Thread { MediaCache.sweep(this) }.start()
         handleIntent(intent)
-        setContent { AppTheme { MainScreen(api, tab, settingsVersion) } }
+        setContent { AppTheme { MainScreen(tab, settingsVersion) } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -151,20 +148,39 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
+    /** magneticplayer://pair… (QR z komputera albo z innego telefonu): parowanie z jednym lub kilkoma serwerami. */
     private fun handleIntent(i: Intent) {
         if (i.hasExtra("tab")) tab.intValue = i.getIntExtra("tab", 0)
         val data = i.data ?: return
-        if (data.scheme == "magneticplayer" && settings.applyPairUri(data)) {
+        if (data.scheme != "magneticplayer") return
+        val targets = Pairing.parse(data)
+        if (targets.isEmpty()) return
+        Toast.makeText(this, "Paruję…", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val msg = withContext(Dispatchers.IO) {
+                val ok = mutableListOf<String>()
+                val bad = mutableListOf<String>()
+                targets.forEach { t ->
+                    try {
+                        ok += Pairing.pair(this@MainActivity, t).name
+                    } catch (e: Exception) {
+                        bad += "${t.host}: ${e.message}"
+                    }
+                }
+                listOfNotNull(ok.takeIf { it.isNotEmpty() }?.let { "Sparowano: ${it.joinToString()}" },
+                    bad.takeIf { it.isNotEmpty() }?.let { "Nie udało się: ${it.joinToString("; ")}" }).joinToString("\n")
+            }
             settingsVersion.intValue++
-            tab.intValue = TAB_TORRENTS
-            Toast.makeText(this, "Sparowano z ${settings.host}", Toast.LENGTH_SHORT).show()
+            if (Servers.all(this@MainActivity).isNotEmpty()) tab.intValue = TAB_TORRENTS
+            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
         }
     }
 
-    /** Na zakładce Pilot przyciski głośności telefonu sterują głośnością mpv na komputerze. */
+    /** Na zakładce Pilot przyciski głośności telefonu sterują głośnością mpv na wybranym ekranie. */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (tab.intValue == TAB_REMOTE && (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)) {
             val d = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) 5 else -5
+            val api = Api.of(this, Servers.screenKey(this)) ?: return super.onKeyDown(keyCode, event)
             lifecycleScope.launch(Dispatchers.IO) { runCatching { api.playerCmd("volume_rel", d) } }
             return true
         }
@@ -183,73 +199,93 @@ private fun CoroutineScope.io(snack: SnackbarHostState, block: suspend () -> Uni
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainScreen(api: Api, tab: MutableIntState, settingsVersion: MutableIntState) {
+private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var online by remember { mutableStateOf<Boolean?>(null) }
-    var hostname by remember { mutableStateOf<String?>(null) }
+    val ctx = LocalContext.current
+    val ver = settingsVersion.intValue
+    fun changed() { settingsVersion.intValue++ }
+    // serwer plików (Torrenty, Biblioteka, Uśpij) i ekran Pilota
+    val servers = remember(ver) { Servers.all(ctx) }
+    val api = remember(ver) { Api.active(ctx) }
+    var screenKey by remember(ver) { mutableStateOf(Servers.screenKey(ctx)) }
+    val screenApi = remember(ver, screenKey) { Api.of(ctx, screenKey) }
+    var online by remember(ver) { mutableStateOf<Boolean?>(null) }
+    var wrong by remember(ver) { mutableStateOf(false) }
     var waking by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
     var confirmSuspend by remember { mutableStateOf(false) }
-    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var sheet by remember { mutableStateOf(false) }
+    var addServer by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<AppUpdate?>(null) }
     var updating by remember { mutableStateOf<Int?>(null) }
-    val ver = settingsVersion.intValue
     LaunchedEffect(online == true, ver) {
         if (online == true) update = withContext(Dispatchers.IO) { Updater.check(ctx, api) }
     }
 
     LaunchedEffect(ver) {
+        var first = true
         while (true) {
             val ok = withContext(Dispatchers.IO) { api.ping() }
             online = ok
-            if (ok && hostname == null) {
-                hostname = withContext(Dispatchers.IO) { runCatching { api.info().optString("hostname") }.getOrNull() }
+            wrong = api.wrongServer
+            // możliwości serwera (przyciski, budzenie) odświeżane raz po połączeniu
+            if (ok && first) {
+                first = false
+                withContext(Dispatchers.IO) { runCatching { api.info() } }
             }
             delay(if (ok) 5000 else 3000)
         }
     }
+    val srv = remember(ver, online) { Servers.get(ctx, api.srv.key) ?: api.srv }
 
-    fun wake() = scope.launch {
+    fun wake(key: String = api.srv.key) = scope.launch {
+        val a = Api.of(ctx, key) ?: return@launch
         try {
-            api.ensureAwake { waking = it }
-            online = true
-            snack.showSnackbar("Komputer działa")
+            a.ensureAwake { waking = it }
+            if (key == api.srv.key) online = true
+            snack.showSnackbar("${a.srv.name} działa")
         } catch (e: ApiException) {
             snack.showSnackbar(e.message ?: "Błąd")
         } finally {
             waking = null
         }
     }
+    val onPlaying = { screenKey = Servers.screenKey(ctx); tab.intValue = TAB_REMOTE }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("MagneticPlayer")
+                    Column(if (servers.size > 1) Modifier.clickable { sheet = true } else Modifier) {
+                        Text(if (servers.isEmpty()) "MagneticPlayer" else srv.name + if (servers.size > 1) " ▾" else "",
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                         val (txt, col) = when {
+                            servers.isEmpty() -> "dodaj serwer w Ustawieniach" to MaterialTheme.colorScheme.onSurfaceVariant
                             waking != null -> waking!! to MaterialTheme.colorScheme.tertiary
-                            online == true -> "● ${hostname ?: api.s.host} — działa" to Color(0xFF3FA96B)
-                            online == false -> "● ${api.s.host} — śpi albo wyłączony" to MaterialTheme.colorScheme.error
+                            wrong -> "● pod tym adresem jest inny serwer" to MaterialTheme.colorScheme.error
+                            online == true -> "● działa · ${srv.roles}" to OK_GREEN
+                            online == false -> "● śpi albo wyłączony" to MaterialTheme.colorScheme.error
                             else -> "…" to MaterialTheme.colorScheme.onSurfaceVariant
                         }
                         Text(txt, style = MaterialTheme.typography.labelMedium, color = col)
                     }
                 },
                 actions = {
-                    if (online == false && waking == null) {
+                    if (online == false && !wrong && waking == null && srv.mac.isNotBlank()) {
                         TextButton({ wake() }) { Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(4.dp)); Text("Obudź") }
                     }
-                    if (online == true && waking == null) {
+                    if (online == true && waking == null && srv.canSuspend) {
                         TextButton({ confirmSuspend = true }) { Icon(Icons.Filled.Bedtime, null); Spacer(Modifier.width(4.dp)); Text("Uśpij") }
                     }
-                    Box {
+                    if (servers.isNotEmpty()) Box {
                         IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "menu") }
                         DropdownMenu(menu, { menu = false }) {
-                            DropdownMenuItem({ Text("Włącz i odblokuj ekran") }, {
+                            if (srv.hasPlayer && srv.canUnlock) DropdownMenuItem({ Text("Włącz i odblokuj ekran") }, {
                                 menu = false; scope.io(snack) { api.screenOn() }
                             }, leadingIcon = { Icon(Icons.Filled.LightMode, null) })
+                            if (servers.size > 1) DropdownMenuItem({ Text("Zmień serwer") }, { menu = false; sheet = true })
+                            DropdownMenuItem({ Text("Serwery i parowanie") }, { menu = false; tab.intValue = TAB_SETTINGS })
                         }
                     }
                 },
@@ -288,32 +324,41 @@ private fun MainScreen(api: Api, tab: MutableIntState, settingsVersion: MutableI
             }
           }
           Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (tab.intValue) {
-                TAB_TORRENTS -> TorrentsTab(api, online == true, snack) { tab.intValue = TAB_REMOTE }
-                TAB_LIBRARY -> LibraryTab(api, online == true, snack) { tab.intValue = TAB_REMOTE }
-                TAB_REMOTE -> RemoteTab(api, online == true, snack)
-                TAB_OFFLINE -> OfflineTab()
-                else -> SettingsTab(api, ver, snack) { settingsVersion.intValue++; hostname = null }
+            val t = tab.intValue
+            when {
+                (t == TAB_TORRENTS || t == TAB_LIBRARY) && servers.isEmpty() ->
+                    Hint("Nie ma jeszcze serwera. Dodaj go w Ustawieniach (kod parowania z komputera).")
+                (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) ->
+                    AsleepPane(srv, waking, wrong) { wake() }
+                t == TAB_TORRENTS && !srv.hasTorrent ->
+                    Hint("${srv.name} nie pobiera torrentów (agent bez Deluge/Transmission). Filmy z dysku są w zakładce Biblioteka.")
+                t == TAB_LIBRARY && !srv.hasLibrary -> Hint("${srv.name} nie udostępnia biblioteki.")
+                else -> key(api.srv.key) {
+                    when (t) {
+                        TAB_TORRENTS -> TorrentsTab(api, online == true, snack, onPlaying)
+                        TAB_LIBRARY -> LibraryTab(api, online == true, snack, onPlaying)
+                        TAB_REMOTE -> RemoteTab(screenApi, snack, onPick = { Servers.setScreen(ctx, it); screenKey = it }) { wake(it) }
+                        TAB_OFFLINE -> OfflineTab()
+                        else -> SettingsTab(api, ver, snack, addServer) { addServer = false; changed() }
+                    }
+                }
             }
           }
         }
     }
 
-    if (confirmSuspend) {
-        AlertDialog(
-            onDismissRequest = { confirmSuspend = false },
-            title = { Text("Uśpić komputer?") },
-            text = { Text("Pobieranie się zatrzyma. Obudzisz go z apki albo klikając magnet link.") },
-            confirmButton = {
-                TextButton({
-                    confirmSuspend = false
-                    scope.io(snack) { api.suspendPc(); delay(3000) }
-                    online = false
-                }) { Text("Uśpij") }
-            },
-            dismissButton = { TextButton({ confirmSuspend = false }) { Text("Anuluj") } },
-        )
-    }
+    if (sheet) ServerSheet(api.srv.key,
+        onPick = { sheet = false; Servers.setActive(ctx, it); changed() },
+        onWake = { sheet = false; Servers.setActive(ctx, it); changed(); wake(it) },
+        onAdd = { sheet = false; addServer = true; tab.intValue = TAB_SETTINGS },
+        onManage = { sheet = false; tab.intValue = TAB_SETTINGS },
+    ) { sheet = false }
+
+    if (confirmSuspend) SuspendDialog(srv, onConfirm = {
+        confirmSuspend = false
+        scope.io(snack) { api.suspendPc(); delay(3000) }
+        online = false
+    }) { confirmSuspend = false }
 }
 
 // ---------------------------------------------------------------- Torrenty
@@ -351,7 +396,7 @@ private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onP
 
     Box(Modifier.fillMaxSize()) {
         when {
-            !online -> Hint("Komputer nie odpowiada. Obudź go przyciskiem u góry albo po prostu kliknij magnet link — obudzi się sam.")
+            !online -> Hint("Łączę…")
             error != null -> Hint(error!!)
             else -> LazyColumn(contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
@@ -544,7 +589,7 @@ private fun FilesScreen(api: Api, torrentId: String, t: Torrent?, snack: Snackba
                         if (f.media != null) WatchableInfo(f)
                         if (f.media != null) {
                             Spacer(Modifier.height(8.dp))
-                            MediaActions(api, MediaRef.InTorrent(torrentId, f.index, f.name), snack, onPlayingOnPc)
+                            MediaActions(api, MediaRef.InTorrent(torrentId, f.index, f.name, api.srv.key), snack, onPlayingOnPc)
                         }
                     }
                 }
@@ -597,17 +642,29 @@ private fun WatchableInfo(f: TFile) {
 // ---------------------------------------------------------------- Pilot
 
 @Composable
-private fun RemoteTab(api: Api, online: Boolean, snack: SnackbarHostState) {
+private fun RemoteTab(api: Api?, snack: SnackbarHostState, onPick: (String) -> Unit, onWake: (String) -> Unit) {
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var st by remember { mutableStateOf<JSONObject?>(null) }
+    var st by remember(api) { mutableStateOf<JSONObject?>(null) }
+    var reachable by remember(api) { mutableStateOf<Boolean?>(null) }
     var dragging by remember { mutableStateOf(false) }
     var dragPos by remember { mutableFloatStateOf(0f) }
     var subsDialog by remember { mutableStateOf(false) }
     var trackDialog by remember { mutableStateOf<String?>(null) }
+    if (api == null) return Hint("Żaden serwer nie ma ekranu (mpv i zalogowanej sesji graficznej).")
+    val settings = remember { Settings(ctx) }
 
-    LaunchedEffect(online) {
-        while (online) {
-            st = withContext(Dispatchers.IO) { runCatching { api.playerStatus() }.getOrNull() }
+    LaunchedEffect(api) {
+        while (true) {
+            val r = withContext(Dispatchers.IO) { runCatching { api.playerStatus() } }
+            st = r.getOrNull()
+            reachable = r.isSuccess || withContext(Dispatchers.IO) { api.ping() }
+            // film otwarty z innego serwera (URL z biletem): mpv nie zapamięta pozycji, więc zapisuje ją Pilot
+            st?.takeIf { it.optBoolean("running") }?.let { o ->
+                val ref = Servers.screenRef(ctx, api.srv.key)
+                val pos = o.optDouble("pos", 0.0)
+                if (ref != null && o.optString("title") == ref.title && !pos.isNaN() && pos > 5) settings.setPosition(ref.key(), (pos * 1000).toLong())
+            }
             delay(1000)
         }
     }
@@ -617,16 +674,29 @@ private fun RemoteTab(api: Api, online: Boolean, snack: SnackbarHostState) {
     }
 
     val s = st
-    if (!online) return Hint("Komputer nie odpowiada.")
+    Column(Modifier.fillMaxSize()) {
+    ScreenPicker(api.srv, onPick)
+    if (reachable == false) {
+        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("${api.srv.name} nie odpowiada.", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(16.dp))
+            if (api.srv.mac.isNotBlank()) Button({ onWake(api.srv.key) }) {
+                Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(6.dp)); Text("Obudź")
+            }
+        }
+        return@Column
+    }
     if (s == null || !s.optBoolean("running")) {
         Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Na komputerze nic nie gra.", style = MaterialTheme.typography.titleMedium)
+            Text("Na ekranie ${api.srv.name} nic nie gra.", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            Text("Wybierz film w zakładce Torrenty → „Na komputerze”.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Wybierz film w zakładce Torrenty albo Biblioteka → przycisk ekranu.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
-            OutlinedButton({ scope.io(snack) { api.screenOn() } }) { Icon(Icons.Filled.LightMode, null); Spacer(Modifier.width(6.dp)); Text("Włącz i odblokuj ekran") }
+            if (api.srv.canUnlock) OutlinedButton({ scope.io(snack) { api.screenOn() } }) {
+                Icon(Icons.Filled.LightMode, null); Spacer(Modifier.width(6.dp)); Text("Włącz i odblokuj ekran")
+            }
         }
-        return
+        return@Column
     }
     val pos = s.optDouble("pos", 0.0).takeIf { !it.isNaN() } ?: 0.0
     val dur = s.optDouble("duration", 0.0).takeIf { !it.isNaN() } ?: 0.0
@@ -634,7 +704,7 @@ private fun RemoteTab(api: Api, online: Boolean, snack: SnackbarHostState) {
     val fs = s.optBoolean("fullscreen")
     val muted = s.optBoolean("muted")
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(s.optString("title"), style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(16.dp))
         Slider(
@@ -698,7 +768,8 @@ private fun RemoteTab(api: Api, online: Boolean, snack: SnackbarHostState) {
         }
         OutlinedButton({ subsDialog = true }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text("Szukaj napisów") }
     }
-    if (subsDialog) SubsDialog(api, MediaRef.Playing(s.optString("title"))) { subsDialog = false }
+    }
+    if (subsDialog) SubsDialog(api, MediaRef.Playing(s?.optString("title").orEmpty(), api.srv.key)) { subsDialog = false }
 }
 
 /** Wybór ścieżki w mpv: lista z językiem, tytułem, kodekiem; dla napisów też „wyłączone”. */
@@ -758,33 +829,26 @@ private fun RemoteButton(icon: ImageVector, desc: String, onClick: () -> Unit) {
 // ---------------------------------------------------------------- Ustawienia
 
 @Composable
-private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, onSaved: () -> Unit) {
+private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: Boolean, onSaved: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val s = api.s
-    var host by remember(ver) { mutableStateOf(s.host) }
-    var port by remember(ver) { mutableStateOf(s.port.toString()) }
-    var token by remember(ver) { mutableStateOf(s.token) }
-    var mac by remember(ver) { mutableStateOf(s.mac) }
     var seq by remember(ver) { mutableStateOf(s.sequential) }
     var after by remember(ver) { mutableStateOf(s.afterDefault) }
     var afterDialog by remember { mutableStateOf(false) }
-    var pairDialog by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
-
-    fun save() {
-        s.host = host; s.port = port.toIntOrNull() ?: 8765; s.token = token; s.mac = mac; s.sequential = seq
-    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Komputer", style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(host, { host = it }, Modifier.fillMaxWidth(), label = { Text("Adres IP") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-        OutlinedTextField(port, { port = it }, Modifier.fillMaxWidth(), label = { Text("Port") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-        OutlinedTextField(token, { token = it }, Modifier.fillMaxWidth(), label = { Text("Token (z install.sh)") }, singleLine = true,
-            visualTransformation = PasswordVisualTransformation())
-        OutlinedTextField(mac, { mac = it }, Modifier.fillMaxWidth(), label = { Text("MAC do budzenia (uzupełni się sam)") }, singleLine = true)
+        ServersSection(ver, snack, openAdd, onSaved)
+        Text("Wersja webowa (torrenty, biblioteka, pilot w przeglądarce laptopa/tabletu): „Sparuj kolejne urządzenie” pokazuje też link dla przeglądarki.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton({
+            scope.launch {
+                try { withContext(Dispatchers.IO) { Updater.shareApk(ctx) } }
+                catch (e: Exception) { snack.showSnackbar("Nie udało się: ${e.message}") }
+            }
+        }) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text("Wyślij apkę (WhatsApp itp.)") }
+        HorizontalDivider()
+        Text("Torrenty", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Pobieranie sekwencyjne")
@@ -799,110 +863,25 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, onSaved: (
                 Text(AFTER_LABELS[after] ?: after, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button({
-                save(); onSaved()
-                result = "Łączę…"
-                scope.launch {
-                    result = try {
-                        val i = withContext(Dispatchers.IO) { api.info() }
-                        mac = s.mac
-                        buildString {
-                            append("OK: ${i.optString("hostname")}, ${i.optString("backend")}\n")
-                            append("karta ${i.optString("iface")}, MAC ${i.optString("mac")}\n")
-                            val wol = i.optString("wake_on")
-                            if (i.optBoolean("wireless")) append("⚠ komputer jest na Wi-Fi — budzenie zwykle nie zadziała\n")
-                            else if (wol.isNotEmpty() && wol != "null" && !wol.contains('g')) append("⚠ Wake-on-LAN wyłączony ($wol) — uruchom install.sh\n")
-                            else append("Wake-on-LAN: ${if (wol.isEmpty() || wol == "null") "nieznany" else wol}\n")
-                        }.trim()
-                    } catch (e: ApiException) {
-                        "Błąd: ${e.message}"
-                    }
-                }
-            }) { Text("Zapisz i testuj") }
-            OutlinedButton({
-                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val text = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
-                val link = Regex("""magneticplayer://pair\S+""").find(text)?.value
-                if (link != null && s.applyPairUri(android.net.Uri.parse(link))) {
-                    onSaved(); scope.launch { snack.showSnackbar("Sparowano z ${s.host}") }
-                } else scope.launch { snack.showSnackbar("W schowku nie ma linka parowania") }
-            }) { Text("Wklej link parowania") }
+        if (Servers.magnetKey(ctx) != null) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Magnet linki zawsze na: ${Servers.get(ctx, Servers.magnetKey(ctx))?.name ?: "?"}", Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall)
+            TextButton({ Servers.setMagnetKey(ctx, null); onSaved() }) { Text("Pytaj") }
         }
-        OutlinedButton({ pairDialog = true }, enabled = s.configured) {
-            Icon(Icons.Filled.QrCode2, null); Spacer(Modifier.width(6.dp)); Text("Sparuj kolejne urządzenie")
-        }
-        OutlinedButton({
-            scope.launch {
-                try { withContext(Dispatchers.IO) { Updater.shareApk(ctx) } }
-                catch (e: Exception) { snack.showSnackbar("Nie udało się: ${e.message}") }
-            }
-        }) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text("Wyślij apkę (WhatsApp itp.)") }
-        OutlinedButton({
-            copyText(ctx, "MagneticPlayer — wersja webowa", s.webUri())
-            scope.launch { snack.showSnackbar("Skopiowano link do wersji webowej — otwórz go na laptopie/tablecie w domowej sieci") }
-        }, enabled = s.configured) { Icon(Icons.Filled.Language, null); Spacer(Modifier.width(6.dp)); Text("Kopiuj link do wersji webowej") }
-        Text("Wersja webowa: torrenty, biblioteka, pilot i napisy w przeglądarce, na laptopie albo tablecie bez apki.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         HorizontalDivider()
         BufferSettings(s)
         HorizontalDivider()
-        OpenSubsSettings(api, snack)
+        if (api.configured) OpenSubsSettings(api, snack)
         HorizontalDivider()
         Text("Magnet linki: przy pierwszym kliknięciu magneta Android zapyta, czym otworzyć — wybierz MagneticPlayer → „Zawsze”. " +
             "Działa też „Udostępnij” z dowolnej apki.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (afterDialog) AfterDialog(after, { afterDialog = false }) { after = it; s.afterDefault = it; afterDialog = false }
-    if (pairDialog) PairDialog(s.pairUri(), s.webUri()) { pairDialog = false }
-}
-
-/** QR z linkiem parowania: drugi telefon skanuje aparatem (albo dostaje link przez „Udostępnij”). */
-@Composable
-private fun PairDialog(link: String, webLink: String, onDismiss: () -> Unit) {
-    val ctx = LocalContext.current
-    val qr = remember(link) { qrBitmap(link, 720) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sparuj kolejne urządzenie") },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                androidx.compose.foundation.Image(qr.asImageBitmap(), "kod QR parowania",
-                    Modifier.fillMaxWidth().aspectRatio(1f).background(Color.White))
-                Spacer(Modifier.height(12.dp))
-                Text("Na drugim telefonie zainstaluj MagneticPlayer, zeskanuj kod aparatem i otwórz link. " +
-                    "Jeśli aparat nie da otworzyć linku: Udostępnij → skopiuj tam → w apce Ustawienia → „Wklej link parowania”. " +
-                    "Kod zawiera token do komputera — pokazuj go tylko domownikom.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(8.dp))
-                Text("Laptop albo tablet bez Androida: otwórz w przeglądarce", style = MaterialTheme.typography.labelMedium)
-                Text(webLink, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable {
-                        copyText(ctx, "MagneticPlayer — wersja webowa", webLink)
-                        android.widget.Toast.makeText(ctx, "Skopiowano", android.widget.Toast.LENGTH_SHORT).show()
-                    })
-            }
-        },
-        confirmButton = { TextButton(onDismiss) { Text("Zamknij") } },
-        dismissButton = {
-            TextButton({
-                ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
-                    .putExtra(Intent.EXTRA_TEXT, link), "Link parowania MagneticPlayer"))
-            }) { Text("Udostępnij link") }
-        },
-    )
 }
 
 fun copyText(ctx: Context, label: String, text: String) {
     (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
         .setPrimaryClip(android.content.ClipData.newPlainText(label, text))
-}
-
-private fun qrBitmap(text: String, size: Int): android.graphics.Bitmap {
-    val m = com.google.zxing.qrcode.QRCodeWriter().encode(text, com.google.zxing.BarcodeFormat.QR_CODE, size, size,
-        mapOf(com.google.zxing.EncodeHintType.MARGIN to 2))
-    val px = IntArray(size * size) { if (m.get(it % size, it / size)) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
-    return android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888)
 }
 
 /** Bufor na dysku (PlayerActivity.prefetch, MediaCache); działa od następnego otwarcia filmu. */
@@ -951,7 +930,7 @@ private fun OpenSubsSettings(api: Api, snack: SnackbarHostState) {
         }.getOrNull()
     }
     Text("Napisy", style = MaterialTheme.typography.titleMedium)
-    Text("Szuka komputer (subliminal): BSPlayer, Podnapisi, Addic7ed, TVsubtitles, NapiProjekt — bez kont. " +
+    Text("Szuka serwer ${api.srv.name} (subliminal): BSPlayer, Podnapisi, Addic7ed, TVsubtitles, NapiProjekt — bez kont. " +
         "Opcjonalnie OpenSubtitles (największa baza angielskich): konto na opensubtitles.com (nie .org), " +
         "menu konta → API consumers → New consumer. Login i hasło opcjonalne (większy limit pobrań). " + (state?.let { "OpenSubtitles: $it." } ?: ""),
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -968,7 +947,7 @@ private fun OpenSubsSettings(api: Api, snack: SnackbarHostState) {
                     withContext(Dispatchers.IO) { api.setOpenSubsConfig(key.ifBlank { null }, user, pass) }
                     key = ""; pass = ""
                     state = "zapisane"
-                    snack.showSnackbar("Zapisano na komputerze")
+                    snack.showSnackbar("Zapisano na ${api.srv.name}")
                 } catch (e: ApiException) {
                     snack.showSnackbar(e.message ?: "Błąd")
                 }

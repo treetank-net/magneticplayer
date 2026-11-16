@@ -25,6 +25,17 @@ Jeden proces w Pythonie (`ThreadingHTTPServer`), poza subliminal nie ma zewnętr
 | `mp_jobs.py` | historia zleceń z telefonu i akcja po pobraniu (`none` / `stop` / `suspend`) |
 | `mp_library.py` | katalogi biblioteki, listowanie wyłącznie plików wideo i audio, napisy leżące obok filmów, ochrona przed wyjściem poza katalog (`safe_join`) |
 | `mp_subs.py` | wyszukiwanie i pobieranie napisów przez subliminal (leniwy import z venv) |
+| `mp_devices.py` | sparowane urządzenia (tokeny jako SHA-256), kody parowania, bilety HMAC na jeden plik; `devices.json` czytany ponownie po zmianie mtime (CLI to osobny proces) |
+| `mp_platform.py` | wszystko zależne od systemu: sesja graficzna, odblokowanie, usypianie, karta sieciowa, ocena budzenia, wysyłanie WoL. Inny system dopisuje się tutaj; czego nie umie, tego agent nie zgłasza w `features`/`power` |
+
+### Wiele serwerów
+
+Plan i decyzje: [plan-wiele-serwerow.md](plan-wiele-serwerow.md), makiety: `ux-wiele-serwerow.html`.
+- Serwer ma `id` (losowe, w `config.json`) i `name`. Apka trzyma listę serwerów, a przy każdym zapytaniu `ping`
+  sprawdza `id`, więc nie wyśle tokenu do innego komputera, który dostał stary adres.
+- Role: serwer plików (`features.torrent`/`library`) i ekran (`features.player`). Jeden komputer może mieć obie.
+- Film z serwera A na ekranie B: apka bierze z A bilet (`/api/media/ticket`) i wysyła do B `player/open` z URL.
+  mpv na B ciągnie film i napisy przez HTTP. Pozycję takiego filmu zapisuje Pilot w apce.
 
 ### Wskazanie pliku (`ref`)
 
@@ -130,12 +141,17 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 
 | plik | co jest w środku |
 |---|---|
-| `Api.kt` | `Settings` (SharedPreferences, link parowania), modele, `MediaRef`, `Wol`, klient HTTP |
-| `MainActivity.kt` | zakładki Torrenty, Pilot i Ustawienia, górny pasek (Obudź/Uśpij), pasek aktualizacji, QR parowania |
+| `Api.kt` | `Settings` (SharedPreferences), modele, `MediaRef` (z `srv`), `Wol`, klient HTTP jednego serwera, budzenie (też przez inny serwer) |
+| `Servers.kt` | lista serwerów, wybrany serwer plików i ekran, migracja starych ustawień (serwer `legacy`), parowanie (`Pairing`) |
+| `ServersUi.kt` | przełącznik serwera, panel „śpi”, okno usypiania, wybór ekranu, Ustawienia → Serwery, dodawanie, urządzenia, „Sparuj kolejne” |
+| `MainActivity.kt` | zakładki Torrenty, Pilot i Ustawienia, górny pasek (serwer, Obudź/Uśpij), pasek aktualizacji |
 | `LibraryTab.kt` | biblioteka i wybór katalogu na komputerze |
-| `MediaUi.kt` | przyciski Telefon, Komputer i VLC, okno napisów |
+| `MediaUi.kt` | przyciski Telefon, ekran i VLC, okno napisów |
 | `PlayerActivity.kt` | odtwarzacz w telefonie |
 | `MagnetActivity.kt` | obsługa magnetów |
 | `Updater.kt` | aktualizacje z komputera, wysyłanie własnego APK |
+
+Klucze pozycji, bufora i pobranych filmów mają przedrostek serwera (`<key>:`), poza serwerem `legacy` (migracja
+z jednego serwera), żeby stare dane zostały.
 
 Kod jest w Kotlinie 2.2 z Compose (BOM 2025.08) i Media3 1.8. Wymaga Androida 8 (minSdk 26), a celuje w SDK 36.
