@@ -25,6 +25,7 @@ w POST w treści JSON.
 |---|---|
 | `GET /api/ping` | `{"ok": true, "app": "magneticplayer", "version", "id"}`, bez tokenu. `id` pozwala apce sprawdzić, że pod adresem jest ten sam serwer, zanim wyśle token |
 | `GET /api/info` | `id`, `name`, `api` (poziom API, teraz 2), `hostname`, `version`, `backend`, `keep_awake` (powód blokady usypiania), `iface`, `ip`, `mac`, `wake_on`, `wireless`, `device` (kto pyta), `features` i `power` (niżej) |
+| `POST /api/wake/verified` | apka obudziła ten serwer przez sieć; agent zapisuje to w configu (`wake_verified`) i od tej pory zgłasza budzenie jako `yes` wszystkim urządzeniom |
 | `POST /api/wake` | `{"mac", "ip"?}`: wysyła magic packet z tego serwera (budzenie innego serwera, gdy telefon go nie dosięga) |
 | `POST /api/system/suspend` | zamyka mpv i usypia komputer |
 | `POST /api/system/screen_on` | budzi ekran komputera, a przy `auto_unlock` zdejmuje też ekran blokady → `{"unlocked"}` |
@@ -35,7 +36,8 @@ w POST w treści JSON.
 `features`: `torrent` (`"deluge"`, `"transmission"` albo `null`), `library`, `player` (mpv + sesja graficzna, chyba że config `player: false`),
 `subs_search`, `unlock`, `apk`, `wake_others`. `power`: `suspend`, `poweroff` (oba `false` przy config `power: false`), `wake`
 (`{"method": "wol"|null, "mac", "confidence": "maybe"|"no", "reason"}`). `yes` w `confidence` wie tylko apka,
-gdy budzenie raz się udało.
+gdy budzenie raz się udało; agent zgłasza `yes` po `POST /api/wake/verified`. Liczniki wybudzeń z
+`/sys/class/wakeup` nie pomagają: na płycie jmpc (ASUS H110M-A) każde wybudzenie idzie na konto przycisku zasilania.
 
 ## Parowanie i urządzenia
 

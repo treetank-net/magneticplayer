@@ -246,6 +246,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         try {
             a.ensureAwake { waking = it }
             if (key == api.srv.key) online = true
+            withContext(Dispatchers.IO) { runCatching { a.info() } }
+            infoVer++
             snack.showSnackbar("${a.srv.name} działa")
         } catch (e: ApiException) {
             snack.showSnackbar(e.message ?: "Błąd")

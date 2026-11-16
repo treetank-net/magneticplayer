@@ -662,6 +662,15 @@ class App:
     def name(self):
         return self.cfg.get("name") or socket.gethostname()
 
+    def wake_info(self, net):
+        """Ocena z mp_platform + „yes”, gdy budzenie przez sieć już raz zadziałało (na tej samej karcie)."""
+        w = platform.wake_info(net)
+        v = self.cfg.get("wake_verified") or {}
+        if v.get("at") and w.get("mac") and v.get("mac") in (None, w["mac"]) and not net.get("wireless"):
+            day = time.strftime("%d.%m.%Y", time.localtime(v["at"]))
+            w = {**w, "confidence": "yes", "reason": f"budzenie przez sieć zadziałało ({day})", "verified_at": v["at"]}
+        return w
+
     def is_screen(self):
         """Czy wolno tu odtwarzać: config "player" (domyślnie tak) + mpv i sesja graficzna."""
         return bool(self.cfg.get("player", True)) and platform.has_display()
@@ -698,7 +707,7 @@ class App:
                 "wake_others": True,
             },
             "power": {"suspend": POWER and platform.can_power(), "poweroff": POWER and platform.can_power(),
-                      "wake": platform.wake_info(net)},
+                      "wake": self.wake_info(net)},
         }
 
     def ref_scope(self, d):
@@ -845,6 +854,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not a.devices.revoke(dev):
                     raise ApiError("nie ma takiego urządzenia", 404)
                 log("odebrano dostęp urządzeniu", dev)
+                return self.send_json({"ok": True})
+            if p == "/api/wake/verified" and method == "POST":
+                # apka obudziła ten komputer przez sieć (wysłała WoL, potem odpowiedział): pamiętamy dla wszystkich
+                net = platform.net_info(self.client_address[0])
+                a.cfg["wake_verified"] = {"at": time.time(), "mac": net.get("mac"), "by": self.device}
+                save_config(a.cfg)
+                log(f"budzenie przez sieć potwierdzone (urządzenie {self.device})")
                 return self.send_json({"ok": True})
             if p == "/api/wake" and method == "POST":
                 b = self.body()

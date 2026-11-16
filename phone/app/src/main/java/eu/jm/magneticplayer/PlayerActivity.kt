@@ -39,38 +39,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Nakładka na pasek przewijania ExoPlayera (ViewOverlay, rysuje się nad nim i znika razem z nim): niebieskawy odcinek
- * od bieżącej pozycji do końca ciągłego zapasu na dysku. Szary od ExoPlayera to dalej bufor w pamięci (~50 s).
- * Geometria jak w DefaultTimeBar w stylu ExoStyledControls.TimeBar (media3-ui 1.8): pasek 2 dp przy dolnej krawędzi
- * obszaru 48 dp, z boków margines na kulkę (14 dp / 2).
- */
-class DiskAheadOverlay(private val bar: android.view.View) : android.graphics.drawable.Drawable() {
-    var positionMs = 0L
-    var aheadEndMs = 0L
-    var durationMs = 0L
-    private val dp = bar.resources.displayMetrics.density
-    private val paint = android.graphics.Paint().apply { color = 0xCC4FC3F7.toInt() }
-
-    override fun draw(canvas: android.graphics.Canvas) {
-        if (durationMs <= 0 || aheadEndMs <= positionMs) return
-        val pad = 7 * dp
-        val left = bar.paddingLeft + pad
-        val width = bar.width - bar.paddingRight - pad - left
-        if (width <= 0) return
-        val h = 2 * dp
-        val bottom = bar.height - bar.paddingBottom - pad + h / 2
-        val x1 = left + width * positionMs.toFloat() / durationMs
-        val x2 = left + width * minOf(aheadEndMs, durationMs).toFloat() / durationMs
-        canvas.drawRect(x1, bottom - h, x2, bottom, paint)
-    }
-
-    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
-    override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
-    @Deprecated("Drawable API")
-    override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
-}
-
 const val VLC_PACKAGE = "org.videolan.vlc"
 
 /** Otwiera strumień w VLC (jeśli jest), inaczej wybór aplikacji. Napisy przekazuje przez extra VLC. */
@@ -103,7 +71,9 @@ class PlayerActivity : ComponentActivity() {
     private var subs: List<SubFile> = emptyList()
     private var prefetchJob: Job? = null
     private var fileSize = 0L  // z prefetch (HEAD), do przeliczania bajtów na czas w nakładce
-    private var diskOverlay: DiskAheadOverlay? = null
+    // koniec ciągłego zapasu na dysku telefonu (ms filmu); suwak rysuje go jako bufor (ForwardingPlayer niżej)
+    @Volatile private var aheadEndMs = 0L
+    private var info: android.widget.TextView? = null
     private val key get() = ref.key()
     // agent czeka do 20 s na kolejne kawałki torrenta, więc timeout odczytu musi być dłuższy
     private val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(8_000).setReadTimeoutMs(30_000)
@@ -127,26 +97,55 @@ class PlayerActivity : ComponentActivity() {
             setShowPreviousButton(false)
             keepScreenOn = true
         }
-        val buttons = LinearLayout(this).apply {
+        val dp = resources.displayMetrics.density
+        // u góry: tytuł i ile da się obejrzeć bez sieci; widoczne razem z kontrolkami
+        val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((16 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt())
+        }
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(android.widget.TextView(this).apply {
+            text = ref.title
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
+        })
+        info = android.widget.TextView(this).apply {
+            setTextColor(0xFF81D4FA.toInt())
+            textSize = 12f
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
+        }
+        texts.addView(info)
+        top.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+        val buttons = top.apply {
             if (Servers.screens(this@PlayerActivity).isNotEmpty()) addView(smallButton("Na ekran") { handOffToPc() })
             addView(smallButton("VLC") {
                 player?.pause()
                 openInVlc(this@PlayerActivity, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
             })
         }
-        view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> buttons.visibility = v })
-        view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_progress)?.let { bar ->
-            val o = DiskAheadOverlay(bar)
-            diskOverlay = o
-            bar.overlay.add(o)
-            bar.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> o.setBounds(0, 0, v.width, v.height) }
-        }
+        // napisy nad kontrolkami, gdy są widoczne (inaczej chowają się pod suwakiem)
+        view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v ->
+            buttons.visibility = v
+            view.subtitleView?.setBottomPaddingFraction(if (v == android.view.View.VISIBLE) 0.24f
+                else androidx.media3.ui.SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION)
+        })
+        // jasny pas „bufor” na suwaku = to, co jest na dysku telefonu (albo w pamięci, co dalej)
+        (view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_progress) as? androidx.media3.ui.DefaultTimeBar)
+            ?.setBufferedColor(0xCC4FC3F7.toInt())
 
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(view, FrameLayout.LayoutParams(-1, -1))
-            addView(buttons, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(16, 16, 16, 16) })
+            addView(buttons, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply {
+                // gradient pod tekstem, żeby był czytelny na jasnym obrazie
+            })
+            buttons.background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x99000000.toInt(), 0)
+            )
         })
 
         // najpierw dekodery telefonu, FFmpeg gdy telefon nie umie (AC3/E-AC3/DTS…)
@@ -163,7 +162,11 @@ class PlayerActivity : ComponentActivity() {
         val sources = DefaultMediaSourceFactory(source).setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(60))
         val p = ExoPlayer.Builder(this, renderers).setMediaSourceFactory(sources).build()
         player = p
-        view.player = p
+        view.player = object : androidx.media3.common.ForwardingPlayer(p) {
+            private fun ahead(real: Long) = maxOf(real, minOf(aheadEndMs, p.duration.takeIf { it > 0 } ?: 0))
+            override fun getBufferedPosition() = ahead(super.getBufferedPosition())
+            override fun getContentBufferedPosition() = ahead(super.getContentBufferedPosition())
+        }
         p.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
@@ -227,10 +230,19 @@ class PlayerActivity : ComponentActivity() {
         Thread { OfflineStore.ensure(this, ref); MediaCache.sweep(this, keep = key) }.start()
     }
 
-    private fun smallButton(text: String, onClick: () -> Unit) = Button(this).apply {
+    private fun smallButton(text: String, onClick: () -> Unit) = Button(this, null, 0, android.R.style.Widget_Material_Button_Borderless).apply {
+        val dp = resources.displayMetrics.density
         this.text = text
         isAllCaps = false
-        alpha = 0.85f
+        setTextColor(Color.WHITE)
+        textSize = 15f
+        minWidth = 0; minimumWidth = 0
+        setPadding((14 * dp).toInt(), (6 * dp).toInt(), (14 * dp).toInt(), (6 * dp).toInt())
+        background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 20 * dp
+            setColor(0x55FFFFFF)
+        }
+        layoutParams = LinearLayout.LayoutParams(-2, (36 * dp).toInt()).apply { marginStart = (8 * dp).toInt() }
         setOnClickListener { onClick() }
     }
 
@@ -315,20 +327,25 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /** Co sekundę: ile ciągłego zapasu leży na dysku od bieżącej pozycji (przeliczone średnim bitrate na czas). */
+    /** Co sekundę: zasięg ciągłego zapasu na dysku od bieżącej pozycji → suwak (bufor) i napis u góry. */
     private fun showDiskAhead(p: ExoPlayer) = lifecycleScope.launch {
         val cache = MediaCache.get(this@PlayerActivity)
         while (isActive) {
-            val o = diskOverlay
             val dur = p.duration
-            val size = fileSize
-            if (o != null && dur > 0 && size > 0) {
+            val size = fileSize.takeIf { it > 0 } ?: OfflineStore.get(this@PlayerActivity, key)?.size ?: 0L
+            if (dur > 0 && size > 0) {
                 val pos = p.currentPosition
                 val from = (pos.toDouble() / dur * size).toLong().coerceIn(0, size - 1)
                 val cached = withContext(Dispatchers.IO) { runCatching { cache.getCachedLength(key, from, size - from) }.getOrDefault(0) }
-                o.positionMs = pos
-                o.durationMs = dur
-                o.aheadEndMs = if (cached > 0) pos + (cached.toDouble() / size * dur).toLong() else 0
-                o.invalidateSelf()
+                val end = if (cached > 0) minOf(dur, pos + (cached.toDouble() / size * dur).toLong()) else 0
+                aheadEndMs = end
+                val whole = withContext(Dispatchers.IO) { runCatching { cache.getCachedBytes(key, 0, size) }.getOrDefault(0) } >= size
+                info?.text = when {
+                    whole -> "Cały film na telefonie · działa bez sieci"
+                    end >= dur - 1_000 -> "Na telefonie do końca filmu"
+                    end - pos > 60_000 -> "Na telefonie do ${clock(end / 1000.0)} (+${humanTime((end - pos) / 1000)})"
+                    else -> ""
+                }
             }
             delay(1_000)
         }

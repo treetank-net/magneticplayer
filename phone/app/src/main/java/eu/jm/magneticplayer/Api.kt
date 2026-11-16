@@ -242,6 +242,11 @@ class Api(val s: Settings, val srv: Server) {
         val uid = j.optString("id").takeIf { it.isNotEmpty() }
         val name = j.optString("name").ifEmpty { j.optString("hostname") }
         // nazwa domyślna (adres, np. po migracji starego serwera) ustępuje nazwie z agenta; własnej nie ruszamy
+        // ten telefon już kiedyś obudził serwer, a agent jeszcze o tym nie wie: dosyłamy
+        val agentKnows = j.optJSONObject("power")?.optJSONObject("wake")?.optString("confidence") == "yes"
+        if (!agentKnows && Servers.get(ctx, srv.key)?.wakeOk == true && j.optInt("api") >= 2) {
+            runCatching { call("POST", "/api/wake/verified", JSONObject(), 4000) }
+        }
         Servers.update(ctx, srv.key) {
             it.copy(info = j, mac = mac ?: it.mac, uid = it.uid ?: uid,
                 name = if ((it.name.isBlank() || it.name == it.host) && name.isNotEmpty()) name else it.name)
@@ -461,6 +466,8 @@ class Api(val s: Settings, val srv: Server) {
             onStatus(if (!via.isNullOrEmpty()) "Budzę $name przez $via… ${(now - start) / 1000} s" else "Budzę $name… ${(now - start) / 1000} s")
             if (ping(1500)) {
                 Servers.update(ctx, srv.key) { it.copy(wakeOk = true) }
+                // agent zapamięta to dla wszystkich urządzeń (starszy agent nie zna endpointu: trudno)
+                runCatching { call("POST", "/api/wake/verified", JSONObject(), 4000) }
                 return@withContext
             }
             delay(1500)
