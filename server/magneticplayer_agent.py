@@ -407,6 +407,7 @@ class NoBackend:
 
 graphical_env = platform.graphical_env
 AUTO_UNLOCK = True  # nadpisywane z configu w App.__init__
+POWER = True  # config "power": false — z sieci nie da się uśpić ani wyłączyć (np. laptop do pracy)
 
 
 def wake_screen(unlock=None):
@@ -622,6 +623,8 @@ class SleepGuard(threading.Thread):
 
 
 def poweroff(guard):
+    if not POWER:
+        raise ApiError("ten serwer ma wyłączone wyłączanie z sieci (config: power)", 403)
     guard.paused_until = time.time() + 120
     guard.release()
     err = platform.power("poweroff")
@@ -630,6 +633,8 @@ def poweroff(guard):
 
 
 def suspend(guard):
+    if not POWER:
+        raise ApiError("ten serwer ma wyłączone usypianie z sieci (config: power)", 403)
     guard.paused_until = time.time() + 120
     guard.release()
     err = platform.power("suspend")
@@ -641,8 +646,9 @@ def suspend(guard):
 
 class App:
     def __init__(self, cfg):
-        global AUTO_UNLOCK
+        global AUTO_UNLOCK, POWER
         self.cfg = cfg
+        POWER = bool(cfg.get("power", True))
         AUTO_UNLOCK = bool(cfg.get("auto_unlock", True))
         self.backend = {"deluge": DelugeBackend, "transmission": TransmissionBackend}.get(cfg["backend"], NoBackend)(cfg)
         self.mpv = Mpv(cfg)
@@ -655,6 +661,10 @@ class App:
 
     def name(self):
         return self.cfg.get("name") or socket.gethostname()
+
+    def is_screen(self):
+        """Czy wolno tu odtwarzać: config "player" (domyślnie tak) + mpv i sesja graficzna."""
+        return bool(self.cfg.get("player", True)) and platform.has_display()
 
     def subs_available(self):
         if self._subs_ok is None:
@@ -681,13 +691,13 @@ class App:
             "features": {
                 "torrent": self.cfg["backend"] if has_torrent else None,
                 "library": library,
-                "player": platform.has_display(),
+                "player": self.is_screen(),
                 "subs_search": self.subs_available(),
                 "unlock": AUTO_UNLOCK and platform.can_unlock(),
                 "apk": apk_version().get("version_code", 0) > 0,
                 "wake_others": True,
             },
-            "power": {"suspend": platform.can_power(), "poweroff": platform.can_power(),
+            "power": {"suspend": POWER and platform.can_power(), "poweroff": POWER and platform.can_power(),
                       "wake": platform.wake_info(net)},
         }
 
@@ -924,6 +934,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.stream(full, method == "HEAD", f.get("_pieces"),
                                    lambda: a.resolve_file(tid, idx)[1].get("_pieces"))
             if p == "/api/player/open" and method == "POST":
+                if not a.is_screen():
+                    raise ApiError(f"{a.name()} nie jest ekranem (brak mpv/sesji albo config: player)", 409)
                 b = self.body()
                 if b.get("url"):  # film z innego serwera (URL z biletem z /api/media/ticket)
                     url = str(b["url"])
@@ -941,6 +953,8 @@ class Handler(BaseHTTPRequestHandler):
                 a.mpv.control(b.get("cmd"), b.get("value"))
                 return self.send_json({"ok": True})
             if p == "/api/system/suspend" and method == "POST":
+                if not POWER:
+                    raise ApiError(f"{a.name()} ma wyłączone usypianie z sieci", 403)
                 if a.mpv.running():
                     a.mpv.cmd("quit")
                 self.send_json({"ok": True})

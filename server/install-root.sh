@@ -8,7 +8,7 @@ BACKEND=${3:-deluge}
 
 echo "== pakiety"
 need=()
-pkgs=(mpv ethtool qrencode)
+pkgs=(mpv ethtool qrencode python3-venv)
 [ "$BACKEND" = deluge ] && pkgs+=(deluged deluge-web)
 for p in "${pkgs[@]}"; do
   dpkg -s "$p" >/dev/null 2>&1 || need+=("$p")

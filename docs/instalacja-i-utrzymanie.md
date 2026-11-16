@@ -7,7 +7,13 @@ Wymagania: Linux Mint lub Ubuntu z sesją graficzną (Cinnamon), Python 3.10+, k
 ```bash
 bash server/install.sh                 # przy komputerze: część rootowa przez pkexec (okno z hasłem)
 BACKEND=none bash server/install.sh    # komputer tylko jako ekran (albo tylko biblioteka): bez Deluge
+BACKEND=none PLAYER=0 POWER=0 PORT=8766 bash server/install.sh   # np. laptop: tylko pliki, bez usypiania z sieci
 ```
+
+Zmienne zapisują się w `config.json` (`backend`, `player`, `power`, `port`), a ponowne `install.sh` bez nich
+niczego tam nie zmienia. `player: false`: serwer nie jest ekranem, nawet gdy ma mpv. `power: false`: z sieci nie
+da się go uśpić ani wyłączyć (apka chowa „Uśpij”). Na laptopie użytkownika agent działa na 8766, bo 8765 zajmuje
+tam inna usługa (`ekrand`).
 
 Na końcu skrypt pokazuje kod parowania i QR. Zeskanuj go aparatem telefonu (otworzy apkę) albo w apce:
 Ustawienia → Dodaj serwer → adres i kod. Nowy kod: `~/.local/share/magneticplayer/venv/bin/python
@@ -25,7 +31,7 @@ Co robią skrypty:
 
 | skrypt | co robi |
 |---|---|
-| `install-root.sh <user> [port] [backend]` | instaluje pakiety `mpv ethtool qrencode`, a przy backendzie Deluge też `deluged deluge-web`<br>wyłącza systemowe usługi Deluge (chodzą jako usługi użytkownika)<br>dodaje regułę polkit `/etc/polkit-1/rules.d/49-magneticplayer.rules`, żeby usługa w tle mogła blokować usypianie i usypiać<br>włącza Wake-on-LAN: NetworkManager `802-3-ethernet.wake-on-lan magic`, udev `81-magneticplayer-wol.rules`, ethtool<br>otwiera port 8765 w ufw dla sieci prywatnych |
+| `install-root.sh <user> [port] [backend]` | instaluje pakiety `mpv ethtool qrencode python3-venv`, a przy backendzie Deluge też `deluged deluge-web`<br>wyłącza systemowe usługi Deluge (chodzą jako usługi użytkownika)<br>dodaje regułę polkit `/etc/polkit-1/rules.d/49-magneticplayer.rules`, żeby usługa w tle mogła blokować usypianie i usypiać<br>włącza Wake-on-LAN: NetworkManager `802-3-ethernet.wake-on-lan magic`, udev `81-magneticplayer-wol.rules`, ethtool<br>otwiera port 8765 w ufw dla sieci prywatnych |
 | `install.sh` | kopiuje agenta do `~/.local/share/magneticplayer/`<br>tworzy venv z `subliminal`<br>zakłada usługi `systemd --user`: `deluged`, `deluge-web` (127.0.0.1:8112) i `magneticplayer` (:8765)<br>przełącza Deluge GTK w tryb klienta, łączącego się z `deluged`<br>wypisuje kod parowania z QR (`--pair`) |
 
 Ponowne uruchomienie `install.sh` aktualizuje agenta i nie rusza konfiguracji ani tokenu.

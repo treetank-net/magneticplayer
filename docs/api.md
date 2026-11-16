@@ -32,8 +32,8 @@ w POST w treści JSON.
 | `GET /api/app/version` | `{"version_code", "version_name"}` opublikowanej apki albo `{"version_code": 0}` |
 | `GET /app/MagneticPlayer.apk` | plik opublikowanej apki |
 
-`features`: `torrent` (`"deluge"`, `"transmission"` albo `null`), `library`, `player` (mpv + sesja graficzna),
-`subs_search`, `unlock`, `apk`, `wake_others`. `power`: `suspend`, `poweroff`, `wake`
+`features`: `torrent` (`"deluge"`, `"transmission"` albo `null`), `library`, `player` (mpv + sesja graficzna, chyba że config `player: false`),
+`subs_search`, `unlock`, `apk`, `wake_others`. `power`: `suspend`, `poweroff` (oba `false` przy config `power: false`), `wake`
 (`{"method": "wol"|null, "mac", "confidence": "maybe"|"no", "reason"}`). `yes` w `confidence` wie tylko apka,
 gdy budzenie raz się udało.
 

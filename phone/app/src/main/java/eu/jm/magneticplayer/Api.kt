@@ -240,7 +240,12 @@ class Api(val s: Settings, val srv: Server) {
         val j = infoRaw()
         val mac = j.optString("mac").takeIf { it.matches(Regex("([0-9a-f]{2}:){5}[0-9a-f]{2}")) && it != "00:00:00:00:00:00" }
         val uid = j.optString("id").takeIf { it.isNotEmpty() }
-        Servers.update(ctx, srv.key) { it.copy(info = j, mac = mac ?: it.mac, uid = it.uid ?: uid) }
+        val name = j.optString("name").ifEmpty { j.optString("hostname") }
+        // nazwa domyślna (adres, np. po migracji starego serwera) ustępuje nazwie z agenta; własnej nie ruszamy
+        Servers.update(ctx, srv.key) {
+            it.copy(info = j, mac = mac ?: it.mac, uid = it.uid ?: uid,
+                name = if ((it.name.isBlank() || it.name == it.host) && name.isNotEmpty()) name else it.name)
+        }
         return j
     }
 

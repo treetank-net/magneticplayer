@@ -212,6 +212,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     val screenApi = remember(ver, screenKey) { Api.of(ctx, screenKey) }
     var online by remember(ver) { mutableStateOf<Boolean?>(null) }
     var wrong by remember(ver) { mutableStateOf(false) }
+    var infoVer by remember { mutableIntStateOf(0) }
     var waking by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
     var confirmSuspend by remember { mutableStateOf(false) }
@@ -233,11 +234,12 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             if (ok && first) {
                 first = false
                 withContext(Dispatchers.IO) { runCatching { api.info() } }
+                infoVer++
             }
             delay(if (ok) 5000 else 3000)
         }
     }
-    val srv = remember(ver, online) { Servers.get(ctx, api.srv.key) ?: api.srv }
+    val srv = remember(ver, online, infoVer) { Servers.get(ctx, api.srv.key) ?: api.srv }
 
     fun wake(key: String = api.srv.key) = scope.launch {
         val a = Api.of(ctx, key) ?: return@launch

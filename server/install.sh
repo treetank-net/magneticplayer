@@ -3,11 +3,14 @@
 #   bash install.sh            # pełna instalacja (część rootowa przez pkexec)
 #   SKIP_ROOT=1 bash install.sh  # tylko część użytkownika (gdy install-root.sh puszczony osobno)
 #   BACKEND=none bash install.sh # serwer bez torrentów (tylko ekran z mpv i/lub biblioteka), bez Deluge
+#   PLAYER=0 POWER=0 …           # nie ekran (bez mpv) / bez usypiania i wyłączania z sieci (np. laptop do pracy)
+#   PORT=8766 …                  # inny port (gdy 8765 jest zajęty)
 set -euo pipefail
 SRC=$(cd "$(dirname "$0")" && pwd)
 DEST=~/.local/share/magneticplayer
 UNITS=~/.config/systemd/user
-PORT=8765
+PORT_SET=${PORT+x}
+PORT=${PORT:-8765}
 BACKEND_SET=${BACKEND+x}
 BACKEND=${BACKEND:-deluge}
 
@@ -27,16 +30,25 @@ install -m 644 "$SRC"/mp_*.py "$DEST/"
 install -d "$DEST/web" && install -m 644 "$SRC"/web/* "$DEST/web/"
 
 echo "== napisy: subliminal w venv ($DEST/venv)"
-[ -x "$DEST/venv/bin/python" ] || python3 -m venv "$DEST/venv"
+[ -x "$DEST/venv/bin/pip" ] || python3 -m venv --clear "$DEST/venv"  # --clear: po nieudanej próbie (brak python3-venv)
 "$DEST/venv/bin/pip" install --isolated -q --upgrade subliminal || echo "UWAGA: subliminal się nie zainstalował — napisy nie zadziałają"
 
-if [ -n "$BACKEND_SET" ]; then
-  echo "== backend: $BACKEND"
-  python3 - "$BACKEND" <<'EOF'
+# ustawienia podane jawnie (BACKEND, PLAYER, POWER) trafiają do config.json; reszta configu zostaje
+if [ -n "$BACKEND_SET$PORT_SET${PLAYER+x}${POWER+x}" ]; then
+  echo "== config: ${BACKEND_SET:+backend=$BACKEND }${PORT_SET:+port=$PORT }${PLAYER+player=$PLAYER }${POWER+power=$POWER}"
+  python3 - "${BACKEND_SET:+$BACKEND}" "${PLAYER-}" "${POWER-}" "${PORT_SET:+$PORT}" <<'EOF'
 import json, os, sys
 p = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 cfg = json.load(open(p)) if os.path.exists(p) else {}
-cfg["backend"] = sys.argv[1]
+backend, player, power, port = sys.argv[1:5]
+if port:
+    cfg["port"] = int(port)
+if backend:
+    cfg["backend"] = backend
+if player:
+    cfg["player"] = player not in ("0", "no", "false")
+if power:
+    cfg["power"] = power not in ("0", "no", "false")
 os.makedirs(os.path.dirname(p), exist_ok=True)
 json.dump(cfg, open(p, "w"), indent=2, ensure_ascii=False)
 os.chmod(p, 0o600)
