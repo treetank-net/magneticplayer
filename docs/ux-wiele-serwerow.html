@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wiele serwerów: UX</title>
+<style>
+  :root {
+    --page: #f4f3f7; --ink: #1c1b1f; --muted: #5d5b66; --line: #d9d7e0;
+    --phone: #141317; --surf: #1d1b20; --surf2: #2b2930; --surf3: #36343b;
+    --on: #e6e1e5; --onv: #cac4d0; --pri: #d0bcff; --onpri: #381e72; --pric: #4f378b;
+    --ok: #3fa96b; --warn: #f2b84b; --err: #f2b8b5; --scrim: rgba(0,0,0,.55);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #0f0e12; --ink: #e6e1e5; --muted: #a9a4b2; --line: #2e2c33; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h2 { font-size: 19px; margin: 48px 0 6px; padding-top: 16px; border-top: 1px solid var(--line); }
+  p.lead { color: var(--muted); max-width: 760px; margin: 0 0 8px; }
+  .note { color: var(--muted); max-width: 760px; margin: 4px 0 18px; }
+  .note b { color: var(--ink); }
+  .row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  figure { margin: 0; width: 300px; max-width: 100%; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  figcaption b { color: var(--ink); }
+
+  /* telefon */
+  .ph { position: relative; width: 300px; max-width: 100%; height: 600px; background: var(--surf); color: var(--on);
+        border: 8px solid var(--phone); border-radius: 30px; overflow: hidden; display: flex; flex-direction: column;
+        font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+  .sb { height: 22px; flex: none; display: flex; justify-content: space-between; padding: 3px 14px 0; font-size: 11px; color: var(--onv); }
+  .top { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px 8px 14px; }
+  .top .t { flex: 1; min-width: 0; }
+  .top .t1 { font-size: 17px; display: flex; align-items: center; gap: 4px; }
+  .top .t2 { font-size: 11px; }
+  .chev { color: var(--onv); font-size: 12px; }
+  .tb { color: var(--pri); font-size: 12px; padding: 6px 6px; white-space: nowrap; }
+  .ok { color: var(--ok); } .bad { color: var(--err); } .warn { color: var(--warn); } .mut { color: var(--onv); }
+  .body { flex: 1; overflow: hidden; padding: 4px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .nav { flex: none; height: 62px; background: var(--surf2); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--onv); }
+  .nav span { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .nav i { font-style: normal; font-size: 16px; padding: 1px 14px; border-radius: 12px; }
+  .nav .on { color: var(--on); } .nav .on i { background: var(--pric); }
+  .card { background: var(--surf2); border-radius: 12px; padding: 10px 12px; }
+  .card .h { font-weight: 600; }
+  .sm { font-size: 11px; color: var(--onv); }
+  .chip { display: inline-block; font-size: 10.5px; padding: 1px 7px; border-radius: 8px; border: 1px solid var(--surf3); color: var(--onv); margin-right: 3px; }
+  .chip.p { border-color: var(--pric); color: var(--pri); }
+  .btn { display: inline-block; padding: 7px 14px; border-radius: 18px; background: var(--pri); color: var(--onpri); font-weight: 600; font-size: 12px; }
+  .btn.t { background: var(--surf3); color: var(--on); }
+  .btn.o { background: none; border: 1px solid var(--surf3); color: var(--pri); }
+  .bar { height: 4px; border-radius: 2px; background: var(--surf3); overflow: hidden; }
+  .bar b { display: block; height: 100%; background: var(--pri); }
+  .scrim { position: absolute; inset: 0; background: var(--scrim); }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surf2); border-radius: 22px 22px 0 0; padding: 8px 0 14px; }
+  .sheet .grab { width: 32px; height: 4px; border-radius: 2px; background: var(--surf3); margin: 0 auto 10px; }
+  .sheet .st { padding: 0 18px 6px; font-weight: 600; font-size: 14px; }
+  .sheet .ss { padding: 0 18px 8px; font-size: 11px; color: var(--onv); }
+  .li { display: flex; gap: 10px; align-items: center; padding: 9px 18px; }
+  .li.sel { background: var(--surf3); }
+  .li .ic { width: 30px; height: 30px; border-radius: 15px; background: var(--surf3); display: grid; place-items: center; flex: none; font-size: 14px; }
+  .li.sel .ic { background: var(--pric); }
+  .li .x { flex: 1; min-width: 0; }
+  .li .r { font-size: 11px; }
+  .li.dim { opacity: .45; }
+  .div { height: 1px; background: var(--surf3); margin: 6px 0; }
+  .dlg { position: absolute; left: 18px; right: 18px; top: 120px; background: var(--surf3); border-radius: 24px; padding: 20px; }
+  .dlg .dt { font-size: 17px; margin-bottom: 10px; }
+  .dlg .dx { color: var(--onv); font-size: 12.5px; }
+  .dlg .da { display: flex; justify-content: flex-end; gap: 16px; margin-top: 16px; color: var(--pri); font-weight: 600; font-size: 12.5px; }
+  .dlg .da .danger { color: var(--err); }
+  .warnbox { background: rgba(242,184,75,.12); border: 1px solid rgba(242,184,75,.45); border-radius: 10px; padding: 8px 10px; color: var(--on); margin-top: 10px; font-size: 12px; }
+  .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; padding: 0 16px; }
+  .big { font-size: 42px; }
+  .field { border: 1px solid var(--surf3); border-radius: 6px; padding: 9px 10px; color: var(--onv); font-size: 12px; }
+  .field b { display: block; font-weight: 400; font-size: 10px; color: var(--pri); margin-bottom: 2px; }
+  .qr { width: 150px; height: 150px; margin: 6px auto; border: 6px solid #fff; background:
+        repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/18px 18px; border-radius: 6px; position: relative; }
+  .qr::after { content: ""; position: absolute; inset: 44px; background: #fff; }
+  .term { width: 300px; max-width: 100%; background: #101014; color: #c9f0c9; border-radius: 10px; padding: 12px; font: 11.5px/1.5 ui-monospace, Menlo, monospace; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+  .term .q { width: 110px; height: 110px; margin: 8px 0; background: repeating-conic-gradient(#ddd 0 25%, #101014 0 50%) 0 0/14px 14px; }
+  .player { background: #000; height: 150px; border-radius: 10px; display: grid; place-items: center; color: #777; }
+  .seek { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--onv); }
+  .seek .bar { flex: 1; }
+  .ctrls { display: flex; justify-content: center; gap: 14px; font-size: 22px; }
+  .snack { position: absolute; left: 10px; right: 10px; bottom: 72px; background: var(--on); color: var(--surf); border-radius: 6px; padding: 10px 12px; font-size: 12px; display: flex; justify-content: space-between; }
+  .snack b { color: var(--pric); }
+  table { border-collapse: collapse; margin: 8px 0 0; font-size: 14px; max-width: 760px; }
+  td, th { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; }
+  ol.dec li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Wiele serwerów: UX apki</h1>
+<p class="lead">Makiety do <code>docs/plan-wiele-serwerow.md</code>. Zasada: apka ma dwa niezależne wybory:
+<b>skąd</b> są filmy (serwer plików: Torrenty, Biblioteka) i <b>gdzie</b> grają (ekran: ten telefon albo mpv na którymś
+komputerze). Przy jednym serwerze apka wygląda prawie tak jak dziś.</p>
+<p class="note">Przykładowe serwery: <b>jmpc</b> (pliki + ekran, kabel), <b>Garaż</b> (tylko pliki, bez monitora, kabel),
+<b>Laptop</b> (tylko ekran, Wi-Fi), <b>Mint 2</b> (pliki + ekran).</p>
+
+<!-- 1 -->
+<h2>1. Przełącznik serwera</h2>
+<p class="note">Dziś w pasku jest „● jmpc — działa”. Ten napis staje się przyciskiem (▾). Panel od dołu pokazuje
+wszystkie serwery ze stanem i z tym, co umieją. <b>Wybór dotyczy Torrentów i Biblioteki.</b> Ekran wybiera się osobno
+(pkt 4), więc „Garaż” bez monitora da się wybrać jako źródło, a „Laptop” bez plików jest tu wyszarzony.</p>
+<div class="row">
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>21:04</span><span>▾ ▮ 82%</span></div>
+      <div class="top"><div class="t"><div class="t1">jmpc <span class="chev">▾</span></div><div class="t2 ok">● działa · pliki + ekran</div></div><span class="tb">☾ Uśpij</span><span class="tb">⋮</span></div>
+      <div class="body">
+        <div class="card"><div class="h">Alien 3 (1992) Special Edition</div><div class="sm">Seeding · 14.2 GB</div><div class="bar" style="margin-top:6px"><b style="width:100%"></b></div></div>
+        <div class="card"><div class="h">The Expanse S02</div><div class="sm">Pobieranie 46% · 3.1 MB/s · 22 min</div><div class="bar" style="margin-top:6px"><b style="width:46%"></b></div></div>
+      </div>
+      <div class="nav"><span class="on"><i>⇩</i>Torrenty</span><span><i>▤</i>Biblioteka</span><span><i>⬇</i>Na telefonie</span><span><i>▶</i>Pilot</span><span><i>⚙</i>Ustawienia</span></div>
+    </div>
+    <figcaption><b>Pasek</b>: nazwa serwera z ▾, a pod nią stan i role. Uśpij/Obudź dotyczą wybranego serwera.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>21:04</span><span>▾ ▮ 82%</span></div>
+      <div class="top"><div class="t"><div class="t1">jmpc <span class="chev">▴</span></div><div class="t2 ok">● działa · pliki + ekran</div></div></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="st">Filmy z serwera</div>
+        <div class="li sel"><div class="ic">🖥</div><div class="x"><div>jmpc</div><div class="sm"><span class="chip p">pliki</span><span class="chip p">ekran</span></div></div><div class="r ok">● działa</div></div>
+        <div class="li"><div class="ic">🖥</div><div class="x"><div>Garaż</div><div class="sm"><span class="chip p">pliki</span></div></div><div class="r mut">● śpi<br><span style="color:var(--pri)">Obudź</span></div></div>
+        <div class="li"><div class="ic">🖥</div><div class="x"><div>Mint 2</div><div class="sm"><span class="chip p">pliki</span><span class="chip p">ekran</span></div></div><div class="r bad">● brak<br>połączenia</div></div>
+        <div class="li dim"><div class="ic">💻</div><div class="x"><div>Laptop</div><div class="sm"><span class="chip">tylko ekran</span></div></div><div class="r ok">● działa</div></div>
+        <div class="div"></div>
+        <div class="li"><div class="ic">＋</div><div class="x" style="color:var(--pri)">Dodaj serwer</div></div>
+        <div class="li"><div class="ic">⚙</div><div class="x" style="color:var(--pri)">Zarządzaj serwerami</div></div>
+      </div>
+    </div>
+    <figcaption><b>Panel serwerów.</b> „Obudź” od razu w wierszu. Serwer z samym ekranem widać, ale nie da się go
+      wybrać jako źródła (żeby było jasne, że istnieje).</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>21:05</span><span>▾ ▮ 82%</span></div>
+      <div class="top"><div class="t"><div class="t1">Garaż <span class="chev">▾</span></div><div class="t2 mut">● śpi</div></div></div>
+      <div class="center">
+        <div class="big">☾</div>
+        <div style="font-size:16px">Garaż śpi</div>
+        <div class="sm">Wybudzanie przez sieć (WoL): <span class="ok">działało już 3 razy</span></div>
+        <span class="btn">⏻ Obudź</span>
+        <div class="sm" style="margin-top:18px">Filmy pobrane na telefon są w zakładce „Na telefonie”.</div>
+      </div>
+      <div class="nav"><span><i>⇩</i>Torrenty</span><span class="on"><i>▤</i>Biblioteka</span><span><i>⬇</i>Na telefonie</span><span><i>▶</i>Pilot</span><span><i>⚙</i>Ustawienia</span></div>
+    </div>
+    <figcaption><b>Wybrany serwer śpi</b>: zamiast błędu jest pusty stan z „Obudź”. Apka pamięta, czy budzenie już
+      kiedyś zadziałało.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>21:05</span><span>▾ ▮ 82%</span></div>
+      <div class="top"><div class="t"><div class="t1">Garaż <span class="chev">▾</span></div><div class="t2 warn">● budzę przez jmpc…</div></div></div>
+      <div class="center">
+        <div class="big">⏻</div>
+        <div style="font-size:16px">Budzę Garaż</div>
+        <div class="bar" style="width:180px"><b style="width:40%"></b></div>
+        <div class="sm">Pakiet z telefonu nie zadziałał (inna sieć),<br>wysłałem go przez <b>jmpc</b>. Zwykle ok. 30 s.</div>
+        <span class="btn t">Anuluj</span>
+      </div>
+      <div class="nav"><span><i>⇩</i>Torrenty</span><span class="on"><i>▤</i>Biblioteka</span><span><i>⬇</i>Na telefonie</span><span><i>▶</i>Pilot</span><span><i>⚙</i>Ustawienia</span></div>
+    </div>
+    <figcaption><b>Budzenie</b>: najpierw z telefonu, po kilku sekundach przez działający serwer. Gdy serwer
+      odpowie, lista sama się wczytuje.</figcaption>
+  </figure>
+</div>
+
+<!-- 2 -->
+<h2>2. Usypianie zależne od tego, czy da się obudzić</h2>
+<p class="note">Przycisk wygląda tak samo. Różni się tylko potwierdzenie. Serwer bez usypiania (np. NAS) nie ma przycisku.</p>
+<table>
+  <tr><th>co wiemy o budzeniu</th><th>po „Uśpij”</th></tr>
+  <tr><td>działało (apka to widziała)</td><td>dzisiejsze pytanie „Uśpić komputer?”</td></tr>
+  <tr><td>„może”: kabel, WoL włączony, ale niesprawdzony</td><td>pytanie + żółta uwaga „Jeszcze nie sprawdzono, czy da się go obudzić z telefonu”</td></tr>
+  <tr><td>„nie”: Wi-Fi, brak WoL</td><td>pytanie z ⚠, czerwony przycisk „Uśpij mimo to”</td></tr>
+</table>
+<div class="row" style="margin-top:20px">
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>23:40</span><span>▾ ▮ 61%</span></div>
+      <div class="top"><div class="t"><div class="t1">Mint 2 <span class="chev">▾</span></div><div class="t2 ok">● działa</div></div><span class="tb">☾ Uśpij</span></div>
+      <div class="scrim"></div>
+      <div class="dlg">
+        <div class="dt">Uśpić Mint 2?</div>
+        <div class="dx">Pobieranie się zatrzyma.</div>
+        <div class="warnbox">Jeszcze nie sprawdzono, czy da się go obudzić z telefonu (karta sieciowa ma WoL, ale BIOS może go blokować).</div>
+        <div class="da"><span>Anuluj</span><span>Uśpij</span></div>
+      </div>
+    </div>
+    <figcaption><b>„Może”.</b> Po pierwszym udanym budzeniu uwaga znika na stałe.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>23:40</span><span>▾ ▮ 61%</span></div>
+      <div class="top"><div class="t"><div class="t1">Laptop <span class="chev">▾</span></div><div class="t2 ok">● działa</div></div><span class="tb">☾ Uśpij</span></div>
+      <div class="scrim"></div>
+      <div class="dlg">
+        <div class="dt">⚠ Uśpić Laptop?</div>
+        <div class="dx">Laptop jest na Wi-Fi, więc <b style="color:var(--on)">nie obudzisz go z telefonu</b>. Trzeba będzie do niego podejść.</div>
+        <div class="da"><span>Anuluj</span><span class="danger">Uśpij mimo to</span></div>
+      </div>
+    </div>
+    <figcaption><b>„Nie”.</b> Powód pochodzi z agenta (Wi-Fi, brak WoL, nieznana karta).</figcaption>
+  </figure>
+</div>
+
+<!-- 3 -->
+<h2>3. Odtwarzanie: „Odtwórz na…”</h2>
+<p class="note">Dziś w menu filmu są „Odtwórz” (telefon) i „Na komputerze”. W nowej wersji <b>„Odtwórz” zostaje</b> (najczęstszy
+przypadek), a „Na komputerze” zamienia się w „Na ekranie…” z listą ekranów. Przy jednym serwerze z ekranem lista się
+nie otwiera, tylko od razu gra jak dziś. Kropka wskazuje ostatnio używany ekran.</p>
+<div class="row">
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>20:12</span><span>▾ ▮ 77%</span></div>
+      <div class="top"><div class="t"><div class="t1">Garaż <span class="chev">▾</span></div><div class="t2 ok">● działa · pliki</div></div></div>
+      <div class="body">
+        <div class="card"><div class="h">Seriale / The Expanse / S02E04.mkv</div><div class="sm">2.1 GB · obejrzane 12 min</div></div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="st">Gdzie odtworzyć?</div>
+        <div class="ss">The Expanse S02E04 · plik z: Garaż</div>
+        <div class="li"><div class="ic">📱</div><div class="x"><div>Ten telefon</div></div></div>
+        <div class="li sel"><div class="ic">💻</div><div class="x"><div>Laptop <span class="sm">· ostatnio</span></div><div class="sm">przez sieć z Garażu</div></div><div class="r ok">●</div></div>
+        <div class="li"><div class="ic">🖥</div><div class="x"><div>jmpc</div><div class="sm">przez sieć z Garażu · coś gra</div></div><div class="r ok">●</div></div>
+        <div class="li"><div class="ic">🖥</div><div class="x"><div>Mint 2</div><div class="sm">śpi · obudzę i odtworzę</div></div><div class="r mut">●</div></div>
+        <div class="div"></div>
+        <div class="li"><div class="ic">⬇</div><div class="x"><div>Pobierz na telefon</div></div></div>
+      </div>
+    </div>
+    <figcaption><b>Wybór ekranu.</b> Garaż nie ma monitora, więc go tu nie ma. „Coś gra” ostrzega, że przejmiemy ekran.
+      Uśpiony ekran budzimy i odtwarzamy w jednym kroku.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>20:13</span><span>▾ ▮ 77%</span></div>
+      <div class="top"><div class="t"><div class="t1">Garaż <span class="chev">▾</span></div><div class="t2 ok">● działa · pliki</div></div></div>
+      <div class="body">
+        <div class="card"><div class="h">Seriale / The Expanse / S02E04.mkv</div><div class="sm">2.1 GB · obejrzane 12 min</div></div>
+      </div>
+      <div class="scrim"></div>
+      <div class="dlg">
+        <div class="dt">Wznowić od 12:04?</div>
+        <div class="dx">Na ekranie <b style="color:var(--on)">Laptop</b>. Teraz gra tam „Alien 3” i zostanie zatrzymany.</div>
+        <div class="da"><span>Od początku</span><span>Wznów</span></div>
+      </div>
+    </div>
+    <figcaption><b>Wznawianie</b> działa jak dziś. Pozycję zna telefon, więc nie ma znaczenia, który serwer daje plik.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>20:14</span><span>▾ ▮ 77%</span></div>
+      <div class="top"><div class="t"><div class="t1">Garaż <span class="chev">▾</span></div><div class="t2 ok">● działa · pliki</div></div></div>
+      <div class="body">
+        <div style="display:flex;align-items:center;gap:6px"><span class="sm">Ekran:</span><span class="chip p" style="font-size:12px;padding:3px 10px">💻 Laptop ▾</span><span class="sm ok">● gra</span></div>
+        <div class="card"><div class="h">The Expanse S02E04</div><div class="sm">plik z: Garaż</div></div>
+        <div class="seek"><span>12:31</span><div class="bar"><b style="width:26%"></b></div><span>47:50</span></div>
+        <div class="ctrls"><span>⏪</span><span>⏸</span><span>⏩</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="btn t">■ Zakończ</span><span class="btn o">Napisy</span><span class="btn o">Audio</span></div>
+        <div class="sm">Głośność 70%</div>
+      </div>
+      <div class="nav"><span><i>⇩</i>Torrenty</span><span><i>▤</i>Biblioteka</span><span><i>⬇</i>Na telefonie</span><span class="on"><i>▶</i>Pilot</span><span><i>⚙</i>Ustawienia</span></div>
+    </div>
+    <figcaption><b>Pilot</b> ma własny wybór ekranu (żeton „Ekran: Laptop ▾”), niezależny od serwera w pasku. Po
+      „Na ekranie…” Pilot sam przełącza się na ten ekran.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>20:15</span><span>▾ ▮ 77%</span></div>
+      <div class="top"><div class="t"><div class="t1">jmpc <span class="chev">▾</span></div><div class="t2 ok">● działa · pliki + ekran</div></div></div>
+      <div class="body">
+        <div style="display:flex;align-items:center;gap:6px"><span class="sm">Ekran:</span><span class="chip p" style="font-size:12px;padding:3px 10px">🖥 jmpc ▾</span></div>
+        <div class="center">
+          <div class="big">▶</div>
+          <div>Na jmpc nic nie gra.</div>
+          <div class="sm">Na innych ekranach: <b style="color:var(--on)">Laptop</b> gra „The Expanse S02E04”.</div>
+          <span class="btn o">Przełącz na Laptop</span>
+        </div>
+      </div>
+      <div class="nav"><span><i>⇩</i>Torrenty</span><span><i>▤</i>Biblioteka</span><span><i>⬇</i>Na telefonie</span><span class="on"><i>▶</i>Pilot</span><span><i>⚙</i>Ustawienia</span></div>
+    </div>
+    <figcaption><b>Pusty pilot</b> podpowiada, gdzie indziej coś gra, żeby nie trzeba było szukać.</figcaption>
+  </figure>
+</div>
+
+<!-- 4 -->
+<h2>4. Dodawanie serwera i parowanie</h2>
+<p class="note">Serwer nikogo nie wpuszcza sam z siebie. Pierwsze urządzenie paruje ten, kto instaluje (QR w terminalu), a kolejne
+urządzenie już sparowane („Sparuj kolejne urządzenie”). Kod jest jednorazowy, ważny 10 minut i zamieniany na własny
+token urządzenia.</p>
+<div class="row">
+  <figure>
+    <div class="term">
+      <div>$ bash install.sh</div>
+      <div>…</div>
+      <div>== gotowe: MagneticPlayer działa na garaz:8765</div>
+      <div style="margin-top:6px">Sparuj telefon: w apce „Dodaj serwer”</div>
+      <div>i zeskanuj kod (ważny 10 min):</div>
+      <div class="q"></div>
+      <div>albo wpisz: adres 192.168.100.42</div>
+      <div>           kod  <b style="color:#fff">7KQ-M4X</b></div>
+      <div style="color:#888">później: magneticplayer_agent.py --pair</div>
+    </div>
+    <figcaption><b>Serwer bez monitora</b>: kod pokazuje się tam, gdzie instalujesz (np. przez SSH). Nie ma okna
+      parowania dla każdego w sieci.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>18:02</span><span>▾ ▮ 90%</span></div>
+      <div class="top"><span class="tb" style="color:var(--on)">←</span><div class="t"><div class="t1">Dodaj serwer</div></div></div>
+      <div class="body">
+        <div class="card" style="text-align:center;padding:18px 12px">
+          <div class="big">⌗</div>
+          <div class="h">Zeskanuj kod QR</div>
+          <div class="sm">z terminala po instalacji albo z „Sparuj kolejne urządzenie” na innym telefonie lub w przeglądarce</div>
+          <div style="margin-top:10px"><span class="btn">Skanuj</span></div>
+        </div>
+        <div class="sm" style="text-align:center">albo wpisz ręcznie</div>
+        <div class="field"><b>Adres</b>192.168.100.42</div>
+        <div class="field"><b>Kod parowania</b>7KQ-M4X</div>
+        <div class="field"><b>Nazwa tego telefonu (widoczna na serwerze)</b>Pixel 8a Jacka</div>
+        <div style="text-align:right"><span class="btn">Połącz</span></div>
+      </div>
+    </div>
+    <figcaption><b>Dodaj serwer</b>: QR albo adres i kod. Nazwę telefonu trzyma serwer na liście urządzeń.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>18:03</span><span>▾ ▮ 90%</span></div>
+      <div class="top"><span class="tb" style="color:var(--on)">←</span><div class="t"><div class="t1">Dodaj serwer</div></div></div>
+      <div class="center">
+        <div class="big ok">✓</div>
+        <div style="font-size:16px">Połączono z „Garaż”</div>
+        <div><span class="chip p">pliki</span><span class="chip p">Transmission</span><span class="chip p">biblioteka: 2 katalogi</span></div>
+        <div class="sm">Brak ekranu (nie ma mpv ani sesji graficznej)</div>
+        <div class="warnbox" style="text-align:left">Budzenie: karta ma WoL, ale jeszcze niesprawdzone. Uśpij i obudź raz, żeby się upewnić.</div>
+        <div class="field" style="width:100%;text-align:left"><b>Nazwa w apce</b>Garaż</div>
+        <span class="btn">Gotowe</span>
+      </div>
+    </div>
+    <figcaption><b>Po połączeniu</b> apka mówi, co serwer umie, a czego nie, i od razu zgłasza wątpliwości co do budzenia.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>18:10</span><span>▾ ▮ 90%</span></div>
+      <div class="top"><span class="tb" style="color:var(--on)">←</span><div class="t"><div class="t1">Sparuj kolejne urządzenie</div></div></div>
+      <div class="body" style="text-align:center">
+        <div class="sm">Zeskanuj na nowym telefonie: „Dodaj serwer”. Kod działa raz i wygasa za <b style="color:var(--on)">9:41</b>.</div>
+        <div class="qr"></div>
+        <div class="sm" style="margin-top:6px">Kod obejmuje serwery:</div>
+        <div class="li" style="padding:4px 8px"><div class="x" style="text-align:left">☑ jmpc</div></div>
+        <div class="li" style="padding:4px 8px"><div class="x" style="text-align:left">☑ Garaż</div></div>
+        <div class="li" style="padding:4px 8px"><div class="x" style="text-align:left">☐ Mint 2 <span class="sm">(niedostępny)</span></div></div>
+      </div>
+    </div>
+    <figcaption><b>Kolejne urządzenie</b> (np. telefon żony): jeden QR na kilka serwerów naraz. To pomysł „na później” z planu,
+      tu pokazany, żeby było widać, o co chodzi.</figcaption>
+  </figure>
+</div>
+
+<!-- 5 -->
+<h2>5. Zarządzanie serwerami i urządzeniami</h2>
+<p class="note">W Ustawieniach sekcja „Serwery” zastępuje dzisiejsze pole adresu. Wejście w serwer pokazuje jego możliwości
+i listę sparowanych urządzeń z „Odbierz dostęp” (zgubiony telefon).</p>
+<div class="row">
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>18:20</span><span>▾ ▮ 90%</span></div>
+      <div class="top"><div class="t"><div class="t1">Ustawienia</div></div></div>
+      <div class="body">
+        <div class="sm" style="color:var(--pri)">Serwery</div>
+        <div class="card" style="padding:4px 0">
+          <div class="li"><div class="ic">🖥</div><div class="x"><div>jmpc</div><div class="sm">192.168.100.100 · pliki + ekran</div></div><div class="r ok">●</div></div>
+          <div class="li"><div class="ic">🖥</div><div class="x"><div>Garaż</div><div class="sm">192.168.100.42 · pliki</div></div><div class="r mut">●</div></div>
+          <div class="li"><div class="ic">💻</div><div class="x"><div>Laptop</div><div class="sm">192.168.100.57 · ekran</div></div><div class="r ok">●</div></div>
+          <div class="li"><div class="ic">＋</div><div class="x" style="color:var(--pri)">Dodaj serwer</div></div>
+        </div>
+        <div class="sm" style="color:var(--pri);margin-top:6px">Odtwarzanie</div>
+        <div class="card"><div>Bufor na telefonie</div><div class="sm">5 min</div></div>
+        <div class="card"><div>Aktualizacje apki</div><div class="sm">z: jmpc (najnowsza wersja spośród serwerów)</div></div>
+      </div>
+      <div class="nav"><span><i>⇩</i>Torrenty</span><span><i>▤</i>Biblioteka</span><span><i>⬇</i>Na telefonie</span><span><i>▶</i>Pilot</span><span class="on"><i>⚙</i>Ustawienia</span></div>
+    </div>
+    <figcaption><b>Lista serwerów</b> w Ustawieniach.</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>18:21</span><span>▾ ▮ 90%</span></div>
+      <div class="top"><span class="tb" style="color:var(--on)">←</span><div class="t"><div class="t1">jmpc</div><div class="t2 ok">● działa · agent 1.4</div></div></div>
+      <div class="body">
+        <div class="card">
+          <div class="sm">Umie</div>
+          <div><span class="chip p">pliki</span><span class="chip p">Deluge</span><span class="chip p">ekran</span><span class="chip p">napisy</span><span class="chip p">odblokowanie</span></div>
+          <div class="sm" style="margin-top:6px">Usypianie: tak · budzenie: <span class="ok">działa (WoL)</span></div>
+        </div>
+        <div class="sm" style="color:var(--pri)">Sparowane urządzenia</div>
+        <div class="card" style="padding:4px 0">
+          <div class="li"><div class="x"><div>Pixel 8a Jacka <span class="sm">· ten telefon</span></div><div class="sm">ostatnio: teraz</div></div></div>
+          <div class="li"><div class="x"><div>Telefon żony</div><div class="sm">ostatnio: wczoraj 22:10</div></div><div class="r" style="color:var(--err)">Odbierz</div></div>
+          <div class="li"><div class="x"><div>Przeglądarka · laptop</div><div class="sm">ostatnio: 3 dni temu</div></div><div class="r" style="color:var(--err)">Odbierz</div></div>
+          <div class="li"><div class="x"><div>Stary wspólny token</div><div class="sm">używany do przeparowania wszystkich</div></div><div class="r" style="color:var(--err)">Wyłącz</div></div>
+        </div>
+        <div style="display:flex;gap:8px"><span class="btn o">Sparuj kolejne</span><span class="btn t">Zmień nazwę</span><span class="btn t" style="color:var(--err)">Usuń</span></div>
+      </div>
+    </div>
+    <figcaption><b>Szczegóły serwera.</b> „Odbierz” dla zgubionego telefonu robisz z dowolnego innego sparowanego
+      urządzenia. „Usuń” usuwa serwer tylko z tej apki.</figcaption>
+  </figure>
+</div>
+
+<!-- 6 -->
+<h2>6. Pozostałe miejsca</h2>
+<div class="row">
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>19:30</span><span>▾ ▮ 70%</span></div>
+      <div class="top"><div class="t"><div class="t1">jmpc <span class="chev">▾</span></div><div class="t2 ok">● działa</div></div></div>
+      <div class="scrim"></div>
+      <div class="dlg" style="top:150px">
+        <div class="dt">Pobrać na którym serwerze?</div>
+        <div class="dx" style="margin-bottom:8px">magnet: Night of the Living Dead (1968)</div>
+        <div class="li sel" style="padding:8px 6px;border-radius:8px"><div class="x">◉ jmpc <span class="sm">· Deluge · 410 GB wolne</span></div></div>
+        <div class="li" style="padding:8px 6px"><div class="x">○ Garaż <span class="sm">· Transmission · 2.1 TB wolne · śpi</span></div></div>
+        <div class="dx" style="margin-top:8px">☐ Zapamiętaj i nie pytaj</div>
+        <div class="da"><span>Anuluj</span><span>Pobierz</span></div>
+      </div>
+    </div>
+    <figcaption><b>Magnet z innej apki</b> przy kilku serwerach z torrentem. Przy jednym działa jak dziś, bez pytania.
+      Uśpiony serwer budzimy (dziś też tak jest).</figcaption>
+  </figure>
+  <figure>
+    <div class="ph">
+      <div class="sb"><span>19:31</span><span>✈ ▮ 70%</span></div>
+      <div class="top"><div class="t"><div class="t1">jmpc <span class="chev">▾</span></div><div class="t2 bad">● brak połączenia</div></div></div>
+      <div class="body">
+        <div class="card">
+          <div class="h">Alien 3 (1992) Special Edition</div>
+          <div class="sm"><span class="chip">jmpc</span> Cały film na telefonie · 14.2 GB</div>
+          <div style="margin-top:8px"><span class="btn t">▶ Odtwórz</span></div>
+        </div>
+        <div class="card">
+          <div class="h">The Expanse S02E05</div>
+          <div class="sm"><span class="chip">Garaż</span> Na telefonie 38% · Wstrzymane</div>
+          <div class="bar" style="margin:6px 0"><b style="width:38%"></b></div>
+          <div><span class="btn t">▶ Odtwórz</span> <span class="btn o">Wznów</span></div>
+        </div>
+      </div>
+      <div class="nav"><span><i>⇩</i>Torrenty</span><span><i>▤</i>Biblioteka</span><span class="on"><i>⬇</i>Na telefonie</span><span><i>▶</i>Pilot</span><span><i>⚙</i>Ustawienia</span></div>
+    </div>
+    <figcaption><b>„Na telefonie”</b> pokazuje filmy ze wszystkich serwerów, z żetonem źródła. „Wznów” pobiera
+      z właściwego serwera, niezależnie od wybranego w pasku.</figcaption>
+  </figure>
+</div>
+
+<h2>Decyzje w tych makietach (do potwierdzenia)</h2>
+<ol class="dec">
+  <li><b>Źródło i ekran to dwa osobne wybory.</b> Źródło jest w pasku, a ekran w „Na ekranie…” i w Pilocie. Alternatywa „jeden
+    wybrany serwer do wszystkiego” jest prostsza, ale nie obsłuży układu Garaż → Laptop.</li>
+  <li><b>„Odtwórz” na telefonie zostaje pierwszym przyciskiem</b>, a „Na ekranie…” jest drugi. Bez dodatkowego kroku dla najczęstszego przypadku.</li>
+  <li><b>Przy jednym serwerze nic się nie zmienia</b>: brak ▾ w pasku, brak listy ekranów, magnet bez pytania.</li>
+  <li><b>Biblioteka pokazuje jeden serwer naraz.</b> Wspólny widok ze wszystkich serwerów jest na później.</li>
+  <li><b>Lista urządzeń i „Odbierz” są dostępne z każdego sparowanego urządzenia</b> (wszyscy mają te same uprawnienia).</li>
+</ol>
+</main>
+</body>
+</html>

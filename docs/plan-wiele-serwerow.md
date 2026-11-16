@@ -3,6 +3,8 @@
 Stan: plan, nic z tego nie jest jeszcze zrobione. Po wdrożeniu kawałka opis przechodzi do `architektura.md`
 i `api.md`, a stąd znika.
 
+Makiety ekranów apki: [ux-wiele-serwerow.html](ux-wiele-serwerow.html) (otwórz w przeglądarce).
+
 ## Cel
 
 Dziś apka zna jeden serwer (jmpc), który robi wszystko: pobiera torrenty, serwuje pliki i wyświetla w mpv.
