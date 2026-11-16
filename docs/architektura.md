@@ -52,7 +52,9 @@ w tle, najwyżej 2 naraz, a wynik trafia do cache. Z tych danych wychodzi `ready
 obejrzeć.
 
 ### Oglądanie
-- **Telefon:** ExoPlayer strumieniuje `/media/<torrent>/<plik>` albo `/lib/<katalog>/<ścieżka>` (Range).
+- **Telefon:** ExoPlayer strumieniuje `/media/<torrent>/<plik>` albo `/lib/<katalog>/<ścieżka>` (Range). Bufor do przodu
+  ustawia się w Ustawieniach (1–30 min, domyślnie 5). Trzymany w pamięci apki (`largeHeap`), z limitem ~60% sterty
+  (64–512 MB), więc przy gęstych plikach kończy się na limicie bajtów (`bigBuffer()` w `PlayerActivity.kt`).
   - Napisy obok filmu dochodzą jako `SubtitleConfiguration` z `/sub`.
   - Dekoder FFmpeg (Jellyfin media3-ffmpeg) obsługuje dźwięk AC3, E-AC3 i DTS.
   - „Na komputer” przekazuje bieżącą pozycję.

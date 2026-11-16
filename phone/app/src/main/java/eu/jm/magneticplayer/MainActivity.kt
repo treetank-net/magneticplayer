@@ -840,6 +840,8 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, onSaved: (
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         HorizontalDivider()
+        BufferSettings(s)
+        HorizontalDivider()
         OpenSubsSettings(api, snack)
         HorizontalDivider()
         Text("Magnet linki: przy pierwszym kliknięciu magneta Android zapyta, czym otworzyć — wybierz MagneticPlayer → „Zawsze”. " +
@@ -895,6 +897,26 @@ private fun qrBitmap(text: String, size: Int): android.graphics.Bitmap {
         mapOf(com.google.zxing.EncodeHintType.MARGIN to 2))
     val px = IntArray(size * size) { if (m.get(it % size, it / size)) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
     return android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888)
+}
+
+/** Bufor odtwarzacza w apce (PlayerActivity.bigBuffer); działa od następnego otwarcia filmu. */
+@Composable
+private fun BufferSettings(s: Settings) {
+    var text by remember { mutableStateOf(s.bufferMinutes.toString()) }
+    val mb = bufferLimitBytes() shr 20
+    Text("Bufor w odtwarzaczu", style = MaterialTheme.typography.titleMedium)
+    Text("Ile filmu telefon pobiera do przodu, żeby oglądać mimo zrywów Wi-Fi. Bufor trzymany w pamięci, " +
+        "maks. ok. $mb MB: przy bardzo dużych plikach (4K) będzie go mniej. Działa od następnego otwarcia filmu.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // zapis od razu przy każdej poprawnej wartości 1–30; przy błędnej zostaje poprzednia
+    val v = text.toIntOrNull()
+    val ok = v != null && v in 1..30
+    OutlinedTextField(text, { t ->
+        text = t.filter { it.isDigit() }.take(2)
+        text.toIntOrNull()?.takeIf { it in 1..30 }?.let { s.bufferMinutes = it }
+    }, Modifier.fillMaxWidth(), label = { Text("Bufor do przodu, minuty (1–30)") }, singleLine = true, isError = !ok,
+        supportingText = if (ok) null else ({ Text("Wpisz od 1 do 30, zostaje ${s.bufferMinutes} min") }),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
 }
 
 /** Konto OpenSubtitles trzyma agent na komputerze (to on szuka i zapisuje napisy obok filmów). */

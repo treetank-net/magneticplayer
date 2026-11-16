@@ -43,6 +43,11 @@ class Settings(ctx: Context) {
         get() = p.getString("sub_langs", "en,pl")!!
         set(v) = p.edit().putString("sub_langs", v.replace(" ", "").lowercase()).apply()
 
+    /** ile minut filmu odtwarzacz w apce trzyma do przodu (w pamięci telefonu) */
+    var bufferMinutes: Int
+        get() = p.getInt("buffer_min", 5)
+        set(v) = p.edit().putInt("buffer_min", v).apply()
+
     val configured get() = host.isNotBlank() && token.isNotBlank()
 
     fun position(key: String): Long = p.getLong("pos:$key", 0)

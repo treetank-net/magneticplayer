@@ -23,12 +23,33 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Limit bajtów bufora: ~60% sterty apki (manifest: largeHeap), 64–512 MB. */
+fun bufferLimitBytes(): Long = (Runtime.getRuntime().maxMemory() * 0.6).toLong().coerceIn(64L shl 20, 512L shl 20)
+
+/**
+ * Bufor do przodu z Ustawień (domyślnie 5 min; sam ExoPlayer trzyma ~50 s), żeby przeżyć zrywy Wi-Fi albo przejście
+ * do innego pokoju. Bufor siedzi w pamięci apki, więc przy gęstych plikach (remuksy 4K) skończy się na limicie
+ * bajtów, a nie na zadanym czasie.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+fun bigBuffer(minutes: Int): DefaultLoadControl {
+    val ms = minutes.coerceIn(1, 30) * 60_000
+    val bytes = bufferLimitBytes().toInt()
+    return DefaultLoadControl.Builder()
+        // min == max: dociąga cały czas do pełnego bufora, zamiast czekać, aż bufor spadnie do minimum
+        .setBufferDurationsMs(ms, ms, 2_500, 5_000)
+        .setTargetBufferBytes(bytes)
+        .setPrioritizeTimeOverSizeThresholds(false)
+        .build()
+}
 
 const val VLC_PACKAGE = "org.videolan.vlc"
 
@@ -98,7 +119,7 @@ class PlayerActivity : ComponentActivity() {
         // najpierw dekodery telefonu, FFmpeg gdy telefon nie umie (AC3/E-AC3/DTS…)
         val renderers = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        val p = ExoPlayer.Builder(this, renderers).build()
+        val p = ExoPlayer.Builder(this, renderers).setLoadControl(bigBuffer(settings.bufferMinutes)).build()
         player = p
         view.player = p
         p.addListener(object : Player.Listener {
