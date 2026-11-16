@@ -138,3 +138,8 @@ Strona to jeden plik `server/web/index.html` (bez zależności). `install.sh` ko
 | OpenSubtitles: „dzienny limit pobrań” | klucz „Under development” daje 100 pobrań na dobę, a anonimowe pobrania mają limit konta. Pomaga podanie loginu w apce albo inne źródło |
 | `pkexec` przez SSH: „No session for cookie” | użyj wariantu z `sudo`, opisanego wyżej |
 | torrent „wstrzymany”, choć nikt nie klikał | akcja „zatrzymaj po pobraniu” albo pauza z Deluge GTK, sprawdź w historii zleceń |
+
+### Diagnostyka strumieniowania
+
+`ssh jmpc touch ~/.config/magneticplayer/debug-stream` włącza w logu agenta (`journalctl --user -u magneticplayer`)
+linię na każde żądanie filmu i napisów: zakres (`Range`), wysłane KB, czas. `rm` tego pliku wyłącza.

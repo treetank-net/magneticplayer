@@ -63,7 +63,9 @@ obejrzeć.
     szary od ExoPlayera to bufor w pamięci.
   - Agent dla torrentów oddaje tylko pobrane kawałki (`ready_end`). Gdy dojdzie do niepobranego, czeka do 20 s na
     Deluge, potem zrywa połączenie, a ExoPlayer ponawia (do 60 razy). Zer z niepobranego pliku nikt nie dostaje.
-  - Napisy obok filmu dochodzą jako `SubtitleConfiguration` z `/sub`.
+  - Napisy obok filmu dochodzą jako `SubtitleConfiguration`. Apka pobiera je z `/sub` na telefon (cacheDir/subs) przy
+    otwarciu filmu, bo media3 czyta plik napisów od nowa przy przewijaniu i przełączaniu ścieżek. Z sieci, bez Wi-Fi,
+    blokowałoby to dociąganie filmu z bufora na dysku i obraz by się ciął.
   - Dekoder FFmpeg (Jellyfin media3-ffmpeg) obsługuje dźwięk AC3, E-AC3 i DTS.
   - „Na komputer” przekazuje bieżącą pozycję.
 - **VLC:** ten sam URL plus extra `subtitles_location`.

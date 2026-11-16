@@ -154,7 +154,8 @@ class PlayerActivity : ComponentActivity() {
         // w pamięci zostaje domyślne ~50 s; dalszy zapas jest na dysku (prefetch). Odtwarzacz czyta z bufora na dysku,
         // a czego tam nie ma, bierze z sieci, ale sam do niego nie zapisuje.
         val source = CacheDataSource.Factory().setCache(MediaCache.get(this))
-            .setUpstreamDataSourceFactory(http)
+            // DefaultDataSource: http z komputera, ale też file:// dla napisów pobranych lokalnie (localSubs)
+            .setUpstreamDataSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(this, http))
             .setCacheWriteDataSinkFactory(null)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         // torrent się dociąga: agent zrywa po 20 s bez nowych kawałków, a my ponawiamy zamiast pokazać błąd
@@ -185,6 +186,7 @@ class PlayerActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
+            val local = withContext(Dispatchers.IO) { localSubs(subs) }
             val subConfigs = subs.mapNotNull { s ->
                 val mime = when (s.ext) {
                     "srt" -> MimeTypes.APPLICATION_SUBRIP
@@ -192,7 +194,7 @@ class PlayerActivity : ComponentActivity() {
                     "vtt" -> MimeTypes.TEXT_VTT
                     else -> null
                 } ?: return@mapNotNull null
-                MediaItem.SubtitleConfiguration.Builder(Uri.parse(api.subUrl(ref, s.name)))
+                MediaItem.SubtitleConfiguration.Builder(local[s.name] ?: Uri.parse(api.subUrl(ref, s.name)))
                     .setMimeType(mime)
                     .setLanguage(s.lang.takeWhile { it.isLetter() }.ifEmpty { null })
                     .setLabel(s.name)
@@ -267,6 +269,34 @@ class PlayerActivity : ComponentActivity() {
             }.getOrElse { false }
             if (!worked) delay(3_000)
         }
+    }
+
+    /**
+     * Napisy pobrane na telefon przy otwarciu filmu. ExoPlayer (media3 1.8, lazy loading napisów) czyta plik napisów
+     * od nowa przy przewijaniu i przełączaniu ścieżek. Z sieci, bez Wi-Fi, takie ładowanie wisi na ponowieniach
+     * i blokuje dociąganie filmu z bufora na dysku (CompositeSequenceableLoader czeka na najbardziej opóźnione źródło),
+     * więc obraz się tnie. Lokalny plik czyta się zawsze. Gdy pobranie się nie uda, zostaje URL z komputera.
+     */
+    private fun localSubs(list: List<SubFile>): Map<String, Uri> {
+        val dir = java.io.File(cacheDir, "subs")
+        dir.deleteRecursively()  // tylko napisy bieżącego filmu
+        dir.mkdirs()
+        val out = mutableMapOf<String, Uri>()
+        list.forEachIndexed { i, s ->
+            runCatching {
+                val f = java.io.File(dir, "$i.${s.ext}")
+                val c = java.net.URL(api.subUrl(ref, s.name)).openConnection() as java.net.HttpURLConnection
+                try {
+                    c.connectTimeout = 8_000; c.readTimeout = 15_000
+                    if (c.responseCode != 200) throw java.io.IOException("HTTP ${c.responseCode}")
+                    c.inputStream.use { inp -> f.outputStream().use { inp.copyTo(it) } }
+                } finally {
+                    c.disconnect()
+                }
+                out[s.name] = Uri.fromFile(f)
+            }
+        }
+        return out
     }
 
     /** Co sekundę: ile ciągłego zapasu leży na dysku od bieżącej pozycji (przeliczone średnim bitrate na czas). */

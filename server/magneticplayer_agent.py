@@ -984,6 +984,17 @@ class Handler(BaseHTTPRequestHandler):
     STALL_WAIT = 20  # s czekania na kolejne kawałki, potem zrywamy połączenie (odtwarzacz ponowi)
 
     def stream(self, full, head_only, pieces=None, refresh=None):
+        # diagnostyka: `touch ~/.config/magneticplayer/debug-stream` loguje każde żądanie (zakres, czas, wysłane bajty)
+        if not os.path.exists(os.path.join(os.path.dirname(CONFIG_PATH), "debug-stream")):
+            return self._stream(full, head_only, pieces, refresh)
+        t0, self._sent = time.time(), 0
+        try:
+            return self._stream(full, head_only, pieces, refresh)
+        finally:
+            log("stream", self.client_address[0], self.command, os.path.basename(full)[-30:],
+                self.headers.get("Range"), f"{self._sent >> 10} KB", f"{time.time() - t0:.1f}s")
+
+    def _stream(self, full, head_only, pieces=None, refresh=None):
         if not os.path.isfile(full):
             raise ApiError("pliku jeszcze nie ma na dysku", 404)
         size = os.path.getsize(full)
@@ -1042,6 +1053,7 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
                 pos += len(chunk)
+                self._sent = getattr(self, "_sent", 0) + len(chunk)
 
 
 class QuietServer(ThreadingHTTPServer):
