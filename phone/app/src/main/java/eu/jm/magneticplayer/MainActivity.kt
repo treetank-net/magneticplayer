@@ -147,6 +147,7 @@ class MainActivity : ComponentActivity() {
         Thread { MediaCache.sweep(this) }.start()
         // telewizor DLNA, który grał przed ubiciem apki: Pilot i powiadomienie wracają
         lifecycleScope.launch(Dispatchers.IO) { if (Dlna.restore(this@MainActivity)) RemoteSessionService.start(applicationContext, "dlna") }
+        Uploads.onAppStart(this)  // przesyłanie pobranych filmów: wyzwalacz w tle i obserwator (Uploads.kt)
         handleIntent(intent)
         setContent { AppTheme { MainScreen(tab, settingsVersion) } }
     }
@@ -1006,6 +1007,8 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
             }
             Switch(keepScreen, { keepScreen = it; s.pilotKeepScreen = it })
         }
+        HorizontalDivider()
+        UploadSettings()
         HorizontalDivider()
         if (api.configured) OpenSubsSettings(api, snack)
         HorizontalDivider()

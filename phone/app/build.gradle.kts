@@ -71,4 +71,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1") // ekran sterowania Cast SDK dziedziczy po AppCompatActivity
     // FFmpeg: dźwięk AC3/E-AC3/DTS/TrueHD, którego telefony nie dekodują same (build Jellyfina)
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1")
+    // przesyłanie pobranych filmów na serwer w tle (Uploads.kt): wyzwalacz MediaStore, czekanie na Wi-Fi
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
 }

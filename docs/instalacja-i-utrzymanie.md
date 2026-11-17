@@ -53,7 +53,7 @@ scp server/*.py jmpc:.local/share/magneticplayer/ && ssh jmpc systemctl --user r
 
 | ścieżka | zawartość |
 |---|---|
-| `~/.config/magneticplayer/config.json` | `id` i `name` serwera, stary wspólny token, port, backend (`deluge`/`transmission`/`none`), hasło deluge-web, katalogi biblioteki, klucz OpenSubtitles i opcjonalny login, `mpv_args`, `auto_unlock` |
+| `~/.config/magneticplayer/config.json` | `id` i `name` serwera, stary wspólny token, port, backend (`deluge`/`transmission`/`none`), hasło deluge-web, katalogi biblioteki, klucz OpenSubtitles i opcjonalny login, `mpv_args`, `auto_unlock`, `upload_dir` (katalog na filmy przesłane z telefonu; domyślnie „Z telefonu” w pierwszym katalogu biblioteki) |
 | `~/.config/magneticplayer/devices.json` | sparowane urządzenia (skróty tokenów), aktywne kody parowania, klucz biletów |
 | `~/.config/magneticplayer/jobs.json` | zlecenia z telefonu: magnet, akcja po pobraniu, czy wykonana |
 | `~/.local/share/magneticplayer/` | agent (`magneticplayer_agent.py`, `mp_*.py`) i `venv/` z subliminal |
