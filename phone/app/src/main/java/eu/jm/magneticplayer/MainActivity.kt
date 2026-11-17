@@ -677,10 +677,15 @@ private fun WatchableInfo(f: TFile) {
 private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (String) -> Unit, onWake: (String) -> Unit) {
     val ctx = LocalContext.current
     var avail by remember { mutableStateOf(Pilot.available(ctx)) }
+    // Chromecasty w sieci szukane z telefonu (działa też bez agenta, np. w gościach)
+    DisposableEffect(Unit) { val stop = CastNet.discover(ctx); onDispose { stop() } }
     LaunchedEffect(Unit) {
         var n = 0
         while (true) {
-            if (n++ % 3 == 0 && Cast.session(ctx) == null) Pilot.refreshAgentCast(ctx)  // Chromecast puszczony przez kogoś innego
+            if (n++ % 3 == 0 && Cast.session(ctx) == null) {
+                CastNet.refresh()  // co gra na Chromecastach (dowolny nadawca)
+                if (CastNet.playing().isEmpty()) Pilot.refreshAgentCast(ctx)  // zapas: agent
+            }
             avail = Pilot.available(ctx); delay(1000)
         }
     }
@@ -708,7 +713,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
         when (target) {
             "cast", "dlna" -> key(target, target == "cast" && Cast.session(ctx) == null) {
                 val remote = remember { Pilot.remote(ctx, target) }
-                if (remote is AgentCastRemote) LaunchedEffect(Unit) {
+                if (remote is AgentCastRemote || remote is DirectCastRemote) LaunchedEffect(Unit) {
                     Pilot.focus.value = "cast"  // powiadomienie ma pokazać ten Chromecast
                     RemoteSessionService.start(ctx.applicationContext)
                 }

@@ -206,6 +206,7 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 | `Servers.kt` | lista serwerów, wybrany serwer plików i ekran, migracja starych ustawień (serwer `legacy`), parowanie (`Pairing`) |
 | `ServersUi.kt` | przełącznik serwera, panel „śpi”, okno usypiania, wybór ekranu, Ustawienia → Serwery, dodawanie, urządzenia, „Sparuj kolejne” |
 | `MainActivity.kt` | zakładki Torrenty, Pilot i Ustawienia, górny pasek (serwer, Obudź/Uśpij), pasek aktualizacji |
+| `CastNet.kt` | Chromecasty z telefonu bez agenta i bez Cast SDK: wykrywanie mDNS (NsdManager, gdy Pilot jest na ekranie) i własny klient protokołu Cast v2 (TLS :8009, ręczny protobuf): stan dowolnego nadawcy, pauza, przewijanie, głośność, zamknięcie |
 | `Remote.kt` | wspólny „zdalny odtwarzacz” (mpv, Chromecast, DLNA) i wybór celu Pilota (`Pilot`) |
 | `RemoteSession.kt` | sesja media3 dla mpv i DLNA: powiadomienie, ekran blokady, głośność przyciskami poza apką |
 | `Cast.kt`, `Dlna.kt` | Chromecast (Cast SDK, MediaRouter) i telewizory DLNA (SSDP, SOAP) |

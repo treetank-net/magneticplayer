@@ -133,6 +133,30 @@ class AgentCastRemote(private val ctx: Context, val api: Api, private val device
     override suspend fun stop() = cmd("stop")
 }
 
+/** Chromecast widziany bezpośrednio z telefonu ([CastNet], protokół Cast v2): działa bez agenta i bez Cast SDK. */
+class DirectCastRemote(private val id: String) : Remote {
+    override val kind = "cast"
+    override val name: String get() = CastNet.devices[id]?.name ?: "Chromecast"
+    @Volatile private var last: RemoteState? = null
+
+    override suspend fun status(): RemoteState? {
+        val s = CastNet.statusOf(id)?.takeIf { it.active } ?: return null.also { last = null }
+        val app = s.app?.takeIf { it != "Default Media Receiver" }
+        return RemoteState(s.title ?: "", s.pos, s.dur, s.state == "PLAYING", s.state == "BUFFERING",
+            volume = if (s.fixedVolume) null else (s.volume * 100).toInt(), muted = s.muted, note = app, at = s.at).also { last = it }
+    }
+    override suspend fun setPlaying(play: Boolean) {
+        CastNet.media(id, if (play) "PLAY" else "PAUSE")
+        last = last?.copy(playing = play, at = System.currentTimeMillis())
+    }
+    override suspend fun seekTo(sec: Double) = CastNet.media(id, "SEEK") { put("currentTime", sec.coerceAtLeast(0.0)) }
+    override suspend fun seekBy(sec: Double) { val s = last ?: status() ?: return; seekTo(s.posNow() + sec) }
+    override suspend fun volumeBy(steps: Int) { val v = (last ?: status())?.volume ?: return; setVolume((v + steps * 5).coerceIn(0, 100)) }
+    override suspend fun setVolume(v: Int) = CastNet.setVolume(id, level = v / 100.0)
+    override suspend fun setMuted(m: Boolean) = CastNet.setVolume(id, muted = m)
+    override suspend fun stop() = CastNet.stopApp(id)
+}
+
 /** Telewizor DLNA, do którego wysłaliśmy film ([Dlna.current]). */
 class DlnaRemote(private val ctx: Context) : Remote {
     override val kind = "dlna"
@@ -179,7 +203,7 @@ object Pilot {
 
     /** Dostępne cele w kolejności domyślnej. Wątek UI (sesja Cast). */
     fun available(ctx: Context): List<String> = buildList {
-        if (Cast.session(ctx) != null || agentCast.value != null) add("cast")
+        if (Cast.session(ctx) != null || CastNet.playing().isNotEmpty() || agentCast.value != null) add("cast")
         if (Dlna.current != null) add("dlna")
         if (Servers.screenKey(ctx) != null) add("screen")
     }
@@ -188,14 +212,15 @@ object Pilot {
 
     fun remote(ctx: Context, kind: String?): Remote? = when (kind) {
         "cast" -> if (Cast.session(ctx) != null) CastRemote(ctx.applicationContext)
-            else agentCast.value?.let { (k, o) -> Api.of(ctx, k)?.let { AgentCastRemote(ctx.applicationContext, it, o.optString("id")) } }
+            else CastNet.playing().firstOrNull()?.let { DirectCastRemote(it.device.id) }
+            ?: agentCast.value?.let { (k, o) -> Api.of(ctx, k)?.let { AgentCastRemote(ctx.applicationContext, it, o.optString("id")) } }
         "dlna" -> DlnaRemote(ctx.applicationContext)
         "screen" -> Api.of(ctx, Servers.screenKey(ctx))?.let { MpvRemote(ctx.applicationContext, it) }
         else -> null
     }
 
     /** Nazwa Chromecasta do chipa: z sesji Cast SDK albo od agenta. */
-    fun castName(ctx: Context): String = Cast.deviceName(ctx) ?: agentCast.value?.second?.optString("device")?.takeIf { it.isNotBlank() } ?: "Chromecast"
+    fun castName(ctx: Context): String = Cast.deviceName(ctx) ?: CastNet.playing().firstOrNull()?.device?.name ?: agentCast.value?.second?.optString("device")?.takeIf { it.isNotBlank() } ?: "Chromecast"
 
     /** Wysłano film na `kind`: Pilot pokazuje ten cel, a mpv i DLNA dostają powiadomienie (Chromecast ma swoje z Cast SDK). */
     fun started(ctx: Context, kind: String) {
