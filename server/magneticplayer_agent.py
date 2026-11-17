@@ -30,6 +30,7 @@ import mp_media
 import mp_platform as platform
 from mp_cast import Casts, CastError
 import mp_renderers
+import mp_upload
 
 # DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
@@ -681,6 +682,7 @@ class App:
         self.convert = mp_media.Converter(log)
         self.renderers = mp_renderers.Renderers(os.path.join(CONFIG_DIR, "renderers.json"), log)
         self.casts = Casts(log, self.renderers)
+        self.uploads = mp_upload.Uploads(cfg, self.library, log)  # przesyłanie filmów z telefonu
         # wykrywanie Chromecastów od startu: rejestr odbiorników zna model, zanim ktoś otworzy wybór urządzenia
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
@@ -735,6 +737,7 @@ class App:
                 # wersja „dla Chromecasta”: nazwa kodera (sprzętowy albo procesor) albo None (brak ffmpeg)
                 "transcode": (mp_media.encoder_info() or {}).get("label"),
                 "transcode_hw": bool((mp_media.encoder_info() or {}).get("hw")),
+                "upload": self.uploads.available(),  # PUT /api/upload/<id> (mp_upload.py)
             },
             "power": {"suspend": POWER and platform.can_power(), "poweroff": POWER and platform.can_power(),
                       "wake": self.wake_info(net)},
@@ -882,6 +885,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.dispatch("POST")
 
+    def do_PUT(self):
+        self.dispatch("PUT")
+
     def do_OPTIONS(self):
         # preflight odtwarzaczy webowych (Chromecast) przed Range na /media, /lib, /sub
         self.send_response(204)
@@ -935,6 +941,8 @@ class Handler(BaseHTTPRequestHandler):
             qd0 = {k: v[0] for k, v in q.items()}
             if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
                 raise ApiError("zły token", 401)
+            if p.startswith("/api/upload/") and method in ("GET", "PUT"):
+                return mp_upload.handle(self, method, p[len("/api/upload/"):], qd0)
             if p == "/api/info" and method == "GET":
                 return self.send_json(a.info(self.client_address[0], self.device))
             if p == "/api/pair/code" and method == "POST":

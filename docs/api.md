@@ -37,7 +37,7 @@ w POST w treści JSON.
 | `GET /app/MagneticPlayer.apk` | plik opublikowanej apki |
 
 `features`: `torrent` (`"deluge"`, `"transmission"` albo `null`), `library`, `player` (mpv + sesja graficzna, chyba że config `player: false`),
-`subs_search`, `unlock`, `apk`, `wake_others`. `power`: `suspend`, `poweroff` (oba `false` przy config `power: false`), `wake`
+`subs_search`, `unlock`, `apk`, `wake_others`, `upload` (przyjmuje filmy z telefonu, niżej). `power`: `suspend`, `poweroff` (oba `false` przy config `power: false`), `wake`
 (`{"method": "wol"|null, "mac", "confidence": "maybe"|"no", "reason"}`). `yes` w `confidence` wie tylko apka,
 gdy budzenie raz się udało; agent zgłasza `yes` po `POST /api/wake/verified`. Liczniki wybudzeń z
 `/sys/class/wakeup` nie pomagają: na płycie jmpc (ASUS H110M-A) każde wybudzenie idzie na konto przycisku zasilania.
@@ -103,6 +103,21 @@ Z konsoli: `magneticplayer_agent.py --pair` (kod + QR w terminalu), `--devices`,
 | `GET /api/library/browse?root=&path=` | `root`, `path`, `dirs`, `files` (`name`, `size`, `mtime`, `media`, `subs`) |
 | `GET /api/fs?path=` | podkatalogi do wyboru nowego katalogu (`parent`, `dirs`) |
 | `GET /lib/<root>/<ścieżka>` | strumień pliku z biblioteki (Range) |
+
+## Przesyłanie z telefonu
+
+Wznawialne przyjmowanie pliku (apka: filmy pobrane przeglądarką, [plan-przesylanie.md](plan-przesylanie.md)).
+`<id>` wybiera telefon (8–80 znaków `A-Za-z0-9_-`, stały dla pliku). Działa bez Deluge i Transmission.
+
+| metoda i ścieżka | opis |
+|---|---|
+| `GET /api/upload/<id>` | `{"received", "size", "done", "name"}`; `404` z `received: 0`, gdy serwer nic o nim nie wie |
+| `PUT /api/upload/<id>?name=&size=&offset=` | ciało (Content-Length, może być 0 = samo sprawdzenie) dopisywane od `offset` → `{"received", "size", "done", "name"}`. Ostatni kawałek kończy plik, a `name` to wtedy nazwa końcowa (przy kolizji „film (2).mkv”). Błędy: `409` z `received`, gdy `offset` się nie zgadza (i gdy ten sam plik idzie innym połączeniem), `507` przy braku miejsca (zostaje 512 MB zapasu), `400`, gdy kawałek wychodzi poza `size` |
+
+Kawałki trafiają do `<katalog>/.mp-upload/<id>.part` i są zapisywane strumieniowo (nie w pamięci). Przerwane
+połączenie zostawia to, co doszło, a po 60 s ciszy agent je zamyka. `name` to sama nazwa pliku: katalogi, znaki
+sterujące i kropka na początku są obcinane. Katalog docelowy: `upload_dir` w `config.json`, a bez niego
+„Z telefonu” w pierwszym istniejącym katalogu biblioteki. Bez obu `features.upload` jest `false`.
 
 ## Odtwarzacz na komputerze (mpv)
 

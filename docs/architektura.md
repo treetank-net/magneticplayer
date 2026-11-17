@@ -28,6 +28,7 @@ Jeden proces w Pythonie (`ThreadingHTTPServer`), poza subliminal nie ma zewnętr
 | `mp_devices.py` | sparowane urządzenia (tokeny jako SHA-256), kody parowania, bilety HMAC na jeden plik; `devices.json` czytany ponownie po zmianie mtime (CLI to osobny proces) |
 | `mp_cast.py` | Chromecast przez pychromecast: wykrywanie, nasłuch stanu wszystkich urządzeń (dowolny nadawca), odtwarzanie i sterowanie dla strony i Pilota |
 | `mp_renderers.py` | kim są Chromecasty (`product_name` z `eureka_info`), profile kodeków na model (`CAST_PROFILES`) i rejestr `renderers.json`; opis w `docs/urzadzenia.md` |
+| `mp_upload.py` | przyjmowanie filmów z telefonu (`/api/upload/<id>`): wznawialne kawałki w `.mp-upload/`, wolne miejsce, kolizje nazw, katalog `upload_dir` albo „Z telefonu” w bibliotece |
 | `mp_platform.py` | wszystko zależne od systemu: sesja graficzna, odblokowanie, usypianie, karta sieciowa, ocena budzenia, wysyłanie WoL. Inny system dopisuje się tutaj; czego nie umie, tego agent nie zgłasza w `features`/`power` |
 
 ### Wiele serwerów
@@ -172,6 +173,16 @@ wybrane napisy i zapisuje je obok filmu. Jeśli ten film gra w mpv, dokłada je 
 OpenSubtitles bez loginu: subliminal wymaga logowania (`@requires_auth`) przed pobraniem, a API pozwala pobierać
 z samym kluczem. Dlatego `_oscom_anonymous` woła `download_subtitle.__wrapped__`.
 
+### Przesyłanie pobranych filmów z telefonu
+Opcja w Ustawieniach, domyślnie wyłączona (szczegóły i decyzje: [plan-przesylanie.md](plan-przesylanie.md)).
+1. Przeglądarka kończy pobieranie do `Download/`. Wyzwalacz WorkManagera na MediaStore (także przy zamkniętej apce)
+   albo ContentObserver zauważa nowy film (`IS_PENDING = 0`, dodany po włączeniu opcji, bez `DCIM/`).
+2. Powiadomienie od razu: „Prześlij” albo „Prześlij i usuń z telefonu”.
+3. `UploadWorker` (tylko Wi-Fi): gdy serwer nie odpowiada na `ping`, czeka i próbuje co 15 min. Potem
+   `GET /api/upload/<id>` i `PUT` kawałkami po 64 MB od `received`.
+4. Agent (`mp_upload.py`) składa plik w `.mp-upload/<id>.part` i przenosi go do „Z telefonu” w bibliotece.
+5. Z usuwaniem: „Dotknij, aby usunąć” → systemowe potwierdzenie `MediaStore.createDeleteRequest` (Android 11+).
+
 ### Usypianie
 - `SleepGuard` co 20 s sprawdza, czy coś się pobiera albo gra. Jeśli tak, trzyma
   `systemd-inhibit --what=sleep --mode=block`. Przy okazji wywołuje `jobs.tick`.
@@ -216,6 +227,7 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 | `PlayerActivity.kt` | odtwarzacz w telefonie |
 | `MagnetActivity.kt` | obsługa magnetów |
 | `Updater.kt` | aktualizacje z komputera, wysyłanie własnego APK |
+| `Uploads.kt` | przesyłanie filmów pobranych przeglądarką na serwer: wykrywanie (WorkManager z wyzwalaczem MediaStore, ContentObserver), pytanie w powiadomieniu, `UploadWorker` (czeka na Wi-Fi serwera, wznawia), `UploadDeleteActivity`, ustawienia |
 
 Klucze pozycji, bufora i pobranych filmów mają przedrostek serwera (`<key>:`), poza serwerem `legacy` (migracja
 z jednego serwera), żeby stare dane zostały.

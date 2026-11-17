@@ -47,6 +47,15 @@ class Settings(ctx: Context) {
         get() = p.getString("last_tv", null)
         set(v) = p.edit().putString("last_tv", v).apply()
 
+    /** pytać o przesłanie filmów pobranych przeglądarką na serwer (Uploads.kt) */
+    var uploadAsk: Boolean
+        get() = p.getBoolean("upload_ask", false)
+        set(v) = p.edit().putBoolean("upload_ask", v).apply()
+    /** serwer docelowy przesyłania (klucz z Servers); null = serwer plików z features.upload */
+    var uploadServer: String?
+        get() = p.getString("upload_server", null)
+        set(v) = p.edit().putString("upload_server", v).apply()
+
 
     fun position(key: String): Long = p.getLong("pos:$key", 0)
     fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).apply()
@@ -460,6 +469,53 @@ class Api(val s: Settings, val srv: Server) {
     }
 
     fun suspendPc() { call("POST", "/api/system/suspend") }
+
+    // ---- przesyłanie filmów z telefonu na serwer (Uploads.kt; agent z features.upload)
+    /** `GET /api/upload/<id>` → kod HTTP i JSON (`received`, `done`); błędy HTTP nie rzucają, bo 404/409/507 niosą stan. */
+    fun uploadStatus(id: String): Pair<Int, JSONObject> = uploadRequest("GET", "/api/upload/$id", 0, null, null)
+
+    /**
+     * `PUT /api/upload/<id>`: [length] bajtów z [input] (strumieniowo, bez ładowania do pamięci); [length] = 0 to samo
+     * sprawdzenie (offset, wolne miejsce). [onProgress] dostaje liczbę wysłanych bajtów i może przerwać wyjątkiem.
+     */
+    fun uploadPut(id: String, name: String, size: Long, offset: Long, input: java.io.InputStream?, length: Long,
+                  onProgress: ((Long) -> Unit)? = null): Pair<Int, JSONObject> =
+        uploadRequest("PUT", "/api/upload/$id?name=${Uri.encode(name)}&size=$size&offset=$offset", length, input, onProgress)
+
+    private fun uploadRequest(method: String, path: String, length: Long, input: java.io.InputStream?,
+                              onProgress: ((Long) -> Unit)?): Pair<Int, JSONObject> {
+        if (!configured) throw ApiException("Dodaj serwer (Ustawienia → Dodaj serwer)")
+        val c = URL(base + path).openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = method
+            c.connectTimeout = 8000
+            c.readTimeout = 90_000
+            c.setRequestProperty("Authorization", "Bearer ${srv.token}")
+            if (method == "PUT") {
+                c.doOutput = true
+                c.setFixedLengthStreamingMode(length)
+                c.setRequestProperty("Content-Type", "application/octet-stream")
+                c.outputStream.use { out ->
+                    val buf = ByteArray(256 shl 10)
+                    var sent = 0L
+                    while (input != null && sent < length) {
+                        val n = input.read(buf, 0, minOf(buf.size.toLong(), length - sent).toInt())
+                        if (n < 0) throw IOException("plik na telefonie jest krótszy, niż był")
+                        out.write(buf, 0, n)
+                        sent += n
+                        onProgress?.invoke(sent)
+                    }
+                }
+            }
+            val code = c.responseCode
+            val text = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            return code to (runCatching { JSONObject(text) }.getOrNull() ?: JSONObject())
+        } catch (e: IOException) {
+            throw ApiException("${srv.name.ifEmpty { "Serwer" }} nie odpowiada (${e.javaClass.simpleName})")
+        } finally {
+            c.disconnect()
+        }
+    }
     fun screenOn() { call("POST", "/api/system/screen_on") }
 
     fun mediaUrl(ref: MediaRef): String = when (ref) {
