@@ -262,16 +262,21 @@ const CastUi = (() => {
       let d;
       try { d = await api("/api/media/probe?" + refQuery(ref)); } catch (e) { put(fmt, h("p", { class: "err" }, e.message)); return; }
       if (!d.ffmpeg) { put(fmt, h("p", { class: "muted" }, "Na serwerze nie ma ffmpeg, więc nie sprawdzę formatu.")); return; }
-      const c = d.cast, j = d.job, rows = [];
+      const c = d.cast, j = d.job, rows = [], per = d.cast_devices || [];
+      // agent zna model naszych Chromecastów: ocena dla każdego i „Przygotuj” tylko, gdy któryś ma kłopot
+      const need = per.length ? per.some(x => x.verdict !== "ok") : c.verdict !== "ok";
+      const PER = { ok: "zagra bez przygotowania", maybe: "może mieć kłopot", no: "raczej nie zagra" };
       if (d.variant) rows.push(h("p", {}, "✓ Jest wersja dla Chromecasta (" + bytes(d.variant.size) + "), pójdzie ona."),
         h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, remove: true }), "Usunięto wersję").then(probe) }, "Usuń tę wersję"));
       else {
-        rows.push(h("p", {}, VERDICT[c.verdict]), ...c.problems.map(x => h("p", { class: "muted" }, "· " + x)));
+        if (per.length) per.forEach(x => rows.push(h("p", { class: x.verdict === "ok" ? "" : "err" }, `${x.name} (${x.label}): ${PER[x.verdict]}`),
+          ...x.problems.map(y => h("p", { class: "muted" }, "· " + y))));
+        else rows.push(h("p", {}, VERDICT[c.verdict]), ...c.problems.map(x => h("p", { class: "muted" }, "· " + x)));
         if (j && (j.state === "queued" || j.state === "running")) {
           rows.push(h("p", {}, j.finishing ? "Kończę zapis (przenoszę indeks na początek pliku), to może potrwać minutę…"
               : `Przygotowuję (${j.encoder || "w kolejce"})… ${Math.round(j.pct)}%` + (j.speed ? ` · ${j.speed.toFixed(1)}× szybciej niż film` : "")),
             bar(j.pct / 100), h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, cancel: true })).then(probe) }, "Przerwij"));
-        } else if (c.verdict !== "ok") {
+        } else if (need) {
           if (j && j.state === "error") rows.push(h("p", { class: "err" }, "Nie wyszło: " + j.error));
           const how = (c.video_copy ? "obraz bez zmian" : "obraz: " + (d.encoder?.label || "?")) + ", " + (c.audio_copy ? "dźwięk bez zmian" : "dźwięk → AAC");
           rows.push(h("button", { class: "btn primary", disabled: !d.complete,
@@ -286,7 +291,7 @@ const CastUi = (() => {
     openDialog("Na Chromecasta: " + (ref.title || ""), [fmt, devs], () => clearTimeout(timer));
     probe();
     api("/api/cast/devices").then(list => put(devs, list.length ? list.map(d => h("div", { class: "row" },
-      h("span", { class: "grow" }, d.name, h("span", { class: "muted" }, " · " + (d.model || ""))),
+      h("span", { class: "grow" }, d.name, h("span", { class: "muted" }, " · " + (d.label || d.model || ""))),
       h("button", { class: "btn primary", onclick: () => act(async () => { await api("/api/cast/play", { ...ref, device: d.id }); $("#dlg").close(); setTab("remote"); }, "Gra na " + d.name) }, "▶ Odtwórz")))
       : h("p", { class: "muted" }, "Nie widzę żadnego Chromecasta w tej sieci.")), e => put(devs, h("p", { class: "err" }, e.message)));
   }

@@ -248,6 +248,7 @@ private fun CastFormat(ref: MediaRef) {
     val p = probe?.takeIf { it.optBoolean("ffmpeg") } ?: return
     val v = p.optJSONObject("variant")
     val c = p.optJSONObject("cast")
+    val devs = p.optJSONArray("cast_devices")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
     val j = p.optJSONObject("job")
     val state = j?.optString("state")
     val small = MaterialTheme.typography.bodySmall
@@ -273,12 +274,25 @@ private fun CastFormat(ref: MediaRef) {
                 }
                 TextButton({ op("cancel") }) { Text("Przerwij") }
             }
-            c?.optString("verdict") == "ok" -> Text("Format: Chromecast powinien to zagrać", style = small, color = muted)
+            // agent zna model naszych Chromecastów: ocena dla każdego, „Przygotuj” tylko gdy któryś ma kłopot
+            devs.isNotEmpty() && devs.all { it.optString("verdict") == "ok" } -> devs.forEach { d ->
+                Text("${d.optString("name")} (${d.optString("label")}): zagra bez przygotowania", style = small, color = muted)
+            }
+            devs.isEmpty() && c?.optString("verdict") == "ok" -> Text("Format: Chromecast powinien to zagrać", style = small, color = muted)
             c != null -> {
-                val probs = c.optJSONArray("problems")
-                Text(if (c.optString("verdict") == "no") "Chromecast raczej tego nie zagra:" else "Chromecast może mieć kłopot:",
-                    style = small, color = MaterialTheme.colorScheme.error)
-                for (i in 0 until (probs?.length() ?: 0)) Text("· " + probs!!.getString(i), style = small, color = muted)
+                if (devs.isNotEmpty()) devs.forEach { d ->
+                    val v = d.optString("verdict")
+                    Text("${d.optString("name")} (${d.optString("label")}): " + when (v) {
+                        "ok" -> "zagra"; "no" -> "raczej nie zagra"; else -> "może mieć kłopot" },
+                        style = small, color = if (v == "ok") muted else MaterialTheme.colorScheme.error)
+                    val pr = d.optJSONArray("problems")
+                    for (i in 0 until (pr?.length() ?: 0)) Text("· " + pr!!.getString(i), style = small, color = muted)
+                } else {
+                    val probs = c.optJSONArray("problems")
+                    Text(if (c.optString("verdict") == "no") "Chromecast raczej tego nie zagra:" else "Chromecast może mieć kłopot:",
+                        style = small, color = MaterialTheme.colorScheme.error)
+                    for (i in 0 until (probs?.length() ?: 0)) Text("· " + probs!!.getString(i), style = small, color = muted)
+                }
                 if (state == "error") Text("Ostatnia próba: " + j!!.optString("error").takeLast(160), style = small,
                     color = MaterialTheme.colorScheme.error)
                 val enc = p.optJSONObject("encoder")?.optString("label") ?: "?"

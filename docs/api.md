@@ -59,7 +59,7 @@ gdy budzenie raz się udało; agent zgłasza `yes` po `POST /api/wake/verified`.
 
 | metoda i ścieżka | opis |
 |---|---|
-| `GET /api/media/probe?ref` | `{"ffmpeg", "file": {container, duration, video, audio[], subs[]}, "cast": {verdict: ok\|maybe\|no, problems[], video_copy, audio_copy}, "complete", "variant": {size, cast} \| null, "job", "encoder": {encoder, label, hw}}` |
+| `GET /api/media/probe?ref` | `{"ffmpeg", "file": {container, duration, video, audio[], subs[]}, "cast": {verdict: ok\|maybe\|no, problems[], video_copy, audio_copy}, "complete", "variant": {size, cast} \| null, "job", "encoder": {encoder, label, hw}, "cast_devices": [{id, name, label, verdict, problems}]}`; `cast` to ocena ogólna (najostrożniejsza), `cast_devices` ocena dla każdego Chromecasta o znanym modelu |
 | `POST /api/media/convert` | `ref` → stan zlecenia (`state: queued\|running\|done\|error`, `pct`, `speed`, `encoder`, `error`, `finishing`: ffmpeg skończył kodowanie i przenosi indeks na początek pliku, co na wolnym dysku trwa do minuty); `"cancel": true` przerywa, `"remove": true` kasuje wersję; 409, gdy torrent nie jest pobrany w całości |
 | `GET /api/media/converts` | wszystkie zlecenia od startu agenta |
 
@@ -74,7 +74,8 @@ YouTube, Spotify). Apka używa tego, gdy sama nie ma sesji Cast.
 
 | metoda i ścieżka | opis |
 |---|---|
-| `GET /api/cast/devices` | `[{id, name, model}]` (mDNS przez pychromecast; pierwsze wywołanie czeka do 3 s) |
+| `GET /api/cast/devices` | `[{id, name, model, product, profile, label}]` (mDNS przez pychromecast; pierwsze wywołanie czeka do 3 s); `product` = `product_name` z `eureka_info`, `label` = nazwa modelu z profilu (`docs/urzadzenia.md`) |
+| `GET /api/renderers` | rejestr Chromecastów widzianych w sieci (`renderers.json`): `id`, `name`, `model`, `product`, `profile`, `build`, `host`, `first_seen`, `last_seen` |
 | `POST /api/cast/play` | `ref` + `device` (+ `start`) → odtwarza (wersja dla Chromecasta, jeśli jest; napisy VTT) |
 | `GET /api/cast/status` | `{active, device, id, app, mine, title, state, pos, duration, volume, muted, volume_fixed, all}`: pierwszy grający Chromecast (najpierw puszczony przez agenta), `all` = wszystkie grające; `app` = aplikacja na Chromecaście („Default Media Receiver”, „YouTube”…), `mine`: puścił agent; `volume` w procentach, `volume_fixed`: stała głośność (przyciski znikają) |
 | `POST /api/cast/cmd` | `{"cmd": "toggle\|play\|pause\|seek\|seek_rel\|volume\|mute\|stop", "value", "device"}`; bez `device` działa na Chromecaście ze statusu; `volume` w procentach 0–100, `seek_rel` w sekundach; `stop` zamyka aplikację na Chromecaście (także cudzą) |

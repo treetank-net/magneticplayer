@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import mp_media
 import mp_platform as platform
 from mp_cast import Casts, CastError
+import mp_renderers
 
 # DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
@@ -678,7 +679,10 @@ class App:
         self.devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
         self._subs_ok = None
         self.convert = mp_media.Converter(log)
-        self.casts = Casts(log)
+        self.renderers = mp_renderers.Renderers(os.path.join(CONFIG_DIR, "renderers.json"), log)
+        self.casts = Casts(log, self.renderers)
+        # wykrywanie Chromecastów od startu: rejestr odbiorników zna model, zanim ktoś otworzy wybór urządzenia
+        threading.Thread(target=self._cast_warmup, daemon=True).start()
         # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
         threading.Thread(target=mp_media.detect_encoder, daemon=True).start()
 
@@ -771,6 +775,14 @@ class App:
             _, f = self.resolve_file(d["torrent_id"], int(d["file_index"]))
             return f.get("ready", 0) >= f.get("size", 1) or f.get("progress", 0) >= 100
         return True
+
+    def _cast_warmup(self):
+        try:
+            self.casts.devices()
+            time.sleep(10)
+            self.casts.devices()  # urządzenia, które odpowiedziały później
+        except Exception as e:  # noqa: BLE001  (np. brak pychromecast)
+            log("chromecast: wykrywanie nie ruszyło:", e)
 
     def ticket_urls(self, b, base, variant=None):
         """Adres filmu i napisów z biletem dla innego urządzenia (ekranu, Chromecasta, telewizora DLNA)."""
@@ -966,8 +978,16 @@ class Handler(BaseHTTPRequestHandler):
                 except (ValueError, OSError, subprocess.TimeoutExpired) as e:
                     raise ApiError(f"nie da się odczytać pliku: {e}", 422)
                 v = mp_media.variant(full)
+                # ocena dla każdego znanego Chromecasta (rejestr odbiorników z modelem)
+                per = []
+                for r in a.renderers.casts():
+                    prof = mp_renderers.CAST_PROFILES.get(r.get("profile") or "")
+                    if prof:
+                        per.append({"id": r["id"], "name": r.get("name"), "label": prof["label"],
+                                    **mp_media.cast_check_for(info, prof)})
                 return self.send_json({
-                    "ffmpeg": True, "file": info, "cast": mp_media.cast_check(info), "complete": a.ref_complete(qd0),
+                    "ffmpeg": True, "file": info, "cast": mp_media.cast_check(info), "cast_devices": per,
+                    "complete": a.ref_complete(qd0),
                     "variant": {"size": os.path.getsize(v), "cast": mp_media.cast_check(mp_media.probe(v))} if v else None,
                     "job": a.convert.status(full), "encoder": mp_media.encoder_info()})
             if p == "/api/media/convert" and method == "POST":
@@ -998,6 +1018,8 @@ class Handler(BaseHTTPRequestHandler):
                 subs = [{"url": x["vtt"], "lang": x["lang"]} for x in t["subs"]]
                 return self.send_json(a.casts.play(str(b.get("device") or ""), t["url"], t["title"],
                                                    t["content_type"] or "video/mp4", subs, b.get("start")))
+            if p == "/api/renderers" and method == "GET":
+                return self.send_json(a.renderers.casts())
             if p == "/api/cast/status" and method == "GET":
                 return self.send_json(a.casts.status())
             if p == "/api/cast/cmd" and method == "POST":

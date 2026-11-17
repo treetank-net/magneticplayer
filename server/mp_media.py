@@ -156,6 +156,38 @@ def cast_check(info):
             "audio": a and {"codec": a["codec"], "lang": a["lang"]}}
 
 
+def cast_check_for(info, prof):
+    """Ocena dla konkretnego Chromecasta (profil z mp_renderers.CAST_PROFILES): "ok" | "maybe" | "no" i powody."""
+    v, a = info["video"], pick_audio(info)
+    problems, verdict = [], "ok"
+
+    def worse(x):
+        nonlocal verdict
+        if x == "no" or (x == "maybe" and verdict == "ok"):
+            verdict = x
+    if not v:
+        problems.append("brak obrazu"); worse("no")
+    else:
+        lim = prof["video"].get(v["codec"])
+        what = f"obraz {(v['codec'] or '?').upper()}{' 10-bit' if v['bits'] > 8 else ''}" \
+               f"{' ' + str(v['height']) + 'p' if v['height'] else ''}"
+        if not lim:
+            problems.append(what + ": ten Chromecast nie ma takiego dekodera"); worse("no")
+        elif (v["height"] or 0) > lim[0] + 8 or v["bits"] > lim[1]:
+            problems.append(f"{what}: za dużo dla tego Chromecasta (do {lim[0]}p, {lim[1]}-bit)"); worse("no")
+    if a:
+        c, name = a["codec"], (a["codec"] or "?").upper()
+        if c in prof["audio"]:
+            pass
+        elif c in prof["passthrough"]:
+            problems.append(f"dźwięk {name}: Chromecast przekaże go telewizorowi; bez obsługi w TV będzie cisza"); worse("maybe")
+        else:
+            problems.append(f"dźwięk {name}: ten Chromecast go nie odtworzy"); worse("no")
+    if "matroska" in (info["container"] or "") and not prof.get("mkv") and verdict == "ok":
+        problems.append("kontener MKV: zwykle działa")
+    return {"verdict": verdict, "problems": problems}
+
+
 def variant_path(full):
     d, base = os.path.split(full)
     return os.path.join(d, CAST_DIR, os.path.splitext(base)[0] + ".cast.mp4")

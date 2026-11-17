@@ -26,6 +26,8 @@ Jeden proces w Pythonie (`ThreadingHTTPServer`), poza subliminal nie ma zewnętr
 | `mp_library.py` | katalogi biblioteki, listowanie wyłącznie plików wideo i audio, napisy leżące obok filmów, ochrona przed wyjściem poza katalog (`safe_join`) |
 | `mp_subs.py` | wyszukiwanie i pobieranie napisów przez subliminal (leniwy import z venv) |
 | `mp_devices.py` | sparowane urządzenia (tokeny jako SHA-256), kody parowania, bilety HMAC na jeden plik; `devices.json` czytany ponownie po zmianie mtime (CLI to osobny proces) |
+| `mp_cast.py` | Chromecast przez pychromecast: wykrywanie, nasłuch stanu wszystkich urządzeń (dowolny nadawca), odtwarzanie i sterowanie dla strony i Pilota |
+| `mp_renderers.py` | kim są Chromecasty (`product_name` z `eureka_info`), profile kodeków na model (`CAST_PROFILES`) i rejestr `renderers.json`; opis w `docs/urzadzenia.md` |
 | `mp_platform.py` | wszystko zależne od systemu: sesja graficzna, odblokowanie, usypianie, karta sieciowa, ocena budzenia, wysyłanie WoL. Inny system dopisuje się tutaj; czego nie umie, tego agent nie zgłasza w `features`/`power` |
 
 ### Wiele serwerów
@@ -84,7 +86,11 @@ Plan i decyzje: [plan-wiele-serwerow.md](plan-wiele-serwerow.md), makiety: `ux-w
   (`addSession`), bo bez tego powiadomienie pojawia się dopiero po podłączeniu kontrolera. Usługa kończy się po ~10 s
   bez niczego grającego. Chromecast ma to samo z Cast SDK.
 - **Chromecast z przeglądarki**: klient webowy nie ma Cast SDK (wymaga HTTPS), więc steruje agent (`mp_cast.py`,
-  pychromecast w venv), a film idzie z agenta pod adresem LAN.
+  pychromecast w venv), a film idzie z agenta pod adresem LAN. Agent słucha wszystkich Chromecastów, więc Pilot
+  w apce (bez własnej sesji Cast) i strona widzą też to, co puścił ktoś inny.
+- **Czy zagra na Chromecaście**: agent zna model każdego Chromecasta (`mp_renderers.py`) i ocenia plik dla każdego
+  osobno (`cast_devices`). „Przygotuj” proponuje tylko wtedy, gdy któryś ma kłopot. Jak pytać urządzenia o model
+  i możliwości: `docs/urzadzenia.md`.
 
 ### Wskazanie pliku (`ref`)
 

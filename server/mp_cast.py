@@ -9,6 +9,8 @@ import sys
 import threading
 import time
 
+from mp_renderers import profile_info
+
 VENV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv")
 
 
@@ -43,8 +45,9 @@ class Casts:
     """Połączenia z każdym Chromecastem w sieci (nasłuch stanu, bez uruchamiania czegokolwiek), więc status widzi
     także to, co puścił ktoś inny (telefon przez Cast SDK, YouTube, Spotify…), i można tym sterować."""
 
-    def __init__(self, log):
+    def __init__(self, log, renderers=None):
         self.log = log
+        self.renderers = renderers  # mp_renderers.Renderers: zapisuje, kim jest każdy Chromecast
         self.lock = threading.Lock()
         self.browser = None
         self.zconf = None
@@ -70,6 +73,8 @@ class Casts:
                 u = str(u)
                 if u in self.casts or getattr(info, "cast_type", "cast") == "group":
                     continue
+                if self.renderers:
+                    self.renderers.seen_cast(u, info.friendly_name, info.model_name, info.host)
                 try:
                     c = pc.get_chromecast_from_cast_info(info, self.zconf)
                     c.start()
@@ -88,7 +93,9 @@ class Casts:
         for uuid, info in list(self.browser.devices.items()):
             if getattr(info, "cast_type", "cast") == "group":
                 continue
-            out.append({"id": str(uuid), "name": info.friendly_name, "model": info.model_name})
+            r = (self.renderers.get(str(uuid)) if self.renderers else None) or {}
+            out.append({"id": str(uuid), "name": info.friendly_name, "model": info.model_name,
+                        "product": r.get("product"), **profile_info(r.get("profile"))})
         return sorted(out, key=lambda d: d["name"].lower())
 
     def _connect(self, dev_id):
