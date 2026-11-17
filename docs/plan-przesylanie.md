@@ -15,7 +15,9 @@ pobieranie w Chrome przy zamkniętej apce, restart telefonu, przesyłanie „po 
 
 Tego samego dnia okienko nad ekranem głównym: pojawia się kilka sekund po zapisaniu pliku (wyzwalacz WorkManagera,
 apka w tle), „Prześlij i usuń” z „Dostępem do wszystkich plików” przesłał film i usunął go bez systemowego pytania,
-„Nie” zamyka kartę i powiadomienie, dwa pliki naraz pokazują się po kolei.
+„Nie” zamyka kartę i powiadomienie, dwa pliki naraz pokazują się po kolei. Pobieranie w Firefoksie: karta stoi nad
+klawiaturą (`FLAG_ALT_FOCUSABLE_IM` kładzie okno pod warstwą klawiatury, `fitInsetsTypes` z `ime()` podnosi je nad nią;
+bez tego karta zasłaniała klawisze). Chrome nie otworzył strony z adresem w LAN (nie wyjaśnione, Firefox tak).
 
 ## Jak to działa
 

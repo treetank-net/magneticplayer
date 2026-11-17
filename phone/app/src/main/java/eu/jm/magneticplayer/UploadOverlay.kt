@@ -89,8 +89,10 @@ object UploadOverlay {
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            // bez fokusu: klawiatura i przeglądarka pod spodem działają dalej
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            // bez fokusu: klawiatura i przeglądarka pod spodem działają dalej; ALT_FOCUSABLE_IM kładzie okno pod
+            // warstwą klawiatury (samo NOT_FOCUSABLE rysuje je na niej), więc dostaje jej wysokość i staje nad nią
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.BOTTOM
