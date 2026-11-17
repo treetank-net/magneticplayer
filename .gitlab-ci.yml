@@ -2,7 +2,8 @@ stages:
   - mirror
 
 # GitLab (treetank/magneticplayer) → GitHub (treetank-net/magneticplayer), jak w pozostałych projektach treetank.
-# Token GITHUB_TREETANK_TOKEN jest w środowisku runnera „vps”.
+# GITHUB_TREETANK_TOKEN: chroniona zmienna CI grupy treetank, więc job działa tylko na chronionych gałęziach i tagach
+# (main jest chroniony; tagi wydań v* też trzeba chronić w ustawieniach projektu).
 mirror-github:
   stage: mirror
   tags:
@@ -16,7 +17,7 @@ mirror-github:
   script:
     - |
       if [ -z "${GITHUB_TREETANK_TOKEN:-}" ]; then
-        echo "GITHUB_TREETANK_TOKEN must be configured for the vps runner." >&2
+        echo "Brak GITHUB_TREETANK_TOKEN: zmienna grupy treetank jest chroniona, a ta gałąź albo tag nie." >&2
         exit 1
       fi
       git remote remove gh 2>/dev/null || true
