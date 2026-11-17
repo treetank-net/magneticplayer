@@ -1,0 +1,30 @@
+stages:
+  - mirror
+
+# GitLab (treetank/magneticplayer) → GitHub (treetank-net/magneticplayer), jak w pozostałych projektach treetank.
+# Token GITHUB_TREETANK_TOKEN jest w środowisku runnera „vps”.
+mirror-github:
+  stage: mirror
+  tags:
+    - vps
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+  script:
+    - |
+      if [ -z "${GITHUB_TREETANK_TOKEN:-}" ]; then
+        echo "GITHUB_TREETANK_TOKEN must be configured for the vps runner." >&2
+        exit 1
+      fi
+      git remote remove gh 2>/dev/null || true
+      git remote add gh "https://${GITHUB_TREETANK_TOKEN}@github.com/treetank-net/magneticplayer.git"
+      if [ -n "${CI_COMMIT_BRANCH:-}" ]; then
+        remote_sha="$(git ls-remote gh refs/heads/main | awk '{print $1}')"
+        if [ "$remote_sha" != "$CI_COMMIT_SHA" ]; then
+          git push --force gh "$CI_COMMIT_SHA:refs/heads/main"
+        fi
+      fi
+      git push --tags gh
