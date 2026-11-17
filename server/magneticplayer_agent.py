@@ -697,6 +697,8 @@ class App:
 
     def wake_info(self, net):
         """Ocena z mp_platform + „yes”, gdy budzenie przez sieć już raz zadziałało (na tej samej karcie)."""
+        if self.cfg.get("wake") is False:  # tryb lekki: cudzy komputer, nikt go z sieci nie budzi
+            return {"method": None, "mac": None, "confidence": "no", "reason": "budzenie wyłączone (instalacja lekka)"}
         w = platform.wake_info(net)
         v = self.cfg.get("wake_verified") or {}
         if v.get("at") and w.get("mac") and v.get("mac") in (None, w["mac"]) and not net.get("wireless"):
@@ -1379,7 +1381,13 @@ def cli_pair(cfg, devices):
     if shutil.which("qrencode"):
         subprocess.run(["qrencode", "-t", "ANSIUTF8", link])
     else:
-        print("(QR w terminalu po: sudo apt install qrencode)")
+        try:  # tryb lekki: moduł qrcode z venv agenta (install.sh woła --pair pythonem z venv)
+            import qrcode
+            q = qrcode.QRCode(border=2)
+            q.add_data(link)
+            q.print_ascii(invert=True)
+        except ImportError:
+            print("(QR w terminalu po: sudo apt install qrencode)")
     print(f"  adres: {host}   port: {cfg['port']}   kod: {code[:3]}-{code[3:]}")
     print(f"  link:  {link}")
     print(f"  przeglądarka: http://{host}:{cfg['port']}/#p={code}")

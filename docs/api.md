@@ -37,7 +37,7 @@ w POST w treści JSON.
 | `GET /app/MagneticPlayer.apk` | plik opublikowanej apki |
 
 `features`: `torrent` (`"deluge"`, `"transmission"` albo `null`), `library`, `player` (mpv + sesja graficzna, chyba że config `player: false`),
-`subs_search`, `unlock`, `apk`, `wake_others`, `upload` (przyjmuje filmy z telefonu, niżej). `power`: `suspend`, `poweroff` (oba `false` przy config `power: false`), `wake`
+`subs_search`, `unlock`, `apk`, `wake_others`, `upload` (przyjmuje filmy z telefonu, niżej). `power`: `suspend`, `poweroff` (oba `false` przy config `power: false`), `wake` (`confidence: "no"` przy config `wake: false`, instalacja lekka)
 (`{"method": "wol"|null, "mac", "confidence": "maybe"|"no", "reason"}`). `yes` w `confidence` wie tylko apka,
 gdy budzenie raz się udało; agent zgłasza `yes` po `POST /api/wake/verified`. Liczniki wybudzeń z
 `/sys/class/wakeup` nie pomagają: na płycie jmpc (ASUS H110M-A) każde wybudzenie idzie na konto przycisku zasilania.

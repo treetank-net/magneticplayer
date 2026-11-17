@@ -8,9 +8,11 @@ Wymagania: Linux Mint lub Ubuntu z sesją graficzną (Cinnamon), Python 3.10+, k
 bash server/install.sh                 # przy komputerze: część rootowa przez pkexec (okno z hasłem)
 BACKEND=none bash server/install.sh    # komputer tylko jako ekran (albo tylko biblioteka): bez Deluge
 BACKEND=none PLAYER=0 POWER=0 PORT=8766 bash server/install.sh   # np. laptop: tylko pliki, bez usypiania z sieci
+LITE=1 bash server/install.sh          # cudzy komputer: bez hasła administratora (niżej)
+bash ~/.local/share/magneticplayer/uninstall.sh [--purge]   # odinstalowanie
 ```
 
-Zmienne zapisują się w `config.json` (`backend`, `player`, `power`, `port`), a ponowne `install.sh` bez nich
+Zmienne zapisują się w `config.json` (`backend`, `player`, `power`, `port`; `LITE=1` dokłada `wake: false`), a ponowne `install.sh` bez nich
 niczego tam nie zmienia. `player: false`: serwer nie jest ekranem, nawet gdy ma mpv. `power: false`: z sieci nie
 da się go uśpić ani wyłączyć (apka chowa „Uśpij”). Na laptopie użytkownika agent działa na 8766, bo 8765 zajmuje
 tam inna usługa (`ekrand`).
@@ -18,6 +20,33 @@ tam inna usługa (`ekrand`).
 Na końcu skrypt pokazuje kod parowania i QR. Zeskanuj go aparatem telefonu (otworzy apkę) albo w apce:
 Ustawienia → Dodaj serwer → adres i kod. Nowy kod: `~/.local/share/magneticplayer/venv/bin/python
 ~/.local/share/magneticplayer/magneticplayer_agent.py --pair`, albo z już sparowanego telefonu.
+
+### Instalacja lekka (`LITE=1`)
+
+Na komputer, którego właściciel nie da hasła administratora albo nie chce zmian w systemie (znajomy, rodzice).
+Nie ma części rootowej, torrentów, usypiania z sieci ani Wake-on-LAN (`backend: none`, `power: false`,
+`wake: false`). Zostają Biblioteka, przesyłanie z telefonu, napisy i ekran, jeśli są już mpv i sesja graficzna.
+Potrzebne są tylko `python3` i `systemd --user`.
+
+- Bez pakietu `python3-venv` (świeże Ubuntu) venv powstaje z `--without-pip`, a pip przychodzi z
+  `bootstrap.pypa.io/get-pip.py`. Z venv są napisy i QR w terminalu (moduł `qrcode` zamiast `qrencode`).
+- Gdy nie ma `~/Wideo`, `~/Videos` ani `~/Filmy`, instalator zakłada katalog wideo z XDG (zwykle `~/Videos`).
+  Bez niego nie byłoby Biblioteki, a przesyłanie nie miałoby dokąd zapisywać. To samo robi `BACKEND=none`.
+- `loginctl enable-linger` (bez roota, gdy pozwala polkit): agent startuje z komputerem i działa po wylogowaniu.
+  Znacznik `~/.local/share/magneticplayer/.linger` mówi `uninstall.sh`, że linger włączył instalator.
+- Zapory nie da się otworzyć bez roota. Na Ubuntu i Mincie ufw jest domyślnie wyłączony, więc zwykle to nie
+  przeszkadza.
+
+Sprawdzone 17.11.2026 na czystym Ubuntu 24.04 (VirtualBox, sieć mostkowana): instalacja, parowanie,
+przesyłanie z polskimi znakami w nazwie, start po restarcie bez logowania, ponowna instalacja i deinstalacja
+z `--purge`.
+
+`uninstall.sh` wyłącza i usuwa usługi (Deluge tylko wtedy, gdy założył je nasz instalator), rootowe dodatki pełnej
+instalacji (polkit, udev WoL, reguły ufw z komentarzem MagneticPlayer; przez pkexec albo sudo) i
+`~/.local/share/magneticplayer`. Z `--purge` usuwa też `~/.config/magneticplayer` (token, sparowane telefony).
+Filmów i pakietów systemowych nie rusza.
+
+### Przez SSH
 
 Przez SSH `pkexec` nie działa, bo nie ma sesji polkit. Część rootową robisz wtedy przez `sudo`:
 
@@ -31,8 +60,8 @@ Co robią skrypty:
 
 | skrypt | co robi |
 |---|---|
-| `install-root.sh <user> [port] [backend]` | instaluje pakiety `mpv ethtool qrencode python3-venv`, a przy backendzie Deluge też `deluged deluge-web`<br>wyłącza systemowe usługi Deluge (chodzą jako usługi użytkownika)<br>dodaje regułę polkit `/etc/polkit-1/rules.d/49-magneticplayer.rules`, żeby usługa w tle mogła blokować usypianie i usypiać<br>włącza Wake-on-LAN: NetworkManager `802-3-ethernet.wake-on-lan magic`, udev `81-magneticplayer-wol.rules`, ethtool<br>otwiera port 8765 w ufw dla sieci prywatnych |
-| `install.sh` | kopiuje agenta do `~/.local/share/magneticplayer/`<br>tworzy venv z `subliminal`<br>zakłada usługi `systemd --user`: `deluged`, `deluge-web` (127.0.0.1:8112) i `magneticplayer` (:8765)<br>przełącza Deluge GTK w tryb klienta, łączącego się z `deluged`<br>wypisuje kod parowania z QR (`--pair`) |
+| `install-root.sh <user> [port] [backend]` | instaluje pakiety `mpv ethtool qrencode python3-venv`, a przy backendzie Deluge też `deluged deluge-web`<br>wyłącza systemowe usługi Deluge (chodzą jako usługi użytkownika)<br>dodaje regułę polkit `/etc/polkit-1/rules.d/49-magneticplayer.rules`, żeby usługa w tle mogła blokować usypianie i usypiać<br>włącza Wake-on-LAN: NetworkManager `802-3-ethernet.wake-on-lan magic`, udev `81-magneticplayer-wol.rules`, ethtool<br>otwiera w ufw dla sieci prywatnych port 8765 i UDP 47700 („co gra”, multicast) |
+| `install.sh` | kopiuje agenta do `~/.local/share/magneticplayer/`<br>tworzy venv z `subliminal`<br>zakłada usługi `systemd --user`: `deluged`, `deluge-web` (127.0.0.1:8112) i `magneticplayer` (:8765)<br>przełącza Deluge GTK w tryb klienta, łączącego się z `deluged`<br>wypisuje kod parowania z QR (`--pair`)<br>kopiuje `uninstall.sh` obok agenta |
 
 Ponowne uruchomienie `install.sh` aktualizuje agenta i nie rusza konfiguracji ani tokenu.
 

@@ -63,5 +63,8 @@ echo "== firewall"
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow from 192.168.0.0/16 to any port "$PORT" proto tcp comment "MagneticPlayer"
   ufw allow from 10.0.0.0/8 to any port "$PORT" proto tcp comment "MagneticPlayer"
+  # rozgłaszanie „co gra” między pilotami (multicast w LAN)
+  ufw allow from 192.168.0.0/16 to any port 47700 proto udp comment "MagneticPlayer"
+  ufw allow from 10.0.0.0/8 to any port 47700 proto udp comment "MagneticPlayer"
 fi
 echo "== root: gotowe"
