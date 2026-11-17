@@ -18,6 +18,9 @@ if [ -n "${LITE:-}" ] && [ "$LITE" != 0 ]; then
   command -v python3 >/dev/null || { echo "Brak python3: zainstaluj go albo użyj pełnej instalacji."; exit 1; }
   systemctl --user show-environment >/dev/null 2>&1 || { echo "Brak systemd --user (sesji użytkownika): tryb lekki tego wymaga."; exit 1; }
 fi
+if command -v python3 >/dev/null && ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))'; then
+  echo "Za stary Python ($(python3 -V 2>&1)): agent potrzebuje 3.8 albo nowszego (Ubuntu 20.04+, Debian 11+)."; exit 1
+fi
 SRC=$(cd "$(dirname "$0")" && pwd)
 DEST=~/.local/share/magneticplayer
 UNITS=~/.config/systemd/user
@@ -41,7 +44,8 @@ install -m 755 "$SRC/magneticplayer_agent.py" "$DEST/"
 install -m 644 "$SRC"/mp_*.py "$DEST/"
 install -d "$DEST/web" && install -m 644 "$SRC"/web/* "$DEST/web/"
 # skrypty obok agenta: z nich serwer instaluje agenta na kolejnych komputerach (mp_install.py, /i/<kod>)
-install -m 755 "$SRC/uninstall.sh" "$SRC/install.sh" "$SRC/install-root.sh" "$DEST/"
+install -m 755 "$SRC/uninstall.sh" "$SRC/install.sh" "$SRC/install-root.sh" "$SRC/join.sh" "$DEST/"
+[ -f "$SRC/join.ps1" ] && install -m 644 "$SRC/join.ps1" "$SRC/install.ps1" "$SRC/uninstall.ps1" "$DEST/"
 
 echo "== napisy: subliminal w venv ($DEST/venv)"
 # --clear: po nieudanej próbie (brak python3-venv); bez venv agent działa, tylko bez napisów i Chromecasta ze strony

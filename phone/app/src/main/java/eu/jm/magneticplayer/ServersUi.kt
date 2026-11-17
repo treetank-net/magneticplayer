@@ -452,8 +452,9 @@ fun ServersSection(ver: Int, snack: SnackbarHostState, openAdd: Boolean, onChang
         servers.forEach { s -> launch(Dispatchers.IO) { online[s.key] = Api(Settings(ctx), s).ping(1500) } }
     }
     Text("Serwery", style = MaterialTheme.typography.titleMedium)
-    if (servers.isEmpty()) Text("Nie ma jeszcze serwera. Po instalacji agenta komputer pokazuje kod parowania (QR) — " +
-        "zeskanuj go aparatem albo wpisz w „Dodaj serwer”.", style = MaterialTheme.typography.bodySmall,
+    if (servers.isEmpty()) Text("Nie ma jeszcze serwera. „Zainstaluj na innym komputerze” poda polecenie do wklejenia na " +
+        "komputerze w tym samym Wi-Fi, a ten telefon sam się z nim sparuje. Komputer z już zainstalowanym agentem pokazuje " +
+        "kod parowania (QR): zeskanuj go aparatem albo wpisz w „Dodaj serwer”.", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     Card(Modifier.fillMaxWidth()) {
         servers.forEach { s ->
@@ -468,7 +469,7 @@ fun ServersSection(ver: Int, snack: SnackbarHostState, openAdd: Boolean, onChang
         Icon(Icons.Filled.QrCode2, null); Spacer(Modifier.width(6.dp)); Text("Sparuj kolejne urządzenie")
     }
     var install by remember { mutableStateOf(false) }
-    if (servers.any { it.canInstall }) OutlinedButton({ install = true }) {
+    if (servers.any { it.canInstall } || InstallShare.available(ctx)) OutlinedButton({ install = true }) {
         Icon(Icons.Filled.InstallDesktop, null); Spacer(Modifier.width(6.dp)); Text("Zainstaluj na innym komputerze")
     }
     if (install) InstallDialog(onDone = onChanged) { install = false }

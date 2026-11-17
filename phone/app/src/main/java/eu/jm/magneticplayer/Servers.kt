@@ -210,13 +210,17 @@ object Pairing {
         val probe = Server("", null, t.host, t.host, t.port, token, t.mac.orEmpty())
         val info = Api(Settings(ctx), probe).infoRaw()
         val uid = info.optString("id").takeIf { it.isNotEmpty() }
+        // ten sam serwer po id; inaczej wpis z tym samym adresem i portem (stary token, albo agent zainstalowany od nowa
+        // z nowym id: pod jednym host:port słucha tylko jeden agent, więc stary wpis jest martwy i nie dublujemy go)
         val existing = Servers.all(ctx).firstOrNull { uid != null && it.uid == uid }
-            ?: Servers.all(ctx).firstOrNull { it.uid == null && it.host == t.host && it.port == t.port }
+            ?: Servers.all(ctx).firstOrNull { it.host == t.host && it.port == t.port }
         val key = existing?.key ?: uid ?: ("s" + System.currentTimeMillis().toString(36))
         val mac = info.optString("mac").takeIf { it.matches(Regex("([0-9a-f]{2}:){5}[0-9a-f]{2}")) && it != "00:00:00:00:00:00" }
         val s = Server(key, uid, existing?.name?.takeIf { it != existing.host } ?: info.optString("name").ifEmpty { t.host },
             t.host, t.port, token, mac ?: existing?.mac ?: t.mac.orEmpty(), existing?.wakeOk ?: false, info)
         Servers.put(ctx, s)
+        // inne wpisy pod tym samym adresem to martwe kopie (np. po reinstalacji sprzed tej poprawki)
+        Servers.all(ctx).filter { it.key != key && it.host == t.host && it.port == t.port }.forEach { Servers.remove(ctx, it.key) }
         if (Servers.all(ctx).size == 1 || Servers.activeKey(ctx) == null) Servers.setActive(ctx, s.key)
         return s
     }

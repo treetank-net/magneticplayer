@@ -60,7 +60,7 @@ object PhoneShare {
     }
 
     /** Adres telefonu w Wi-Fi (albo Ethernecie), null gdy ich nie ma. */
-    private fun lanIp(ctx: Context): String? {
+    fun lanIp(ctx: Context): String? {
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
         val net = cm.activeNetwork ?: return null
         val caps = cm.getNetworkCapabilities(net) ?: return null

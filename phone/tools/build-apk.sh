@@ -13,6 +13,15 @@ if [ ! -f keystore.properties ]; then
   echo "wygenerowano klucz podpisu: phone/magneticplayer.keystore (nie gub — aktualizacje apki muszą mieć ten sam)"
 fi
 mkdir -p .gradle-home out
+# agent w apce: telefon sam serwuje instalator nowemu komputerowi (InstallShare.kt), bez innego serwera
+# (zależności: pip, mpv, Python na Windows, nowy komputer i tak pobiera z internetu).
+# Ta sama zawartość co paczka z serwera (mp_install.bundle); szablony join.* osobno, żeby telefon podstawił adres.
+AG=app/src/main/assets/agent
+rm -rf "$AG" && mkdir -p "$AG"
+( cd "$ROOT/.." && git ls-files -z server | grep -zE '^server/([^/]+\.(py|sh|ps1)|web/[^/]+)$' \
+    | xargs -0 tar --owner=0 --group=0 --numeric-owner -czf "$ROOT/$AG/agent.tgz" )
+cp ../server/join.sh ../server/join.ps1 "$AG/"
+git -C .. describe --always --dirty > "$AG/version.txt" 2>/dev/null || true
 # versionCode rośnie sam (minuty od 2025-01-01), żeby aktualizacje zawsze były „nowsze”
 VC=$(( ($(date +%s) - 1735689600) / 60 ))
 VN="1.$(date +%y%m%d.%H%M)"

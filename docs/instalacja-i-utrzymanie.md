@@ -60,6 +60,26 @@ Starszy serwer dostaje je po ponownym `install.sh` (albo `scp` jak przy szybkiej
 Sprawdzone 17.11.2026: jmpc → czyste Ubuntu 24.04 w VirtualBox (instalacja lekka, zgłoszenie, parowanie kodem
 ze zgłoszenia, ponowne użycie kodu odrzucone).
 
+### Z telefonu, bez serwera (apka 1.2611+)
+
+Ten sam przycisk „Zainstaluj na innym komputerze” działa też bez żadnego serwera: źródłem jest „Ten telefon”.
+`build-apk.sh` zaszywa w APK paczkę agenta (`assets/agent/agent.tgz`, ~80 KB: pliki z `server/` śledzone przez git;
+nie `.tar.gz`, bo AAPT rozpakowuje takie assets) i szablony `join.sh`/`join.ps1`. Na czas otwartego okna telefon uruchamia w Wi-Fi mały serwer HTTP
+(`InstallShare.kt`, losowy port) z tymi samymi trasami co agent: `/i/<kod>`, `/i/<kod>/ps`, `/i/<kod>/bundle.tar.gz`
+i `POST /api/install/join`. Polecenie wygląda jak zwykle (`curl -fsSL http://<telefon>:<port>/i/<kod> | bash`),
+a po zgłoszeniu nowego agenta telefon paruje się sam. Okno musi zostać otwarte do końca instalacji.
+
+Ponowna instalacja na tym samym komputerze (np. po `uninstall.sh --purge`, z nowym id agenta) zastępuje w apce stary
+wpis o tym samym adresie i porcie zamiast dodawać drugi (`Pairing.pair`); dotyczy każdego parowania, nie tylko z telefonu.
+
+Telefon nie potrzebuje internetu, ale nowy komputer tak: paczka to sam kod agenta, a zależności dociąga instalator
+(pip: napisy, Chromecast, QR; mpv; na Windows Python). Bez internetu na Linuksie zadziała biblioteka, przesyłanie
+i oglądanie na telefonie; na Windows bez Pythona instalacja nie ruszy.
+
+Python: Linux wymaga 3.8+ (sprawdzają `join.sh` i `install.sh`). Na Windows instalator szuka Pythona 3.9+, a gdy go
+brak, instaluje 3.12 dla użytkownika przez winget, a bez wingeta (Windows 10 LTSC, stary Windows 10) oficjalnym
+instalatorem z python.org (`/quiet InstallAllUsers=0`). Obie drogi bez administratora.
+
 ### Windows 10/11 (instalacja lekka)
 
 Z apki: w tym samym oknie przełącznik „Windows”. Polecenie `irm http://<serwer>:8765/i/<kod>/ps | iex` wkleja się

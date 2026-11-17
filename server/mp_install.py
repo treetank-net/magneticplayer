@@ -24,8 +24,14 @@ from mp_devices import CODE_ALPHABET, normalize_code
 
 TTL = 30 * 60
 HERE = os.path.dirname(os.path.abspath(__file__))
-BUNDLE_FILES = ("install.sh", "install-root.sh", "uninstall.sh")
-BUNDLE_OPTIONAL = ("install.ps1", "uninstall.ps1")  # Windows (instalacja lekka)
+BUNDLE_FILES = ("install.sh", "install-root.sh", "uninstall.sh", "join.sh")
+BUNDLE_OPTIONAL = ("install.ps1", "uninstall.ps1", "join.ps1")  # Windows (instalacja lekka)
+
+
+def template(name):
+    """Skrypt `curl … | bash` (join.sh) albo `irm … | iex` (join.ps1); te same pliki serwuje telefon (InstallShare.kt)."""
+    with open(os.path.join(HERE, name), encoding="utf-8-sig") as f:
+        return f.read()
 
 
 class InstallError(Exception):
@@ -79,14 +85,14 @@ class Installs:
         c["state"] = "downloading" if c["state"] == "waiting" else c["state"]
         url = f"{base}/i/{normalize_code(code)}"
         lite = "0" if full else "${LITE:-1}"
-        return SCRIPT.replace("@URL@", url).replace("@LITE@", lite)
+        return template("join.sh").replace("@URL@", url).replace("@LITE@", lite)
 
     def script_ps(self, code, base):
         """Windows: `irm <url>/ps | iex` (zawsze instalacja lekka)."""
         self.script(code, base, False)  # ten sam stan i kontrola kodu
-        if not os.path.isfile(os.path.join(HERE, "install.ps1")):
+        if not all(os.path.isfile(os.path.join(HERE, f)) for f in ("install.ps1", "join.ps1")):
             raise InstallError("ten serwer nie ma instalatora dla Windows (install.ps1) — zaktualizuj go", 409)
-        return SCRIPT_PS.replace("@URL@", f"{base}/i/{normalize_code(code)}")
+        return template("join.ps1").replace("@URL@", f"{base}/i/{normalize_code(code)}")
 
     def bundle(self, code):
         c = self._get(code)
@@ -130,35 +136,3 @@ class Installs:
                     "expires_in": int(c["exp"] - time.time())}
 
 
-# PowerShell dla `irm … | iex`: pobiera paczkę (tar.exe jest w Windows 10+) i uruchamia install.ps1.
-SCRIPT_PS = r"""& {
-  $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'
-  $u = '@URL@'
-  $t = Join-Path $env:TEMP ('magneticplayer-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
-  New-Item -ItemType Directory $t | Out-Null
-  Write-Host "== pobieram agenta z $u"
-  Invoke-WebRequest "$u/bundle.tar.gz" -OutFile "$t\mp.tgz" -UseBasicParsing
-  tar -xzf "$t\mp.tgz" -C $t
-  $env:MP_JOIN = $u
-  try { powershell -NoProfile -ExecutionPolicy Bypass -File "$t\server\install.ps1" }
-  finally { Remove-Item -Recurse -Force $t -ErrorAction SilentlyContinue; Remove-Item Env:MP_JOIN -ErrorAction SilentlyContinue }
-}
-"""
-
-# Skrypt dla `curl … | bash`. Całość w funkcji, żeby bash przeczytał go do końca, zanim cokolwiek ruszy stdin.
-SCRIPT = r"""#!/bin/bash
-# MagneticPlayer: instalacja z innego serwera w tej sieci (kod jednorazowy).
-mp_main() {
-  set -euo pipefail
-  local url="@URL@"
-  command -v python3 >/dev/null || { echo "Brak python3 — zainstaluj go (sudo apt install python3) i spróbuj ponownie."; exit 1; }
-  tmp=$(mktemp -d)
-  trap 'rm -rf "${tmp:-}"' EXIT
-  echo "== pobieram agenta z $url"
-  if command -v curl >/dev/null; then curl -fsSL "$url/bundle.tar.gz" -o "$tmp/mp.tgz"
-  else wget -qO "$tmp/mp.tgz" "$url/bundle.tar.gz"; fi
-  tar xzf "$tmp/mp.tgz" -C "$tmp"
-  LITE=@LITE@ JOIN="$url" bash "$tmp/server/install.sh" </dev/null
-}
-mp_main "$@"
-"""

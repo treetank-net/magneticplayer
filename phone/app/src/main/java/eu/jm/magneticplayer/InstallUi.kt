@@ -23,6 +23,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,8 @@ import org.json.JSONObject
 /**
  * „Zainstaluj na innym komputerze”: serwer daje jednorazowe polecenie (`curl … /i/<kod> | bash`), nowy komputer
  * pobiera z niego agenta, instaluje się i zgłasza z kodem parowania, a ten telefon paruje się sam (mp_install.py).
+ * Bez serwera (albo z wyboru) źródłem jest sam telefon: agent zaszyty w APK, serwer HTTP na czas okna (InstallShare).
+ * Zależności (pip, mpv, Python na Windows) nowy komputer i tak pobiera z internetu.
  */
 @Composable
 fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
@@ -50,6 +53,9 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val sources = remember { Servers.all(ctx).filter { it.canInstall } }
     var source by remember { mutableStateOf(sources.firstOrNull { it.key == Servers.activeKey(ctx) } ?: sources.firstOrNull()) }
+    val phoneOk = remember { InstallShare.available(ctx) }
+    var fromPhone by remember { mutableStateOf(source == null) }
+    DisposableEffect(Unit) { onDispose { InstallShare.stop() } }
     var lite by remember { mutableStateOf(true) }
     var windows by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf<JSONObject?>(null) }
@@ -60,6 +66,23 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     // czekanie na nowy komputer: co 2 s stan kodu; po zgłoszeniu parowanie jego kodem
     LaunchedEffect(code) {
         val c = code ?: return@LaunchedEffect
+        if (c.optBoolean("phone")) {  // źródłem jest ten telefon: stan prosto z InstallShare
+            while (added == null) {
+                delay(1000)
+                state = InstallShare.state
+                val j = InstallShare.joined ?: continue
+                InstallShare.stop()
+                try {
+                    added = withContext(Dispatchers.IO) { Pairing.pair(ctx, PairTarget(j.host, j.port, j.pairCode, null, null)) }
+                    onDone()
+                } catch (e: Exception) {
+                    error = "Nowy komputer się zgłosił, ale parowanie nie wyszło: ${e.message}. Kod ręczny: na nim " +
+                        "magneticplayer_agent.py --pair."
+                    return@LaunchedEffect
+                }
+            }
+            return@LaunchedEffect
+        }
         val src = source ?: return@LaunchedEffect
         val api = Api(Settings(ctx), src)
         while (added == null) {
@@ -82,6 +105,14 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
 
     fun start() = scope.launch {
         error = null
+        if (fromPhone) {
+            val url = withContext(Dispatchers.IO) { runCatching { InstallShare.start(ctx) }.getOrNull() }
+            if (url == null) { error = "Telefon musi być w tym samym Wi-Fi co nowy komputer."; return@launch }
+            code = JSONObject().put("phone", true).put("code", InstallShare.code).put("url", url)
+                .put("command", "curl -fsSL $url | bash").put("command_full", "curl -fsSL '$url?full=1' | bash")
+                .put("command_windows", "irm $url/ps | iex")
+            return@launch
+        }
         val src = source ?: return@launch
         try {
             code = withContext(Dispatchers.IO) { Api(Settings(ctx), src).installCode() }
@@ -102,14 +133,23 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                 if (c == null) {
                     Text("Komputer w tej samej sieci (Linux albo Windows 10/11) pobierze agenta z serwera i sam się sparuje z tym telefonem.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (sources.size > 1) {
+                    if (sources.size + (if (phoneOk) 1 else 0) > 1) {
                         Text("Skąd pobrać agenta", style = MaterialTheme.typography.labelLarge)
                         sources.forEach { s ->
-                            Row(Modifier.fillMaxWidth().clickable { source = s }, verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(source?.key == s.key, { source = s }); Text(s.name)
+                            Row(Modifier.fillMaxWidth().clickable { source = s; fromPhone = false }, verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(!fromPhone && source?.key == s.key, { source = s; fromPhone = false }); Text(s.name)
                             }
                         }
-                    }
+                        if (phoneOk) Row(Modifier.fillMaxWidth().clickable { fromPhone = true }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(fromPhone, { fromPhone = true })
+                            Column {
+                                Text("Ten telefon")
+                                Text("bez innego serwera; okno musi zostać otwarte do końca instalacji. Dodatki (napisy, mpv, na Windows Python) komputer pobierze z internetu",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else if (fromPhone) Text("Agent pochodzi z tego telefonu, bez innego serwera. Zostaw to okno otwarte do końca instalacji. Dodatki (napisy, mpv, na Windows Python) komputer pobierze z internetu; bez niego na Linuksie zadziała biblioteka i oglądanie na telefonie.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Text(if (windows) "Na nowym komputerze otwórz PowerShell (prawy klik na Start → Terminal) i wklej:"
                         else "Na nowym komputerze otwórz terminal i wklej:", style = MaterialTheme.typography.bodyMedium)
@@ -151,7 +191,7 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
         confirmButton = {
             when {
                 added != null -> TextButton(onDismiss) { Text("Gotowe") }
-                c == null -> TextButton({ start() }, enabled = source != null) { Text("Pokaż polecenie") }
+                c == null -> TextButton({ start() }, enabled = source != null || fromPhone) { Text("Pokaż polecenie") }
                 else -> TextButton({
                     ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
                         .putExtra(Intent.EXTRA_TEXT, command), "Polecenie instalacji MagneticPlayer"))

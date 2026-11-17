@@ -34,10 +34,21 @@ function Find-Python {
 
 Write-Host '== MagneticPlayer: instalacja lekka (Windows)'
 $py = Find-Python
-if (-not $py) {
+if (-not $py -and (Get-Command winget -ErrorAction SilentlyContinue)) {
   Write-Host '== brak Pythona: instaluję Python 3.12 dla tego użytkownika (winget, bez administratora)'
-  if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw 'Brak Pythona i wingeta. Zainstaluj Python 3 z python.org i uruchom ponownie.' }
   winget install -e --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements --disable-interactivity | Out-Host
+  $py = Find-Python
+}
+if (-not $py) {
+  # bez wingeta (Windows 10 LTSC, stary Windows 10) albo gdy zawiódł: oficjalny instalator z python.org, po cichu, dla użytkownika
+  $pyVer = '3.12.10'
+  $pyArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
+  $pyExe = Join-Path $env:TEMP "python-$pyVer-$pyArch.exe"
+  Write-Host "== brak Pythona: pobieram Python $pyVer z python.org (instalacja dla tego użytkownika, bez administratora)"
+  Invoke-WebRequest "https://www.python.org/ftp/python/$pyVer/python-$pyVer-$pyArch.exe" -OutFile $pyExe -UseBasicParsing
+  $p = Start-Process $pyExe -ArgumentList '/quiet', 'InstallAllUsers=0', 'PrependPath=0', 'Include_test=0', 'Include_launcher=0', 'Shortcuts=0' -Wait -PassThru
+  Remove-Item $pyExe -Force -ErrorAction SilentlyContinue
+  if ($p.ExitCode -ne 0) { Write-Host "instalator Pythona zakończył się kodem $($p.ExitCode)" }
   $py = Find-Python
   if (-not $py) { throw 'Python się nie zainstalował. Zainstaluj go z python.org i uruchom ponownie.' }
 }
@@ -52,7 +63,7 @@ New-Item -ItemType Directory -Force -Path $Dest, (Join-Path $Dest 'web'), $ConfD
 Copy-Item (Join-Path $Src '*.py') $Dest -Force
 Copy-Item (Join-Path $Src 'web\*') (Join-Path $Dest 'web') -Force
 # skrypty obok agenta: z nich serwer instaluje agenta na kolejnych komputerach (mp_install.py)
-foreach ($f in 'install.ps1', 'uninstall.ps1', 'install.sh', 'install-root.sh', 'uninstall.sh') {
+foreach ($f in 'install.ps1', 'uninstall.ps1', 'join.ps1', 'install.sh', 'install-root.sh', 'uninstall.sh', 'join.sh') {
   if (Test-Path (Join-Path $Src $f)) { Copy-Item (Join-Path $Src $f) $Dest -Force }
 }
 
