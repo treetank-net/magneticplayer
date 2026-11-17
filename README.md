@@ -57,3 +57,8 @@ w apce: Ustawienia → „Wklej link parowania”.
   na zdalny dostęp w przyszłości.
 - [docs/plan-wiele-serwerow.md](docs/plan-wiele-serwerow.md): etap 1 (wdrożony): kilka serwerów, osobne
   serwery plików i ekranu, tokeny per urządzenie.
+
+## Licencja
+
+MIT, patrz [LICENSE](LICENSE). Projekt nie dostarcza żadnych treści: co pobierasz i komu udostępniasz przez
+BitTorrent, jest Twoją odpowiedzialnością.
