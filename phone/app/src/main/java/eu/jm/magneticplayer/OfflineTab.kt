@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
@@ -54,13 +55,29 @@ private data class OfflineRow(val item: OfflineItem, val cached: Long, val fromS
 
 /** „Na telefonie”: pobrane filmy i bufor z oglądania. Działa bez sieci. */
 @Composable
-fun OfflineTab() {
+fun OfflineTab(onPlaying: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val dl by DownloadService.status.collectAsState()
     var rows by remember { mutableStateOf<List<OfflineRow>?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var confirmDelete by remember { mutableStateOf<OfflineItem?>(null) }
+    var chooser by remember { mutableStateOf<OfflineItem?>(null) }
+    var opening by remember { mutableStateOf<String?>(null) }
+    val canScreen = true  // ekrany mpv, Chromecasty, telewizory DLNA: wybór pokaże, co jest w sieci
+    fun playOn(item: OfflineItem, key: String?, cast: CastTarget?, tv: DlnaTarget? = null) = scope.launch {
+        opening = "Otwieram…"
+        try {
+            if (cast != null) Screens.cast(ctx, item.ref, cast, null) { opening = it }
+            else if (tv != null) Screens.dlna(ctx, item.ref, tv, null) { opening = it }
+            else Screens.play(ctx, item.ref, key!!, null) { opening = it }
+            onPlaying()  // jak z Biblioteki: od razu Pilot
+        } catch (e: ApiException) {
+            android.widget.Toast.makeText(ctx, e.message, android.widget.Toast.LENGTH_LONG).show()
+        } finally {
+            opening = null
+        }
+    }
     LaunchedEffect(refresh) {
         while (true) {
             rows = withContext(Dispatchers.IO) {
@@ -82,6 +99,7 @@ fun OfflineTab() {
         items(list, key = { it.item.key }) { r ->
             OfflineCard(r, dl[r.item.key],
                 onPlay = { ctx.startActivity(PlayerActivity.intent(ctx, r.item.ref)) },
+                onScreen = if (canScreen) ({ chooser = r.item }) else null,
                 onDownload = { DownloadService.start(ctx, r.item.ref); refresh++ },
                 onPolicy = { p ->
                     scope.launch(Dispatchers.IO) { OfflineStore.update(ctx, r.item.key) { it.copy(policy = p, created = System.currentTimeMillis()) } }
@@ -89,6 +107,17 @@ fun OfflineTab() {
                 },
                 onDelete = { confirmDelete = r.item })
         }
+    }
+    chooser?.let { item ->
+        ScreenChooser(item.ref, onPhone = null, onPick = { chooser = null; playOn(item, it, null) },
+            onCast = { chooser = null; playOn(item, null, it) }, onDlna = { chooser = null; playOn(item, null, null, it) }) { chooser = null }
+    }
+    opening?.let { msg ->
+        AlertDialog(onDismissRequest = {}, confirmButton = {}, text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp)); Spacer(Modifier.width(16.dp)); Text(msg)
+            }
+        })
     }
     confirmDelete?.let { item ->
         AlertDialog(
@@ -109,7 +138,7 @@ fun OfflineTab() {
 @Composable
 private fun OfflineCard(
     r: OfflineRow, dlStatus: String?,
-    onPlay: () -> Unit, onDownload: () -> Unit, onPolicy: (String) -> Unit, onDelete: () -> Unit,
+    onPlay: () -> Unit, onScreen: (() -> Unit)?, onDownload: () -> Unit, onPolicy: (String) -> Unit, onDelete: () -> Unit,
 ) {
     val i = r.item
     var menu by remember { mutableStateOf(false) }
@@ -117,10 +146,11 @@ private fun OfflineCard(
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(i.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val frac = if (i.size > 0) (r.cached.toDouble() / i.size).coerceIn(0.0, 1.0) else 0.0
-            val done = i.complete || (i.size > 0 && r.cached >= i.size)
+            val done = i.size > 0 && r.cached >= i.size
             val line = when {
                 dlStatus != null -> dlStatus
                 done -> "Cały film na telefonie · ${humanBytes(i.size)}"
+                i.complete -> "Film zniknął z telefonu (${(frac * 100).toInt()}%). Pobierz ponownie"
                 i.error != null -> "${i.error} · ${(frac * 100).toInt()}%"
                 i.want -> "W kolejce do pobrania"
                 i.size > 0 -> "Na telefonie ${(frac * 100).toInt()}% · ${humanBytes(r.cached)} z ${humanBytes(i.size)}"
@@ -140,6 +170,9 @@ private fun OfflineCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onPlay) {
                     Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Odtwórz")
+                }
+                if (onScreen != null) OutlinedButton(onScreen) {
+                    Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Na ekran")
                 }
                 if (!done && dlStatus == null && !i.want) OutlinedButton(onDownload) {
                     Icon(Icons.Filled.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))

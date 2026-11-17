@@ -55,7 +55,7 @@ class DownloadService : Service() {
             cancelled.remove(key)
             val old = OfflineStore.get(ctx, key)
             OfflineStore.put(ctx, (old ?: OfflineItem(key, ref, ref.title)).copy(
-                pinned = true, want = true, error = null, created = if (old?.pinned == true) old.created else System.currentTimeMillis(),
+                pinned = true, want = true, complete = false, error = null, created = if (old?.pinned == true) old.created else System.currentTimeMillis(),
                 policy = policy ?: old?.takeIf { it.pinned }?.policy ?: "watched"))
             ContextCompat.startForegroundService(ctx, Intent(ctx, DownloadService::class.java))
         }
@@ -162,7 +162,7 @@ class DownloadService : Service() {
                 MediaCache.setLength(this, key, size)
                 if (!spaceChecked) {
                     val missing = size - cache.getCachedBytes(key, 0, size)
-                    if (missing > cacheDir.usableSpace - (500L shl 20)) throw IOException("za mało miejsca (potrzeba ${humanBytes(missing)})")
+                    if (missing > noBackupFilesDir.usableSpace - (500L shl 20)) throw IOException("za mało miejsca (potrzeba ${humanBytes(missing)})")
                     spaceChecked = true
                 }
                 var at = 0L

@@ -26,13 +26,18 @@ import urllib.request
 from http.cookiejar import CookieJar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import mp_media
 import mp_platform as platform
+from mp_cast import Casts, CastError
+
+# DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
+DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 from mp_devices import Devices
 from mp_jobs import AFTER, Jobs
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 API_LEVEL = 2  # /api/info: id, features, power; tokeny urządzeń, bilety, player/open z url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -422,7 +427,18 @@ class Mpv:
         self.req = 0
 
     def running(self):
-        return self.proc is not None and self.proc.poll() is None
+        if self.proc is not None:
+            return self.proc.poll() is None
+        # mpv sprzed restartu agenta (żyje w osobnym zakresie systemd): działa, jeśli odpowiada jego gniazdo
+        s = socket.socket(socket.AF_UNIX)
+        s.settimeout(0.3)
+        try:
+            s.connect(MPV_SOCKET)
+            return True
+        except OSError:
+            return False
+        finally:
+            s.close()
 
     def cmd(self, *command, timeout=3):
         if not self.running():
@@ -496,6 +512,9 @@ class Mpv:
             pass
         argv = ["mpv", f"--input-ipc-server={MPV_SOCKET}", "--force-window=yes", "--idle=once",
                 "--keep-open=yes", *self.args, *([f"--force-media-title={title}"] if title else []), path]
+        # osobny zakres systemd: restart/aktualizacja agenta nie zamyka filmu (inaczej systemd zabija całą usługę)
+        if shutil.which("systemd-run") and os.environ.get("XDG_RUNTIME_DIR"):
+            argv = ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--unit", f"magneticplayer-mpv-{os.getpid()}-{int(time.time())}", *argv]
         log("start:", " ".join(re.sub(r"(ticket|token)=[^&\s]+", r"\1=…", a) for a in argv))
         self.proc = subprocess.Popen(argv, env=graphical_env(), stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
@@ -658,6 +677,10 @@ class App:
         self.jobs = Jobs(os.path.join(CONFIG_DIR, "jobs.json"), log)
         self.devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
         self._subs_ok = None
+        self.convert = mp_media.Converter(log)
+        self.casts = Casts(log)
+        # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
+        threading.Thread(target=mp_media.detect_encoder, daemon=True).start()
 
     def name(self):
         return self.cfg.get("name") or socket.gethostname()
@@ -705,6 +728,9 @@ class App:
                 "unlock": AUTO_UNLOCK and platform.can_unlock(),
                 "apk": apk_version().get("version_code", 0) > 0,
                 "wake_others": True,
+                # wersja „dla Chromecasta”: nazwa kodera (sprzętowy albo procesor) albo None (brak ffmpeg)
+                "transcode": (mp_media.encoder_info() or {}).get("label"),
+                "transcode_hw": bool((mp_media.encoder_info() or {}).get("hw")),
             },
             "power": {"suspend": POWER and platform.can_power(), "poweroff": POWER and platform.can_power(),
                       "wake": self.wake_info(net)},
@@ -738,6 +764,37 @@ class App:
         if d.get("root") is not None and d.get("root") != "":
             return self.library.resolve(int(d["root"]), d.get("path", ""))
         raise ApiError("brak wskazania pliku", 400)
+
+    def ref_complete(self, d):
+        """Czy plik jest cały na dysku (torrent pobrany), bo konwersja niepełnego dałaby śmieci."""
+        if d.get("torrent_id"):
+            _, f = self.resolve_file(d["torrent_id"], int(d["file_index"]))
+            return f.get("ready", 0) >= f.get("size", 1) or f.get("progress", 0) >= 100
+        return True
+
+    def ticket_urls(self, b, base, variant=None):
+        """Adres filmu i napisów z biletem dla innego urządzenia (ekranu, Chromecasta, telewizora DLNA)."""
+        full = self.resolve_ref(b)
+        scope = self.ref_scope(b)
+        if not scope:
+            raise ApiError("bilet tylko na plik z torrenta albo biblioteki", 400)
+        ticket, exp = self.devices.ticket(scope)
+        tq = "ticket=" + urllib.parse.quote(ticket)
+        if b.get("torrent_id"):
+            url = f"{base}/media/{b['torrent_id']}/{int(b['file_index'])}/{urllib.parse.quote(os.path.basename(full))}?{tq}"
+            rq = f"torrent_id={b['torrent_id']}&file_index={int(b['file_index'])}"
+        else:
+            path = b.get("path", "")
+            url = f"{base}/lib/{int(b['root'])}/{urllib.parse.quote(path)}?{tq}"
+            rq = f"root={int(b['root'])}&path={urllib.parse.quote(path)}"
+        cast_v = variant == "cast" and mp_media.variant(full)
+        if cast_v:
+            url += "&v=cast"
+        subs = [{"name": x["name"], "lang": x.get("lang"),
+                 "url": f"{base}/sub?{rq}&name={urllib.parse.quote(x['name'])}&{tq}",
+                 "vtt": f"{base}/sub?{rq}&name={urllib.parse.quote(x['name'])}&vtt=1&{tq}"} for x in sidecar_subs(full)]
+        return {"url": url, "subs": subs, "title": os.path.basename(full), "expires": exp,
+                "variant": "cast" if cast_v else None, "content_type": "video/mp4" if cast_v else None}
 
     def machine_action(self, tid, action):
         if tid:
@@ -813,10 +870,36 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.dispatch("POST")
 
+    def do_OPTIONS(self):
+        # preflight odtwarzaczy webowych (Chromecast) przed Range na /media, /lib, /sub
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Range, Authorization")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def end_headers(self):
+        # pliki (film, napisy) czyta też odbiornik Chromecasta z innego „origin”; bez CORS pomija napisy
+        if urllib.parse.urlsplit(self.path).path.startswith(("/media/", "/lib/", "/sub")) or self.command == "OPTIONS":
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, X-Ready-End")
+        for k, v in getattr(self, "extra_headers", ()):
+            self.send_header(k, v)
+        self.extra_headers = []
+        super().end_headers()
+
     def do_HEAD(self):
         self.dispatch("HEAD")
 
+    def caption_header(self, q, rq):
+        """Samsung (DLNA) pyta o napisy nagłówkiem getcaptionInfo.sec; podajemy pierwsze SRT obok filmu (`&cap=`)."""
+        cap, t = (q.get("cap") or [""])[0], (q.get("ticket") or [""])[0]
+        if cap and t and self.headers.get("getcaptionInfo.sec"):
+            self.extra_headers.append(("CaptionInfo.sec", f"{self.base_url()}/sub?{rq}&name={urllib.parse.quote(cap)}"
+                                                          f"&ticket={urllib.parse.quote(t)}"))
+
     def dispatch(self, method):
+        self.extra_headers = []
         u = urllib.parse.urlsplit(self.path)
         q = urllib.parse.parse_qs(u.query)
         p = u.path.rstrip("/")
@@ -837,6 +920,7 @@ class Handler(BaseHTTPRequestHandler):
                 log("sparowano urządzenie:", (b.get("name") or "?")[:60])
                 return self.send_json({**res, "id": a.cfg["id"], "name": a.name()})
             self.device = self.authorized(q)
+            qd0 = {k: v[0] for k, v in q.items()}
             if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
                 raise ApiError("zły token", 401)
             if p == "/api/info" and method == "GET":
@@ -871,23 +955,54 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             if p == "/api/media/ticket" and method == "POST":
                 b = self.body()
+                return self.send_json(a.ticket_urls(b, self.base_url(), b.get("variant")))
+            # ---- format pliku i wersja dla Chromecasta
+            if p == "/api/media/probe" and method == "GET":
+                full = a.resolve_ref(qd0)
+                if not mp_media.detect_encoder():
+                    return self.send_json({"ffmpeg": False})
+                try:
+                    info = mp_media.probe(full)
+                except (ValueError, OSError, subprocess.TimeoutExpired) as e:
+                    raise ApiError(f"nie da się odczytać pliku: {e}", 422)
+                v = mp_media.variant(full)
+                return self.send_json({
+                    "ffmpeg": True, "file": info, "cast": mp_media.cast_check(info), "complete": a.ref_complete(qd0),
+                    "variant": {"size": os.path.getsize(v), "cast": mp_media.cast_check(mp_media.probe(v))} if v else None,
+                    "job": a.convert.status(full), "encoder": mp_media.encoder_info()})
+            if p == "/api/media/convert" and method == "POST":
+                b = self.body()
                 full = a.resolve_ref(b)
-                scope = a.ref_scope(b)
-                if not scope:
-                    raise ApiError("bilet tylko na plik z torrenta albo biblioteki", 400)
-                ticket, exp = a.devices.ticket(scope)
-                base = self.base_url()
-                tq = "ticket=" + urllib.parse.quote(ticket)
-                if b.get("torrent_id"):
-                    url = f"{base}/media/{b['torrent_id']}/{int(b['file_index'])}/{urllib.parse.quote(os.path.basename(full))}?{tq}"
-                    rq = f"torrent_id={b['torrent_id']}&file_index={int(b['file_index'])}"
-                else:
-                    path = b.get("path", "")
-                    url = f"{base}/lib/{int(b['root'])}/{urllib.parse.quote(path)}?{tq}"
-                    rq = f"root={int(b['root'])}&path={urllib.parse.quote(path)}"
-                subs = [{"name": x["name"], "lang": x.get("lang"),
-                         "url": f"{base}/sub?{rq}&name={urllib.parse.quote(x['name'])}&{tq}"} for x in sidecar_subs(full)]
-                return self.send_json({"url": url, "subs": subs, "title": os.path.basename(full), "expires": exp})
+                if b.get("cancel"):
+                    a.convert.cancel(full)
+                    return self.send_json({"ok": True})
+                if b.get("remove"):
+                    a.convert.cancel(full)
+                    mp_media.remove_variant(full)
+                    return self.send_json({"ok": True})
+                if not a.ref_complete(b):
+                    raise ApiError("film jeszcze się pobiera; przygotuję go, gdy będzie cały", 409)
+                try:
+                    return self.send_json(a.convert.start(full, os.path.basename(full)))
+                except (RuntimeError, ValueError, OSError) as e:
+                    raise ApiError(str(e), 409)
+            if p == "/api/media/converts" and method == "GET":
+                return self.send_json(a.convert.all())
+            # ---- Chromecast sterowany z agenta (klient webowy)
+            if p == "/api/cast/devices" and method == "GET":
+                return self.send_json(a.casts.devices())
+            if p == "/api/cast/play" and method == "POST":
+                b = self.body()
+                port = self.server.server_address[1]
+                t = a.ticket_urls(b, f"http://{lan_ip()}:{port}", "cast")
+                subs = [{"url": x["vtt"], "lang": x["lang"]} for x in t["subs"]]
+                return self.send_json(a.casts.play(str(b.get("device") or ""), t["url"], t["title"],
+                                                   t["content_type"] or "video/mp4", subs, b.get("start")))
+            if p == "/api/cast/status" and method == "GET":
+                return self.send_json(a.casts.status())
+            if p == "/api/cast/cmd" and method == "POST":
+                b = self.body()
+                return self.send_json(a.casts.control(b.get("cmd"), b.get("value")))
             if p == "/api/app/version" and method == "GET":
                 return self.send_json(apk_version())
             if p == "/app/MagneticPlayer.apk" and method in ("GET", "HEAD"):
@@ -940,12 +1055,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json([{k: v for k, v in f.items() if not k.startswith("_")} for f in files])
             m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/action", p)
             if m and method == "POST":
-                a.backend.action(m.group(1), self.body().get("action"))
+                act = self.body().get("action")
+                if act == "remove_data":  # wersje „dla Chromecasta” leżą w katalogu torrenta: kasujemy razem z nim
+                    try:
+                        save_path, files = a.backend.files(m.group(1))
+                        for f in files:
+                            mp_media.remove_variant(os.path.join(save_path, f["path"]))
+                    except ApiError:
+                        pass
+                a.backend.action(m.group(1), act)
                 return self.send_json({"ok": True})
             m = re.fullmatch(r"/media/([0-9a-fA-F]+)/(\d+)(/.*)?", p)
             if m and method in ("GET", "HEAD"):
                 tid, idx = m.group(1), int(m.group(2))
                 full, f = a.resolve_file(tid, idx)
+                self.caption_header(q, f"torrent_id={tid}&file_index={idx}")
+                if qd0.get("v") == "cast" and mp_media.variant(full):
+                    return self.stream(mp_media.variant(full), method == "HEAD")
                 # tylko pobrane kawałki: zamiast zer z niepobranego pliku czekamy na Deluge (patrz stream())
                 return self.stream(full, method == "HEAD", f.get("_pieces"),
                                    lambda: a.resolve_file(tid, idx)[1].get("_pieces"))
@@ -960,7 +1086,10 @@ class Handler(BaseHTTPRequestHandler):
                         raise ApiError("url musi być http(s)", 400)
                     a.mpv.open(url, b.get("title"), subs, b.get("start"))
                 else:
-                    a.mpv.open(a.resolve_ref(b), start=b.get("start"))
+                    full = a.resolve_ref(b)
+                    # napisy obok filmu mpv znajdzie sam, a z podkatalogu (Subs/English.srt z torrentów) już nie
+                    extra = [os.path.join(os.path.dirname(full), x["name"]) for x in sidecar_subs(full) if os.sep in x["name"]]
+                    a.mpv.open(full, start=b.get("start"), subs=extra)
                 return self.send_json({"ok": True})
             if p == "/api/player/status" and method == "GET":
                 return self.send_json(a.mpv.status())
@@ -998,6 +1127,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/lib/(\d+)/(.+)", p)
             if m and method in ("GET", "HEAD"):
                 full = a.library.resolve(int(m.group(1)), urllib.parse.unquote(m.group(2)))
+                self.caption_header(q, f"root={int(m.group(1))}&path={urllib.parse.quote(urllib.parse.unquote(m.group(2)))}")
+                if qd0.get("v") == "cast" and mp_media.variant(full):
+                    return self.stream(mp_media.variant(full), method == "HEAD")
                 return self.stream(full, method == "HEAD")
             # ---- napisy
             if p == "/api/subs/list" and method == "GET":
@@ -1043,7 +1175,7 @@ class Handler(BaseHTTPRequestHandler):
                 a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
                 return self.send_json({"ok": True})
             raise ApiError("nie ma takiego endpointu", 404)
-        except (LibError, SubsError) as e:
+        except (LibError, SubsError, CastError) as e:
             self.send_json({"error": str(e)}, e.status)
         except ApiError as e:
             self.send_json({"error": str(e)}, e.status)
@@ -1109,8 +1241,9 @@ class Handler(BaseHTTPRequestHandler):
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         if full.endswith(".apk"):
             ctype = "application/vnd.android.package-archive"
+        dlna = self.headers.get("getcontentFeatures.dlna.org") or "dlna" in (self.headers.get("User-Agent") or "").lower()
         if full.lower().endswith(".mkv"):
-            ctype = "video/x-matroska"
+            ctype = "video/x-mkv" if dlna else "video/x-matroska"  # Samsung (DLNA) nie zna x-matroska
         start, end = 0, size - 1
         rng = self.headers.get("Range")
         status = 200
@@ -1139,6 +1272,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         # do którego bajtu da się czytać od `start` bez czekania (bufor na dysku w apce dociąga tylko tyle)
         self.send_header("X-Ready-End", str(ready_end(pieces, start, size)))
+        if dlna:  # telewizory DLNA bez tego potrafią stać w TRANSITIONING
+            self.send_header("transferMode.dlna.org", "Streaming")
+            self.send_header("contentFeatures.dlna.org", DLNA_FEATURES)
         self.end_headers()
         if head_only:
             return

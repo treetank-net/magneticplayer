@@ -26,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.ConnectedTv
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -86,25 +88,63 @@ private val WARN = Color(0xFFF2B84B)
 object Screens {
     /**
      * Odtwarza `ref` na ekranie `screenKey` (mpv na serwerze), budząc go w razie potrzeby. Ten sam serwer: plik lokalny
-     * jak dawniej. Inny: bilet z serwera plików i URL dla mpv. Zapamiętuje ekran dla Pilota.
+     * jak dawniej. Inny: URL z biletu serwera plików albo z telefonu ([source]). Zapamiętuje ekran dla Pilota.
      */
     suspend fun play(ctx: Context, ref: MediaRef, screenKey: String, startSec: Double?, onStatus: (String) -> Unit) =
         withContext(Dispatchers.IO) {
             val screen = Api.of(ctx, screenKey) ?: throw ApiException("Nie ma już tego ekranu")
             screen.ensureAwake(onStatus)
             if (screenKey == ref.srv) {
-                screen.playerOpen(ref, startSec)
+                // pozycja z telefonu: film mógł być ostatnio oglądany gdzie indziej (Chromecast, telewizor, telefon)
+                screen.playerOpen(ref, startSec ?: savedStart(ctx, ref))
             } else {
-                val file = Api.forRef(ctx, ref)
-                file.ensureAwake(onStatus)
+                val src = source(ctx, ref, onStatus)
                 onStatus("Otwieram na ${screen.srv.name}…")
-                val t = file.ticket(ref)
-                val start = startSec ?: Settings(ctx).position(ref.key()).takeIf { it > 5_000 }?.let { it / 1000.0 }
-                screen.playerOpenUrl(t.copy(title = ref.title), start)
+                screen.playerOpenUrl(Ticket(src.url, src.subs.map { it.url }, ref.title), startSec ?: savedStart(ctx, ref))
             }
             Servers.setScreen(ctx, screenKey)
             Servers.setScreenRef(ctx, screenKey, ref)
+            withContext(Dispatchers.Main) { Pilot.started(ctx, "screen") }
         }
+
+    /** Odtwarza `ref` na Chromecaście (odbiornik domyślny Google'a, napisy jako WebVTT). */
+    suspend fun cast(ctx: Context, ref: MediaRef, target: CastTarget, startSec: Double?, onStatus: (String) -> Unit) {
+        val src = withContext(Dispatchers.IO) { source(ctx, ref, onStatus, variant = "cast") }
+        onStatus("Łączę z ${target.name}…")
+        val start = startSec ?: savedStart(ctx, ref)
+        Cast.play(ctx, target, ref, src, ((start ?: 0.0) * 1000).toLong())
+        Pilot.started(ctx, "cast")
+        Settings(ctx).lastTv = target.name
+    }
+
+    /** Odtwarza `ref` na telewizorze DLNA (Samsung i inne): oryginalny plik, napisy SRT po swojemu. */
+    suspend fun dlna(ctx: Context, ref: MediaRef, target: DlnaTarget, startSec: Double?, onStatus: (String) -> Unit) =
+        withContext(Dispatchers.IO) {
+            val src = source(ctx, ref, onStatus)
+            onStatus("Wysyłam do ${target.name}…")
+            Dlna.play(ctx, target, ref, src, startSec ?: savedStart(ctx, ref) ?: 0.0)
+            Settings(ctx).lastTv = target.name
+        }
+
+    private fun savedStart(ctx: Context, ref: MediaRef) =
+        Settings(ctx).position(ref.key()).takeIf { it > 5_000 }?.let { it / 1000.0 }
+
+    /**
+     * Skąd ekran weźmie plik: z serwera (bilet), gdy odpowiada albo telefon nie ma całego filmu (wtedy budzimy).
+     * Serwer nie odpowiada (np. u kogoś w gościach), a cały film jest na telefonie: telefon go udostępnia.
+     */
+    suspend fun source(ctx: Context, ref: MediaRef, onStatus: (String) -> Unit, variant: String? = null): MediaSrc {
+        val file = Api.of(ctx, ref.srv)
+        val onPhone = PhoneShare.hasWhole(ctx, ref.key())
+        if (file != null && (!onPhone || file.ping(1500))) {
+            file.ensureAwake(onStatus)
+            val t = file.ticket(ref, variant)
+            return MediaSrc(t.url, ref.title, t.subInfo, false, t.contentType)
+        }
+        if (!onPhone) throw ApiException("Nie ma już serwera z tym filmem")
+        onStatus("Udostępniam film z telefonu…")
+        return PhoneShare.start(ctx, ref)
+    }
 }
 
 /** Stan ekranu do listy wyboru: null = sprawdzam, false = nie odpowiada, true = działa (+ co gra). */
@@ -113,12 +153,23 @@ private data class ScreenState(val online: Boolean?, val playing: String? = null
 /** „Gdzie odtworzyć?”: ten telefon albo mpv na którymś serwerze. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScreenChooser(ref: MediaRef, onPhone: (() -> Unit)?, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+fun ScreenChooser(ref: MediaRef, onPhone: (() -> Unit)?, onPick: (String) -> Unit, onCast: (CastTarget) -> Unit,
+                  onDlna: (DlnaTarget) -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val screens = remember { Servers.screens(ctx) }
     val last = remember { Servers.screenKey(ctx) }
     val fileName = remember { Servers.get(ctx, ref.srv)?.name ?: "?" }
     val states = remember { mutableStateMapOf<String, ScreenState>() }
+    val casts = rememberCastTargets()
+    val castOk = remember { Cast.available(ctx) }
+    val castNow = remember { Cast.session(ctx)?.castDevice?.friendlyName }
+    val onPhoneWhole = remember { PhoneShare.hasWhole(ctx, ref.key()) }
+    var searching by remember { mutableStateOf(true) }
+    val lastTv = remember { Settings(ctx).lastTv }
+    // telewizory DLNA: najpierw znane z poprzedniego szukania, po 3 s te, które odpowiedziały teraz
+    var dlnas by remember { mutableStateOf(Dlna.found.values.toList()) }
+    LaunchedEffect(Unit) { dlnas = withContext(Dispatchers.IO) { Dlna.discover() } }
+    LaunchedEffect(Unit) { delay(8_000); searching = false }
     LaunchedEffect(Unit) {
         screens.forEach { s ->
             launch(Dispatchers.IO) {
@@ -150,7 +201,89 @@ fun ScreenChooser(ref: MediaRef, onPhone: (() -> Unit)?, onPick: (String) -> Uni
                     when (st?.online) { true -> OK_GREEN; false -> MaterialTheme.colorScheme.outline; null -> null },
                     s.key == last) { onPick(s.key) }
             }
+            if (castOk) {
+                casts.forEach { c ->
+                    val sub = listOfNotNull(
+                        c.desc.takeIf { it.isNotBlank() },
+                        if (onPhoneWhole) "film z $fileName albo z telefonu" else "film z $fileName",
+                    ).joinToString(" · ")
+                    SheetRow(Icons.Filled.Cast, c.name + when (c.name) { castNow -> " · połączony"; lastTv -> " · ostatnio"; else -> "" },
+                        sub, null, c.name == castNow) { onCast(c) }
+                }
+                if (casts.isEmpty()) SheetRow(Icons.Filled.Cast, "Chromecast",
+                    if (searching) "szukam w sieci…" else "nie widzę żadnego w tej sieci Wi-Fi", null, false, enabled = false) {}
+                CastFormat(ref)
+            }
+            dlnas.forEach { d ->
+                val sub = listOfNotNull("DLNA", d.model.ifBlank { null },
+                    if (onPhoneWhole) "film z $fileName albo z telefonu" else "film z $fileName").joinToString(" · ")
+                SheetRow(Icons.Filled.ConnectedTv, d.name + if (d.name == lastTv) " · ostatnio" else "", sub, null,
+                    Dlna.current?.id == d.id) { onDlna(d) }
+            }
         }
+    }
+}
+
+/** Pod Chromecastami: czy ten plik zagra, i „Przygotuj wersję dla Chromecasta” (agent 1.2+ z ffmpeg). */
+@Composable
+private fun CastFormat(ref: MediaRef) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val api = remember { Api.of(ctx, ref.srv) } ?: return
+    var probe by remember { mutableStateOf<org.json.JSONObject?>(null) }
+    var tick by remember { mutableIntStateOf(0) }
+    var err by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(tick) {
+        while (true) {
+            probe = withContext(Dispatchers.IO) { runCatching { if (api.ping(1500)) api.mediaProbe(ref) else null }.getOrNull() }
+            val st = probe?.optJSONObject("job")?.optString("state")
+            if (st != "queued" && st != "running") break
+            delay(2_000)
+        }
+    }
+    fun op(o: String?) = scope.launch {
+        err = withContext(Dispatchers.IO) { runCatching { api.mediaConvert(ref, o) }.exceptionOrNull()?.message }
+        tick++
+    }
+    val p = probe?.takeIf { it.optBoolean("ffmpeg") } ?: return
+    val v = p.optJSONObject("variant")
+    val c = p.optJSONObject("cast")
+    val j = p.optJSONObject("job")
+    val state = j?.optString("state")
+    val small = MaterialTheme.typography.bodySmall
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(Modifier.padding(start = 60.dp, end = 20.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        when {
+            v != null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("✓ Chromecast dostanie wersję przygotowaną dla niego (${humanBytes(v.optLong("size"))})", Modifier.weight(1f),
+                    style = small, color = OK_GREEN)
+                TextButton({ op("remove") }) { Text("Usuń") }
+            }
+            state == "queued" || state == "running" -> {
+                val pct = j!!.optDouble("pct", 0.0)
+                val speed = j.optDouble("speed").takeIf { !it.isNaN() }?.let { " · %.1f× szybciej niż film".format(it) } ?: ""
+                Text("Przygotowuję dla Chromecasta (${j.optString("encoder").ifEmpty { "w kolejce" }}): ${pct.toInt()}%$speed",
+                    style = small)
+                androidx.compose.material3.LinearProgressIndicator({ (pct / 100).toFloat() }, Modifier.fillMaxWidth())
+                TextButton({ op("cancel") }) { Text("Przerwij") }
+            }
+            c?.optString("verdict") == "ok" -> Text("Format: Chromecast powinien to zagrać", style = small, color = muted)
+            c != null -> {
+                val probs = c.optJSONArray("problems")
+                Text(if (c.optString("verdict") == "no") "Chromecast raczej tego nie zagra:" else "Chromecast może mieć kłopot:",
+                    style = small, color = MaterialTheme.colorScheme.error)
+                for (i in 0 until (probs?.length() ?: 0)) Text("· " + probs!!.getString(i), style = small, color = muted)
+                if (state == "error") Text("Ostatnia próba: " + j!!.optString("error").takeLast(160), style = small,
+                    color = MaterialTheme.colorScheme.error)
+                val enc = p.optJSONObject("encoder")?.optString("label") ?: "?"
+                val how = (if (c.optBoolean("video_copy")) "obraz bez zmian" else "obraz: $enc") +
+                    (if (c.optBoolean("audio_copy")) ", dźwięk bez zmian" else ", dźwięk → AAC")
+                TextButton({ op(null) }, enabled = p.optBoolean("complete")) {
+                    Text(if (p.optBoolean("complete")) "Przygotuj wersję dla Chromecasta ($how)" else "Przygotuję, gdy film pobierze się w całości")
+                }
+            }
+        }
+        err?.let { Text(it, style = small, color = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -331,6 +464,7 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
     var revoke by remember { mutableStateOf<JSONObject?>(null) }
     var invite by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
+    var wakeTest by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
         try {
             withContext(Dispatchers.IO) {
@@ -358,6 +492,7 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                     if (s.hasLibrary) AssistChip({}, { Text("biblioteka") })
                     if (s.hasPlayer) AssistChip({}, { Text("ekran (mpv)") })
                     if (s.canUnlock && s.hasPlayer) AssistChip({}, { Text("odblokowanie") })
+                    s.transcode?.let { AssistChip({}, { Text("wersje dla Chromecasta: $it") }) }
                 }
                 if (!s.knowsFeatures) Text("Stara wersja agenta: zaktualizuj ją (install.sh), żeby apka wiedziała, co ten serwer umie.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -367,6 +502,9 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                     else -> "budzenie niesprawdzone: ${s.wakeReason}"
                 }
                 Text("Usypianie: ${if (s.canSuspend) "tak" else "nie"} · $wake", style = MaterialTheme.typography.bodySmall)
+                if (s.canSuspend && s.mac.isNotBlank() && s.wakeConfidence != "no") OutlinedButton({ wakeTest = true }) {
+                    Text(if (s.wakeConfidence == "yes") "Sprawdź budzenie jeszcze raz" else "Sprawdź budzenie")
+                }
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nazwa w apce") }, singleLine = true)
                 HorizontalDivider()
                 Text("Sparowane urządzenia", style = MaterialTheme.typography.titleSmall)
@@ -402,6 +540,7 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
         dismissButton = { TextButton({ reload++ }) { Text("Testuj") } },
     )
     if (invite) InviteDialog(key) { invite = false }
+    if (wakeTest) WakeTestDialog(s) { wakeTest = false; reload++ }
     revoke?.let { d ->
         AlertDialog(
             onDismissRequest = { revoke = null },
@@ -627,33 +766,66 @@ fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {
     )
 }
 
-/** Ekran Pilota: żeton „Ekran: X ▾” z wyborem, gdy ekranów jest kilka. */
-@Composable
-fun ScreenPicker(current: Server?, onPick: (String) -> Unit) {
-    val ctx = LocalContext.current
-    val screens = remember { Servers.screens(ctx) }
-    var menu by remember { mutableStateOf(false) }
-    if (current == null) return
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("Ekran:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(8.dp))
-        Box {
-            FilledTonalButton({ menu = true }, enabled = screens.size > 1) {
-                Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                Text(current.name + if (screens.size > 1) " ▾" else "")
-            }
-            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
-                screens.forEach { s ->
-                    androidx.compose.material3.DropdownMenuItem({ Text(s.name) }, { menu = false; onPick(s.key) })
-                }
-            }
-        }
-    }
-}
-
 fun qrBitmap(text: String, size: Int): android.graphics.Bitmap {
     val m = com.google.zxing.qrcode.QRCodeWriter().encode(text, com.google.zxing.BarcodeFormat.QR_CODE, size, size,
         mapOf(com.google.zxing.EncodeHintType.MARGIN to 2))
     val px = IntArray(size * size) { if (m.get(it % size, it / size)) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
     return android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888)
+}
+
+/**
+ * „Sprawdź budzenie”: usypia serwer, czeka, aż zniknie z sieci, i budzi go jak przy oglądaniu (WoL z telefonu
+ * i przez inne serwery). Udane budzenie zapisuje się na serwerze (/api/wake/verified), więc „Uśpij” przestaje ostrzegać.
+ */
+@Composable
+private fun WakeTestDialog(s: Server, onDone: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var phase by remember { mutableStateOf<String?>(null) }  // null = pytanie, potem opis kroku
+    var result by remember { mutableStateOf<Boolean?>(null) }
+    fun run() = scope.launch {
+        val api = Api(Settings(ctx), s)
+        result = try {
+            withContext(Dispatchers.IO) {
+                phase = "Usypiam ${s.name}…"
+                api.suspendPc()
+                phase = "Czekam, aż ${s.name} zaśnie…"
+                var asleep = false
+                repeat(30) { if (!asleep) { delay(2_000); asleep = !api.ping(1500) } }
+                if (!asleep) throw ApiException("${s.name} nie zasnął (może coś go trzyma: pobieranie, odtwarzanie)")
+                delay(10_000)  // karta sieciowa przechodzi w tryb czuwania dopiero po chwili
+                api.ensureAwake { phase = it }
+            }
+            true
+        } catch (e: ApiException) {
+            phase = e.message
+            false
+        }
+    }
+    AlertDialog(
+        onDismissRequest = { if (phase == null || result != null) onDone() },
+        title = { Text("Budzenie ${s.name}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    phase == null -> Text("Uśpię ${s.name} i spróbuję go obudzić przez sieć. To potrwa 1–2 minuty, a w tym czasie " +
+                        "nic na nim nie zagra ani się nie pobierze. Ktoś przy nim siedzi?")
+                    result == null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(phase!!)
+                    }
+                    result == true -> Text("Działa: ${s.name} obudził się przez sieć. Apka i serwer to zapamiętały.", color = OK_GREEN)
+                    else -> Text("Nie wyszło: $phase\n\nSprawdź Wake-on-LAN w BIOS-ie i ustawienia karty sieciowej (docs/instalacja-i-utrzymanie.md).",
+                        color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            when {
+                phase == null -> TextButton({ run() }) { Text("Uśpij i obudź") }
+                result != null -> TextButton(onDone) { Text("OK") }
+                else -> {}
+            }
+        },
+        dismissButton = { if (phase == null) TextButton(onDone) { Text("Anuluj") } },
+    )
 }

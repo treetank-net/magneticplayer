@@ -12,7 +12,7 @@ import java.io.File
 import java.util.TreeSet
 
 /**
- * Filmy na dysku telefonu (cacheDir/media). Zapisują do niego tylko prefetch w PlayerActivity i DownloadService,
+ * Filmy na dysku telefonu (noBackupFilesDir/media; dawniej cacheDir/media, które Android czyści przy braku miejsca). Zapisują do niego tylko prefetch w PlayerActivity i DownloadService,
  * i to wyłącznie bajty, które agent zgłosił jako pobrane (X-Ready-End), więc nie trafią tu zera z niepobranego torrenta.
  *
  * Sprzątanie ([sweep], [onWatched]):
@@ -30,16 +30,28 @@ object MediaCache {
      * ale [PinnedAwareLruEvictor] ich nie rusza. Evictor liczy go raz, przy pierwszym użyciu w procesie.
      */
     fun maxBytes(ctx: Context): Long {
-        val dir = File(ctx.applicationContext.cacheDir, "media")
+        val dir = dir(ctx)
         val used = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
         return ((dir.parentFile!!.usableSpace + used) * 0.6).toLong().coerceIn(1L shl 30, 64L shl 30)
     }
 
     @Volatile private var cache: SimpleCache? = null
 
+    /**
+     * Katalog bufora. Nie cacheDir: tam system kasuje pliki aplikacji przekraczających limit bufora (u nas do 60% dysku),
+     * więc „pobrane” filmy znikały. Stary katalog przenosimy raz (ten sam system plików, więc rename).
+     */
+    private fun dir(ctx: Context): File {
+        val app = ctx.applicationContext
+        val dir = File(app.noBackupFilesDir, "media")
+        val old = File(app.cacheDir, "media")
+        if (!dir.exists() && old.exists()) old.renameTo(dir)
+        return dir
+    }
+
     fun get(ctx: Context): SimpleCache = cache ?: synchronized(this) {
         cache ?: ctx.applicationContext.let { app ->
-            SimpleCache(File(app.cacheDir, "media"),
+            SimpleCache(dir(app),
                 PinnedAwareLruEvictor(maxBytes(app)) { key -> OfflineStore.isPinned(app, key) },
                 StandaloneDatabaseProvider(app))
         }.also { cache = it }

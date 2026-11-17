@@ -1,5 +1,6 @@
 """Biblioteka: przeglądanie wybranych katalogów komputera (tylko filmy/muzyka + napisy obok)."""
 import os
+import re
 
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}
 AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
@@ -30,7 +31,34 @@ def sidecar_subs(full):
                 out.append({"name": n, "lang": lang, "ext": ext.lower()[1:]})
     except OSError:
         pass
+    # torrenty: Subs/English.srt albo Subs/<nazwa>/2_English.srt (nazwa ze ścieżką względem katalogu filmu)
+    seen = set()  # NTFS/exFAT: „subs” i „Subs” to ten sam katalog
+    for sd in ("Subs", "subs", "Subtitles", "subtitles", "Sub", "sub"):
+        for rel in (sd, os.path.join(sd, stem)):
+            try:
+                real = os.path.join(d, rel)
+                st = os.stat(real)
+                if (st.st_dev, st.st_ino) in seen or not os.path.isdir(real):
+                    continue
+                seen.add((st.st_dev, st.st_ino))
+                names = sorted(os.listdir(real))
+            except OSError:
+                continue
+            for n in names:
+                s, ext = os.path.splitext(n)
+                if ext.lower() in SUB_EXT and os.path.isfile(os.path.join(d, rel, n)):
+                    out.append({"name": os.path.join(rel, n), "lang": _lang_guess(s), "ext": ext.lower()[1:]})
     return out
+
+
+_LANGS = {"english": "en", "eng": "en", "polish": "pl", "pol": "pl", "polski": "pl", "german": "de", "french": "fr",
+          "spanish": "es", "italian": "it", "russian": "ru", "portuguese": "pt", "dutch": "nl", "czech": "cs"}
+
+
+def _lang_guess(s):
+    """„2_English” → „en”; nieznane zostaje jak jest (do etykiety)."""
+    w = re.sub(r"^[\d_\-. ]+", "", s).strip()
+    return _LANGS.get(w.lower().split(" ")[0].split(".")[0], w)
 
 
 def safe_join(base, rel):

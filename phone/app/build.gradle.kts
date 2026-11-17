@@ -61,9 +61,14 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-ui:1.8.0")
+    implementation("androidx.media3:media3-session:1.8.0")
     implementation("androidx.media3:media3-datasource:1.8.0")
     implementation("androidx.media3:media3-database:1.8.0")
     implementation("com.google.zxing:core:3.5.3") // QR parowania
+    // Chromecast (Google Cast, odbiornik domyślny Google'a) i wykrywanie urządzeń w sieci
+    implementation("com.google.android.gms:play-services-cast-framework:22.1.0")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("androidx.appcompat:appcompat:1.7.1") // ekran sterowania Cast SDK dziedziczy po AppCompatActivity
     // FFmpeg: dźwięk AC3/E-AC3/DTS/TrueHD, którego telefony nie dekodują same (build Jellyfina)
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1")
 }

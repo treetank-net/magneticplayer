@@ -9,6 +9,9 @@ z kodem 4xx lub 5xx.
 `/media`, `/lib` i `/sub` przyjmują zamiast tokenu `?ticket=` z `POST /api/media/ticket`: podpis na jeden plik,
 ważny 12 h. Tak inny serwer (ekran) dostaje film, nie będąc sparowany z serwerem plików. Bilet na API nie działa.
 
+Odpowiedzi `/media`, `/lib` i `/sub` mają `Access-Control-Allow-Origin: *` (plus `OPTIONS` dla preflightu), bo
+odbiornik Chromecasta czyta film i napisy z innego „origin”. Bez tego pomija napisy.
+
 `ref` oznacza wskazanie pliku: `torrent_id` + `file_index`, `root` + `path` albo `playing: true`
 (zob. [architektura](architektura.md#wskazanie-pliku-ref)). W GET przekazuje się je jako parametry zapytania,
 w POST w treści JSON.
@@ -47,7 +50,31 @@ gdy budzenie raz się udało; agent zgłasza `yes` po `POST /api/wake/verified`.
 | `POST /api/pair/code` | nowy kod dla kolejnego urządzenia → `{"code", "expires_in", "host", "port", "id", "name"}` |
 | `GET /api/devices` | `[{id, name, created, last_seen, current, legacy?}]` |
 | `POST /api/devices/revoke` | `{"id"}`; `"legacy"` wyłącza stary wspólny token |
-| `POST /api/media/ticket` | `ref` → `{"url", "subs": [{name, lang, url}], "title", "expires"}`; adresy z biletem, host z nagłówka `Host` |
+| `POST /api/media/ticket` | `ref` (+ `"variant": "cast"`) → `{"url", "subs": [{name, lang, url, vtt}], "title", "expires", "variant", "content_type"}`; adresy z biletem, host z nagłówka `Host`; `vtt` to napisy po konwersji do WebVTT (dla Chromecasta); z `variant: "cast"` URL wskazuje wersję „dla Chromecasta”, jeśli jest (`&v=cast`, `content_type: video/mp4`) |
+
+`/media` i `/lib` z `&v=cast` dają wersję „dla Chromecasta” (gdy jest), a z `&cap=<napisy>` i nagłówkiem żądania
+`getcaptionInfo.sec` odpowiadają nagłówkiem `CaptionInfo.sec` z adresem tych napisów (telewizory Samsung, DLNA).
+
+## Format pliku, wersja dla Chromecasta (agent 1.2+)
+
+| metoda i ścieżka | opis |
+|---|---|
+| `GET /api/media/probe?ref` | `{"ffmpeg", "file": {container, duration, video, audio[], subs[]}, "cast": {verdict: ok\|maybe\|no, problems[], video_copy, audio_copy}, "complete", "variant": {size, cast} \| null, "job", "encoder": {encoder, label, hw}}` |
+| `POST /api/media/convert` | `ref` → stan zlecenia (`state: queued\|running\|done\|error`, `pct`, `speed`, `encoder`, `error`); `"cancel": true` przerywa, `"remove": true` kasuje wersję; 409, gdy torrent nie jest pobrany w całości |
+| `GET /api/media/converts` | wszystkie zlecenia od startu agenta |
+
+Wersja leży obok filmu w `.mp-cast/<nazwa>.cast.mp4`. Obraz H.264 8-bit ≤1080p zostaje, inny idzie przez najlepszy
+działający koder: NVENC, VideoToolbox, VAAPI, Quick Sync, V4L2 albo x264, w 1080p. Dźwięk AAC/MP3 zostaje,
+inny → AAC stereo. `features.transcode` w `/api/info` to etykieta kodera, a `transcode_hw` mówi, czy sprzętowy.
+
+## Chromecast sterowany przez agenta (klient webowy)
+
+| metoda i ścieżka | opis |
+|---|---|
+| `GET /api/cast/devices` | `[{id, name, model}]` (mDNS przez pychromecast; pierwsze wywołanie czeka do 3 s) |
+| `POST /api/cast/play` | `ref` + `device` (+ `start`) → odtwarza (wersja dla Chromecasta, jeśli jest; napisy VTT) |
+| `GET /api/cast/status` | `{active, device, title, state, pos, duration, volume, volume_fixed}`; `volume` w procentach, `volume_fixed`: Chromecast ze stałą głośnością (strona chowa wtedy przyciski) |
+| `POST /api/cast/cmd` | `{"cmd": "toggle\|play\|pause\|seek\|seek_rel\|volume\|stop", "value"}`; `volume` w procentach 0–100, `seek_rel` w sekundach |
 
 Z konsoli: `magneticplayer_agent.py --pair` (kod + QR w terminalu), `--devices`, `--revoke ID`.
 

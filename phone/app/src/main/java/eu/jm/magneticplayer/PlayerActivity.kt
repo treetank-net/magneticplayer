@@ -121,7 +121,7 @@ class PlayerActivity : ComponentActivity() {
         texts.addView(info)
         top.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
         val buttons = top.apply {
-            if (Servers.screens(this@PlayerActivity).isNotEmpty()) addView(smallButton("Na ekran") { handOffToPc() })
+            addView(smallButton("Na ekran") { handOffToPc() })
             addView(smallButton("VLC") {
                 player?.pause()
                 openInVlc(this@PlayerActivity, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
@@ -246,25 +246,52 @@ class PlayerActivity : ComponentActivity() {
         setOnClickListener { onClick() }
     }
 
-    /** „Na ekran”: jeden ekran od razu, kilka: wybór (ostatnio używany oznaczony). */
+    // Chromecasty w sieci, wykrywane, póki odtwarzacz jest na wierzchu
+    private var casts: List<CastTarget> = emptyList()
+    private var stopDiscovery: (() -> Unit)? = null
+
+    override fun onStart() {
+        super.onStart()
+        stopDiscovery = Cast.discover(this) { casts = it }
+        Thread { Dlna.discover() }.start()  // do listy „Na ekran” (Dlna.found)
+    }
+
+    /** „Na ekran”: jeden ekran (bez Chromecastów) od razu, inaczej wybór (ostatnio używany oznaczony). */
     private fun handOffToPc() {
         val screens = Servers.screens(this)
-        if (screens.size == 1) return handOffTo(screens[0])
+        val cs = casts
+        val tvs = Dlna.found.values.toList()
+        if (screens.size == 1 && cs.isEmpty() && tvs.isEmpty()) return handOffTo(screens[0], null)
+        if (screens.isEmpty() && cs.isEmpty() && tvs.isEmpty()) {
+            Toast.makeText(this, "Nie widzę żadnego ekranu ani Chromecasta w tej sieci", Toast.LENGTH_LONG).show()
+            return
+        }
         val last = Servers.screenKey(this)
+        val labels = screens.map { it.name + if (it.key == last) " · ostatnio" else "" } +
+            cs.map { "${it.name} (Chromecast)" } + tvs.map { "${it.name} (DLNA)" }
         android.app.AlertDialog.Builder(this).setTitle("Na którym ekranie?")
-            .setItems(screens.map { it.name + if (it.key == last) " · ostatnio" else "" }.toTypedArray()) { _, i -> handOffTo(screens[i]) }
+            .setItems(labels.toTypedArray()) { _, i ->
+                when {
+                    i < screens.size -> handOffTo(screens[i], null)
+                    i < screens.size + cs.size -> handOffTo(null, cs[i - screens.size])
+                    else -> handOffTo(null, null, tvs[i - screens.size - cs.size])
+                }
+            }
             .show()
     }
 
-    private fun handOffTo(screen: Server) {
+    private fun handOffTo(screen: Server?, cast: CastTarget?, tv: DlnaTarget? = null) {
         val p = player ?: return
         val pos = p.currentPosition
+        val name = screen?.name ?: cast?.name ?: tv?.name ?: return
         p.pause()
-        Toast.makeText(this, "Otwieram na ${screen.name}…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Otwieram na $name…", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             try {
-                Screens.play(this@PlayerActivity, ref, screen.key, pos / 1000.0) { }
-                Toast.makeText(this@PlayerActivity, "Gra na ${screen.name}", Toast.LENGTH_SHORT).show()
+                if (cast != null) Screens.cast(this@PlayerActivity, ref, cast, pos / 1000.0) { }
+                else if (tv != null) Screens.dlna(this@PlayerActivity, ref, tv, pos / 1000.0) { }
+                else Screens.play(this@PlayerActivity, ref, screen!!.key, pos / 1000.0) { }
+                Toast.makeText(this@PlayerActivity, "Gra na $name", Toast.LENGTH_SHORT).show()
                 startActivity(Intent(this@PlayerActivity, MainActivity::class.java).putExtra("tab", TAB_REMOTE)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                 finish()
@@ -358,6 +385,8 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        stopDiscovery?.invoke()
+        stopDiscovery = null
         player?.let {
             val pos = it.currentPosition
             val dur = it.duration

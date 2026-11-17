@@ -230,11 +230,53 @@ function mediaActions(ref, isVideo = true) {
   return h("div", { class: "row", style: "margin-top:6px" },
     h("button", { class: "btn primary", onclick: () => act(async () => { await api("/api/player/open", ref); setTab("remote"); }, "Gra na komputerze") }, "▶ Na komputerze"),
     isVideo && h("button", { class: "btn", onclick: () => Player.open(ref) }, "W przeglądarce"),
+    isVideo && h("button", { class: "btn", onclick: () => CastUi.open(ref) }, "Chromecast…"),
     h("button", { class: "btn", onclick: () => { const u = new URL(mediaUrl(ref), location.href).href;
       navigator.clipboard?.writeText(u).then(() => toast("Link skopiowany — wklej w VLC: Media → Otwórz strumień sieciowy"), () => prompt("Link do VLC:", u)); } }, "Link do VLC"),
     isVideo && h("button", { class: "btn", onclick: () => Subs.open(ref) }, "Napisy…"),
   );
 }
+
+// ---------------------------------------------------------------- Chromecast (sterowany przez agenta)
+const CastUi = (() => {
+  const VERDICT = { ok: "Chromecast powinien to zagrać.", maybe: "Chromecast może mieć kłopot:", no: "Chromecast raczej tego nie zagra:" };
+  function open(ref) {
+    const devs = h("div", {}, h("p", { class: "muted" }, "Szukam Chromecastów w sieci…"));
+    const fmt = h("div", { style: "margin-bottom:10px" }, h("p", { class: "muted" }, "Sprawdzam format…"));
+    let timer = null;
+    async function probe() {
+      let d;
+      try { d = await api("/api/media/probe?" + refQuery(ref)); } catch (e) { put(fmt, h("p", { class: "err" }, e.message)); return; }
+      if (!d.ffmpeg) { put(fmt, h("p", { class: "muted" }, "Na serwerze nie ma ffmpeg, więc nie sprawdzę formatu.")); return; }
+      const c = d.cast, j = d.job, rows = [];
+      if (d.variant) rows.push(h("p", {}, "✓ Jest wersja dla Chromecasta (" + bytes(d.variant.size) + "), pójdzie ona."),
+        h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, remove: true }), "Usunięto wersję").then(probe) }, "Usuń tę wersję"));
+      else {
+        rows.push(h("p", {}, VERDICT[c.verdict]), ...c.problems.map(x => h("p", { class: "muted" }, "· " + x)));
+        if (j && (j.state === "queued" || j.state === "running")) {
+          rows.push(h("p", {}, `Przygotowuję (${j.encoder || "w kolejce"})… ${Math.round(j.pct)}%` + (j.speed ? ` · ${j.speed.toFixed(1)}× szybciej niż film` : "")),
+            bar(j.pct / 100), h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, cancel: true })).then(probe) }, "Przerwij"));
+        } else if (c.verdict !== "ok") {
+          if (j && j.state === "error") rows.push(h("p", { class: "err" }, "Nie wyszło: " + j.error));
+          const how = (c.video_copy ? "obraz bez zmian" : "obraz: " + (d.encoder?.label || "?")) + ", " + (c.audio_copy ? "dźwięk bez zmian" : "dźwięk → AAC");
+          rows.push(h("button", { class: "btn primary", disabled: !d.complete,
+            onclick: () => act(() => api("/api/media/convert", ref), "Przygotowuję").then(probe) }, "Przygotuj wersję dla Chromecasta"),
+            h("p", { class: "muted" }, d.complete ? how : "Najpierw musi się pobrać w całości."));
+        }
+      }
+      put(fmt, rows);
+      clearTimeout(timer);
+      if (j && (j.state === "queued" || j.state === "running") && $("#dlg").open) timer = setTimeout(probe, 2000);
+    }
+    openDialog("Na Chromecasta: " + (ref.title || ""), [fmt, devs], () => clearTimeout(timer));
+    probe();
+    api("/api/cast/devices").then(list => put(devs, list.length ? list.map(d => h("div", { class: "row" },
+      h("span", { class: "grow" }, d.name, h("span", { class: "muted" }, " · " + (d.model || ""))),
+      h("button", { class: "btn primary", onclick: () => act(async () => { await api("/api/cast/play", { ...ref, device: d.id }); $("#dlg").close(); setTab("remote"); }, "Gra na " + d.name) }, "▶ Odtwórz")))
+      : h("p", { class: "muted" }, "Nie widzę żadnego Chromecasta w tej sieci.")), e => put(devs, h("p", { class: "err" }, e.message)));
+  }
+  return { open };
+})();
 
 // ---------------------------------------------------------------- Torrenty
 const Torrents = (() => {
@@ -397,7 +439,20 @@ const Remote = (() => {
       h("p", { class: "muted", style: "text-align:center;margin:12px 0 0" },
         "Klawisze: ", h("span", { class: "kbd" }, "spacja"), " pauza · ", h("span", { class: "kbd" }, "← →"), " 10 s · ",
         h("span", { class: "kbd" }, "↑ ↓"), " głośność · ", h("span", { class: "kbd" }, "f"), " pełny ekran · ", h("span", { class: "kbd" }, "m"), " wycisz"));
-    put(root, els.idle, els.panel);
+    const ccmd = (c, value) => act(() => api("/api/cast/cmd", value === undefined ? { cmd: c } : { cmd: c, value })).then(poll);
+    els.cast = h("div", { class: "card", hidden: true });
+    els.castTitle = h("div", { class: "name" }); els.castPos = h("p", { class: "muted" });
+    els.castBar = h("div");
+    els.castPlay = h("button", { class: "btn big primary", onclick: () => ccmd("toggle") }, "⏯");
+    els.castVol = [h("button", { class: "btn", onclick: () => ccmd("volume", Math.max(0, (cst?.volume || 0) - 5)) }, "🔉"),
+      h("button", { class: "btn", onclick: () => ccmd("volume", Math.min(100, (cst?.volume || 0) + 5)) }, "🔊")];
+    put(els.cast, h("p", { class: "muted" }, "Chromecast"), els.castTitle, els.castBar, els.castPos,
+      h("div", { class: "row controls" },
+        h("button", { class: "btn big", onclick: () => ccmd("seek_rel", -10) }, "↺10"), els.castPlay,
+        h("button", { class: "btn big", onclick: () => ccmd("seek_rel", 30) }, "30↻"),
+        ...els.castVol,
+        h("button", { class: "btn", onclick: () => ccmd("stop") }, "⏹ Zakończ")));
+    put(root, els.cast, els.idle, els.panel);
     built = true;
   }
   const CODECS = { hdmv_pgs_subtitle: "PGS", dvd_subtitle: "VobSub", subrip: "SRT", ass: "ASS", eac3: "E-AC3", ac3: "AC3", aac: "AAC", dts: "DTS", truehd: "TrueHD", hevc: "HEVC", h264: "H.264", av1: "AV1" };
@@ -413,9 +468,20 @@ const Remote = (() => {
     if (document.activeElement !== sel) { const s = list.find(t => t.selected); sel.value = s ? s.id : (type === "sub" ? "no" : sel.value); }
     return list.length;
   }
+  let cst = null;
   async function poll() {
     try { st = await api("/api/player/status"); } catch (e) { st = null; }
+    try { cst = await api("/api/cast/status"); } catch (e) { cst = null; }
     if (!built) build();
+    els.cast.hidden = !cst?.active;
+    if (cst?.active) {
+      els.castTitle.textContent = (cst.title || "") + " · " + cst.device;
+      put(els.castBar, cst.duration ? bar(cst.pos / cst.duration) : null);
+      els.castPos.textContent = `${clock(cst.pos)} / ${clock(cst.duration || 0)} · ${cst.state} · ` +
+        (cst.volume_fixed ? "głośność: pilot telewizora" : `głośność ${cst.volume}%`);
+      els.castVol.forEach(b => b.hidden = !!cst.volume_fixed);
+      els.castPlay.textContent = cst.state === "PLAYING" ? "⏸" : "▶";
+    }
     const running = st && st.running && !st.idle;
     els.idle.hidden = running; els.panel.hidden = !running;
     if (!running) return;

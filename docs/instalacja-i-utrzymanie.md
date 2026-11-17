@@ -36,6 +36,13 @@ Co robią skrypty:
 
 Ponowne uruchomienie `install.sh` aktualizuje agenta i nie rusza konfiguracji ani tokenu.
 
+### Chromecast i wersje dla niego
+
+`install-root.sh` instaluje `ffmpeg`, a `install.sh` instaluje `pychromecast` w venv. Koder dla „Przygotuj wersję
+dla Chromecasta” agent wybiera sam przy starcie i pokazuje go w apce w szczegółach serwera. Na jmpc (GTX 970)
+powinien to być NVENC, o ile działa sterownik NVIDIA z `libnvidia-encode`. Na Intelu VAAPI, na Macu VideoToolbox.
+Wersje leżą w `.mp-cast/` obok filmów i można je kasować ręcznie.
+
 ### Szybka aktualizacja samego agenta
 
 ```bash
@@ -103,7 +110,7 @@ Kod repo jest też na `ovh-vps` w `~/git/MagneticPlayer.git` (remote `ovh`).
   Komputer tylko do oglądania: `BACKEND=none bash server/install.sh`.
 - Nazwa serwera u góry apki; ▾ (gdy serwerów jest kilka) przełącza, z którego są Torrenty i Biblioteka.
 - Przycisk ekranu przy filmie odtwarza na wybranym komputerze. Gdy film jest na innym serwerze, ekran dostaje
-  adres z biletem i ciągnie film przez sieć. Pilot ma własny wybór ekranu.
+  adres z biletem i ciągnie film przez sieć. Pilot ma żetony celów: ekran (▾ gdy kilka), Chromecast i telewizor.
 - Uśpiony serwer budzi telefon, a po kilku sekundach także inny działający serwer (gdy telefon go nie dosięga).
   Okno „Uśpij” ostrzega, gdy budzenie przez sieć jest niepewne albo niemożliwe (Wi-Fi, brak WoL).
 - Stary serwer z jednego tokenu przechodzi do listy sam, z zachowaniem pozycji, bufora i pobranych filmów.
@@ -162,6 +169,8 @@ Strona to jeden plik `server/web/index.html` (bez zależności). `install.sh` ko
 | „Na komputerze” wisi 5 s i zwraca błąd z `cinnamon-screensaver-command` | stara wersja agenta: `--deactivate` w Cinnamon 5.4 wywala wygaszacz (`grab_helper`). Zaktualizuj agenta |
 | OpenSubtitles: „dzienny limit pobrań” | klucz „Under development” daje 100 pobrań na dobę, a anonimowe pobrania mają limit konta. Pomaga podanie loginu w apce albo inne źródło |
 | `pkexec` przez SSH: „No session for cookie” | użyj wariantu z `sudo`, opisanego wyżej |
+| telewizor Samsung „wczytuje…” i nic nie gra | na telewizorze czeka pytanie o zgodę dla nowego urządzenia (telefon albo PC). Zezwól pilotem i wyślij film jeszcze raz |
+| pobrany film „zniknął z telefonu” | stare wersje trzymały pobrane w `cacheDir`, który Android czyści przy braku miejsca. Od 1.2.0 są w `noBackupFilesDir/media`, a lista pokazuje, ile zostało. Pobierz ponownie |
 | torrent „wstrzymany”, choć nikt nie klikał | akcja „zatrzymaj po pobraniu” albo pauza z Deluge GTK, sprawdź w historii zleceń |
 
 ### Diagnostyka strumieniowania

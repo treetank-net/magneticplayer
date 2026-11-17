@@ -41,6 +41,9 @@ data class Server(
     val canWakeOthers get() = features?.optBoolean("wake_others", false) ?: false
     val canSuspend get() = power?.optBoolean("suspend", true) ?: true
     val canPoweroff get() = power?.optBoolean("poweroff", true) ?: true
+    /** koder do wersji „dla Chromecasta” (np. „NVIDIA NVENC”, „procesor (x264)”), null = brak ffmpeg albo stary agent */
+    val transcode: String? get() = features?.takeIf { !it.isNull("transcode") }?.optString("transcode")?.ifEmpty { null }
+    val transcodeHw get() = features?.optBoolean("transcode_hw") ?: false
 
     /** yes (sprawdzone przez apkę) / maybe / no */
     val wakeConfidence: String get() = when {

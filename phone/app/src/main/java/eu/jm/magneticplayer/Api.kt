@@ -25,6 +25,10 @@ class Settings(ctx: Context) {
     var sequential: Boolean
         get() = p.getBoolean("sequential", true)
         set(v) = p.edit().putBoolean("sequential", v).apply()
+    /** Pilot nie wygasza ekranu, gdy coś gra */
+    var pilotKeepScreen: Boolean
+        get() = p.getBoolean("pilot_keep_screen", true)
+        set(v) = p.edit().putBoolean("pilot_keep_screen", v).apply()
     /** domyślna akcja po pobraniu: none | stop | suspend */
     var afterDefault: String
         get() = p.getString("after", "none")!!
@@ -37,6 +41,11 @@ class Settings(ctx: Context) {
     var bufferMinutes: Int
         get() = p.getInt("buffer_min", 5)
         set(v) = p.edit().putInt("buffer_min", v).apply()
+
+    /** nazwa ostatnio używanego telewizora (Chromecast albo DLNA), do „ostatnio” w wyborze ekranu */
+    var lastTv: String?
+        get() = p.getString("last_tv", null)
+        set(v) = p.edit().putString("last_tv", v).apply()
 
 
     fun position(key: String): Long = p.getLong("pos:$key", 0)
@@ -137,7 +146,9 @@ sealed class MediaRef {
 }
 
 /** Film z innego serwera dla ekranu: URL i napisy z biletem (POST /api/media/ticket). */
-data class Ticket(val url: String, val subs: List<String>, val title: String)
+data class Ticket(val url: String, val subs: List<String>, val title: String, val subInfo: List<SubSrc> = emptyList(),
+                  /** "video/mp4", gdy bilet wskazuje wersję „dla Chromecasta” */
+                  val contentType: String? = null)
 
 data class TFile(
     val index: Int, val path: String, val size: Long, val progress: Double, val media: String?,
@@ -259,10 +270,18 @@ class Api(val s: Settings, val srv: Server) {
     fun revoke(id: String) { call("POST", "/api/devices/revoke", JSONObject().put("id", id)) }
     fun wakeOther(mac: String, host: String) { call("POST", "/api/wake", JSONObject().put("mac", mac).put("ip", host), 4000) }
 
-    fun ticket(ref: MediaRef): Ticket {
-        val o = JSONObject(call("POST", "/api/media/ticket", ref.json()))
+    fun ticket(ref: MediaRef, variant: String? = null): Ticket {
+        val o = JSONObject(call("POST", "/api/media/ticket", ref.json().apply { if (variant != null) put("variant", variant) }))
         val a = o.optJSONArray("subs") ?: JSONArray()
-        return Ticket(o.getString("url"), List(a.length()) { a.getJSONObject(it).getString("url") }, o.optString("title"))
+        val info = List(a.length()) { i ->
+            a.getJSONObject(i).let { x ->
+                val u = x.getString("url")
+                // starszy agent nie podaje „vtt”, ale /sub umie &vtt=1
+                SubSrc(x.optString("name"), x.optString("lang"), u, x.optString("vtt").ifEmpty { "$u&vtt=1" })
+            }
+        }
+        return Ticket(o.getString("url"), info.map { it.url }, o.optString("title"), info,
+            o.optString("content_type").takeIf { !o.isNull("content_type") && it.isNotEmpty() })
     }
 
     fun torrents(): List<Torrent> {
@@ -403,6 +422,11 @@ class Api(val s: Settings, val srv: Server) {
     fun action(id: String, action: String) {
         call("POST", "/api/torrents/$id/action", JSONObject().put("action", action))
     }
+
+    /** Format pliku i ocena dla Chromecasta, wersja „dla Chromecasta” i jej przygotowywanie (agent 1.2+). */
+    fun mediaProbe(ref: MediaRef): JSONObject = JSONObject(call("GET", "/api/media/probe?${ref.query()}", timeout = 30000))
+    fun mediaConvert(ref: MediaRef, op: String? = null): JSONObject =
+        JSONObject(call("POST", "/api/media/convert", ref.json().apply { if (op != null) put(op, true) }))
 
     fun playerStatus(): JSONObject = JSONObject(call("GET", "/api/player/status", timeout = 3000))
 

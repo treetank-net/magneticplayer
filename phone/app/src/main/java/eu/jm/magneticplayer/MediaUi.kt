@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.Computer
@@ -73,10 +74,12 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
     var chooser by remember { mutableStateOf(false) }
     var opening by remember { mutableStateOf<String?>(null) }
     val screens = remember { Servers.screens(ctx) }
-    fun playOn(key: String) = scope.launch {
+    fun playOn(key: String?, cast: CastTarget? = null, tv: DlnaTarget? = null) = scope.launch {
         opening = "Otwieram…"
         try {
-            Screens.play(ctx, ref, key, null) { opening = it }
+            if (cast != null) Screens.cast(ctx, ref, cast, null) { opening = it }
+            else if (tv != null) Screens.dlna(ctx, ref, tv, null) { opening = it }
+            else Screens.play(ctx, ref, key!!, null) { opening = it }
             onPlayingOnPc()
         } catch (e: ApiException) {
             snack.showSnackbar(e.message ?: "Błąd")
@@ -98,6 +101,8 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
             Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
             Text(if (screens.size == 1) screens[0].name.take(14) else "Na ekranie…")
         }
+        // Chromecasty (i reszta ekranów) w jednym wyborze
+        IconButton({ chooser = true }) { Icon(Icons.Filled.Cast, "Chromecast, telewizor") }
         Box {
             IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "więcej") }
             DropdownMenu(menu, { menu = false }) {
@@ -123,7 +128,8 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
         }
     }
     if (subsDialog) SubsDialog(api, ref) { subsDialog = false }
-    if (chooser) ScreenChooser(ref, onPhone = null, onPick = { chooser = false; playOn(it) }) { chooser = false }
+    if (chooser) ScreenChooser(ref, onPhone = null, onPick = { chooser = false; playOn(it) },
+        onCast = { chooser = false; playOn(null, it) }, onDlna = { chooser = false; playOn(null, tv = it) }) { chooser = false }
     opening?.let { msg ->
         AlertDialog(onDismissRequest = {}, confirmButton = {}, text = {
             Row(verticalAlignment = Alignment.CenterVertically) {

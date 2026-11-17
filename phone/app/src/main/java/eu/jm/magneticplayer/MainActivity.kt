@@ -62,6 +62,11 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.RadioButton
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -98,6 +103,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -139,6 +145,8 @@ class MainActivity : ComponentActivity() {
         if (Servers.all(this).isEmpty()) tab.intValue = TAB_SETTINGS
         // bufor na dysku: obejrzane i stare filmy, także po ubiciu apki w trakcie oglądania
         Thread { MediaCache.sweep(this) }.start()
+        // telewizor DLNA, który grał przed ubiciem apki: Pilot i powiadomienie wracają
+        lifecycleScope.launch(Dispatchers.IO) { if (Dlna.restore(this@MainActivity)) RemoteSessionService.start(applicationContext) }
         handleIntent(intent)
         setContent { AppTheme { MainScreen(tab, settingsVersion) } }
     }
@@ -176,12 +184,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        appResumes.intValue++
+    }
+
     /** Na zakładce Pilot przyciski głośności telefonu sterują głośnością mpv na wybranym ekranie. */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (tab.intValue == TAB_REMOTE && (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)) {
-            val d = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) 5 else -5
-            val api = Api.of(this, Servers.screenKey(this)) ?: return super.onKeyDown(keyCode, event)
-            lifecycleScope.launch(Dispatchers.IO) { runCatching { api.playerCmd("volume_rel", d) } }
+        val vol = keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+        // głośność celu Pilota: Chromecast i telewizor na każdej zakładce, ekran z mpv tylko na Pilocie
+        val target = if (vol) Pilot.effective(this) else null
+        if (target != null && (target != "screen" || tab.intValue == TAB_REMOTE)) {
+            val r = Pilot.remote(this, target) ?: return super.onKeyDown(keyCode, event)
+            val d = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) 1 else -1
+            lifecycleScope.launch { runCatching { r.volumeBy(d) } }
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -196,6 +212,10 @@ private fun CoroutineScope.io(snack: SnackbarHostState, block: suspend () -> Uni
         snack.showSnackbar(e.message ?: "Błąd")
     }
 }
+
+/** licznik powrotów apki na ekran (onResume), do sprawdzania aktualizacji */
+private val appResumes = androidx.compose.runtime.mutableIntStateOf(0)
+private var lastUpdateCheck = 0L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -220,8 +240,12 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     var addServer by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<AppUpdate?>(null) }
     var updating by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(online == true, ver) {
-        if (online == true) update = withContext(Dispatchers.IO) { Updater.check(ctx, api) }
+    // aktualizacja: po połączeniu, po zmianie ustawień i po powrocie apki na ekran (najwyżej co 10 min)
+    LaunchedEffect(online == true, ver, appResumes.intValue) {
+        if (online == true && System.currentTimeMillis() - lastUpdateCheck > 10 * 60_000L) {
+            lastUpdateCheck = System.currentTimeMillis()
+            update = withContext(Dispatchers.IO) { Updater.check(ctx, api) }
+        }
     }
 
     LaunchedEffect(ver) {
@@ -341,8 +365,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                     when (t) {
                         TAB_TORRENTS -> TorrentsTab(api, online == true, snack, onPlaying)
                         TAB_LIBRARY -> LibraryTab(api, online == true, snack, onPlaying)
-                        TAB_REMOTE -> RemoteTab(screenApi, snack, onPick = { Servers.setScreen(ctx, it); screenKey = it }) { wake(it) }
-                        TAB_OFFLINE -> OfflineTab()
+                        TAB_REMOTE -> PilotTab(screenApi, snack, onPickScreen = { Servers.setScreen(ctx, it); screenKey = it }) { wake(it) }
+                        TAB_OFFLINE -> OfflineTab(onPlaying)
                         else -> SettingsTab(api, ver, snack, addServer) { addServer = false; changed() }
                     }
                 }
@@ -645,53 +669,74 @@ private fun WatchableInfo(f: TFile) {
 
 // ---------------------------------------------------------------- Pilot
 
+/**
+ * Pilot: na górze cele (ekrany z mpv, Chromecast i telewizor DLNA, gdy coś na nie wysłaliśmy), pod spodem ten sam
+ * układ przycisków dla każdego. Czego cel nie umie (ścieżki w DLNA, głośność Chromecasta ze stałą głośnością), tego nie ma.
+ */
 @Composable
-private fun RemoteTab(api: Api?, snack: SnackbarHostState, onPick: (String) -> Unit, onWake: (String) -> Unit) {
+private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (String) -> Unit, onWake: (String) -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var st by remember(api) { mutableStateOf<JSONObject?>(null) }
-    var reachable by remember(api) { mutableStateOf<Boolean?>(null) }
-    var dragging by remember { mutableStateOf(false) }
-    var dragPos by remember { mutableFloatStateOf(0f) }
-    var subsDialog by remember { mutableStateOf(false) }
-    var trackDialog by remember { mutableStateOf<String?>(null) }
-    if (api == null) return Hint("Żaden serwer nie ma ekranu (mpv i zalogowanej sesji graficznej).")
-    val settings = remember { Settings(ctx) }
-
-    LaunchedEffect(api) {
-        while (true) {
-            val r = withContext(Dispatchers.IO) { runCatching { api.playerStatus() } }
-            st = r.getOrNull()
-            reachable = r.isSuccess || withContext(Dispatchers.IO) { api.ping() }
-            // film otwarty z innego serwera (URL z biletem): mpv nie zapamięta pozycji, więc zapisuje ją Pilot
-            st?.takeIf { it.optBoolean("running") }?.let { o ->
-                val ref = Servers.screenRef(ctx, api.srv.key)
-                val pos = o.optDouble("pos", 0.0)
-                if (ref != null && o.optString("title") == ref.title && !pos.isNaN() && pos > 5) settings.setPosition(ref.key(), (pos * 1000).toLong())
+    var avail by remember { mutableStateOf(Pilot.available(ctx)) }
+    LaunchedEffect(Unit) { while (true) { avail = Pilot.available(ctx); delay(1000) } }
+    val focus = Pilot.focus.value
+    val target = focus?.takeIf { it in avail } ?: avail.firstOrNull()
+    val screens = remember { Servers.screens(ctx) }
+    var menu by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (screenApi != null) Box {
+                FilterChip(target == "screen", {
+                    if (target == "screen" && screens.size > 1) menu = true else Pilot.focus.value = "screen"
+                }, { Text(screenApi.srv.name + if (screens.size > 1) " ▾" else "") },
+                    leadingIcon = { Icon(Icons.Filled.Computer, null, Modifier.size(18.dp)) })
+                DropdownMenu(menu, { menu = false }) {
+                    screens.forEach { s -> DropdownMenuItem({ Text(s.name) }, { menu = false; Pilot.focus.value = "screen"; onPickScreen(s.key) }) }
+                }
             }
-            delay(1000)
+            if ("cast" in avail) FilterChip(target == "cast", { Pilot.focus.value = "cast" },
+                { Text(Cast.deviceName(ctx) ?: "Chromecast") }, leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
+            if ("dlna" in avail) FilterChip(target == "dlna", { Pilot.focus.value = "dlna" },
+                { Text(Dlna.current?.name ?: "Telewizor") }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
+        }
+        when (target) {
+            "cast", "dlna" -> key(target) {
+                val remote = remember { Pilot.remote(ctx, target)!! }
+                RemoteView(remote, snack, onGone = { if (Pilot.focus.value == target) Pilot.focus.value = null })
+            }
+            "screen" -> if (screenApi != null) key(screenApi.srv.key) { ScreenRemote(screenApi, snack, onWake) }
+            else -> Hint("Żaden serwer nie ma ekranu (mpv i zalogowanej sesji graficznej).")
         }
     }
-    fun cmd(c: String, v: Any? = null) = scope.io(snack) {
-        api.playerCmd(c, v)
-        st = runCatching { api.playerStatus() }.getOrNull()
-    }
+}
 
-    val s = st
-    Column(Modifier.fillMaxSize()) {
-    ScreenPicker(api.srv, onPick)
-    if (reachable == false) {
-        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+/** mpv na ekranie serwera: budzenie, „nic nie gra”, a gdy gra, wspólny pilot plus ścieżki, napisy i pełny ekran. */
+@Composable
+private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val remote = remember(api) { MpvRemote(ctx.applicationContext, api) }
+    var reachable by remember(api) { mutableStateOf<Boolean?>(null) }
+    var running by remember(api) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(api) {
+        while (true) {
+            val r = runCatching { remote.status() }
+            running = r.getOrNull() != null
+            reachable = r.isSuccess || withContext(Dispatchers.IO) { api.ping() }
+            delay(if (running == true) 5000 else 1500)  // gdy gra, stan czyta RemoteView
+        }
+    }
+    when {
+        reachable == false -> Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally) {
             Text("${api.srv.name} nie odpowiada.", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(16.dp))
             if (api.srv.mac.isNotBlank()) Button({ onWake(api.srv.key) }) {
                 Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(6.dp)); Text("Obudź")
             }
         }
-        return@Column
-    }
-    if (s == null || !s.optBoolean("running")) {
-        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        running == false -> Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Na ekranie ${api.srv.name} nic nie gra.", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             Text("Wybierz film w zakładce Torrenty albo Biblioteka → przycisk ekranu.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -700,80 +745,135 @@ private fun RemoteTab(api: Api?, snack: SnackbarHostState, onPick: (String) -> U
                 Icon(Icons.Filled.LightMode, null); Spacer(Modifier.width(6.dp)); Text("Włącz i odblokuj ekran")
             }
         }
-        return@Column
+        running == true -> {
+            LaunchedEffect(Unit) { RemoteSessionService.start(ctx.applicationContext) }  // powiadomienie i głośność poza apką
+            RemoteView(remote, snack, onGone = { running = false }) { s -> MpvExtras(api, remote, s, snack) }
+        }
     }
-    val pos = s.optDouble("pos", 0.0).takeIf { !it.isNaN() } ?: 0.0
-    val dur = s.optDouble("duration", 0.0).takeIf { !it.isNaN() } ?: 0.0
-    val paused = s.optBoolean("paused")
-    val fs = s.optBoolean("fullscreen")
-    val muted = s.optBoolean("muted")
+}
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(s.optString("title"), style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+/** Wspólny pilot: tytuł, suwak, przewijanie, pauza, głośność, Zakończ; `extras` = to, co umie tylko dany cel. */
+@Composable
+private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> Unit,
+                       extras: @Composable ColumnScope.(RemoteState) -> Unit = {}) {
+    val scope = rememberCoroutineScope()
+    var st by remember(remote) { mutableStateOf<RemoteState?>(null) }
+    var drag by remember { mutableStateOf<Float?>(null) }
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(remote) {
+        var misses = 0
+        while (true) {
+            val s = runCatching { remote.status() }.getOrNull()
+            if (s != null) { st = s; misses = 0 } else if (++misses >= 3) { st = null; onGone() }
+            repeat(4) { delay(250); tick++ }  // pozycja płynie między odczytami
+        }
+    }
+    fun act(f: suspend Remote.() -> Unit) = scope.launch {
+        try {
+            remote.f()
+            runCatching { remote.status() }.getOrNull()?.let { st = it }
+        } catch (e: Exception) {
+            snack.showSnackbar(e.message ?: "${remote.name} nie odpowiada")
+        }
+    }
+    val s = st ?: return Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    @Suppress("UNUSED_EXPRESSION") tick
+    // jak w odtwarzaczach: ekran z pilotem nie gaśnie, gdy coś gra (ustawienie)
+    val view = androidx.compose.ui.platform.LocalView.current
+    val keep = remember { Settings(view.context).pilotKeepScreen } && s.playing
+    DisposableEffect(keep) {
+        view.keepScreenOn = keep
+        onDispose { view.keepScreenOn = false }
+    }
+    val pos = s.posNow()
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(s.title, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        val note = listOfNotNull(s.note, if (s.buffering && s.note == null) "wczytuje…" else null).joinToString(" · ")
+        if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(16.dp))
         Slider(
-            value = if (dragging) dragPos else pos.toFloat(),
-            onValueChange = { dragging = true; dragPos = it },
-            onValueChangeFinished = { dragging = false; cmd("seek_to", dragPos.toDouble()) },
-            valueRange = 0f..(if (dur > 0) dur.toFloat() else 1f),
+            value = drag ?: pos.toFloat().coerceIn(0f, s.dur.toFloat().coerceAtLeast(1f)),
+            onValueChange = { drag = it },
+            onValueChangeFinished = { drag?.let { d -> act { seekTo(d.toDouble()) } }; drag = null },
+            valueRange = 0f..(if (s.dur > 0) s.dur.toFloat() else 1f),
+            enabled = s.dur > 0,
         )
         Row(Modifier.fillMaxWidth()) {
-            Text(clock(if (dragging) dragPos.toDouble() else pos), style = MaterialTheme.typography.labelMedium)
+            Text(clock(drag?.toDouble() ?: pos), style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.weight(1f))
-            Text(clock(dur), style = MaterialTheme.typography.labelMedium)
+            Text(clock(s.dur), style = MaterialTheme.typography.labelMedium)
         }
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            RemoteButton(Icons.Filled.FastRewind, "-60 s") { cmd("seek", -60) }
-            RemoteButton(Icons.Filled.Replay10, "-10 s") { cmd("seek", -10) }
-            FilledIconButton({ cmd("toggle_pause") }, Modifier.size(80.dp)) {
-                Icon(if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, "play/pauza", Modifier.size(44.dp))
+            RemoteButton(Icons.Filled.FastRewind, "-60 s") { act { seekBy(-60.0) } }
+            RemoteButton(Icons.Filled.Replay10, "-10 s") { act { seekBy(-10.0) } }
+            FilledIconButton({ act { setPlaying(!s.playing) } }, Modifier.size(80.dp)) {
+                Icon(if (s.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (s.playing) "pauza" else "graj", Modifier.size(44.dp))
             }
-            RemoteButton(Icons.Filled.Forward10, "+10 s") { cmd("seek", 10) }
-            RemoteButton(Icons.Filled.FastForward, "+60 s") { cmd("seek", 60) }
+            RemoteButton(Icons.Filled.Forward10, "+10 s") { act { seekBy(10.0) } }
+            RemoteButton(Icons.Filled.FastForward, "+60 s") { act { seekBy(60.0) } }
         }
         Spacer(Modifier.height(24.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            RemoteButton(Icons.AutoMirrored.Filled.VolumeDown, "ciszej") { cmd("volume_rel", -5) }
-            RemoteButton(if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, "wycisz") { cmd("mute") }
-            RemoteButton(Icons.AutoMirrored.Filled.VolumeUp, "głośniej") { cmd("volume_rel", 5) }
+        if (s.volume != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                RemoteButton(Icons.AutoMirrored.Filled.VolumeDown, "ciszej") { act { volumeBy(-1) } }
+                RemoteButton(if (s.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                    if (s.muted) "włącz dźwięk" else "wycisz") { act { setMuted(!s.muted) } }
+                RemoteButton(Icons.AutoMirrored.Filled.VolumeUp, "głośniej") { act { volumeBy(1) } }
+            }
+            Text((if (s.muted) "Wyciszony (${s.volume})" else "Głośność ${s.volume}") + " · działają też przyciski głośności telefonu",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text("Głośność ustawia pilot telewizora (${remote.name} ma stałą głośność)",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text("Głośność ${s.optDouble("volume", 0.0).toInt()}% (działają też przyciski głośności telefonu)",
-            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilledTonalButton({ cmd("fullscreen") }) {
-                Icon(if (fs) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null)
-                Spacer(Modifier.width(6.dp)); Text(if (fs) "Wyjdź z pełnego" else "Pełny ekran")
-            }
-            FilledTonalButton({ cmd("stop") }) { Icon(Icons.Filled.Stop, null); Spacer(Modifier.width(6.dp)); Text("Zakończ") }
-        }
+        extras(s)
         Spacer(Modifier.height(10.dp))
-        val tracks = s.optJSONArray("tracks")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton({ trackDialog = "sub" }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text("Napisy") }
-            OutlinedButton({ trackDialog = "audio" }) { Icon(Icons.Filled.Audiotrack, null); Spacer(Modifier.width(6.dp)); Text("Audio") }
-            if (tracks.count { it.optString("type") == "video" } > 1)
-                OutlinedButton({ trackDialog = "video" }) { Text("Wideo") }
+        FilledTonalButton({ act { stop() }; if (remote.kind != "screen") onGone() }) {
+            Icon(Icons.Filled.Stop, null); Spacer(Modifier.width(6.dp)); Text("Zakończ")
         }
-        trackDialog?.let { type ->
-            TrackDialog(type, tracks.filter { it.optString("type") == type }, onDismiss = { trackDialog = null }) { id ->
-                trackDialog = null
-                cmd("track", JSONObject().put("type", type).put("id", id ?: "no"))
-            }
-        }
-        val sub = s.optString("sub").takeIf { it.isNotEmpty() && it != "null" } ?: "brak"
-        val audio = s.optString("audio").takeIf { it.isNotEmpty() && it != "null" } ?: "domyślna"
-        Text("napisy: $sub · audio: $audio", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton({ cmd("sub_delay", -0.1) }) { Text("napisy −0,1 s") }
-            TextButton({ cmd("sub_delay", 0.1) }) { Text("napisy +0,1 s") }
-        }
-        OutlinedButton({ subsDialog = true }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text("Szukaj napisów") }
     }
+}
+
+/** Tylko mpv: pełny ekran, ścieżki, opóźnienie i wyszukiwanie napisów. */
+@Composable
+private fun ColumnScope.MpvExtras(api: Api, remote: MpvRemote, st: RemoteState, snack: SnackbarHostState) {
+    val scope = rememberCoroutineScope()
+    var subsDialog by remember { mutableStateOf(false) }
+    var trackDialog by remember { mutableStateOf<String?>(null) }
+    val s = st.mpv ?: return
+    fun cmd(c: String, v: Any? = null) = scope.io(snack) { remote.raw(c, v) }
+    val fs = s.optBoolean("fullscreen")
+    FilledTonalButton({ cmd("fullscreen") }) {
+        Icon(if (fs) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null)
+        Spacer(Modifier.width(6.dp)); Text(if (fs) "Wyjdź z pełnego" else "Pełny ekran")
     }
-    if (subsDialog) SubsDialog(api, MediaRef.Playing(s?.optString("title").orEmpty(), api.srv.key)) { subsDialog = false }
+    Spacer(Modifier.height(10.dp))
+    val tracks = s.optJSONArray("tracks")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedButton({ trackDialog = "sub" }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text("Napisy") }
+        OutlinedButton({ trackDialog = "audio" }) { Icon(Icons.Filled.Audiotrack, null); Spacer(Modifier.width(6.dp)); Text("Audio") }
+        if (tracks.count { it.optString("type") == "video" } > 1)
+            OutlinedButton({ trackDialog = "video" }) { Text("Wideo") }
+    }
+    trackDialog?.let { type ->
+        TrackDialog(type, tracks.filter { it.optString("type") == type }, onDismiss = { trackDialog = null }) { id ->
+            trackDialog = null
+            cmd("track", JSONObject().put("type", type).put("id", id ?: "no"))
+        }
+    }
+    val sub = s.optString("sub").takeIf { it.isNotEmpty() && it != "null" } ?: "brak"
+    val audio = s.optString("audio").takeIf { it.isNotEmpty() && it != "null" } ?: "domyślna"
+    Text("napisy: $sub · audio: $audio", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(10.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TextButton({ cmd("sub_delay", -0.1) }) { Text("napisy −0,1 s") }
+        TextButton({ cmd("sub_delay", 0.1) }) { Text("napisy +0,1 s") }
+    }
+    OutlinedButton({ subsDialog = true }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text("Szukaj napisów") }
+    if (subsDialog) SubsDialog(api, MediaRef.Playing(st.title, api.srv.key)) { subsDialog = false }
 }
 
 /** Wybór ścieżki w mpv: lista z językiem, tytułem, kodekiem; dla napisów też „wyłączone”. */
@@ -874,6 +974,16 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
         }
         HorizontalDivider()
         BufferSettings(s)
+        HorizontalDivider()
+        var keepScreen by remember { mutableStateOf(s.pilotKeepScreen) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Pilot nie wygasza ekranu")
+                Text("Gdy na ekranie, Chromecaście albo telewizorze coś gra, a Pilot jest otwarty", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(keepScreen, { keepScreen = it; s.pilotKeepScreen = it })
+        }
         HorizontalDivider()
         if (api.configured) OpenSubsSettings(api, snack)
         HorizontalDivider()

@@ -71,8 +71,24 @@ razem.
   z tytułem w `[nawiasie]` są w `mp_subs.search`.
 - Web: nie podawaj tablic do `replaceChildren`, tylko używaj `put()`.
 - Zrzut ekranu telefonu przez adb jest czarny, gdy ekran śpi. Wtedy `uiautomator dump`. Telefonu nie odblokowuj.
+- Samsung (UE43J5500, DLNA) pyta na ekranie o zgodę dla każdego nowego adresu sterującego; bez `DLNA.ORG_OP=01` nie przewija.
+- Chromecast „Duży pokój” ma stałą głośność (głośność tylko pilotem telewizora).
+- Android czyści `cacheDir`, gdy apka przekroczy limit cache: pobrane filmy są w `noBackupFilesDir/media`.
+- media3 `MediaSessionService`: sesję trzeba dodać `addSession()`, inaczej brak powiadomienia do czasu podłączenia kontrolera.
+- `systemctl --user restart magneticplayer` zabijał mpv (ten sam cgroup); dlatego mpv startuje przez `systemd-run --scope`.
 
 ## Otwarte sprawy
+
+- **Telewizory, agent 1.2.0, wspólny Pilot: sprawdzone na sprzęcie** (jmpc NVENC, laptop VAAPI, „Przygotuj”,
+  Chromecast z serwera i z telefonu, Samsung DLNA z napisami i przewijaniem, Pilot dla mpv/Chromecasta/DLNA,
+  powiadomienia, głośność poza apką, mpv przeżywa restart agenta, Chromecast ze strony (przez API agenta),
+  telefon jako źródło dla ekranu jmpc, odzyskiwanie DLNA po ubiciu apki). Zostało:
+  - strona webowa w przeglądarce (karta Chromecasta po zmianie `volume_fixed`) — sprawdzone tylko API i składnia JS;
+  - „Sprawdź budzenie” (usypia serwer, tylko za zgodą) i aktualizacja po powrocie apki na ekran;
+  - kafelek w panelu systemowym pisze „Ten telefon” przy mpv/DLNA (brak trasy MediaRouter2);
+  - Pilot w apce nie widzi Chromecasta puszczonego ze strony (inny nadawca) i odwrotnie;
+  - „Przygotuj” stoi na 99% przez ~1 min (faststart na USB); przydałby się napis „kończę zapis…”;
+  - Pilot odświeża się 4×/s, więc `uiautomator dump` często nie działa („could not get idle state”): przy testach zrzuty ekranu.
 
 - Pomysł: sprawdzanie aktualizacji, gdy apka wraca na pierwszy plan (dziś tylko gdy apka złapie połączenie z PC albo zmienią się ustawienia).
 - Pomysł: zdalny dostęp spoza LAN (Tailscale/WireGuard, opisane w `docs/siec-i-bezpieczenstwo.md`).

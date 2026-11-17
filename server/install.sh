@@ -32,6 +32,8 @@ install -d "$DEST/web" && install -m 644 "$SRC"/web/* "$DEST/web/"
 echo "== napisy: subliminal w venv ($DEST/venv)"
 [ -x "$DEST/venv/bin/pip" ] || python3 -m venv --clear "$DEST/venv"  # --clear: po nieudanej próbie (brak python3-venv)
 "$DEST/venv/bin/pip" install --isolated -q --upgrade subliminal || echo "UWAGA: subliminal się nie zainstalował — napisy nie zadziałają"
+# Chromecast sterowany z klienta webowego (apka na telefonie ma własny Cast SDK)
+"$DEST/venv/bin/pip" install --isolated -q --upgrade pychromecast || echo "UWAGA: pychromecast się nie zainstalował — Chromecast z przeglądarki nie zadziała"
 
 # ustawienia podane jawnie (BACKEND, PLAYER, POWER) trafiają do config.json; reszta configu zostaje
 if [ -n "$BACKEND_SET$PORT_SET${PLAYER+x}${POWER+x}" ]; then
