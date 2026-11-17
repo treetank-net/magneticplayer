@@ -67,14 +67,17 @@ Wersja leży obok filmu w `.mp-cast/<nazwa>.cast.mp4`. Obraz H.264 8-bit ≤1080
 działający koder: NVENC, VideoToolbox, VAAPI, Quick Sync, V4L2 albo x264, w 1080p. Dźwięk AAC/MP3 zostaje,
 inny → AAC stereo. `features.transcode` w `/api/info` to etykieta kodera, a `transcode_hw` mówi, czy sprzętowy.
 
-## Chromecast sterowany przez agenta (klient webowy)
+## Chromecast sterowany przez agenta (klient webowy, Pilot w apce)
+
+Agent słucha wszystkich Chromecastów w sieci, więc status pokazuje też to, co puścił ktoś inny (telefon przez Cast SDK,
+YouTube, Spotify). Apka używa tego, gdy sama nie ma sesji Cast.
 
 | metoda i ścieżka | opis |
 |---|---|
 | `GET /api/cast/devices` | `[{id, name, model}]` (mDNS przez pychromecast; pierwsze wywołanie czeka do 3 s) |
 | `POST /api/cast/play` | `ref` + `device` (+ `start`) → odtwarza (wersja dla Chromecasta, jeśli jest; napisy VTT) |
-| `GET /api/cast/status` | `{active, device, title, state, pos, duration, volume, volume_fixed}`; `volume` w procentach, `volume_fixed`: Chromecast ze stałą głośnością (strona chowa wtedy przyciski) |
-| `POST /api/cast/cmd` | `{"cmd": "toggle\|play\|pause\|seek\|seek_rel\|volume\|stop", "value"}`; `volume` w procentach 0–100, `seek_rel` w sekundach |
+| `GET /api/cast/status` | `{active, device, id, app, mine, title, state, pos, duration, volume, muted, volume_fixed, all}`: pierwszy grający Chromecast (najpierw puszczony przez agenta), `all` = wszystkie grające; `app` = aplikacja na Chromecaście („Default Media Receiver”, „YouTube”…), `mine`: puścił agent; `volume` w procentach, `volume_fixed`: stała głośność (przyciski znikają) |
+| `POST /api/cast/cmd` | `{"cmd": "toggle\|play\|pause\|seek\|seek_rel\|volume\|mute\|stop", "value", "device"}`; bez `device` działa na Chromecaście ze statusu; `volume` w procentach 0–100, `seek_rel` w sekundach; `stop` zamyka aplikację na Chromecaście (także cudzą) |
 
 Z konsoli: `magneticplayer_agent.py --pair` (kod + QR w terminalu), `--devices`, `--revoke ID`.
 

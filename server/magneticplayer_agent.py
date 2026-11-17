@@ -1002,7 +1002,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.casts.status())
             if p == "/api/cast/cmd" and method == "POST":
                 b = self.body()
-                return self.send_json(a.casts.control(b.get("cmd"), b.get("value")))
+                return self.send_json(a.casts.control(b.get("cmd"), b.get("value"), b.get("device") or None))
             if p == "/api/app/version" and method == "GET":
                 return self.send_json(apk_version())
             if p == "/app/MagneticPlayer.apk" and method in ("GET", "HEAD"):

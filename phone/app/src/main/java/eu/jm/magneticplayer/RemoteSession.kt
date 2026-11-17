@@ -26,7 +26,8 @@ import kotlinx.coroutines.launch
  * Zdalny odtwarzacz ([Remote]: mpv na ekranie albo telewizor DLNA) jako „odtwarzacz” dla systemu: powiadomienie
  * z przyciskami i suwakiem (panel u góry, ekran blokady) i głośność urządzenia przyciskami telefonu także poza apką
  * (sesja zdalna, DeviceInfo REMOTE). Sam nic nie odtwarza, stan czyta co ~1,5 s.
- * Chromecast ma takie samo powiadomienie z Cast SDK, więc tu go nie ma.
+ * Chromecast puszczony z tego telefonu ma powiadomienie z Cast SDK; ten widziany tylko przez agenta (strona, YouTube)
+ * dostaje je stąd, gdy wybierze się go na Pilocie.
  */
 @OptIn(UnstableApi::class)
 class RemotePlayer(private val ctx: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
@@ -53,7 +54,8 @@ class RemotePlayer(private val ctx: Context) : SimpleBasePlayer(Looper.getMainLo
     /** DLNA, gdy coś na nie wysłaliśmy; inaczej ekran z mpv (chyba że Pilot steruje Chromecastem). */
     private fun pick(): Remote? = when {
         Dlna.current != null -> DlnaRemote(ctx)
-        Pilot.focus.value == "cast" -> null
+        // Chromecast z Cast SDK ma własne powiadomienie; widziany tylko przez agenta dostaje nasze
+        Pilot.focus.value == "cast" -> if (Cast.session(ctx) == null) Pilot.remote(ctx, "cast") else null
         else -> Pilot.remote(ctx, "screen")
     }
 

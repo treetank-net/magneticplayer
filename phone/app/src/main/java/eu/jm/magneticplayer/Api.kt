@@ -428,6 +428,16 @@ class Api(val s: Settings, val srv: Server) {
     fun mediaConvert(ref: MediaRef, op: String? = null): JSONObject =
         JSONObject(call("POST", "/api/media/convert", ref.json().apply { if (op != null) put(op, true) }))
 
+    /** Chromecast widziany przez agenta (dowolny nadawca): `{active, device, id, app, title, state, pos, …, all: [...]}`. */
+    fun castStatus(): JSONObject = JSONObject(call("GET", "/api/cast/status", timeout = 3000))
+
+    fun castCmd(cmd: String, value: Any? = null, device: String? = null) {
+        val b = JSONObject().put("cmd", cmd)
+        if (value != null) b.put("value", value)
+        if (device != null) b.put("device", device)
+        call("POST", "/api/cast/cmd", b, 6000)
+    }
+
     fun playerStatus(): JSONObject = JSONObject(call("GET", "/api/player/status", timeout = 3000))
 
     fun playerCmd(cmd: String, value: Any? = null) {

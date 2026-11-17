@@ -84,9 +84,8 @@ razem.
   powiadomienia, głośność poza apką, mpv przeżywa restart agenta, Chromecast ze strony (przez API agenta),
   telefon jako źródło dla ekranu jmpc, odzyskiwanie DLNA po ubiciu apki). Zostało:
   - strona webowa w przeglądarce (karta Chromecasta po zmianie `volume_fixed`) — sprawdzone tylko API i składnia JS;
-  - „Sprawdź budzenie” (usypia serwer, tylko za zgodą) i aktualizacja po powrocie apki na ekran;
+  - aktualizacja po powrocie apki na ekran („Sprawdź budzenie” użytkownik sprawdza sam, usypiając i budząc);
   - kafelek w panelu systemowym pisze „Ten telefon” przy mpv/DLNA (brak trasy MediaRouter2);
-  - Pilot w apce nie widzi Chromecasta puszczonego ze strony (inny nadawca) i odwrotnie;
   - Pilot odświeża się 4×/s, więc `uiautomator dump` często nie działa („could not get idle state”): przy testach zrzuty ekranu.
 
 - Pomysł: sprawdzanie aktualizacji, gdy apka wraca na pierwszy plan (dziś tylko gdy apka złapie połączenie z PC albo zmienią się ustawienia).

@@ -95,6 +95,44 @@ class CastRemote(private val ctx: Context) : Remote {
     override suspend fun stop() = main { Cast.stop(ctx) }
 }
 
+/**
+ * Chromecast, na którym gra coś, czego ten telefon nie puścił przez Cast SDK (strona, inny telefon, YouTube…):
+ * stan i polecenia idą przez agenta, który słucha wszystkich Chromecastów w sieci (/api/cast/status).
+ */
+class AgentCastRemote(private val ctx: Context, val api: Api, private val device: String) : Remote {
+    override val kind = "cast"
+    @Volatile private var last: RemoteState? = null
+    @Volatile private var devName: String? = null
+    override val name: String get() = devName ?: "Chromecast"
+
+    override suspend fun status(): RemoteState? = withContext(Dispatchers.IO) {
+        val all = api.castStatus().optJSONArray("all")
+        val o = (0 until (all?.length() ?: 0)).map { all!!.getJSONObject(it) }.firstOrNull { it.optString("id") == device }
+        Pilot.agentCast.value = o?.let { api.srv.key to it }
+        if (o == null) return@withContext null.also { last = null }
+        devName = o.optString("device")
+        fun d(k: String) = o.optDouble(k, 0.0).takeIf { !it.isNaN() } ?: 0.0
+        val app = o.optString("app").takeIf { it.isNotBlank() && it != "Default Media Receiver" }
+        RemoteState(o.optString("title"), d("pos"), d("duration"), o.optString("state") == "PLAYING",
+            o.optString("state") == "BUFFERING",
+            volume = if (o.optBoolean("volume_fixed")) null else o.optInt("volume"), muted = o.optBoolean("muted"),
+            note = app ?: if (!o.optBoolean("mine")) "puszczone z innego urządzenia" else null).also { last = it }
+    }
+
+    private suspend fun cmd(c: String, v: Any? = null) = withContext(Dispatchers.IO) { api.castCmd(c, v, device) }
+
+    override suspend fun setPlaying(play: Boolean) {
+        cmd(if (play) "play" else "pause")
+        last = last?.copy(playing = play, at = System.currentTimeMillis())
+    }
+    override suspend fun seekTo(sec: Double) = cmd("seek", sec)
+    override suspend fun seekBy(sec: Double) = cmd("seek_rel", sec)
+    override suspend fun volumeBy(steps: Int) { val v = (last ?: status())?.volume ?: return; setVolume((v + steps * 5).coerceIn(0, 100)) }
+    override suspend fun setVolume(v: Int) = cmd("volume", v)
+    override suspend fun setMuted(m: Boolean) = cmd("mute", m)
+    override suspend fun stop() = cmd("stop")
+}
+
 /** Telewizor DLNA, do którego wysłaliśmy film ([Dlna.current]). */
 class DlnaRemote(private val ctx: Context) : Remote {
     override val kind = "dlna"
@@ -124,10 +162,24 @@ class DlnaRemote(private val ctx: Context) : Remote {
 object Pilot {
     /** "screen" | "cast" | "dlna" */
     val focus = mutableStateOf<String?>(null)
+    /** Chromecast grający według agenta (klucz serwera, wpis z /api/cast/status), gdy telefon nie ma sesji Cast SDK */
+    val agentCast = mutableStateOf<Pair<String, JSONObject>?>(null)
+
+    /** Pyta agentów (najpierw ekran, potem wybrany serwer, potem reszta), czy na jakimś Chromecaście coś gra. */
+    suspend fun refreshAgentCast(ctx: Context) = withContext(Dispatchers.IO) {
+        val keys = (listOfNotNull(Servers.screenKey(ctx), Servers.activeKey(ctx)) + Servers.all(ctx).map { it.key }).distinct()
+        for (k in keys) {
+            val api = Api.of(ctx, k) ?: continue
+            val o = runCatching { api.castStatus() }.getOrNull() ?: continue
+            agentCast.value = if (o.optBoolean("active")) k to o else null
+            return@withContext
+        }
+        agentCast.value = null
+    }
 
     /** Dostępne cele w kolejności domyślnej. Wątek UI (sesja Cast). */
     fun available(ctx: Context): List<String> = buildList {
-        if (Cast.session(ctx) != null) add("cast")
+        if (Cast.session(ctx) != null || agentCast.value != null) add("cast")
         if (Dlna.current != null) add("dlna")
         if (Servers.screenKey(ctx) != null) add("screen")
     }
@@ -135,11 +187,15 @@ object Pilot {
     fun effective(ctx: Context): String? = available(ctx).let { a -> focus.value?.takeIf { it in a } ?: a.firstOrNull() }
 
     fun remote(ctx: Context, kind: String?): Remote? = when (kind) {
-        "cast" -> CastRemote(ctx.applicationContext)
+        "cast" -> if (Cast.session(ctx) != null) CastRemote(ctx.applicationContext)
+            else agentCast.value?.let { (k, o) -> Api.of(ctx, k)?.let { AgentCastRemote(ctx.applicationContext, it, o.optString("id")) } }
         "dlna" -> DlnaRemote(ctx.applicationContext)
         "screen" -> Api.of(ctx, Servers.screenKey(ctx))?.let { MpvRemote(ctx.applicationContext, it) }
         else -> null
     }
+
+    /** Nazwa Chromecasta do chipa: z sesji Cast SDK albo od agenta. */
+    fun castName(ctx: Context): String = Cast.deviceName(ctx) ?: agentCast.value?.second?.optString("device")?.takeIf { it.isNotBlank() } ?: "Chromecast"
 
     /** Wysłano film na `kind`: Pilot pokazuje ten cel, a mpv i DLNA dostają powiadomienie (Chromecast ma swoje z Cast SDK). */
     fun started(ctx: Context, kind: String) {

@@ -677,7 +677,13 @@ private fun WatchableInfo(f: TFile) {
 private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (String) -> Unit, onWake: (String) -> Unit) {
     val ctx = LocalContext.current
     var avail by remember { mutableStateOf(Pilot.available(ctx)) }
-    LaunchedEffect(Unit) { while (true) { avail = Pilot.available(ctx); delay(1000) } }
+    LaunchedEffect(Unit) {
+        var n = 0
+        while (true) {
+            if (n++ % 3 == 0 && Cast.session(ctx) == null) Pilot.refreshAgentCast(ctx)  // Chromecast puszczony przez kogoś innego
+            avail = Pilot.available(ctx); delay(1000)
+        }
+    }
     val focus = Pilot.focus.value
     val target = focus?.takeIf { it in avail } ?: avail.firstOrNull()
     val screens = remember { Servers.screens(ctx) }
@@ -695,14 +701,21 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
                 }
             }
             if ("cast" in avail) FilterChip(target == "cast", { Pilot.focus.value = "cast" },
-                { Text(Cast.deviceName(ctx) ?: "Chromecast") }, leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
+                { Text(Pilot.castName(ctx)) }, leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
             if ("dlna" in avail) FilterChip(target == "dlna", { Pilot.focus.value = "dlna" },
                 { Text(Dlna.current?.name ?: "Telewizor") }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
         }
         when (target) {
-            "cast", "dlna" -> key(target) {
-                val remote = remember { Pilot.remote(ctx, target)!! }
-                RemoteView(remote, snack, onGone = { if (Pilot.focus.value == target) Pilot.focus.value = null })
+            "cast", "dlna" -> key(target, target == "cast" && Cast.session(ctx) == null) {
+                val remote = remember { Pilot.remote(ctx, target) }
+                if (remote is AgentCastRemote) LaunchedEffect(Unit) {
+                    Pilot.focus.value = "cast"  // powiadomienie ma pokazać ten Chromecast
+                    RemoteSessionService.start(ctx.applicationContext)
+                }
+                if (remote != null) RemoteView(remote, snack, onGone = {
+                    if (target == "cast") Pilot.agentCast.value = null
+                    if (Pilot.focus.value == target) Pilot.focus.value = null
+                })
             }
             "screen" -> if (screenApi != null) key(screenApi.srv.key) { ScreenRemote(screenApi, snack, onWake) }
             else -> Hint("Żaden serwer nie ma ekranu (mpv i zalogowanej sesji graficznej).")
