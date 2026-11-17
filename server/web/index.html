@@ -91,6 +91,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     <p class="name">Sparuj tę przeglądarkę</p>
     <p class="muted">Kod parowania (np. <span class="kbd">7KQ-M4X</span>) da apka na telefonie: Ustawienia → serwer → „Sparuj kolejne”, albo komputer: <span class="kbd">magneticplayer_agent.py --pair</span>. Działa też stary token. Zapamiętam dostęp w tej przeglądarce.</p>
     <div class="row"><input type="text" id="tokenInput" class="grow" placeholder="kod parowania albo token" autocomplete="off"><button class="btn primary" id="tokenSave">Połącz</button></div>
+    <p class="name" style="margin-top:18px">Albo poproś o dostęp</p>
+    <p class="muted">Domownik dostanie prośbę w apce na telefonie (zobaczy ją, gdy apka połączy się z tym komputerem) i wybierze, czy wpuścić jako gościa, czy domownika.</p>
+    <div class="row"><input type="text" id="reqName" class="grow" placeholder="kim jesteś, np. Laptop Kasi" maxlength="60" autocomplete="off"><button class="btn" id="reqSend">Poproś o dostęp</button></div>
+    <p class="muted" id="reqState"></p>
   </section>
   <section id="torrents"></section>
   <section id="library" hidden></section>
@@ -121,10 +125,10 @@ let token = "", pairCode = null;
 })();
 const isCode = v => /^[A-Za-z0-9]{3}-?[A-Za-z0-9]{3}$/.test(v.trim());
 /** Jednorazowy kod parowania → własny token tej przeglądarki. */
-async function pairWith(code) {
+async function pairWith(code, name) {
   const ua = navigator.userAgent, os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
   const r = await fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, name: "Przeglądarka" + (os ? " · " + os : "") }) });
+    body: JSON.stringify({ code, name: name || "Przeglądarka" + (os ? " · " + os : "") }) });
   let j = null; try { j = await r.json(); } catch {}
   if (!r.ok) throw new Error((j && j.error) || "HTTP " + r.status);
   token = j.token; store.set("mp_token", token);
@@ -207,6 +211,41 @@ $("#tokenSave").onclick = async () => {
   $("#login").hidden = true; setTab(tab);
 };
 $("#tokenInput").addEventListener("keydown", e => { if (e.key === "Enter") $("#tokenSave").click(); });
+// prośba o dostęp (mp_access.py): domownik akceptuje w apce, a my dostajemy zwykły kod parowania
+let reqTimer = null;
+$("#reqName").value = store.get("mp_reqname") || "";
+$("#reqName").addEventListener("keydown", e => { if (e.key === "Enter") $("#reqSend").click(); });
+$("#reqSend").onclick = async () => {
+  const name = $("#reqName").value.trim(), st = $("#reqState");
+  if (!name) return toast("Wpisz, kim jesteś: domownik zobaczy tę nazwę");
+  store.set("mp_reqname", name);
+  clearTimeout(reqTimer);
+  let req;
+  try {
+    const r = await fetch("/api/access/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    req = await r.json();
+    if (!r.ok) throw new Error(req.error || "HTTP " + r.status);
+  } catch (e) { st.textContent = e.message; return; }
+  $("#reqSend").disabled = true;
+  st.textContent = "Wysłano. Czekam na zgodę domownika… (niech otworzy apkę MagneticPlayer)";
+  const poll = async () => {
+    let j;
+    try {
+      const r = await fetch(`/api/access/request/${req.id}?secret=${encodeURIComponent(req.secret)}`);
+      j = await r.json();
+      if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+    } catch (e) { $("#reqSend").disabled = false; st.textContent = "Prośba wygasła. Możesz wysłać ją jeszcze raz."; return; }
+    if (j.state === "approved" && j.code) {
+      try { await pairWith(j.code, name); } catch (e) { $("#reqSend").disabled = false; st.textContent = "Parowanie: " + e.message; return; }
+      st.textContent = ""; $("#reqSend").disabled = false;
+      toast(j.role === "guest" ? "Wpuszczono jako gościa" : "Wpuszczono");
+      $("#login").hidden = true; return setTab(tab);
+    }
+    if (j.state === "denied") { $("#reqSend").disabled = false; st.textContent = "Domownik odrzucił prośbę."; return; }
+    reqTimer = setTimeout(poll, 3000);
+  };
+  reqTimer = setTimeout(poll, 3000);
+};
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
 function setTab(t) {
   tab = t; store.set("mp_tab", t);
@@ -325,14 +364,14 @@ const Torrents = (() => {
   }
   function card(t) {
     const done = t.progress >= 100;
-    const after = h("select", { title: "Po pobraniu", onchange: e => act(() => api(`/api/torrents/${t.id}/after`, { after: e.target.value }), "Zapisano") },
+    const after = h("select", { class: "owner-only", title: "Po pobraniu", onchange: e => act(() => api(`/api/torrents/${t.id}/after`, { after: e.target.value }), "Zapisano") },
       Object.entries(AFTER).map(([k, v]) => h("option", { value: k, selected: t.after === k }, "po pobraniu: " + v)));
     const paused = /pause/i.test(t.state);
     return h("div", { class: "card" },
       h("div", { class: "row" },
         h("div", { class: "grow name", style: "cursor:pointer", onclick: () => { openId = openId === t.id ? null : t.id; refresh(); } },
           (t.mine ? "📱 " : "") + t.name),
-        h("button", { class: "btn", onclick: () => act(() => api(`/api/torrents/${t.id}/action`, { action: paused ? "resume" : "pause" })).then(refresh) }, paused ? "Wznów" : "Wstrzymaj")),
+        h("button", { class: "btn owner-only", onclick: () => act(() => api(`/api/torrents/${t.id}/action`, { action: paused ? "resume" : "pause" })).then(refresh) }, paused ? "Wznów" : "Wstrzymaj")),
       bar(t.progress / 100, done),
       h("div", { class: "row muted" },
         h("span", { class: "grow" }, `${t.progress.toFixed(1)}% · ${bytes(t.size)} · ${t.state}`,
@@ -372,7 +411,7 @@ const Torrents = (() => {
     try { jobs = await api("/api/jobs"); } catch { return null; }
     const gone = jobs.filter(j => !j.in_client && j.magnet);
     if (!gone.length) return null;
-    return h("details", { class: "card" }, h("summary", {}, `Wcześniejsze zlecenia z telefonu (${gone.length})`),
+    return h("details", { class: "card owner-only" }, h("summary", {}, `Wcześniejsze zlecenia z telefonu (${gone.length})`),
       gone.slice(0, 40).map(j => h("div", { class: "list-item row" },
         h("span", { class: "grow" }, j.name, h("span", { class: "muted" }, " · " + new Date(j.added * 1000).toLocaleDateString("pl"))),
         h("button", { class: "btn", onclick: () => act(() => api("/api/torrents", { magnet: j.magnet, sequential: true, after: j.after }), "Pobieram znowu").then(refresh) }, "Pobierz znowu"))));

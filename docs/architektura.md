@@ -30,6 +30,7 @@ usługi jest autostart `HKCU\…\Run` przy logowaniu, a mpv słucha na nazwanym 
 | `mp_cast.py` | Chromecast przez pychromecast: wykrywanie, nasłuch stanu wszystkich urządzeń (dowolny nadawca), odtwarzanie i sterowanie dla strony i Pilota |
 | `mp_announce.py` | rozgłaszanie „co gra” między pilotami (UDP multicast `239.255.77.77:47700`): nasłuch dla strony (`/api/announce`), ogłaszanie mpv tego serwera, odpowiedź na „who” |
 | `mp_renderers.py` | kim są Chromecasty (`product_name` z `eureka_info`), profile kodeków na model (`CAST_PROFILES`) i rejestr `renderers.json`; opis w `docs/urzadzenia.md` |
+| `mp_access.py` | prośby o dostęp z sieci domowej: prośba bez tokenu, lista i decyzja domownika, wydanie kodu parowania proszącemu |
 | `mp_install.py` | instalacja agenta na kolejnym komputerze: kod dołączenia, skrypt `/i/<kod>`, paczka, zgłoszenie nowego serwera z kodem parowania dla telefonu |
 | `mp_upload.py` | przyjmowanie filmów z telefonu (`/api/upload/<id>`): wznawialne kawałki w `.mp-upload/`, wolne miejsce, kolizje nazw, katalog `upload_dir` albo „Z telefonu” w bibliotece |
 | `mp_platform.py` | wszystko zależne od systemu: sesja graficzna, odblokowanie, usypianie, karta sieciowa, ocena budzenia, wysyłanie WoL, ścieżka do mpv (na Windows `mpv\mpv.exe` obok agenta). Inny system dopisuje się tutaj; czego nie umie, tego agent nie zgłasza w `features`/`power` |
@@ -234,6 +235,7 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 | `PlayerActivity.kt` | odtwarzacz w telefonie |
 | `MagnetActivity.kt` | obsługa magnetów |
 | `Updater.kt` | aktualizacje z komputera, wysyłanie własnego APK |
+| `Access.kt` | prośby o dostęp: sprawdzanie przy połączeniu (pętla w `MainActivity`), powiadomienie z przyciskami Gość/Domownik/Odrzuć, `AccessReceiver` |
 | `InstallUi.kt` | „Zainstaluj na innym komputerze”: polecenie z kodem dołączenia, czekanie na nowy serwer i parowanie z nim |
 | `UploadOverlay.kt` | okienko „Przesłać na serwer?” nad przeglądarką (uprawnienie „Wyświetlanie nad innymi aplikacjami”) |
 | `Uploads.kt` | przesyłanie filmów pobranych przeglądarką na serwer: wykrywanie (WorkManager z wyzwalaczem MediaStore, ContentObserver), pytanie w powiadomieniu, `UploadWorker` (czeka na Wi-Fi serwera, wznawia), `UploadDeleteActivity`, ustawienia |

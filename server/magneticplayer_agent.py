@@ -33,6 +33,7 @@ import mp_renderers
 from mp_announce import Announcer
 import mp_upload
 import mp_install
+import mp_access
 
 # DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
@@ -810,6 +811,7 @@ class App:
         self.announce.start()
         self.uploads = mp_upload.Uploads(cfg, self.library, log)  # przesyłanie filmów z telefonu
         self.installs = mp_install.Installs(log)  # instalacja na kolejnym komputerze (kod dołączenia)
+        self.access = mp_access.AccessRequests(log)  # prośby o dostęp z sieci domowej (mp_access.py)
         # wykrywanie Chromecastów od startu: rejestr odbiorników zna model, zanim ktoś otworzy wybór urządzenia
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
@@ -883,6 +885,7 @@ class App:
                 "transcode_hw": bool((mp_media.encoder_info() or {}).get("hw")),
                 "upload": self.uploads.available(),  # PUT /api/upload/<id> (mp_upload.py)
                 "install": self.installs.available(),  # /api/install/* i /i/<kod> (mp_install.py)
+                "access_requests": True,  # /api/access/* (mp_access.py)
             },
             "power": {"suspend": POWER and platform.can_power(), "poweroff": POWER and platform.can_power(),
                       "wake": self.wake_info(net)},
@@ -1105,6 +1108,11 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(err, 403)
                 log("sparowano urządzenie:", (b.get("name") or "?")[:60])
                 return self.send_json({**res, "id": a.cfg["id"], "name": a.name()})
+            # prośba o dostęp: bez tokenu, tylko z sieci domowej; po akceptacji domownika zwraca kod parowania
+            if p == "/api/access/request" and method == "POST":
+                return self.send_json(a.access.request(self.body().get("name"), self.client_address[0]))
+            if (m := re.fullmatch(r"/api/access/request/([0-9a-f]{16})", p)) and method == "GET":
+                return self.send_json(a.access.poll(m.group(1), (q.get("secret") or [""])[0]))
             self.device = self.authorized(q)
             qd0 = {k: v[0] for k, v in q.items()}
             if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
@@ -1116,6 +1124,10 @@ class Handler(BaseHTTPRequestHandler):
                 return mp_upload.handle(self, method, p[len("/api/upload/"):], qd0)
             if p == "/api/info" and method == "GET":
                 return self.send_json(a.info(self.client_address[0], self.device, self.role))
+            if p == "/api/access/requests" and method == "GET":
+                return self.send_json({"requests": a.access.pending()})
+            if (m := re.fullmatch(r"/api/access/requests/([0-9a-f]{16})", p)) and method == "POST":
+                return self.send_json(a.access.decide(m.group(1), self.body(), a.devices, self.device))
             if p == "/api/pair/code" and method == "POST":
                 b = self.body()
                 try:  # {"role": "guest", "days": 7}: zaproszenie dla gościa (kod ważny dobę, dostęp na `days`)
@@ -1391,7 +1403,7 @@ class Handler(BaseHTTPRequestHandler):
                 a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
                 return self.send_json({"ok": True})
             raise ApiError("nie ma takiego endpointu", 404)
-        except (LibError, SubsError, CastError, mp_install.InstallError) as e:
+        except (LibError, SubsError, CastError, mp_install.InstallError, mp_access.AccessError) as e:
             self.send_json({"error": str(e)}, e.status)
         except ApiError as e:
             self.send_json({"error": str(e)}, e.status)

@@ -251,6 +251,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
 
     LaunchedEffect(ver) {
         var first = true
+        var pings = 0
         while (true) {
             val ok = withContext(Dispatchers.IO) { api.ping() }
             online = ok
@@ -261,6 +262,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 withContext(Dispatchers.IO) { runCatching { api.info() } }
                 infoVer++
             }
+            // prośby o dostęp z sieci domowej (Access.kt): co ~15 s, póki apka jest na ekranie i serwer odpowiada
+            if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) { Access.check(ctx, api) }
             delay(if (ok) 5000 else 3000)
         }
     }

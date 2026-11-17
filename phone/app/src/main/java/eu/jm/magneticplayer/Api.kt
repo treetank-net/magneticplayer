@@ -281,6 +281,12 @@ class Api(val s: Settings, val srv: Server) {
     fun installCode(): JSONObject = JSONObject(call("POST", "/api/install/code", JSONObject()))
     /** `{state: waiting|downloading|joined, server: {host, port, id, name, pair_code} | null, expires_in}` */
     fun installStatus(code: String): JSONObject = JSONObject(call("GET", "/api/install/status?code=$code", null, 4000))
+    /** Oczekujące prośby o dostęp z sieci domowej: `[{id, name, ip, age, expires_in}]` (mp_access.py). */
+    fun accessRequests(): JSONArray = JSONObject(call("GET", "/api/access/requests", null, 4000)).getJSONArray("requests")
+    fun accessDecide(id: String, approve: Boolean, role: String = "guest", days: Int = 0) {
+        call("POST", "/api/access/requests/$id", JSONObject().put("action", if (approve) "approve" else "deny")
+            .put("role", role).put("days", days))
+    }
     fun devices(): JSONArray = JSONArray(call("GET", "/api/devices"))
     fun revoke(id: String) { call("POST", "/api/devices/revoke", JSONObject().put("id", id)) }
     fun wakeOther(mac: String, host: String) { call("POST", "/api/wake", JSONObject().put("mac", mac).put("ip", host), 4000) }

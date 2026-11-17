@@ -35,6 +35,18 @@ Kod działa raz, przez dobę, a sam dostęp przez dzień, tydzień albo bez limi
 wszystko tutaj. Gość ogląda i włącza filmy, ale nie zmienia niczego na serwerze (lista w `docs/api.md`).
 Domownik odbiera dostęp w szczegółach serwera (lista urządzeń).
 
+### Prośba o dostęp
+
+Bez zaproszenia: niesparowana przeglądarka w domowej sieci wpisuje nazwę i dotyka „Poproś o dostęp” (strona
+`http://<serwer>:8765/`). Telefon domownika z otwartą apką sprawdza prośby co ~15 s i pokazuje powiadomienie
+„X prosi o dostęp” z przyciskami „Gość (dzień)”, „Domownik”, „Odrzuć”. Po akceptacji przeglądarka dostaje zwykły
+kod parowania z wybraną rolą i paruje się sama.
+
+Zabezpieczenia: prośba tylko z adresu prywatnego, jedna na adres, najwyżej 5 oczekujących i 10 na minutę, wygasa po
+5 min. Wynik odbiera tylko ten, kto ma sekret z odpowiedzi na prośbę, a kod oddajemy raz. Nazwa to tylko podpis od
+proszącego: domownik decyduje, czy rozpoznaje urządzenie. Bez akceptacji nic nie daje dostępu, a gość nie widzi
+próśb (`403`). Apka nie sprawdza próśb w tle, więc przy zamkniętej apce prośba czeka, aż ktoś ją otworzy.
+
 ## Zdalny dostęp: opcje na przyszłość
 
 Nie wystawiaj portu 8765 na routerze. Bez TLS i przy jednym tokenie to proszenie się o kłopoty. Rozsądne

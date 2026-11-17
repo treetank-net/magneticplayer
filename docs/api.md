@@ -127,6 +127,17 @@ połączenie zostawia to, co doszło, a po 60 s ciszy agent je zamyka. `name` to
 sterujące i kropka na początku są obcinane. Katalog docelowy: `upload_dir` w `config.json`, a bez niego
 „Z telefonu” w pierwszym istniejącym katalogu biblioteki. Bez obu `features.upload` jest `false`.
 
+## Prośba o dostęp (agent 1.3+, `features.access_requests`)
+
+| metoda i ścieżka | opis |
+|---|---|
+| `POST /api/access/request` | bez tokenu, tylko z adresu prywatnego: `{"name"}` → `{"id", "secret", "expires_in"}` (300 s); kolejna prośba z tego adresu zastępuje poprzednią; `429` przy więcej niż 5 oczekujących albo 10 na minutę |
+| `GET /api/access/request/<id>?secret=` | bez tokenu: `{"state": pending\|approved\|delivered\|denied, "expires_in"}`; przy `approved` raz `"code"` (kod parowania dla `POST /api/pair`) i `"role"`; `404` po wygaśnięciu albo przy złym sekrecie |
+| `GET /api/access/requests` | domownik: `{"requests": [{id, name, ip, age, expires_in}]}` |
+| `POST /api/access/requests/<id>` | domownik: `{"action": "approve"\|"deny", "role": "guest"\|"owner", "days"}` (gość: `days` ogranicza dostęp jak przy zaproszeniu); `409`, gdy już rozpatrzona albo wygasła |
+
+Prośby są w pamięci agenta (`mp_access.py`), restart je kasuje.
+
 ## Instalacja na kolejnym komputerze (agent 1.3+)
 
 | metoda i ścieżka | opis |

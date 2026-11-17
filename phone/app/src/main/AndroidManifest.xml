@@ -118,6 +118,7 @@
             android:foregroundServiceType="dataSync" />
         <!-- przesyłanie na serwer (Uploads.kt): przyciski powiadomień, potwierdzenie usunięcia, WorkManager w tle -->
         <receiver android:name=".UploadReceiver" android:exported="false" />
+        <receiver android:name=".AccessReceiver" android:exported="false" />
         <activity
             android:name=".UploadDeleteActivity"
             android:exported="false"
