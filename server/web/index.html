@@ -71,6 +71,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .noplayer .needs-player { display: none !important; }
 .only-noplayer { display: none; }
 .noplayer .only-noplayer { display: block; }
+.guest .owner-only { display: none; }
 </style>
 </head>
 <body>
@@ -223,6 +224,7 @@ function applyInfo() {
   $("#btnSuspend").hidden = !info.power?.suspend;
   $("#btnScreen").hidden = !(f.player && f.unlock);
   document.body.classList.toggle("noplayer", !f.player);
+  document.body.classList.toggle("guest", info.role === "guest");  // gość: bez dodawania torrentów (agent i tak odmówi)
   const tb = document.querySelector('nav button[data-tab="torrents"]');
   tb.hidden = !f.torrent;
   if (!f.torrent && tab === "torrents") setTab("library");
@@ -315,7 +317,7 @@ const Torrents = (() => {
       inp.value = ""; refresh();
     };
     inp.addEventListener("keydown", e => { if (e.key === "Enter") add(); });
-    return h("div", { class: "card" },
+    return h("div", { class: "card owner-only" },
       h("div", { class: "row" }, inp, h("button", { class: "btn primary", onclick: add }, "Pobierz")),
       h("div", { class: "row muted", style: "margin-top:8px" },
         h("label", {}, seq, " pobieranie po kolei (można oglądać w trakcie)"),

@@ -274,7 +274,9 @@ class Api(val s: Settings, val srv: Server) {
         return j
     }
 
-    fun pairCode(): JSONObject = JSONObject(call("POST", "/api/pair/code", JSONObject()))
+    /** Kod parowania; gość: `role=guest`, `days` = ważność dostępu (0 = bez limitu), sam kod żyje dobę. */
+    fun pairCode(guestDays: Int? = null): JSONObject = JSONObject(call("POST", "/api/pair/code",
+        if (guestDays == null) JSONObject() else JSONObject().put("role", "guest").put("days", guestDays)))
     /** Kod dołączenia nowego komputera: `{code, expires_in, url, command, command_full}` (mp_install.py). */
     fun installCode(): JSONObject = JSONObject(call("POST", "/api/install/code", JSONObject()))
     /** `{state: waiting|downloading|joined, server: {host, port, id, name, pair_code} | null, expires_in}` */

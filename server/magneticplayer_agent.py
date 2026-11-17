@@ -110,6 +110,26 @@ def save_config(cfg):
     os.replace(tmp, CONFIG_PATH)
 
 
+# Gość (rola „guest”, mp_devices.py): tylko oglądanie. Lista dozwolonych, nie zakazanych, żeby nowe endpointy
+# były dla gościa zamknięte, dopóki ktoś ich tu świadomie nie dopisze.
+GUEST_ALLOWED = {
+    "GET": ("/api/info", "/api/announce", "/api/app/version", "/app/MagneticPlayer.apk", "/api/library",
+            "/api/library/browse", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
+            "/api/media/converts", "/api/jobs", "/api/player/status", "/api/cast/status", "/api/cast/devices",
+            "/api/renderers", "/api/torrents"),
+    "POST": ("/api/media/ticket", "/api/player/open", "/api/player/cmd", "/api/cast/play", "/api/cast/cmd",
+             "/api/subs/search", "/api/subs/download", "/api/subs/job/stop", "/api/system/screen_on", "/api/wake",
+             "/api/media/convert"),
+}
+
+
+def guest_allowed(method, p):
+    allowed = GUEST_ALLOWED.get("GET" if method == "HEAD" else method, ())
+    if p.startswith("/api/torrents/"):  # lista plików torrenta tak, akcje (start, usuń, „po pobraniu”) nie
+        return method in ("GET", "HEAD") and p.endswith("/files")
+    return any(p == a or (a.endswith("/") and p.startswith(a)) for a in allowed)
+
+
 class ApiError(Exception):
     def __init__(self, msg, status=500):
         super().__init__(msg)
@@ -722,8 +742,16 @@ class App:
                 self._subs_ok = False
         return self._subs_ok
 
-    def info(self, client_ip, device):
-        """Kim jest ten serwer i co umie (apka chowa to, czego nie ma)."""
+    def info(self, client_ip, device, role="owner"):
+        """Kim jest ten serwer i co umie (apka chowa to, czego nie ma; gościowi znika to, czego mu nie wolno)."""
+        out = self._info(client_ip, device)
+        out["role"] = role
+        if role == "guest":
+            out["features"].update(upload=False, install=False, unlock=False, apk=out["features"]["apk"])
+            out["power"].update(suspend=False, poweroff=False)
+        return out
+
+    def _info(self, client_ip, device):
         net = platform.net_info(client_ip)
         has_torrent = not isinstance(self.backend, NoBackend)
         try:
@@ -971,12 +999,19 @@ class Handler(BaseHTTPRequestHandler):
             qd0 = {k: v[0] for k, v in q.items()}
             if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
                 raise ApiError("zły token", 401)
+            self.role = a.devices.role(self.device)
+            if self.role == "guest" and not guest_allowed(method, p):
+                raise ApiError("gość nie ma do tego dostępu (poproś domownika)", 403)
             if p.startswith("/api/upload/") and method in ("GET", "PUT"):
                 return mp_upload.handle(self, method, p[len("/api/upload/"):], qd0)
             if p == "/api/info" and method == "GET":
-                return self.send_json(a.info(self.client_address[0], self.device))
+                return self.send_json(a.info(self.client_address[0], self.device, self.role))
             if p == "/api/pair/code" and method == "POST":
-                code, ttl = a.devices.new_code()
+                b = self.body()
+                try:  # {"role": "guest", "days": 7}: zaproszenie dla gościa (kod ważny dobę, dostęp na `days`)
+                    code, ttl = a.devices.new_code(str(b.get("role") or "owner"), float(b.get("days") or 0) or None)
+                except ValueError as e:
+                    raise ApiError(str(e), 400)
                 host, _, port = (self.headers.get("Host") or "").rpartition(":")
                 return self.send_json({"code": code, "expires_in": ttl, "host": host or None,
                                        "port": int(port) if port.isdigit() else a.cfg["port"],

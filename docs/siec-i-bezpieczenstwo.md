@@ -27,6 +27,14 @@ MagneticPlayer jest pomyślany do domowej sieci:
 - **deluge-web** słucha tylko na `127.0.0.1:8112`, więc z sieci jest dostępny wyłącznie przez agenta.
 - **Wake-on-LAN** to broadcast w lokalnej sieci, więc spoza niej nie zadziała.
 
+## Goście
+
+Gość dostaje zaproszenie z telefonu domownika: Ustawienia → „Sparuj kolejne urządzenie” → „Gość” → „Wyślij
+zaproszenie” (komunikatorem). W treści jest adres strony z kodem (`http://<serwer>:8765/#p=KOD`) i link dla apki.
+Kod działa raz, przez dobę, a sam dostęp przez dzień, tydzień albo bez limitu. Działa tylko w domowej sieci, jak
+wszystko tutaj. Gość ogląda i włącza filmy, ale nie zmienia niczego na serwerze (lista w `docs/api.md`).
+Domownik odbiera dostęp w szczegółach serwera (lista urządzeń).
+
 ## Zdalny dostęp: opcje na przyszłość
 
 Nie wystawiaj portu 8765 na routerze. Bez TLS i przy jednym tokenie to proszenie się o kłopoty. Rozsądne

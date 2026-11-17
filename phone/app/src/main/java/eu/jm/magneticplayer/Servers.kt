@@ -37,6 +37,8 @@ data class Server(
     val hasLibrary get() = features?.optBoolean("library", true) ?: true
     /** Umie zainstalować agenta na kolejnym komputerze (`/api/install/code`, agent 1.3+). */
     val canInstall get() = features?.optBoolean("install", false) ?: false
+    /** Ten telefon jest tu gościem (agent 1.3+): bez zapraszania, torrentów, ustawień i zasilania. */
+    val isGuest get() = info?.optString("role") == "guest"
     val hasFiles get() = hasTorrent || hasLibrary
     val hasPlayer get() = features?.optBoolean("player", true) ?: true
     val canUnlock get() = features?.optBoolean("unlock", true) ?: true

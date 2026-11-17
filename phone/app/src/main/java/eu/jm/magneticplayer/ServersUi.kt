@@ -45,6 +45,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -463,7 +464,7 @@ fun ServersSection(ver: Int, snack: SnackbarHostState, openAdd: Boolean, onChang
         }
         SheetRow(Icons.Filled.Add, "Dodaj serwer", null, null, false) { add = true }
     }
-    if (servers.isNotEmpty()) OutlinedButton({ invite = true }) {
+    if (servers.any { !it.isGuest }) OutlinedButton({ invite = true }) {
         Icon(Icons.Filled.QrCode2, null); Spacer(Modifier.width(6.dp)); Text("Sparuj kolejne urządzenie")
     }
     var install by remember { mutableStateOf(false) }
@@ -535,7 +536,10 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                     else -> list.forEach { d ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(d.optString("name") + if (d.optBoolean("current")) " · ten telefon" else "")
+                                Text(d.optString("name") + (if (d.optString("role") == "guest") " · gość" +
+                                    (if (d.optDouble("expires", 0.0) > 0) " do " + java.text.SimpleDateFormat("d.MM", java.util.Locale("pl"))
+                                        .format(java.util.Date((d.optDouble("expires") * 1000).toLong())) else "") else "") +
+                                    if (d.optBoolean("current")) " · ten telefon" else "")
                                 Text(lastSeen(d), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             if (!d.optBoolean("current")) TextButton({ revoke = d }) {
@@ -707,8 +711,10 @@ fun ServerSummary(s: Server) {
 @Composable
 fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
-    val servers = remember { Servers.all(ctx) }
+    val servers = remember { Servers.all(ctx).filter { !it.isGuest } }
     val checked = remember { mutableStateMapOf<String, Boolean>().apply { servers.forEach { put(it.key, servers.size == 1 || it.key == preselect) } } }
+    var guest by remember { mutableStateOf(false) }
+    var guestDays by remember { mutableIntStateOf(7) }
     val online = remember { mutableStateMapOf<String, Boolean>() }
     var codes by remember { mutableStateOf<List<Pair<Server, JSONObject>>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -726,7 +732,7 @@ fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {
         error = null
         try {
             codes = withContext(Dispatchers.IO) {
-                servers.filter { checked[it.key] == true }.map { s -> s to Api(Settings(ctx), s).pairCode() }
+                servers.filter { checked[it.key] == true }.map { s -> s to Api(Settings(ctx), s).pairCode(if (guest) guestDays else null) }
             }
         } catch (e: ApiException) {
             error = e.message
@@ -746,6 +752,22 @@ fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {
                             Text(s.name + if (online[s.key] == false) " (nie odpowiada)" else "")
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Dla kogo?", Modifier.fillMaxWidth())
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(!guest, { guest = false }, { Text("Domownik") })
+                        FilterChip(guest, { guest = true }, { Text("Gość") })
+                    }
+                    Text(if (guest) "Gość ogląda Bibliotekę i torrenty, włącza filmy na ekranie i Chromecaście, szuka napisów. " +
+                        "Nie doda ani nie usunie torrentu, nie uśpi komputera, nie zmieni ustawień i nie zaprosi innych. " +
+                        "Kod działa raz, przez dobę, więc możesz go wysłać komunikatorem."
+                        else "Domownik może wszystko, jak ten telefon. Kod działa raz, przez 10 min.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (guest) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(1 to "dzień", 7 to "tydzień", 0 to "bez limitu").forEach { (d, label) ->
+                            FilterChip(guestDays == d, { guestDays = d }, { Text(label) })
+                        }
+                    }
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     return@Column
                 }
@@ -753,7 +775,9 @@ fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {
                 androidx.compose.foundation.Image(qr.asImageBitmap(), "kod QR parowania",
                     Modifier.fillMaxWidth().aspectRatio(1f).background(Color.White))
                 Spacer(Modifier.height(8.dp))
-                Text(if (left > 0) "Ważny jeszcze ${left / 60}:${"%02d".format(left % 60)}, działa raz." else "Kod wygasł — zamknij i wygeneruj nowy.",
+                Text(if (left <= 0) "Kod wygasł — zamknij i wygeneruj nowy."
+                    else if (left >= 3600) "Ważny jeszcze ${left / 3600} h ${(left % 3600) / 60} min, działa raz."
+                    else "Ważny jeszcze ${left / 60}:${"%02d".format(left % 60)}, działa raz.",
                     style = MaterialTheme.typography.labelMedium, color = if (left > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(8.dp))
                 Text("Na nowym telefonie: zainstaluj MagneticPlayer i zeskanuj kod aparatem. Albo w apce: Ustawienia → Dodaj serwer i wpisz:",
@@ -779,9 +803,15 @@ fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {
         },
         dismissButton = {
             if (link != null) TextButton({
+                val text = if (!guest) link else {
+                    val (ws, wo) = codes!!.first()
+                    "Zaproszenie do filmów na ${codes!!.joinToString { it.first.name }} (MagneticPlayer). W domowym Wi-Fi " +
+                        "otwórz w przeglądarce http://${ws.host}:${ws.port}/#p=${wo.getString("code")}, a z apką MagneticPlayer " +
+                        "ten link: $link\nKod działa raz, przez dobę" + (if (guestDays > 0) "; dostęp na ${if (guestDays == 1) "dzień" else "$guestDays dni"}." else ".")
+                }
                 ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
-                    .putExtra(Intent.EXTRA_TEXT, link), "Link parowania MagneticPlayer"))
-            }) { Text("Udostępnij link") }
+                    .putExtra(Intent.EXTRA_TEXT, text), if (guest) "Zaproszenie dla gościa" else "Link parowania MagneticPlayer"))
+            }) { Text(if (guest) "Wyślij zaproszenie" else "Udostępnij link") }
             else TextButton(onDismiss) { Text("Anuluj") }
         },
     )

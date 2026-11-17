@@ -80,7 +80,7 @@ private enum class Phase { Working, Done, Error }
 @Composable
 private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val targets = remember { Servers.all(ctx).filter { it.hasTorrent } }
+    val targets = remember { Servers.all(ctx).filter { it.hasTorrent && !it.isGuest } }
     // zapamiętany wybór, jedyny serwer z torrentami albo null = zapytaj
     var target by remember {
         mutableStateOf(Servers.magnetKey(ctx)?.takeIf { k -> targets.any { it.key == k } } ?: targets.singleOrNull()?.key)

@@ -46,11 +46,18 @@ gdy budzenie raz się udało; agent zgłasza `yes` po `POST /api/wake/verified`.
 
 | metoda i ścieżka | opis |
 |---|---|
-| `POST /api/pair` | bez tokenu: `{"code", "name"}` → `{"token", "device_id"}`. Kod działa raz, 10 min; po 10 złych próbach w minutę odmowa |
-| `POST /api/pair/code` | nowy kod dla kolejnego urządzenia → `{"code", "expires_in", "host", "port", "id", "name"}` |
-| `GET /api/devices` | `[{id, name, created, last_seen, current, legacy?}]` |
+| `POST /api/pair` | bez tokenu: `{"code", "name"}` → `{"token", "device_id", "role", "expires"}`. Kod działa raz, 10 min (kod gościa: dobę); po 10 złych próbach w minutę odmowa |
+| `POST /api/pair/code` | nowy kod dla kolejnego urządzenia → `{"code", "expires_in", "host", "port", "id", "name"}`; z `{"role": "guest", "days": N}` kod dla gościa (`days` = ważność dostępu, 0 lub brak = bez limitu) |
+| `GET /api/devices` | `[{id, name, created, last_seen, current, role, expires, legacy?}]` |
 | `POST /api/devices/revoke` | `{"id"}`; `"legacy"` wyłącza stary wspólny token |
 | `POST /api/media/ticket` | `ref` (+ `"variant": "cast"`) → `{"url", "subs": [{name, lang, url, vtt}], "title", "expires", "variant", "content_type"}`; adresy z biletem, host z nagłówka `Host`; `vtt` to napisy po konwersji do WebVTT (dla Chromecasta); z `variant: "cast"` URL wskazuje wersję „dla Chromecasta”, jeśli jest (`&v=cast`, `content_type: video/mp4`) |
+
+**Gość** (`role: "guest"`, agent 1.3+) ma tylko listę dozwolonych endpointów (`GUEST_ALLOWED` w agencie): info,
+Biblioteka, lista torrentów i ich plików, pliki filmów i napisów, bilety, format i wersje dla Chromecasta, ekran
+(`player/*`, `screen_on`), Chromecast, napisy, budzenie innych serwerów. Na resztę `403` („gość nie ma do tego
+dostępu”): dodawanie i akcje torrentów, ustawienia biblioteki i OpenSubtitles, `fs`, usypianie, odblokowanie,
+przesyłanie, parowanie i lista urządzeń, instalacja. `/api/info` mówi gościowi `role: "guest"` i ma u niego
+`upload`, `install`, `unlock`, `suspend` i `poweroff` na `false`. Po `expires` token przestaje działać (`401`).
 
 `/media` i `/lib` z `&v=cast` dają wersję „dla Chromecasta” (gdy jest), a z `&cap=<napisy>` i nagłówkiem żądania
 `getcaptionInfo.sec` odpowiadają nagłówkiem `CaptionInfo.sec` z adresem tych napisów (telewizory Samsung, DLNA).
