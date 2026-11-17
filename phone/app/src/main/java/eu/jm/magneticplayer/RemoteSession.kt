@@ -50,6 +50,8 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
                 // zatrzymany telewizor (koniec filmu, ktoś wyłączył) liczy się jak „nic nie gra”
                 val idle = s == null || (r is DlnaRemote && Dlna.last?.state in Dlna.IDLE_STATES)
                 idlePolls = if (idle) idlePolls + 1 else 0
+                // nazwa urządzenia w systemie (kafelek, karta w panelu) zamiast „Ten telefon”
+                RemoteRoutes.set(ctx, kind, if (s != null && r != null) r.name else null)
                 invalidateState()
                 if (n++ % 2 == 0) announce(r, s)
                 delay(1500)
@@ -74,7 +76,8 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
         else -> Pilot.remote(ctx, kind)
     }
 
-    private val remoteDevice = DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMinVolume(0).setMaxVolume(100).build()
+    private val remoteDevice = DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMinVolume(0).setMaxVolume(100)
+        .setRoutingControllerId(RemoteRoutes.controllerId(kind)).build()
 
     override fun getState(): State {
         val s = st
@@ -135,6 +138,7 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
 
     override fun handleRelease(): ListenableFuture<*> {
         scope.cancel()
+        RemoteRoutes.set(ctx, kind, null)
         return Futures.immediateVoidFuture()
     }
 }

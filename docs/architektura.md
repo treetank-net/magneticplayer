@@ -223,6 +223,7 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 | `Announce.kt` | rozgłaszanie „co gra” (multicast, `MulticastLock`): telefon ogłasza telewizor DLNA, na którym puścił film, i słucha innych (Pilot przejmuje cudzy telewizor przez `Dlna.adopt`) |
 | `CastNet.kt` | Chromecasty z telefonu bez agenta i bez Cast SDK: wykrywanie mDNS (NsdManager, gdy Pilot jest na ekranie) i własny klient protokołu Cast v2 (TLS :8009, ręczny protobuf): stan dowolnego nadawcy, pauza, przewijanie, głośność, zamknięcie |
 | `Remote.kt` | wspólny „zdalny odtwarzacz” (mpv, Chromecast, DLNA) i wybór celu Pilota (`Pilot`) |
+| `RemoteRoutes.kt` | dostawca tras MediaRouter2: nazwa grającego celu (np. „jmpc”, telewizor) na karcie multimediów w systemie zamiast „Ten telefon” |
 | `RemoteSession.kt` | sesje media3 dla każdego grającego celu (mpv, DLNA, Chromecast bez SDK): powiadomienia, ekran blokady, głośność przyciskami poza apką |
 | `Cast.kt`, `Dlna.kt` | Chromecast (Cast SDK, MediaRouter) i telewizory DLNA (SSDP, SOAP) |
 | `PhoneShare.kt` | telefon jako serwer plików dla ekranu, Chromecasta i DLNA |

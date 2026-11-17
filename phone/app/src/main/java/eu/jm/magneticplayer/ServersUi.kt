@@ -484,7 +484,6 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
     var revoke by remember { mutableStateOf<JSONObject?>(null) }
     var invite by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
-    var wakeTest by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
         try {
             withContext(Dispatchers.IO) {
@@ -522,9 +521,6 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                     else -> "budzenie niesprawdzone: ${s.wakeReason}"
                 }
                 Text("Usypianie: ${if (s.canSuspend) "tak" else "nie"} · $wake", style = MaterialTheme.typography.bodySmall)
-                if (s.canSuspend && s.mac.isNotBlank() && s.wakeConfidence != "no") OutlinedButton({ wakeTest = true }) {
-                    Text(if (s.wakeConfidence == "yes") "Sprawdź budzenie jeszcze raz" else "Sprawdź budzenie")
-                }
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nazwa w apce") }, singleLine = true)
                 HorizontalDivider()
                 Text("Sparowane urządzenia", style = MaterialTheme.typography.titleSmall)
@@ -560,7 +556,6 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
         dismissButton = { TextButton({ reload++ }) { Text("Testuj") } },
     )
     if (invite) InviteDialog(key) { invite = false }
-    if (wakeTest) WakeTestDialog(s) { wakeTest = false; reload++ }
     revoke?.let { d ->
         AlertDialog(
             onDismissRequest = { revoke = null },
@@ -793,59 +788,3 @@ fun qrBitmap(text: String, size: Int): android.graphics.Bitmap {
     return android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888)
 }
 
-/**
- * „Sprawdź budzenie”: usypia serwer, czeka, aż zniknie z sieci, i budzi go jak przy oglądaniu (WoL z telefonu
- * i przez inne serwery). Udane budzenie zapisuje się na serwerze (/api/wake/verified), więc „Uśpij” przestaje ostrzegać.
- */
-@Composable
-private fun WakeTestDialog(s: Server, onDone: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var phase by remember { mutableStateOf<String?>(null) }  // null = pytanie, potem opis kroku
-    var result by remember { mutableStateOf<Boolean?>(null) }
-    fun run() = scope.launch {
-        val api = Api(Settings(ctx), s)
-        result = try {
-            withContext(Dispatchers.IO) {
-                phase = "Usypiam ${s.name}…"
-                api.suspendPc()
-                phase = "Czekam, aż ${s.name} zaśnie…"
-                var asleep = false
-                repeat(30) { if (!asleep) { delay(2_000); asleep = !api.ping(1500) } }
-                if (!asleep) throw ApiException("${s.name} nie zasnął (może coś go trzyma: pobieranie, odtwarzanie)")
-                delay(10_000)  // karta sieciowa przechodzi w tryb czuwania dopiero po chwili
-                api.ensureAwake { phase = it }
-            }
-            true
-        } catch (e: ApiException) {
-            phase = e.message
-            false
-        }
-    }
-    AlertDialog(
-        onDismissRequest = { if (phase == null || result != null) onDone() },
-        title = { Text("Budzenie ${s.name}") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                when {
-                    phase == null -> Text("Uśpię ${s.name} i spróbuję go obudzić przez sieć. To potrwa 1–2 minuty, a w tym czasie " +
-                        "nic na nim nie zagra ani się nie pobierze. Ktoś przy nim siedzi?")
-                    result == null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(phase!!)
-                    }
-                    result == true -> Text("Działa: ${s.name} obudził się przez sieć. Apka i serwer to zapamiętały.", color = OK_GREEN)
-                    else -> Text("Nie wyszło: $phase\n\nSprawdź Wake-on-LAN w BIOS-ie i ustawienia karty sieciowej (docs/instalacja-i-utrzymanie.md).",
-                        color = MaterialTheme.colorScheme.error)
-                }
-            }
-        },
-        confirmButton = {
-            when {
-                phase == null -> TextButton({ run() }) { Text("Uśpij i obudź") }
-                result != null -> TextButton(onDone) { Text("OK") }
-                else -> {}
-            }
-        },
-        dismissButton = { if (phase == null) TextButton(onDone) { Text("Anuluj") } },
-    )
-}

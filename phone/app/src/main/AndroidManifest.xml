@@ -103,6 +103,15 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <!-- trasy MediaRouter2: nazwa telewizora/ekranu w systemie zamiast „Ten telefon” (RemoteRoutes.kt) -->
+        <service
+            android:name=".RemoteRouteProvider"
+            android:exported="true"
+            tools:targetApi="30">
+            <intent-filter>
+                <action android:name="android.media.MediaRoute2ProviderService" />
+            </intent-filter>
+        </service>
         <service
             android:name=".DownloadService"
             android:exported="false"

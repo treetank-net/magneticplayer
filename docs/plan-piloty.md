@@ -69,7 +69,19 @@ według rodzaju (`remote-screen`, `remote-dlna`, `remote-cast`), nie urządzenia
 - Przyciski głośności poza apką Android daje jednej sesji, zwykle ostatnio aktywnej.
 - Chipy na Pilocie: tylko cele, na których coś gra, plus ekran domyślny z napisem „nic nie gra”.
 
-## 4. Kafelek z nazwą urządzenia (a)
+## 4. Kafelek z nazwą urządzenia (a) — zrobione
+
+Sprawdzone 17.11.2026 na Pixelu (Android 17): karta mpv na jmpc ma chip „jmpc” zamiast „Ten telefon”, a trasa
+i sesja znikają ~10 s po zatrzymaniu. Wyszło prościej niż w planie: bez `transferTo`. Dostawca (`RemoteRoutes.kt`)
+sam zakłada sesję trasy (`notifySessionCreated(REQUEST_ID_NONE, …)`, `clientPackageName` = nasz pakiet). System pisze
+w logu „Ignoring session creation result for unknown request”, ale sesję przechowuje, a System UI łączy ją z naszą
+sesją multimediów po `originalId` = `volumeControlId` (media3: `DeviceInfo.setRoutingControllerId`). Dzięki temu
+kilka celów naraz ma każdy swoją nazwę. Dostawcę system wiąże, póki nasz MediaRouter2 szuka tras z cechą
+`eu.jm.magneticplayer.REMOTE` (bez aktywnego skanowania), czyli póki coś gra. Ikona na chipie to głośnik: typu trasy
+(telewizor, komputer) aplikacja nie może ustawić. Przełączanie wyjścia z panelu systemu na nasze trasy jest odrzucane:
+cel wybiera się w apce.
+
+Pierwotny plan:
 
 - Apka zgłasza się jako dostawca tras (`MediaRoute2ProviderService`) z trasą na każdy grający cel. Apka wybiera ją
   u siebie (`MediaRouter2.transferTo`), a identyfikator kontrolera trafia do sesji
