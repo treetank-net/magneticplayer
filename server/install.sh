@@ -7,6 +7,7 @@
 #   PORT=8766 …                  # inny port (gdy 8765 jest zajęty)
 #   LITE=1 bash install.sh       # tryb lekki (cudzy komputer): bez roota i hasła, bez torrentów, bez usypiania
 #                                  z sieci i WoL; zostają pliki, przesyłanie z telefonu i ekran, jeśli jest mpv
+#   JOIN=http://<serwer>:8765/i/<kod> …  # ustawia skrypt z /i/<kod>: po instalacji zgłasza się tam, telefon paruje sam
 # Odinstalowanie: bash ~/.local/share/magneticplayer/uninstall.sh [--purge]
 set -euo pipefail
 if [ -n "${LITE:-}" ] && [ "$LITE" != 0 ]; then
@@ -39,7 +40,8 @@ mkdir -p "$DEST" "$UNITS"
 install -m 755 "$SRC/magneticplayer_agent.py" "$DEST/"
 install -m 644 "$SRC"/mp_*.py "$DEST/"
 install -d "$DEST/web" && install -m 644 "$SRC"/web/* "$DEST/web/"
-install -m 755 "$SRC/uninstall.sh" "$DEST/"
+# skrypty obok agenta: z nich serwer instaluje agenta na kolejnych komputerach (mp_install.py, /i/<kod>)
+install -m 755 "$SRC/uninstall.sh" "$SRC/install.sh" "$SRC/install-root.sh" "$DEST/"
 
 echo "== napisy: subliminal w venv ($DEST/venv)"
 # --clear: po nieudanej próbie (brak python3-venv); bez venv agent działa, tylko bez napisów i Chromecasta ze strony
@@ -179,7 +181,11 @@ systemctl --user --no-pager --lines=5 status magneticplayer | head -12 || true
 echo
 echo "================ MagneticPlayer ================"
 PY=python3; [ -x "$DEST/venv/bin/python" ] && PY="$DEST/venv/bin/python"
-"$PY" "$DEST/magneticplayer_agent.py" --pair
+if [ -n "${JOIN:-}" ] && python3 "$DEST/magneticplayer_agent.py" --join "$JOIN"; then
+  echo " Gdyby telefon się nie sparował, kod ręczny: python3 $DEST/magneticplayer_agent.py --pair"
+else
+  "$PY" "$DEST/magneticplayer_agent.py" --pair
+fi
 echo " kolejny kod:     python3 $DEST/magneticplayer_agent.py --pair"
 echo " urządzenia:      python3 $DEST/magneticplayer_agent.py --devices / --revoke <id>"
 echo " odinstalowanie:  bash $DEST/uninstall.sh   (z --purge usuwa też ustawienia i sparowane telefony)"

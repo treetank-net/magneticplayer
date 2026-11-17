@@ -37,7 +37,7 @@ w POST w treści JSON.
 | `GET /app/MagneticPlayer.apk` | plik opublikowanej apki |
 
 `features`: `torrent` (`"deluge"`, `"transmission"` albo `null`), `library`, `player` (mpv + sesja graficzna, chyba że config `player: false`),
-`subs_search`, `unlock`, `apk`, `wake_others`, `upload` (przyjmuje filmy z telefonu, niżej). `power`: `suspend`, `poweroff` (oba `false` przy config `power: false`), `wake` (`confidence: "no"` przy config `wake: false`, instalacja lekka)
+`subs_search`, `unlock`, `apk`, `wake_others`, `upload` (przyjmuje filmy z telefonu, niżej), `install` (instaluje agenta na kolejnym komputerze, niżej). `power`: `suspend`, `poweroff` (oba `false` przy config `power: false`), `wake` (`confidence: "no"` przy config `wake: false`, instalacja lekka)
 (`{"method": "wol"|null, "mac", "confidence": "maybe"|"no", "reason"}`). `yes` w `confidence` wie tylko apka,
 gdy budzenie raz się udało; agent zgłasza `yes` po `POST /api/wake/verified`. Liczniki wybudzeń z
 `/sys/class/wakeup` nie pomagają: na płycie jmpc (ASUS H110M-A) każde wybudzenie idzie na konto przycisku zasilania.
@@ -119,6 +119,20 @@ Kawałki trafiają do `<katalog>/.mp-upload/<id>.part` i są zapisywane strumien
 połączenie zostawia to, co doszło, a po 60 s ciszy agent je zamyka. `name` to sama nazwa pliku: katalogi, znaki
 sterujące i kropka na początku są obcinane. Katalog docelowy: `upload_dir` w `config.json`, a bez niego
 „Z telefonu” w pierwszym istniejącym katalogu biblioteki. Bez obu `features.upload` jest `false`.
+
+## Instalacja na kolejnym komputerze (agent 1.3+)
+
+| metoda i ścieżka | opis |
+|---|---|
+| `POST /api/install/code` | jednorazowy kod dołączenia (30 min) → `{"code", "expires_in", "url", "command", "command_full"}`; `command` to `curl -fsSL <url> \| bash` (instalacja lekka), `command_full` z `?full=1` (pełna, z hasłem administratora); `409`, gdy obok agenta nie ma skryptów instalacyjnych |
+| `GET /api/install/status?code=` | tylko dla urządzenia, które utworzyło kod: `{"state": waiting\|downloading\|joined, "server": {host, port, id, name, pair_code, version} \| null, "downloads", "expires_in"}` |
+| `GET /i/<kod>[?full=1]` | bez tokenu: skrypt bash, który pobiera paczkę i uruchamia `install.sh` z `JOIN=<url>` |
+| `GET /i/<kod>/bundle.tar.gz` | bez tokenu: agent z tego serwera (`server/*.py`, `web/`, `install*.sh`, `uninstall.sh`; bez venv i APK) |
+| `POST /api/install/join` | bez tokenu, od nowego agenta (`--join`): `{"code", "id", "name", "port", "pair_code", "version"}`; adres bierze z połączenia. Zużywa kod |
+
+Kody są w pamięci agenta (restart je kasuje). Zły, zużyty albo przeterminowany kod daje `403`, a po 10 złych
+próbach w minutę `429`. Po zgłoszeniu kod żyje jeszcze co najmniej 10 min (tyle ważny jest kod parowania), żeby
+telefon zdążył go odebrać.
 
 ## Odtwarzacz na komputerze (mpv)
 

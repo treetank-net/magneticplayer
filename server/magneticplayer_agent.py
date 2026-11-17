@@ -32,6 +32,7 @@ from mp_cast import Casts, CastError
 import mp_renderers
 from mp_announce import Announcer
 import mp_upload
+import mp_install
 
 # DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
@@ -40,7 +41,7 @@ from mp_jobs import AFTER, Jobs
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 API_LEVEL = 2  # /api/info: id, features, power; tokeny urządzeń, bilety, player/open z url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -687,6 +688,7 @@ class App:
         self.announce = Announcer(log, lambda: {"id": self.cfg["id"], "name": self.name()}, self._announce_mine)
         self.announce.start()
         self.uploads = mp_upload.Uploads(cfg, self.library, log)  # przesyłanie filmów z telefonu
+        self.installs = mp_install.Installs(log)  # instalacja na kolejnym komputerze (kod dołączenia)
         # wykrywanie Chromecastów od startu: rejestr odbiorników zna model, zanim ktoś otworzy wybór urządzenia
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
@@ -744,6 +746,7 @@ class App:
                 "transcode": (mp_media.encoder_info() or {}).get("label"),
                 "transcode_hw": bool((mp_media.encoder_info() or {}).get("hw")),
                 "upload": self.uploads.available(),  # PUT /api/upload/<id> (mp_upload.py)
+                "install": self.installs.available(),  # /api/install/* i /i/<kod> (mp_install.py)
             },
             "power": {"suspend": POWER and platform.can_power(), "poweroff": POWER and platform.can_power(),
                       "wake": self.wake_info(net)},
@@ -947,6 +950,15 @@ class Handler(BaseHTTPRequestHandler):
                 # klient webowy (laptop/tablet bez apki); statyczny plik, dane z API i tak wymagają tokenu
                 return self.send_static(os.path.join(WEB_DIR, "index.html"), "text/html; charset=utf-8", method == "HEAD")
             a = self.app
+            # instalacja na nowym komputerze: bez tokenu, ale z ważnym kodem dołączenia (mp_install.py)
+            if (m := re.fullmatch(r"/i/([A-Za-z0-9-]{4,12})(/bundle\.tar\.gz)?", p)) and method == "GET":
+                if m.group(2):
+                    return self.send_bytes(a.installs.bundle(m.group(1)), "application/gzip")
+                full = (q.get("full") or ["0"])[0] not in ("0", "")
+                return self.send_bytes(a.installs.script(m.group(1), self.base_url(), full).encode(),
+                                       "text/x-shellscript; charset=utf-8")
+            if p == "/api/install/join" and method == "POST":
+                return self.send_json(a.installs.join(self.body(), self.client_address[0]))
             if p == "/api/pair" and method == "POST":
                 # bez tokenu: jednorazowy kod (z apki innego urządzenia albo --pair na komputerze) → token urządzenia
                 b = self.body()
@@ -969,6 +981,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"code": code, "expires_in": ttl, "host": host or None,
                                        "port": int(port) if port.isdigit() else a.cfg["port"],
                                        "id": a.cfg["id"], "name": a.name()})
+            if p == "/api/install/code" and method == "POST":
+                code, ttl = a.installs.new_code(self.device)
+                url = f"{self.base_url()}/i/{code}"
+                return self.send_json({"code": code, "expires_in": ttl, "url": url,
+                                       "command": f"curl -fsSL {url} | bash",
+                                       "command_full": f"curl -fsSL '{url}?full=1' | bash"})
+            if p == "/api/install/status" and method == "GET":
+                return self.send_json(a.installs.status(qd0.get("code"), self.device))
             if p == "/api/devices" and method == "GET":
                 return self.send_json(a.devices.list(self.device))
             if p == "/api/devices/revoke" and method == "POST":
@@ -1225,7 +1245,7 @@ class Handler(BaseHTTPRequestHandler):
                 a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
                 return self.send_json({"ok": True})
             raise ApiError("nie ma takiego endpointu", 404)
-        except (LibError, SubsError, CastError) as e:
+        except (LibError, SubsError, CastError, mp_install.InstallError) as e:
             self.send_json({"error": str(e)}, e.status)
         except ApiError as e:
             self.send_json({"error": str(e)}, e.status)
@@ -1237,6 +1257,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": repr(e)}, 500)
             except OSError:
                 pass
+
+    def send_bytes(self, body, ctype):
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def send_static(self, path, ctype, head_only=False):
         try:
@@ -1393,6 +1421,34 @@ def cli_pair(cfg, devices):
     print(f"  przeglądarka: http://{host}:{cfg['port']}/#p={code}")
 
 
+def cli_join(cfg, devices, url):
+    """Po instalacji z innego serwera (`JOIN=<serwer>/i/<kod>`): zgłoszenie się z kodem parowania dla telefonu."""
+    m = re.fullmatch(r"(https?://[^/]+)/i/([A-Za-z0-9-]+)/?", url.strip())
+    if not m:
+        print(f"zły adres dołączenia: {url}")
+        return 1
+    pair_code, _ = devices.new_code()
+    body = json.dumps({"code": m.group(2), "id": cfg["id"], "name": cfg.get("name") or socket.gethostname(),
+                       "port": cfg["port"], "pair_code": pair_code, "version": VERSION}).encode()
+    req = urllib.request.Request(m.group(1) + "/api/install/join", data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read()).get("error")
+        except ValueError:
+            err = e.reason
+        print(f"Nie udało się zgłosić do {m.group(1)}: {err}")
+        return 1
+    except OSError as e:
+        print(f"Nie udało się zgłosić do {m.group(1)}: {e}")
+        return 1
+    print(f"Zgłoszono się do {m.group(1)}: telefon, który zaczął instalację, sparuje się sam (do 10 min).")
+    return 0
+
+
 def main():
     cfg = load_config()
     if "--print-token" in sys.argv:
@@ -1401,6 +1457,9 @@ def main():
     devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
     if "--pair" in sys.argv:
         return cli_pair(cfg, devices)
+    if "--join" in sys.argv:
+        i = sys.argv.index("--join")
+        sys.exit(cli_join(cfg, devices, sys.argv[i + 1] if i + 1 < len(sys.argv) else ""))
     if "--devices" in sys.argv:
         for d in devices.list():
             seen = time.strftime("%Y-%m-%d %H:%M", time.localtime(d["last_seen"])) if d.get("last_seen") else "nigdy"

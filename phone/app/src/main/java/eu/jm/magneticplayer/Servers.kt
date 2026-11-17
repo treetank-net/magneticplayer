@@ -35,6 +35,8 @@ data class Server(
     val knowsFeatures get() = features != null
     val hasTorrent get() = features?.let { !it.isNull("torrent") && it.optString("torrent").isNotEmpty() } ?: true
     val hasLibrary get() = features?.optBoolean("library", true) ?: true
+    /** Umie zainstalować agenta na kolejnym komputerze (`/api/install/code`, agent 1.3+). */
+    val canInstall get() = features?.optBoolean("install", false) ?: false
     val hasFiles get() = hasTorrent || hasLibrary
     val hasPlayer get() = features?.optBoolean("player", true) ?: true
     val canUnlock get() = features?.optBoolean("unlock", true) ?: true

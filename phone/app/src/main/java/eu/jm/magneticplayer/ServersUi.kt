@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.ConnectedTv
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.InstallDesktop
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Settings
@@ -465,6 +466,11 @@ fun ServersSection(ver: Int, snack: SnackbarHostState, openAdd: Boolean, onChang
     if (servers.isNotEmpty()) OutlinedButton({ invite = true }) {
         Icon(Icons.Filled.QrCode2, null); Spacer(Modifier.width(6.dp)); Text("Sparuj kolejne urządzenie")
     }
+    var install by remember { mutableStateOf(false) }
+    if (servers.any { it.canInstall }) OutlinedButton({ install = true }) {
+        Icon(Icons.Filled.InstallDesktop, null); Spacer(Modifier.width(6.dp)); Text("Zainstaluj na innym komputerze")
+    }
+    if (install) InstallDialog(onDone = onChanged) { install = false }
     details?.let { k -> ServerDetailsDialog(k, snack, onChanged = onChanged) { details = null } }
     if (add) AddServerDialog(onDone = { onChanged() }) { add = false }
     if (invite) InviteDialog(Servers.activeKey(ctx)) { invite = false }

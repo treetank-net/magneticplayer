@@ -29,7 +29,7 @@ Odpowiadaj po polsku.
 # agent: wdrożenie po zmianie w server/
 python3 -m py_compile server/*.py
 rsync -a server/ jmpc:.local/src/MagneticPlayer/server/
-scp -q server/*.py jmpc:.local/share/magneticplayer/ && scp -q server/web/index.html jmpc:.local/share/magneticplayer/web/
+scp -q server/*.py server/*.sh jmpc:.local/share/magneticplayer/ && scp -q server/web/index.html jmpc:.local/share/magneticplayer/web/
 ssh jmpc systemctl --user restart magneticplayer
 ssh jmpc journalctl --user -u magneticplayer -n 50
 

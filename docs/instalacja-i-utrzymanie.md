@@ -46,6 +46,20 @@ instalacji (polkit, udev WoL, reguły ufw z komentarzem MagneticPlayer; przez pk
 `~/.local/share/magneticplayer`. Z `--purge` usuwa też `~/.config/magneticplayer` (token, sparowane telefony).
 Filmów i pakietów systemowych nie rusza.
 
+### Z istniejącego serwera (agent 1.3+)
+
+W apce: Ustawienia → „Zainstaluj na innym komputerze” → „Pokaż polecenie”. Na nowym komputerze (Linux, ta sama
+sieć) wklejasz w terminalu np. `curl -fsSL http://192.168.100.100:8765/i/ABC123 | bash`. Skrypt pobiera agenta
+z serwera (bez GitHuba i repozytorium), instaluje go lekko albo w pełni (przełącznik „Bez hasła administratora”),
+a nowy agent zgłasza się z kodem parowania. Telefon, który pokazał polecenie, paruje się z nim sam. Kod działa raz,
+przez 30 min. Bez telefonu pod ręką: `--pair` na nowym komputerze, jak zwykle. Szczegóły: `docs/api.md`.
+
+Instalator kopiuje `install.sh`, `install-root.sh` i `uninstall.sh` obok agenta, bo z nich serwer składa paczkę.
+Starszy serwer dostaje je po ponownym `install.sh` (albo `scp` jak przy szybkiej aktualizacji).
+
+Sprawdzone 17.11.2026: jmpc → czyste Ubuntu 24.04 w VirtualBox (instalacja lekka, zgłoszenie, parowanie kodem
+ze zgłoszenia, ponowne użycie kodu odrzucone).
+
 ### Przez SSH
 
 Przez SSH `pkexec` nie działa, bo nie ma sesji polkit. Część rootową robisz wtedy przez `sudo`:
@@ -75,7 +89,7 @@ Wersje leżą w `.mp-cast/` obok filmów i można je kasować ręcznie.
 ### Szybka aktualizacja samego agenta
 
 ```bash
-scp server/*.py jmpc:.local/share/magneticplayer/ && ssh jmpc systemctl --user restart magneticplayer
+scp server/*.py server/*.sh jmpc:.local/share/magneticplayer/ && ssh jmpc systemctl --user restart magneticplayer
 ```
 
 ### Pliki na komputerze
