@@ -6,6 +6,13 @@ Film pobrany przeglądarką na telefonie (np. u znajomego, z linku) ma trafić d
 pamiętania o tym. Apka zauważa nowy plik, od razu pyta w powiadomieniu, a samo przesłanie robi dopiero wtedy, gdy
 telefon widzi serwer w Wi-Fi, np. wieczorem po powrocie do domu.
 
+## Sprawdzone
+
+17.11.2026, Pixel 8a (Android 17) i jmpc: film wrzucony do `Download/` (MediaStore, `IS_PENDING = 0`) od razu dał
+powiadomienie „Pobrano … Przesłać na jmpc?”. „Prześlij i usuń z telefonu” przesłał plik (rozmiar zgodny, polskie znaki
+w nazwie) do `torrents/Z telefonu/`, a po potwierdzeniu w systemowym oknie usunął go z telefonu. Nie sprawdzone:
+pobieranie w Chrome przy zamkniętej apce, restart telefonu, przesyłanie „po powrocie do domu”.
+
 ## Jak to działa
 
 1. **Wykrywanie** (`Uploads.kt`): zlecenie WorkManagera z wyzwalaczem `addContentUriTrigger(MediaStore.Video…, true)`.
