@@ -17,6 +17,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- przesyłanie filmów pobranych przeglądarką na serwer (Uploads.kt): odczyt filmów innych apek -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- przesyłanie: okienko nad przeglądarką i (opcjonalnie) usuwanie pliku przeglądarki bez systemowego pytania -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <application

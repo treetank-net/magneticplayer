@@ -13,6 +13,10 @@ powiadomienie „Pobrano … Przesłać na jmpc?”. „Prześlij i usuń z tele
 w nazwie) do `torrents/Z telefonu/`, a po potwierdzeniu w systemowym oknie usunął go z telefonu. Nie sprawdzone:
 pobieranie w Chrome przy zamkniętej apce, restart telefonu, przesyłanie „po powrocie do domu”.
 
+Tego samego dnia okienko nad ekranem głównym: pojawia się kilka sekund po zapisaniu pliku (wyzwalacz WorkManagera,
+apka w tle), „Prześlij i usuń” z „Dostępem do wszystkich plików” przesłał film i usunął go bez systemowego pytania,
+„Nie” zamyka kartę i powiadomienie, dwa pliki naraz pokazują się po kolei.
+
 ## Jak to działa
 
 1. **Wykrywanie** (`Uploads.kt`): zlecenie WorkManagera z wyzwalaczem `addContentUriTrigger(MediaStore.Video…, true)`.
@@ -25,6 +29,11 @@ pobieranie w Chrome przy zamkniętej apce, restart telefonu, przesyłanie „po 
    (bez `RELATIVE_PATH`) sprawdza `DATA LIKE '%/Download/%'`.
 3. **Pytanie:** „Pobrano *nazwa*. *rozmiar*. Przesłać na *serwer*?” z przyciskami „Prześlij” i „Prześlij i usuń
    z telefonu”. W powiadomieniu nie da się zrobić checkboxa, dlatego są dwa przyciski.
+   Z uprawnieniem „Wyświetlanie nad innymi aplikacjami” (Ustawienia → „Okienko nad przeglądarką”) to samo pytanie
+   wyskakuje jako karta na dole ekranu nad przeglądarką (`UploadOverlay.kt`, okno `TYPE_APPLICATION_OVERLAY`
+   z Compose, bez fokusu), jak pytanie menedżera haseł o zapisanie hasła: „Nie”, „Prześlij”, „Prześlij i usuń”
+   z podpowiedzią, że ostatni kasuje film z telefonu. Kilka plików naraz idzie po kolei. Nietknięta karta znika po
+   20 s, a powiadomienie (wtedy ciche) zostaje.
 4. **Zlecenie** (`UploadWorker`): unikalne na plik (`upload:<id z MediaStore>`), tylko w sieci bez limitu
    (`NetworkType.UNMETERED`). Najpierw `ping` serwera. Gdy nie odpowiada (telefon poza domem), powiadomienie
    „Czeka na *serwer* — prześle się, gdy telefon będzie w jego sieci” i kolejna próba za 15 min.
@@ -32,7 +41,9 @@ pobieranie w Chrome przy zamkniętej apce, restart telefonu, przesyłanie „po 
    potem kawałki po 64 MB (`setFixedLengthStreamingMode`, plik czytany strumieniem z deskryptora, bez ładowania do
    pamięci). Zerwane połączenie zostawia na serwerze to, co doszło, a następna próba ciągnie od tego miejsca.
    W trakcie działa powiadomienie z postępem i „Anuluj” (usługa pierwszoplanowa `dataSync`, jeśli system pozwoli).
-6. **Usuwanie:** plik należy do przeglądarki, więc apka może go tylko zaproponować do usunięcia. Po przesłaniu
+6. **Usuwanie:** plik należy do przeglądarki. Z opcjonalnym „Dostępem do wszystkich plików”
+   (`MANAGE_EXTERNAL_STORAGE`, Ustawienia → „Usuwaj bez pytania”; apka spoza Play może o nie prosić) apka usuwa go
+   sama (`ContentResolver.delete`, a gdy odmówi, po ścieżce). Bez niego może go tylko zaproponować do usunięcia. Po przesłaniu
    powiadomienie „Dotknij, aby usunąć z telefonu” otwiera przezroczystą `UploadDeleteActivity`, a ta systemowe okno
    `MediaStore.createDeleteRequest` (Android 11+). Na Androidzie 10 i starszych apka mówi, żeby usunąć ręcznie.
 7. **Serwer** (`server/mp_upload.py`): kawałki do `<katalog>/.mp-upload/<id>.part`, na końcu rename do katalogu

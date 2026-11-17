@@ -69,8 +69,11 @@ import java.util.concurrent.TimeUnit
  * 2. Od razu powiadomienie z pytaniem: „Prześlij” albo „Prześlij i usuń z telefonu”.
  * 3. Wybór → [UploadWorker] (unikalne zlecenie na plik, tylko Wi-Fi/sieć bez limitu). Gdy serwer nie odpowiada
  *    (telefon poza domem), zlecenie czeka i próbuje co ~15 min. Przesyłanie wznawia się od `received` z serwera.
- * 4. Po przesłaniu z usuwaniem: powiadomienie „Dotknij, aby usunąć” → systemowe potwierdzenie (plik należy do
- *    przeglądarki, więc usunąć może tylko użytkownik: `MediaStore.createDeleteRequest`, Android 11+).
+ *    Z uprawnieniem „Wyświetlanie nad innymi aplikacjami” pytanie wyskakuje też jako okienko nad przeglądarką
+ *    ([UploadOverlay]), a powiadomienie przychodzi po cichu.
+ * 4. Po przesłaniu z usuwaniem: z „Dostępem do wszystkich plików” (MANAGE_EXTERNAL_STORAGE, opcjonalny) apka usuwa
+ *    plik sama; bez niego powiadomienie „Dotknij, aby usunąć” → systemowe potwierdzenie (plik należy do
+ *    przeglądarki: `MediaStore.createDeleteRequest`, Android 11+).
  */
 object Uploads {
     const val CH_ASK = "upload_ask"
@@ -104,6 +107,27 @@ object Uploads {
     fun canReadVideos(ctx: Context) = ContextCompat.checkSelfPermission(ctx,
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_EXTERNAL_STORAGE
     ) == PackageManager.PERMISSION_GRANTED
+
+    /** „Dostęp do wszystkich plików”: wtedy plik przeglądarki da się usunąć bez systemowego pytania. */
+    fun canDeleteSilently() = Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()
+
+    fun allFilesIntent(ctx: Context) = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+        Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /** Usuwa film bez pytania (wymaga [canDeleteSilently]); najpierw przez MediaStore, potem po ścieżce. */
+    fun deleteSilently(ctx: Context, v: PhoneVideo): Boolean {
+        if (!canDeleteSilently()) return false
+        if (runCatching { ctx.contentResolver.delete(v.uri, null, null) > 0 }.getOrDefault(false)) return true
+        @Suppress("DEPRECATION")
+        val path = runCatching {
+            ctx.contentResolver.query(v.uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        }.getOrNull() ?: return false
+        val ok = java.io.File(path).delete()
+        if (ok) runCatching { ctx.contentResolver.delete(v.uri, null, null) }
+        return ok
+    }
 
     fun canUpload(s: Server) = s.info?.optJSONObject("features")?.optBoolean("upload") == true
 
@@ -241,7 +265,10 @@ object Uploads {
     fun ask(ctx: Context, v: PhoneVideo) {
         val srv = target(ctx) ?: return
         val id = notifId(v.id)
+        // okienko nad przeglądarką; powiadomienie zostaje na później (po cichu, żeby nie pytać dwa razy naraz)
+        val overlay = UploadOverlay.show(ctx, v, srv.name)
         notify(ctx, id, NotificationCompat.Builder(ctx, CH_ASK)
+            .setSilent(overlay)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle("Pobrano ${v.name}")
             .setContentText("${humanBytes(v.size)}. Przesłać na ${srv.name}?")
@@ -448,6 +475,8 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         val shown = name.ifEmpty { v.name }
         if (!inputData.getBoolean("delete", false)) {
             finish("Przesłano na ${srv.name}", "$shown jest w Bibliotece (Z telefonu).")
+        } else if (Uploads.deleteSilently(ctx, v)) {
+            finish("Przesłano na ${srv.name} i usunięto z telefonu", "$shown jest w Bibliotece (Z telefonu).")
         } else if (Build.VERSION.SDK_INT >= 30) {
             val pi = PendingIntent.getActivity(ctx, nid, Intent(ctx, UploadDeleteActivity::class.java)
                 .setData(v.uri).putExtra("nid", nid), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -515,6 +544,22 @@ fun UploadSettings() {
         })
     }
     if (!on) return
+    // stan uprawnień systemowych odświeżany po powrocie z ustawień systemu
+    var resumed by remember { mutableStateOf(0) }
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resumed++ }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    val overlayOk = remember(resumed) { UploadOverlay.allowed(ctx) }
+    val deleteOk = remember(resumed) { Uploads.canDeleteSilently() }
+    PermRow("Okienko nad przeglądarką", if (overlayOk) "Pytanie wyskakuje nad przeglądarką, gdy film się pobierze."
+        else "Bez tego pytanie jest tylko w powiadomieniach. Wymaga zgody „Wyświetlanie nad innymi aplikacjami”.",
+        overlayOk) { ctx.startActivity(UploadOverlay.settingsIntent(ctx)) }
+    if (Build.VERSION.SDK_INT >= 30) PermRow("Usuwaj bez pytania", if (deleteOk) "Po przesłaniu apka sama usuwa film z telefonu."
+        else "Bez tego Android po przesłaniu pyta, czy usunąć plik przeglądarki. Wymaga zgody „Dostęp do wszystkich plików” (szeroka: apka mogłaby czytać i zmieniać wszystkie pliki).",
+        deleteOk) { ctx.startActivity(Uploads.allFilesIntent(ctx)) }
     val servers = Servers.all(ctx)
     val able = servers.filter { Uploads.canUpload(it) }
     if (able.isEmpty()) {
@@ -530,5 +575,17 @@ fun UploadSettings() {
             RadioButton(chosen == srv.key, { s.uploadServer = srv.key; chosen = srv.key })
             Text(srv.name)
         }
+    }
+}
+
+/** Wiersz z uprawnieniem systemowym: opis i przełącznik, który otwiera ustawienia systemu (tam się je daje i cofa). */
+@Composable
+private fun PermRow(title: String, desc: String, ok: Boolean, open: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = open), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title)
+            Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(ok, { open() })
     }
 }

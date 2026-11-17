@@ -231,6 +231,7 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 | `PlayerActivity.kt` | odtwarzacz w telefonie |
 | `MagnetActivity.kt` | obsługa magnetów |
 | `Updater.kt` | aktualizacje z komputera, wysyłanie własnego APK |
+| `UploadOverlay.kt` | okienko „Przesłać na serwer?” nad przeglądarką (uprawnienie „Wyświetlanie nad innymi aplikacjami”) |
 | `Uploads.kt` | przesyłanie filmów pobranych przeglądarką na serwer: wykrywanie (WorkManager z wyzwalaczem MediaStore, ContentObserver), pytanie w powiadomieniu, `UploadWorker` (czeka na Wi-Fi serwera, wznawia), `UploadDeleteActivity`, ustawienia |
 
 Klucze pozycji, bufora i pobranych filmów mają przedrostek serwera (`<key>:`), poza serwerem `legacy` (migracja
