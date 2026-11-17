@@ -19,7 +19,7 @@ Odpowiadaj po polsku.
 | agent na PC | `~/.local/share/magneticplayer/` (`*.py`, `web/`, `apk/`, `venv/`), usługa `systemctl --user … magneticplayer`, port 8765 |
 | kopia źródeł na PC | `~/.local/src/MagneticPlayer/server` (z niej działa `install.sh`) |
 | konfiguracja i token | `jmpc:~/.config/magneticplayer/config.json`. **Tokenu nie wypisuj ani nie wklejaj nigdzie** |
-| repo | git, gałąź `main`, remote `ovh` = `ovh-vps:git/MagneticPlayer.git` |
+| repo | **publiczne** (MIT): `origin` = gitlab.com/treetank/magneticplayer, CI lustruje na github.com/treetank-net/magneticplayer; `ovh` = `ovh-vps:git/MagneticPlayer.git` (prywatna kopia). Prywatne notatki w `CLAUDE.local.md` (poza gitem) |
 | kopia klucza podpisu | `ovh-vps:~/backup/MagneticPlayer/` (+ `README.txt`) |
 | telefony | Pixel 8a użytkownika (adb po Wi-Fi, port zmienia się co sesję debugowania) i telefon żony (tylko aktualizacje przez `publish.sh`) |
 
@@ -46,7 +46,7 @@ ssh jmpc 'T=$(python3 -c "import json;print(json.load(open(\".config/magneticpla
 
 Polecenia w sesji graficznej przez ssh wymagają `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0`.
 
-Użytkownik prosi o commit i push po skończonej zmianie (`git push ovh main`). Kod i dokumentacja zmieniają się
+Użytkownik prosi o commit i push po skończonej zmianie (`git push origin main && git push ovh main`). Repo jest publiczne: tytuły filmów z dysku użytkownika, tokeny i inne prywatne szczegóły nie trafiają do commitów (przykłady: filmy z domeny publicznej). Kod i dokumentacja zmieniają się
 razem.
 
 ## Emulator (gdy telefon jest zajęty)
