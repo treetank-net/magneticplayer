@@ -90,7 +90,9 @@ razem.
   Chromecast z serwera i z telefonu, Samsung DLNA z napisami i przewijaniem, Pilot dla mpv/Chromecasta/DLNA,
   powiadomienia, głośność poza apką, mpv przeżywa restart agenta, Chromecast ze strony (przez API agenta),
   telefon jako źródło dla ekranu jmpc, odzyskiwanie DLNA po ubiciu apki). Zostało:
-  - strona webowa w przeglądarce (karta Chromecasta po zmianie `volume_fixed`) — sprawdzone tylko API i składnia JS;
+  - strona webowa w przeglądarce (karta Chromecasta po zmianie `volume_fixed`) — sprawdzone tylko API i składnia JS.
+    Stronę da się testować Playwrightem z cache npx (`~/.npm/_npx/*/node_modules/playwright`) z
+    `executablePath: "/usr/bin/google-chrome"` (jego własne przeglądarki są w innej wersji);
   - aktualizacja po powrocie apki na ekran (budzenie oznacza się jako sprawdzone samo przy zwykłym budzeniu z apki;
     przycisk „Sprawdź budzenie” usunięty jako zbędny);
   - Pilot odświeża się 4×/s, więc `uiautomator dump` często nie działa („could not get idle state”): przy testach zrzuty ekranu.

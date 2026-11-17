@@ -132,6 +132,7 @@ async function pairWith(code, name) {
   let j = null; try { j = await r.json(); } catch {}
   if (!r.ok) throw new Error((j && j.error) || "HTTP " + r.status);
   token = j.token; store.set("mp_token", token);
+  await refreshInfo();
 }
 const AFTER = { none: "nic", stop: "zatrzymaj torrent", suspend: "uśpij komputer" };
 const PROVIDERS = { opensubtitlescom: "OpenSubtitles", podnapisi: "Podnapisi", bsplayer: "BSPlayer",
@@ -207,7 +208,7 @@ $("#tokenSave").onclick = async () => {
   const v = $("#tokenInput").value.trim();
   if (isCode(v)) {
     try { await pairWith(v); } catch (e) { return toast(e.message); }
-  } else { token = v; store.set("mp_token", token); }
+  } else { token = v; store.set("mp_token", token); await refreshInfo(); }
   $("#login").hidden = true; setTab(tab);
 };
 $("#tokenInput").addEventListener("keydown", e => { if (e.key === "Enter") $("#tokenSave").click(); });
@@ -268,6 +269,8 @@ function applyInfo() {
   tb.hidden = !f.torrent;
   if (!f.torrent && tab === "torrents") setTab("library");
 }
+/** Nowy token (parowanie, prośba o dostęp): rola i możliwości od razu, nie przy następnym pingu. */
+async function refreshInfo() { info = null; await ping(); }
 async function ping() {
   try {
     const r = await fetch("/api/ping", { cache: "no-store" });
