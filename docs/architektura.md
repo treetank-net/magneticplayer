@@ -184,6 +184,9 @@ okno potwierdzenia.
 Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i tak idą przez API z tokenem.
 - Token przychodzi w `#t=`, trafia do `localStorage` i znika z paska adresu. `#tab=` wybiera zakładkę.
 - Zakładki: Torrenty, Biblioteka i Pilot (odpytywanie `/api/player/status`, ścieżki, klawisze).
+- Strona czyta raz `/api/info` i chowa to, czego serwer nie ma: „Uśpij” bez `power.suspend`, „Ekran” bez
+  `features.player`/`unlock`, Torrenty bez `features.torrent`, a bez `features.player` także „▶ Na komputerze”
+  i pilota mpv (Pilot pokazuje wtedy tylko Chromecasta). Status w nagłówku podaje `name` serwera.
 - Okno napisów działa jak w apce (asynchroniczne zlecenie, postęp, „Wystarczy”).
 - Odtwarzacz to `<video>` z napisami WebVTT (`/sub?…&vtt=1`).
 - DOM buduje helper `put(el, ...dzieci)`, który spłaszcza tablice i pomija `null`. Gołe `replaceChildren` z tablicą

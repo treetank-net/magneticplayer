@@ -60,7 +60,7 @@ gdy budzenie raz się udało; agent zgłasza `yes` po `POST /api/wake/verified`.
 | metoda i ścieżka | opis |
 |---|---|
 | `GET /api/media/probe?ref` | `{"ffmpeg", "file": {container, duration, video, audio[], subs[]}, "cast": {verdict: ok\|maybe\|no, problems[], video_copy, audio_copy}, "complete", "variant": {size, cast} \| null, "job", "encoder": {encoder, label, hw}}` |
-| `POST /api/media/convert` | `ref` → stan zlecenia (`state: queued\|running\|done\|error`, `pct`, `speed`, `encoder`, `error`); `"cancel": true` przerywa, `"remove": true` kasuje wersję; 409, gdy torrent nie jest pobrany w całości |
+| `POST /api/media/convert` | `ref` → stan zlecenia (`state: queued\|running\|done\|error`, `pct`, `speed`, `encoder`, `error`, `finishing`: ffmpeg skończył kodowanie i przenosi indeks na początek pliku, co na wolnym dysku trwa do minuty); `"cancel": true` przerywa, `"remove": true` kasuje wersję; 409, gdy torrent nie jest pobrany w całości |
 | `GET /api/media/converts` | wszystkie zlecenia od startu agenta |
 
 Wersja leży obok filmu w `.mp-cast/<nazwa>.cast.mp4`. Obraz H.264 8-bit ≤1080p zostaje, inny idzie przez najlepszy

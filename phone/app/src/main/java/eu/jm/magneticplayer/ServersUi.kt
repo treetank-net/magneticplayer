@@ -262,9 +262,15 @@ private fun CastFormat(ref: MediaRef) {
             state == "queued" || state == "running" -> {
                 val pct = j!!.optDouble("pct", 0.0)
                 val speed = j.optDouble("speed").takeIf { !it.isNaN() }?.let { " · %.1f× szybciej niż film".format(it) } ?: ""
-                Text("Przygotowuję dla Chromecasta (${j.optString("encoder").ifEmpty { "w kolejce" }}): ${pct.toInt()}%$speed",
-                    style = small)
-                androidx.compose.material3.LinearProgressIndicator({ (pct / 100).toFloat() }, Modifier.fillMaxWidth())
+                if (j.optBoolean("finishing")) {
+                    // ffmpeg +faststart przepisuje plik na końcu: bez tego pasek stoi na 99% nawet minutę
+                    Text("Kończę zapis (przenoszę indeks na początek pliku), to może potrwać minutę…", style = small)
+                    androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else {
+                    Text("Przygotowuję dla Chromecasta (${j.optString("encoder").ifEmpty { "w kolejce" }}): ${pct.toInt()}%$speed",
+                        style = small)
+                    androidx.compose.material3.LinearProgressIndicator({ (pct / 100).toFloat() }, Modifier.fillMaxWidth())
+                }
                 TextButton({ op("cancel") }) { Text("Przerwij") }
             }
             c?.optString("verdict") == "ok" -> Text("Format: Chromecast powinien to zagrać", style = small, color = muted)

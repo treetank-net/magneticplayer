@@ -284,6 +284,11 @@ class Converter:
             k, _, v = line.strip().partition("=")
             if k == "out_time_us" and v.isdigit() and dur:
                 j["pct"] = min(99.9, int(v) / 1e6 / dur * 100)
+                # na końcu +faststart przepisuje cały plik (indeks na początek): na dysku USB to i minuta przy 99%
+                if j["pct"] >= 99.5:
+                    j["finishing"] = True
+            elif k == "progress" and v == "end":
+                j["finishing"] = True
             elif k == "speed" and v.endswith("x"):
                 try:
                     j["speed"] = float(v[:-1])

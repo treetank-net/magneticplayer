@@ -67,6 +67,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #toast.show { opacity: 1; }
 .kbd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--chip); border-radius: 4px; padding: 0 5px; }
 @media (max-width: 600px) { nav { margin-left: 0; width: 100%; } nav button { flex: 1; } main { padding: 12px; } }
+/* serwer bez ekranu (config player: false): bez „Na komputerze” i pilota mpv */
+.noplayer .needs-player { display: none !important; }
+.only-noplayer { display: none; }
+.noplayer .only-noplayer { display: block; }
 </style>
 </head>
 <body>
@@ -212,12 +216,22 @@ function setTab(t) {
 }
 $("#btnSuspend").onclick = () => { if (confirm("Uśpić komputer? Obudzisz go z apki na telefonie.")) act(() => api("/api/system/suspend", {}), "Usypiam komputer"); };
 $("#btnScreen").onclick = () => act(() => api("/api/system/screen_on", {}), "Ekran włączony");
-let hostname = "";
+let hostname = "", info = null;
+/** Co serwer umie (features, power): chowa Uśpij, Ekran, Torrenty i „Na komputerze”, gdy ich tu nie ma. */
+function applyInfo() {
+  const f = info.features || {};
+  $("#btnSuspend").hidden = !info.power?.suspend;
+  $("#btnScreen").hidden = !(f.player && f.unlock);
+  document.body.classList.toggle("noplayer", !f.player);
+  const tb = document.querySelector('nav button[data-tab="torrents"]');
+  tb.hidden = !f.torrent;
+  if (!f.torrent && tab === "torrents") setTab("library");
+}
 async function ping() {
   try {
     const r = await fetch("/api/ping", { cache: "no-store" });
     online = r.ok;
-    if (online && !hostname && token) { try { hostname = (await api("/api/info")).hostname; } catch {} }
+    if (online && !info && token) { try { info = await api("/api/info"); hostname = info.name || info.hostname; applyInfo(); } catch {} }
   } catch { online = false; }
   const s = $("#status");
   s.textContent = online ? "● " + (hostname || location.hostname) + " — działa" : "● komputer nie odpowiada (śpi?) — obudź go z apki na telefonie";
@@ -228,7 +242,7 @@ setInterval(ping, 5000);
 // ---------------------------------------------------------------- akcje dla pliku
 function mediaActions(ref, isVideo = true) {
   return h("div", { class: "row", style: "margin-top:6px" },
-    h("button", { class: "btn primary", onclick: () => act(async () => { await api("/api/player/open", ref); setTab("remote"); }, "Gra na komputerze") }, "▶ Na komputerze"),
+    h("button", { class: "btn primary needs-player", onclick: () => act(async () => { await api("/api/player/open", ref); setTab("remote"); }, "Gra na komputerze") }, "▶ Na komputerze"),
     isVideo && h("button", { class: "btn", onclick: () => Player.open(ref) }, "W przeglądarce"),
     isVideo && h("button", { class: "btn", onclick: () => CastUi.open(ref) }, "Chromecast…"),
     h("button", { class: "btn", onclick: () => { const u = new URL(mediaUrl(ref), location.href).href;
@@ -254,7 +268,8 @@ const CastUi = (() => {
       else {
         rows.push(h("p", {}, VERDICT[c.verdict]), ...c.problems.map(x => h("p", { class: "muted" }, "· " + x)));
         if (j && (j.state === "queued" || j.state === "running")) {
-          rows.push(h("p", {}, `Przygotowuję (${j.encoder || "w kolejce"})… ${Math.round(j.pct)}%` + (j.speed ? ` · ${j.speed.toFixed(1)}× szybciej niż film` : "")),
+          rows.push(h("p", {}, j.finishing ? "Kończę zapis (przenoszę indeks na początek pliku), to może potrwać minutę…"
+              : `Przygotowuję (${j.encoder || "w kolejce"})… ${Math.round(j.pct)}%` + (j.speed ? ` · ${j.speed.toFixed(1)}× szybciej niż film` : "")),
             bar(j.pct / 100), h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, cancel: true })).then(probe) }, "Przerwij"));
         } else if (c.verdict !== "ok") {
           if (j && j.state === "error") rows.push(h("p", { class: "err" }, "Nie wyszło: " + j.error));
@@ -412,8 +427,10 @@ const Remote = (() => {
       play: h("button", { class: "btn big primary", onclick: () => cmd("toggle_pause") }, "⏯"),
       vol: h("span", { class: "muted" }), fs: h("button", { class: "btn", onclick: () => cmd("fullscreen") }, "Pełny ekran"),
       audio: trackSel("audio"), sub: trackSel("sub"), video: trackSel("video"), videoBox: h("label", { class: "muted" }),
-      idle: h("div", { class: "card", hidden: true }, h("p", { class: "name" }, "Na komputerze nic nie gra."),
+      idle: h("div", { class: "card needs-player", hidden: true }, h("p", { class: "name" }, "Na komputerze nic nie gra."),
         h("p", { class: "muted" }, "Wybierz film w Torrentach albo Bibliotece → „Na komputerze”.")),
+      idleNo: h("div", { class: "card only-noplayer" }, h("p", { class: "name" }, "Ten serwer nie odtwarza na swoim ekranie."),
+        h("p", { class: "muted" }, "Udostępnia pliki: w Bibliotece „W przeglądarce” albo „Chromecast…”.")),
     };
     els.videoBox.append("wideo ", els.video);
     els.panel = h("div", { class: "card" },
@@ -452,7 +469,8 @@ const Remote = (() => {
         h("button", { class: "btn big", onclick: () => ccmd("seek_rel", 30) }, "30↻"),
         ...els.castVol,
         h("button", { class: "btn", onclick: () => ccmd("stop") }, "⏹ Zakończ")));
-    put(root, els.cast, els.idle, els.panel);
+    els.panel.classList.add("needs-player");
+    put(root, els.cast, els.idle, els.idleNo, els.panel);
     built = true;
   }
   const CODECS = { hdmv_pgs_subtitle: "PGS", dvd_subtitle: "VobSub", subrip: "SRT", ass: "ASS", eac3: "E-AC3", ac3: "AC3", aac: "AAC", dts: "DTS", truehd: "TrueHD", hevc: "HEVC", h264: "H.264", av1: "AV1" };

@@ -87,7 +87,6 @@ razem.
   - „Sprawdź budzenie” (usypia serwer, tylko za zgodą) i aktualizacja po powrocie apki na ekran;
   - kafelek w panelu systemowym pisze „Ten telefon” przy mpv/DLNA (brak trasy MediaRouter2);
   - Pilot w apce nie widzi Chromecasta puszczonego ze strony (inny nadawca) i odwrotnie;
-  - „Przygotuj” stoi na 99% przez ~1 min (faststart na USB); przydałby się napis „kończę zapis…”;
   - Pilot odświeża się 4×/s, więc `uiautomator dump` często nie działa („could not get idle state”): przy testach zrzuty ekranu.
 
 - Pomysł: sprawdzanie aktualizacji, gdy apka wraca na pierwszy plan (dziś tylko gdy apka złapie połączenie z PC albo zmienią się ustawienia).
