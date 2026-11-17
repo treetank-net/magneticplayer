@@ -475,7 +475,8 @@ const Remote = (() => {
         ...els.castVol,
         h("button", { class: "btn", onclick: () => ccmd("stop") }, "⏹ Zakończ")));
     els.panel.classList.add("needs-player");
-    put(root, els.cast, els.idle, els.idleNo, els.panel);
+    els.others = h("div", { class: "card", hidden: true });
+    put(root, els.cast, els.idle, els.idleNo, els.panel, els.others);
     built = true;
   }
   const CODECS = { hdmv_pgs_subtitle: "PGS", dvd_subtitle: "VobSub", subrip: "SRT", ass: "ASS", eac3: "E-AC3", ac3: "AC3", aac: "AAC", dts: "DTS", truehd: "TrueHD", hevc: "HEVC", h264: "H.264", av1: "AV1" };
@@ -495,7 +496,15 @@ const Remote = (() => {
   async function poll() {
     try { st = await api("/api/player/status"); } catch (e) { st = null; }
     try { cst = await api("/api/cast/status"); } catch (e) { cst = null; }
+    let ann = [];
+    try { ann = await api("/api/announce"); } catch (e) { }
     if (!built) build();
+    // co grają inne piloty (rozgłoszenia z telefonów i innych serwerów), bez tego, co już widać wyżej
+    ann = ann.filter(x => !(x.target.kind === "cast" && cst?.active && x.target.name === cst.device));
+    els.others.hidden = !ann.length;
+    put(els.others, h("p", { class: "muted" }, "Gra też"), ann.map(x => h("p", {},
+      `${x.title || "?"} · ${x.target.name}`, h("span", { class: "muted" },
+        ` · ${x.state === "PLAYING" ? "gra" : "pauza"} ${clock(x.pos || 0)}${x.dur ? " / " + clock(x.dur) : ""} · puścił ${x.from.name}`))));
     els.cast.hidden = !cst?.active;
     if (cst?.active) {
       els.castTitle.textContent = (cst.title || "") + " · " + cst.device;

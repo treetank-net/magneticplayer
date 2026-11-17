@@ -678,7 +678,11 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
     val ctx = LocalContext.current
     var avail by remember { mutableStateOf(Pilot.available(ctx)) }
     // Chromecasty w sieci szukane z telefonu (działa też bez agenta, np. w gościach)
-    DisposableEffect(Unit) { val stop = CastNet.discover(ctx); onDispose { stop() } }
+    DisposableEffect(Unit) {
+        val stop = CastNet.discover(ctx)
+        val stopListen = Announce.listen(ctx)  // co grają inne piloty (telewizory DLNA)
+        onDispose { stop(); stopListen() }
+    }
     LaunchedEffect(Unit) {
         var n = 0
         while (true) {
@@ -708,13 +712,13 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             if ("cast" in avail) FilterChip(target == "cast", { Pilot.focus.value = "cast" },
                 { Text(Pilot.castName(ctx)) }, leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
             if ("dlna" in avail) FilterChip(target == "dlna", { Pilot.focus.value = "dlna" },
-                { Text(Dlna.current?.name ?: "Telewizor") }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
+                { Text(Dlna.current?.name ?: Announce.foreignDlna()?.targetName ?: "Telewizor") }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
         }
         when (target) {
             "cast", "dlna" -> key(target, target == "cast" && Cast.session(ctx) == null) {
                 val remote = remember { Pilot.remote(ctx, target) }
-                if (remote is AgentCastRemote || remote is DirectCastRemote) LaunchedEffect(Unit) {
-                    Pilot.focus.value = "cast"  // powiadomienie ma pokazać ten Chromecast
+                if (remote is AgentCastRemote || remote is DirectCastRemote || remote is DlnaRemote) LaunchedEffect(Unit) {
+                    Pilot.focus.value = target  // powiadomienie ma pokazać ten cel (też przejęty od innego pilota)
                     RemoteSessionService.start(ctx.applicationContext)
                 }
                 if (remote != null) RemoteView(remote, snack, onGone = {

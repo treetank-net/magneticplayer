@@ -24,7 +24,17 @@ prosto z Chromecasta; pauza, +10 s, wznowienie i „Zakończ” działają. Rozp
 - **Kim jest Chromecast:** telefon pyta `https://<ip>:8443/setup/eureka_info` tak jak agent i trzyma własny rejestr.
   Tabelę profili bierze z agenta (`/api/renderers/profiles`) i zapamiętuje ją, żeby działała też poza domem.
 
-## 2. Rozgłaszanie „co gra” (multicast)
+## 2. Rozgłaszanie „co gra” (multicast) — zrobione
+
+Sprawdzone 17.11.2026:
+- rozgłoszenie „innego telefonu” (z laptopa) z prawdziwym Samsungiem: Pilot pokazał chip telewizora, przejął
+  sterowanie i czytał stan prosto z TV;
+- jmpc ↔ laptop w obie strony; telefon → jmpc działa;
+- telefon → laptop (oba przez Wi-Fi) nie dochodzi. Laptop → telefon przez Wi-Fi działa, więc to raczej router albo
+  karta Wi-Fi laptopa (power save), a nie apka. Dwóch telefonów naraz nie było jak sprawdzić.
+
+Zatrzymany telewizor (koniec filmu albo „Zakończ” z innego telefonu) zamyka powiadomienie po ~10 s, a apka
+przestaje go śledzić.
 
 - UDP multicast `239.255.77.77:47700`, TTL 1 (tylko ta sieć), JSON:
 

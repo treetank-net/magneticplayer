@@ -27,6 +27,7 @@ Jeden proces w Pythonie (`ThreadingHTTPServer`), poza subliminal nie ma zewnętr
 | `mp_subs.py` | wyszukiwanie i pobieranie napisów przez subliminal (leniwy import z venv) |
 | `mp_devices.py` | sparowane urządzenia (tokeny jako SHA-256), kody parowania, bilety HMAC na jeden plik; `devices.json` czytany ponownie po zmianie mtime (CLI to osobny proces) |
 | `mp_cast.py` | Chromecast przez pychromecast: wykrywanie, nasłuch stanu wszystkich urządzeń (dowolny nadawca), odtwarzanie i sterowanie dla strony i Pilota |
+| `mp_announce.py` | rozgłaszanie „co gra” między pilotami (UDP multicast `239.255.77.77:47700`): nasłuch dla strony (`/api/announce`), ogłaszanie mpv tego serwera, odpowiedź na „who” |
 | `mp_renderers.py` | kim są Chromecasty (`product_name` z `eureka_info`), profile kodeków na model (`CAST_PROFILES`) i rejestr `renderers.json`; opis w `docs/urzadzenia.md` |
 | `mp_platform.py` | wszystko zależne od systemu: sesja graficzna, odblokowanie, usypianie, karta sieciowa, ocena budzenia, wysyłanie WoL. Inny system dopisuje się tutaj; czego nie umie, tego agent nie zgłasza w `features`/`power` |
 
@@ -206,6 +207,7 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 | `Servers.kt` | lista serwerów, wybrany serwer plików i ekran, migracja starych ustawień (serwer `legacy`), parowanie (`Pairing`) |
 | `ServersUi.kt` | przełącznik serwera, panel „śpi”, okno usypiania, wybór ekranu, Ustawienia → Serwery, dodawanie, urządzenia, „Sparuj kolejne” |
 | `MainActivity.kt` | zakładki Torrenty, Pilot i Ustawienia, górny pasek (serwer, Obudź/Uśpij), pasek aktualizacji |
+| `Announce.kt` | rozgłaszanie „co gra” (multicast, `MulticastLock`): telefon ogłasza telewizor DLNA, na którym puścił film, i słucha innych (Pilot przejmuje cudzy telewizor przez `Dlna.adopt`) |
 | `CastNet.kt` | Chromecasty z telefonu bez agenta i bez Cast SDK: wykrywanie mDNS (NsdManager, gdy Pilot jest na ekranie) i własny klient protokołu Cast v2 (TLS :8009, ręczny protobuf): stan dowolnego nadawcy, pauza, przewijanie, głośność, zamknięcie |
 | `Remote.kt` | wspólny „zdalny odtwarzacz” (mpv, Chromecast, DLNA) i wybór celu Pilota (`Pilot`) |
 | `RemoteSession.kt` | sesja media3 dla mpv i DLNA: powiadomienie, ekran blokady, głośność przyciskami poza apką |

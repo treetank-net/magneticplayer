@@ -40,15 +40,29 @@ class RemotePlayer(private val ctx: Context) : SimpleBasePlayer(Looper.getMainLo
 
     init {
         scope.launch {
+            var n = 0
             while (isActive) {
                 val r = pick()
                 val s = r?.let { runCatching { it.status() }.getOrNull() }
                 remote = r; st = s
-                idlePolls = if (s == null) idlePolls + 1 else 0
+                // zatrzymany telewizor (koniec filmu, ktoś wyłączył) liczy się jak „nic nie gra”
+                val idle = s == null || (r is DlnaRemote && Dlna.last?.state in Dlna.IDLE_STATES)
+                idlePolls = if (idle) idlePolls + 1 else 0
                 invalidateState()
+                if (n++ % 2 == 0) announce(r, s)
                 delay(1500)
             }
         }
+    }
+
+    /** Telewizor DLNA zna tylko telefon, który na nim puścił: mówimy innym pilotom, co na nim gra ([Announce]). */
+    private fun announce(r: Remote?, s: RemoteState?) {
+        val t = Dlna.current
+        if (r !is DlnaRemote || s == null || t == null) { Announce.mine = emptyList(); return }
+        val state = when { s.buffering -> "BUFFERING"; s.playing -> "PLAYING"; else -> "PAUSED" }
+        val msg = Announce.playing(ctx, "dlna", t.id, t.name, Dlna.ctl(t), s.title, state, s.posNow(), s.dur)
+        Announce.mine = listOf(msg)
+        Announce.send(msg)
     }
 
     /** DLNA, gdy coś na nie wysłaliśmy; inaczej ekran z mpv (chyba że Pilot steruje Chromecastem). */
@@ -132,7 +146,10 @@ class RemoteSessionService : MediaSessionService() {
     private val watch = object : Runnable {
         override fun run() {
             // ~10 s bez niczego grającego: koniec (mpv zamknięte, telewizor zatrzymany przez Zakończ)
-            if (((session?.player as? RemotePlayer)?.idlePolls ?: 99) >= 7) { stopSelf(); return }
+            if (((session?.player as? RemotePlayer)?.idlePolls ?: 99) >= 7) {
+                if (Dlna.last?.state in Dlna.IDLE_STATES) Dlna.forget()  // telewizor już nic nie gra: przestajemy go śledzić
+                stopSelf(); return
+            }
             main.postDelayed(this, 3000)
         }
     }
@@ -146,7 +163,10 @@ class RemoteSessionService : MediaSessionService() {
             // bez tego media3 pokaże powiadomienie dopiero, gdy podłączy się jakiś kontroler (np. System UI)
             .also { addSession(it) }
         main.postDelayed(watch, 3000)
+        stopListen = Announce.listen(this)  // odpowiada na „who” innych pilotów, póki coś gra
     }
+
+    private var stopListen: (() -> Unit)? = null
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
@@ -156,6 +176,7 @@ class RemoteSessionService : MediaSessionService() {
 
     override fun onDestroy() {
         main.removeCallbacks(watch)
+        stopListen?.invoke()
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()

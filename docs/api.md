@@ -75,6 +75,7 @@ YouTube, Spotify). Apka używa tego, gdy sama nie ma sesji Cast.
 | metoda i ścieżka | opis |
 |---|---|
 | `GET /api/cast/devices` | `[{id, name, model, product, profile, label}]` (mDNS przez pychromecast; pierwsze wywołanie czeka do 3 s); `product` = `product_name` z `eureka_info`, `label` = nazwa modelu z profilu (`docs/urzadzenia.md`) |
+| `GET /api/announce` | co grają inne piloty w sieci (rozgłoszenia multicast `239.255.77.77:47700` z telefonów i innych agentów, bez wpisów starszych niż 10 s): `[{target: {kind, id, name}, from: {kind, id, name}, title, state, pos, dur}]`; agent sam ogłasza mpv na swoim ekranie (`docs/urzadzenia.md`) |
 | `GET /api/renderers` | rejestr Chromecastów widzianych w sieci (`renderers.json`): `id`, `name`, `model`, `product`, `profile`, `build`, `host`, `first_seen`, `last_seen` |
 | `POST /api/cast/play` | `ref` + `device` (+ `start`) → odtwarza (wersja dla Chromecasta, jeśli jest; napisy VTT) |
 | `GET /api/cast/status` | `{active, device, id, app, mine, title, state, pos, duration, volume, muted, volume_fixed, all}`: pierwszy grający Chromecast (najpierw puszczony przez agenta), `all` = wszystkie grające; `app` = aplikacja na Chromecaście („Default Media Receiver”, „YouTube”…), `mine`: puścił agent; `volume` w procentach, `volume_fixed`: stała głośność (przyciski znikają) |

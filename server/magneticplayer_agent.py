@@ -30,6 +30,7 @@ import mp_media
 import mp_platform as platform
 from mp_cast import Casts, CastError
 import mp_renderers
+from mp_announce import Announcer
 
 # DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
@@ -681,6 +682,9 @@ class App:
         self.convert = mp_media.Converter(log)
         self.renderers = mp_renderers.Renderers(os.path.join(CONFIG_DIR, "renderers.json"), log)
         self.casts = Casts(log, self.renderers)
+        # rozgłaszanie „co gra” między pilotami (multicast w LAN): mpv tego serwera + lista od innych dla strony
+        self.announce = Announcer(log, lambda: {"id": self.cfg["id"], "name": self.name()}, self._announce_mine)
+        self.announce.start()
         # wykrywanie Chromecastów od startu: rejestr odbiorników zna model, zanim ktoś otworzy wybór urządzenia
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
@@ -775,6 +779,18 @@ class App:
             _, f = self.resolve_file(d["torrent_id"], int(d["file_index"]))
             return f.get("ready", 0) >= f.get("size", 1) or f.get("progress", 0) >= 100
         return True
+
+    def _announce_mine(self):
+        """Co gra na ekranie tego serwera (mpv), jako wiadomość „playing” dla innych pilotów."""
+        if not self.is_screen() or not self.mpv.running():
+            return []
+        st = self.mpv.status()
+        if not st.get("running") or st.get("idle"):
+            return []
+        return [{"type": "playing", "target": {"kind": "screen", "id": self.cfg["id"], "name": self.name(),
+                                                "ctl": {"agent": f"http://{lan_ip()}:{self.cfg['port']}"}},
+                 "title": st.get("title") or "", "state": "PAUSED" if st.get("paused") else "PLAYING",
+                 "pos": st.get("pos") or 0, "dur": st.get("duration") or 0, "ts": int(time.time())}]
 
     def _cast_warmup(self):
         try:
@@ -1018,6 +1034,8 @@ class Handler(BaseHTTPRequestHandler):
                 subs = [{"url": x["vtt"], "lang": x["lang"]} for x in t["subs"]]
                 return self.send_json(a.casts.play(str(b.get("device") or ""), t["url"], t["title"],
                                                    t["content_type"] or "video/mp4", subs, b.get("start")))
+            if p == "/api/announce" and method == "GET":
+                return self.send_json(a.announce.list())
             if p == "/api/renderers" and method == "GET":
                 return self.send_json(a.renderers.casts())
             if p == "/api/cast/status" and method == "GET":

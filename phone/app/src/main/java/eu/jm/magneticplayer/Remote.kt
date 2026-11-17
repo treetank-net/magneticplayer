@@ -204,7 +204,7 @@ object Pilot {
     /** Dostępne cele w kolejności domyślnej. Wątek UI (sesja Cast). */
     fun available(ctx: Context): List<String> = buildList {
         if (Cast.session(ctx) != null || CastNet.playing().isNotEmpty() || agentCast.value != null) add("cast")
-        if (Dlna.current != null) add("dlna")
+        if (Dlna.current != null || Announce.foreignDlna() != null) add("dlna")
         if (Servers.screenKey(ctx) != null) add("screen")
     }
 
@@ -214,7 +214,11 @@ object Pilot {
         "cast" -> if (Cast.session(ctx) != null) CastRemote(ctx.applicationContext)
             else CastNet.playing().firstOrNull()?.let { DirectCastRemote(it.device.id) }
             ?: agentCast.value?.let { (k, o) -> Api.of(ctx, k)?.let { AgentCastRemote(ctx.applicationContext, it, o.optString("id")) } }
-        "dlna" -> DlnaRemote(ctx.applicationContext)
+        "dlna" -> {
+            // film na telewizorze puścił inny pilot (rozgłoszenie): przejmujemy sterowanie
+            if (Dlna.current == null) Announce.foreignDlna()?.let { Dlna.adopt(it) }
+            DlnaRemote(ctx.applicationContext)
+        }
         "screen" -> Api.of(ctx, Servers.screenKey(ctx))?.let { MpvRemote(ctx.applicationContext, it) }
         else -> null
     }

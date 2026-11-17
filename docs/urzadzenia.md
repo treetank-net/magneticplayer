@@ -94,6 +94,24 @@ rocznik i platforma), `resolution` (`1920x1080`), `firmwareVersion`, `wifiMac` i
 w kodzie, ale przydaje się do rozpoznania rocznika: platforma decyduje o kodekach (seria J z 2015 nie ma np. HEVC
 10-bit).
 
+## Rozgłaszanie między pilotami (nasze, multicast)
+
+UDP `239.255.77.77:47700`, TTL 1, JSON (`Announce.kt`, `server/mp_announce.py`):
+
+```json
+{"mp": 1, "type": "playing", "from": {"kind": "phone", "id": "…", "name": "Google Pixel 8a"},
+ "target": {"kind": "dlna", "id": "uuid:28a4…", "name": "[TV] UE43J5500",
+            "ctl": {"avt": "http://192.168.100.6:9197/upnp/control/AVTransport1", "rc": "…/RenderingControl1", "samsung": true}},
+ "title": "…", "state": "PLAYING", "pos": 61.0, "dur": 3600, "ts": 1794929824}
+```
+
+- `type`: `playing` (co ~3 s), `stopped` (raz, na koniec), `who` (prośba o natychmiastową odpowiedź).
+- `target.kind`: `dlna` (ogłasza telefon, bo tylko on wie, co wysłał), `screen` (ogłasza agent: mpv, `ctl.agent` =
+  adres agenta; sterowanie i tak wymaga tokenu), `cast` (zarezerwowane; Chromecasty każdy widzi sam).
+- Podgląd z konsoli: nasłuch na grupie (jak `scratchpad/annlisten.py` w sesjach z agentem) albo `GET /api/announce`.
+- Router musi przepuszczać multicast między Wi-Fi a kablem. U nas telefon → jmpc działa, telefon → laptop (oba
+  przez Wi-Fi) nie.
+
 ## Ekran serwera (mpv) i konwersja
 
 mpv dekoduje wszystko, co ma ffmpeg, więc nie ma profilu. Co umie serwer, podaje `GET /api/info`: `features.player`,

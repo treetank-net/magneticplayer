@@ -319,8 +319,33 @@ object Dlna {
         return true
     }
 
+    /** Jak sterować tym telewizorem bez nas (do rozgłoszenia: [Announce]). */
+    fun ctl(t: DlnaTarget): org.json.JSONObject = org.json.JSONObject().put("avt", t.avTransport).put("rc", t.rendering ?: "")
+        .put("samsung", t.samsung).put("model", t.model)
+
+    /** Przejmuje sterowanie telewizorem, na który film puścił inny pilot (z rozgłoszenia). */
+    fun adopt(e: Announce.Entry) {
+        val c = e.ctl
+        val t = DlnaTarget(e.targetId, e.targetName, c.optString("model"), c.getString("avt"),
+            c.optString("rc").takeIf { it.isNotEmpty() }, c.optBoolean("samsung"))
+        current = t; currentRef = null; currentTitle = e.title; last = null
+        found[t.id] = t
+    }
+
+    /** Stany, w których na telewizorze nic nie gra. */
+    val IDLE_STATES = setOf("STOPPED", "NO_MEDIA_PRESENT")
+
+    /** Zapomina telewizor bez wysyłania mu Stop (film się skończył albo zatrzymał go ktoś inny). */
+    fun forget() {
+        val t = current ?: return
+        Announce.stopped("dlna", t.id)
+        current = null; currentRef = null; currentTitle = null; last = null
+        app?.let { prefs(it).edit().remove("dlna_session").apply() }
+    }
+
     fun stop() {
         val t = current ?: return
+        Announce.stopped("dlna", t.id)
         runCatching { soap(t.avTransport, AVT, "Stop", "InstanceID" to "0") }
         current = null; currentRef = null; currentTitle = null; last = null
         app?.let { prefs(it).edit().remove("dlna_session").apply() }
