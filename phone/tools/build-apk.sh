@@ -16,15 +16,12 @@ mkdir -p .gradle-home out
 # agent w apce: telefon sam serwuje instalator nowemu komputerowi (InstallShare.kt), bez innego serwera
 # (zależności: pip, mpv, Python na Windows, nowy komputer i tak pobiera z internetu).
 # Ta sama zawartość co paczka z serwera (mp_install.bundle); szablony join.* osobno, żeby telefon podstawił adres.
-AG=app/src/main/assets/agent
-rm -rf "$AG" && mkdir -p "$AG"
-( cd "$ROOT/.." && git ls-files -z server | grep -zE '^server/([^/]+\.(py|sh|ps1)|web/[^/]+)$' \
-    | xargs -0 tar --owner=0 --group=0 --numeric-owner -czf "$ROOT/$AG/agent.tgz" )
-cp ../server/join.sh ../server/join.ps1 "$AG/"
-git -C .. describe --always --dirty > "$AG/version.txt" 2>/dev/null || true
+tools/agent-bundle.sh app/src/main/assets/agent
+# klucz publiczny podpisu paczek agenta z wydań (AgentBundle.kt); bez niego apka używa tylko paczki z APK
+[ -f tools/agent-signing.pub ] && cp tools/agent-signing.pub app/src/main/assets/agent/signing.pub
 # versionCode rośnie sam (minuty od 2025-01-01), żeby aktualizacje zawsze były „nowsze”
 VC=$(( ($(date +%s) - 1735689600) / 60 ))
-VN="1.$(date +%y%m%d.%H%M)"
+VN=${VN:-"1.$(date +%y%m%d.%H%M)"}  # wydanie w CI podaje wersję z tagu
 nice -n 19 docker run --rm --cpus="${CPUS:-4}" --memory="${MEM:-6g}" \
   -e GRADLE_USER_HOME=/gh -v "$ROOT/.gradle-home:/gh" -v "$ROOT:/w" -w /w "$IMG" bash -c "
     chmod +x gradlew

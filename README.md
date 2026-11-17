@@ -36,6 +36,9 @@ docs/     dokumentacja
 
 ## Szybki start
 
+Gotowe APK jest w [wydaniach na GitHubie](https://github.com/treetank-net/magneticplayer/releases) (agenta na kolejne
+komputery apka zainstaluje sama: „Zainstaluj na innym komputerze”). Ze źródeł:
+
 ```bash
 # komputer (lokalnie; część rootowa przez pkexec)
 bash server/install.sh

@@ -85,7 +85,7 @@
         <!-- Chromecast: odbiornik domyślny, sterowanie z powiadomienia i pełny ekran sterowania -->
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
-            android:value="eu.jm.magneticplayer.MpCastOptions" />
+            android:value="net.treetank.magneticplayer.MpCastOptions" />
         <activity
             android:name=".CastControlsActivity"
             android:exported="false"

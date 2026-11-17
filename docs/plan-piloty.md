@@ -77,7 +77,7 @@ sam zakłada sesję trasy (`notifySessionCreated(REQUEST_ID_NONE, …)`, `client
 w logu „Ignoring session creation result for unknown request”, ale sesję przechowuje, a System UI łączy ją z naszą
 sesją multimediów po `originalId` = `volumeControlId` (media3: `DeviceInfo.setRoutingControllerId`). Dzięki temu
 kilka celów naraz ma każdy swoją nazwę. Dostawcę system wiąże, póki nasz MediaRouter2 szuka tras z cechą
-`eu.jm.magneticplayer.REMOTE` (bez aktywnego skanowania), czyli póki coś gra. Ikona na chipie to głośnik: typu trasy
+`net.treetank.magneticplayer.REMOTE` (bez aktywnego skanowania), czyli póki coś gra. Ikona na chipie to głośnik: typu trasy
 (telewizor, komputer) aplikacja nie może ustawić. Przełączanie wyjścia z panelu systemu na nasze trasy jest odrzucane:
 cel wybiera się w apce.
 

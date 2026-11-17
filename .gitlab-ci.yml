@@ -1,5 +1,6 @@
 stages:
   - mirror
+  - release
 
 # GitLab (treetank/magneticplayer) → GitHub (treetank-net/magneticplayer), jak w pozostałych projektach treetank.
 # GITHUB_TREETANK_TOKEN: chroniona zmienna CI grupy treetank, więc job działa tylko na chronionych gałęziach i tagach
@@ -29,3 +30,22 @@ mirror-github:
         fi
       fi
       git push --tags gh
+
+# Wydanie na chroniony tag v1.RRMMDD.GGMM (phone/tools/tag-release.sh): APK + podpisana paczka agenta na GitHubie.
+# Klucze: chronione zmienne projektu ze środowiskiem „release” (MP_KEYSTORE_B64, MP_KEYSTORE_PASS, MP_KEY_PASS,
+# MP_AGENT_KEY_B64), więc dostaje je tylko ten job. vps2 to też produkcja timeprotect: build z limitem (2 CPU, 5 GB).
+release:
+  stage: release
+  tags:
+    - vps2
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v1\.[0-9]{6}\.[0-9]{4}$/
+  environment:
+    name: release
+  resource_group: magneticplayer-release
+  timeout: 45m
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+  script:
+    - phone/tools/release-ci.sh

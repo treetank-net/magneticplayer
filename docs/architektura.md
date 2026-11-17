@@ -237,6 +237,7 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 | `Updater.kt` | aktualizacje z komputera, wysyłanie własnego APK |
 | `Access.kt` | prośby o dostęp: sprawdzanie przy połączeniu (pętla w `MainActivity`), powiadomienie z przyciskami Gość/Domownik/Odrzuć, `AccessReceiver` |
 | `InstallShare.kt` | telefon jako źródło instalatora: serwer HTTP na czas okna instalacji z agentem zaszytym w APK (te same trasy co `mp_install.py`) |
+| `AgentBundle.kt` | paczka agenta dla `InstallShare`: z APK albo nowsza z wydania na GitHubie (manifest podpisany ECDSA P-256, sha256 paczki, minimalny czytnik tar) |
 | `InstallUi.kt` | „Zainstaluj na innym komputerze”: polecenie z kodem dołączenia, czekanie na nowy serwer i parowanie z nim |
 | `UploadOverlay.kt` | okienko „Przesłać na serwer?” nad przeglądarką (uprawnienie „Wyświetlanie nad innymi aplikacjami”) |
 | `Uploads.kt` | przesyłanie filmów pobranych przeglądarką na serwer: wykrywanie (WorkManager z wyzwalaczem MediaStore, ContentObserver), pytanie w powiadomieniu, `UploadWorker` (czeka na Wi-Fi serwera, wznawia), `UploadDeleteActivity`, ustawienia |

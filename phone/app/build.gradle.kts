@@ -13,11 +13,11 @@ val keyProps = Properties().apply {
 }
 
 android {
-    namespace = "eu.jm.magneticplayer"
+    namespace = "net.treetank.magneticplayer"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
     defaultConfig {
-        applicationId = "eu.jm.magneticplayer"
+        applicationId = "net.treetank.magneticplayer"
         minSdk = 26
         targetSdk = 36
         versionCode = (project.findProperty("vCode") as String?)?.toInt() ?: 1

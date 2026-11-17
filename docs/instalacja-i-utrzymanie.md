@@ -69,6 +69,11 @@ nie `.tar.gz`, bo AAPT rozpakowuje takie assets) i szablony `join.sh`/`join.ps1`
 i `POST /api/install/join`. Polecenie wygląda jak zwykle (`curl -fsSL http://<telefon>:<port>/i/<kod> | bash`),
 a po zgłoszeniu nowego agenta telefon paruje się sam. Okno musi zostać otwarte do końca instalacji.
 
+Po otwarciu okna apka sprawdza (najwyżej co 6 godzin) ostatnie wydanie na GitHubie (`AgentBundle.kt`): pobiera
+manifest, sprawdza podpis kluczem z apki i, gdy paczka jest nowsza niż zaszyta w APK, pobiera ją i porównuje sha256.
+Taką paczkę telefon serwuje dalej („agent … z wydania d.MM.rrrr” w oknie); bez sieci albo przy błędzie podpisu
+zostaje paczka z APK. Wersję (czas commita) niesie podpisany manifest, więc starszej paczki nie da się podsunąć.
+
 Ponowna instalacja na tym samym komputerze (np. po `uninstall.sh --purge`, z nowym id agenta) zastępuje w apce stary
 wpis o tym samym adresie i porcie zamiast dodawać drugi (`Pairing.pair`); dotyczy każdego parowania, nie tylko z telefonu.
 
@@ -175,9 +180,14 @@ adb install -r phone/out/MagneticPlayer.apk
 
 ### Klucz podpisu
 
-`phone/magneticplayer.keystore` i `phone/keystore.properties` są **poza gitem**. Generuje je pierwszy build.
-Trzymaj kopię zapasową: bez tego klucza żadna nowa wersja nie zainstaluje się jako aktualizacja.
-Trzeba by wtedy odinstalować apkę na każdym telefonie i sparować go od nowa.
+Od listopada 2026 apka ma identyfikator `net.treetank.magneticplayer` (wcześniej `eu.jm.magneticplayer`), a wydania
+podpisuje **klucz treetank** (ten sam co timeprotect, tylko w zmiennych CI, patrz „Wydania”). Stara apka nie
+zaktualizuje się do nowej (inny pakiet i klucz): nową instaluje się obok („Wyślij apkę” albo z wydania na GitHubie),
+paruje od nowa, a starą odinstalowuje.
+
+`phone/magneticplayer.keystore` i `phone/keystore.properties` (**poza gitem**, generuje je pierwszy build) to od tej
+pory klucz deweloperski: podpisuje buildy lokalne (`build-apk.sh`), czyli emulator i testy. Taki build nie
+zainstaluje się na wersję z wydania bez odinstalowania. Kopię zapasową i tak trzymamy:
 
 **Kopia zapasowa** jest na `ovh-vps` w `~/backup/MagneticPlayer/` (katalog 700, pliki 600). Obok leży `README.txt`
 z instrukcją odtworzenia i sumami sha256. Odtworzenie:
@@ -186,7 +196,27 @@ z instrukcją odtworzenia i sumami sha256. Odtworzenie:
 scp 'ovh-vps:backup/MagneticPlayer/{magneticplayer.keystore,keystore.properties}' phone/
 ```
 
-Kod repo jest też na `ovh-vps` w `~/git/MagneticPlayer.git` (remote `ovh`).
+Kod jest publiczny (MIT): `origin` = gitlab.com/treetank/magneticplayer, lustro github.com/treetank-net/magneticplayer
+(job `mirror-github`), prywatna kopia na `ovh-vps` w `~/git/MagneticPlayer.git` (remote `ovh`).
+
+### Wydania (GitHub)
+
+Wydanie robi GitLab CI, wzorem timeprotect: lokalnie tylko `phone/tools/tag-release.sh` (tag `v1.RRMMDD.GGMM` na
+wypchniętym `main`). Job `release` na runnerze `vps2` (`phone/tools/release-ci.sh`):
+
+1. buduje APK (2 CPU, 5 GB: na vps2 działa produkcja) podpisane kluczem treetank (alias `treetank`); odcisk
+   certyfikatu jest sprawdzany (`EXPECTED_CERT`), bo każde wydanie musi mieć ten sam klucz, inaczej telefony nie
+   przyjmą aktualizacji;
+2. pakuje agenta (`phone/tools/agent-bundle.sh`) i pisze manifest `agent.json` (czas commita z `server/`, commit,
+   wersja, sha256 paczki) podpisany ECDSA P-256 (`agent.json.sig`);
+3. czeka, aż lustro przepchnie tag na GitHub, i publikuje wydanie (`phone/tools/github-release.py`): APK,
+   `version.json`, `agent.tgz`, `agent.json`, `agent.json.sig`.
+
+Klucze są tylko w chronionych zmiennych CI projektu ze środowiskiem `release` (`MP_KEYSTORE_B64`, `MP_KEYSTORE_PASS`: kopie
+`TP_KEYSTORE_*` z `treetank/timeprotect-android`; `MP_AGENT_KEY_B64`), więc nie dostaje ich żaden inny job; tagi `v*` są chronione. Klucz paczek:
+`~/.config/magneticplayer-release/agent-signing.pem` z kopią na `ovh-vps` w `~/backup/MagneticPlayer/`; publiczny
+w repo (`phone/tools/agent-signing.pub`), a `build-apk.sh` kopiuje go do apki. Wydanie na GitHubie nie zastępuje
+`publish.sh`: domownicy dostają aktualizacje z komputera jak dotąd.
 
 ### Kolejne telefony (domownicy)
 
