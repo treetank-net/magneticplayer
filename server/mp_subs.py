@@ -23,13 +23,18 @@ class SubsError(Exception):
 _sl = None
 
 
+def add_venv_path():
+    """site-packages venv agenta na sys.path (Linux: lib/python3*/; Windows: Lib/, choć tam agent i tak chodzi z venv)."""
+    for sp in glob.glob(os.path.join(VENV, "lib", "python3*", "site-packages")) + [os.path.join(VENV, "Lib", "site-packages")]:
+        if os.path.isdir(sp) and sp not in sys.path:
+            sys.path.append(sp)
+
+
 def _subliminal():
     """Leniwy import subliminal z venv (agent działa na systemowym pythonie tej samej wersji)."""
     global _sl
     if _sl is None:
-        for sp in glob.glob(os.path.join(VENV, "lib", "python3*", "site-packages")):
-            if sp not in sys.path:
-                sys.path.append(sp)
+        add_venv_path()
         try:
             import subliminal
             from babelfish import Language

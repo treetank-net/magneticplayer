@@ -17,7 +17,8 @@
 ## Agent (`server/`)
 
 Jeden proces w Pythonie (`ThreadingHTTPServer`), poza subliminal nie ma zewnętrznych zależności. Działa jako usługa
-`systemd --user` w sesji użytkownika, bo potrzebuje jego ekranu (mpv) i jego katalogów.
+`systemd --user` w sesji użytkownika, bo potrzebuje jego ekranu (mpv) i jego katalogów. Na Windows (instalacja lekka, `install.ps1`) zamiast
+usługi jest autostart `HKCU\…\Run` przy logowaniu, a mpv słucha na nazwanym potoku zamiast gniazda unix.
 
 | plik | odpowiedzialność |
 |---|---|
@@ -31,7 +32,7 @@ Jeden proces w Pythonie (`ThreadingHTTPServer`), poza subliminal nie ma zewnętr
 | `mp_renderers.py` | kim są Chromecasty (`product_name` z `eureka_info`), profile kodeków na model (`CAST_PROFILES`) i rejestr `renderers.json`; opis w `docs/urzadzenia.md` |
 | `mp_install.py` | instalacja agenta na kolejnym komputerze: kod dołączenia, skrypt `/i/<kod>`, paczka, zgłoszenie nowego serwera z kodem parowania dla telefonu |
 | `mp_upload.py` | przyjmowanie filmów z telefonu (`/api/upload/<id>`): wznawialne kawałki w `.mp-upload/`, wolne miejsce, kolizje nazw, katalog `upload_dir` albo „Z telefonu” w bibliotece |
-| `mp_platform.py` | wszystko zależne od systemu: sesja graficzna, odblokowanie, usypianie, karta sieciowa, ocena budzenia, wysyłanie WoL. Inny system dopisuje się tutaj; czego nie umie, tego agent nie zgłasza w `features`/`power` |
+| `mp_platform.py` | wszystko zależne od systemu: sesja graficzna, odblokowanie, usypianie, karta sieciowa, ocena budzenia, wysyłanie WoL, ścieżka do mpv (na Windows `mpv\mpv.exe` obok agenta). Inny system dopisuje się tutaj; czego nie umie, tego agent nie zgłasza w `features`/`power` |
 
 ### Wiele serwerów
 

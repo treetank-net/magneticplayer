@@ -1,7 +1,8 @@
 """Wszystko, co zależy od systemu: sesja graficzna, ekran blokady, usypianie, sieć, Wake-on-LAN.
 
-Na razie tylko Linux (systemd, logind, X11/Wayland). Na innym systemie funkcje zwracają „nie umiem” (False/None),
-a agent nie zgłasza ich w /api/info, więc apka chowa odpowiednie przyciski. Windows/Mac dopisuje się tutaj.
+Pełnie Linux (systemd, logind, X11/Wayland). Windows (instalacja lekka, install.ps1): ekran przez mpv, adres IP;
+bez odblokowania, usypiania i Wake-on-LAN. Czego system nie umie, funkcje zwracają „nie umiem” (False/None),
+a agent nie zgłasza tego w /api/info, więc apka chowa odpowiednie przyciski.
 """
 import os
 import re
@@ -12,6 +13,8 @@ import sys
 import time
 
 LINUX = sys.platform.startswith("linux")
+WINDOWS = os.name == "nt"
+HERE = os.path.dirname(os.path.abspath(__file__))
 SESSIONS = ("cinnamon-session", "cinnamon", "xfce4-session", "mate-session", "gnome-shell", "plasmashell",
             "lxsession", "lxqt-session", "budgie-wm", "kwin_wayland", "kwin_x11", "labwc", "wayfire")
 
@@ -52,10 +55,18 @@ def graphical_env():
     return env
 
 
+def mpv_path():
+    """mpv z PATH albo obok agenta (Windows: install.ps1 kładzie go w <agent>/mpv/mpv.exe)."""
+    local = os.path.join(HERE, "mpv", "mpv.exe" if WINDOWS else "mpv")
+    return shutil.which("mpv") or (local if os.path.isfile(local) else None)
+
+
 def has_display():
     """Czy da się tu wyświetlić film: mpv + zalogowana sesja graficzna (albo jawnie ustawiony DISPLAY)."""
-    if not shutil.which("mpv"):
+    if not mpv_path():
         return False
+    if WINDOWS:  # agent startuje z logowaniem użytkownika (HKCU\...\Run), więc działa w jego sesji
+        return True
     return _session_env() is not None or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
@@ -135,8 +146,14 @@ def power(action):
 def net_info(client_ip):
     """Karta, przez którą widać klienta: nazwa, IP, MAC, ustawienie Wake-on (ethtool/nmcli), czy Wi-Fi."""
     dev, src = None, None
-    if not LINUX:
-        return {"iface": None, "ip": None, "mac": None, "wake_on": None, "wireless": False}
+    if not LINUX:  # bez nazwy karty i MAC: adres z trasy do klienta (connect na UDP nic nie wysyła)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect((client_ip if client_ip and not client_ip.startswith("127.") else "192.168.0.1", 9))
+                src = s.getsockname()[0]
+        except OSError:
+            pass
+        return {"iface": None, "ip": src, "mac": None, "wake_on": None, "wireless": False}
     # klient na tym samym komputerze (lo): karta z trasy domyślnej
     for target in (client_ip, "1.1.1.1"):
         try:

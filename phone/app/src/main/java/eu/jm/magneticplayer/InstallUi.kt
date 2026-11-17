@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -50,6 +51,7 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     val sources = remember { Servers.all(ctx).filter { it.canInstall } }
     var source by remember { mutableStateOf(sources.firstOrNull { it.key == Servers.activeKey(ctx) } ?: sources.firstOrNull()) }
     var lite by remember { mutableStateOf(true) }
+    var windows by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf<JSONObject?>(null) }
     var state by remember { mutableStateOf("waiting") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -89,7 +91,8 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     }
 
     val c = code
-    val command = c?.optString(if (lite) "command" else "command_full").orEmpty()
+    val command = c?.optString(if (windows) "command_windows" else if (lite) "command" else "command_full").orEmpty()
+        .ifEmpty { if (c != null && windows) "Ten serwer nie ma jeszcze instalatora dla Windows — zaktualizuj na nim agenta." else "" }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (added != null) "Dodano serwer" else "Zainstaluj na innym komputerze") },
@@ -97,7 +100,7 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 added?.let { ServerSummary(it); return@Column }
                 if (c == null) {
-                    Text("Komputer z Linuksem w tej samej sieci pobierze agenta z serwera i sam się sparuje z tym telefonem.",
+                    Text("Komputer w tej samej sieci (Linux albo Windows 10/11) pobierze agenta z serwera i sam się sparuje z tym telefonem.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (sources.size > 1) {
                         Text("Skąd pobrać agenta", style = MaterialTheme.typography.labelLarge)
@@ -108,7 +111,8 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                         }
                     }
                 } else {
-                    Text("Na nowym komputerze otwórz terminal i wklej:", style = MaterialTheme.typography.bodyMedium)
+                    Text(if (windows) "Na nowym komputerze otwórz PowerShell (prawy klik na Start → Terminal) i wklej:"
+                        else "Na nowym komputerze otwórz terminal i wklej:", style = MaterialTheme.typography.bodyMedium)
                     Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         modifier = Modifier.fillMaxWidth().clickable {
                             copyText(ctx, "MagneticPlayer — instalacja", command)
@@ -125,7 +129,14 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(!windows, { windows = false }, { Text("Linux") })
+                    FilterChip(windows, { windows = true }, { Text("Windows") })
+                }
+                if (windows) Text("Lekka instalacja: Biblioteka, przesyłanie z telefonu, napisy i ekran (mpv dociąga sam). " +
+                    "Wklej polecenie do okna PowerShell, nie do „Uruchom” (Win+R): Defender blokuje takie polecenie podane wprost.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Bez hasła administratora", style = MaterialTheme.typography.bodyMedium)
                         Text(if (lite) "Lekka: Biblioteka, przesyłanie z telefonu, napisy i ekran (gdy jest mpv). Bez torrentów, usypiania i budzenia z sieci."

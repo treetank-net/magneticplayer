@@ -25,6 +25,7 @@ from mp_devices import CODE_ALPHABET, normalize_code
 TTL = 30 * 60
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUNDLE_FILES = ("install.sh", "install-root.sh", "uninstall.sh")
+BUNDLE_OPTIONAL = ("install.ps1", "uninstall.ps1")  # Windows (instalacja lekka)
 
 
 class InstallError(Exception):
@@ -80,6 +81,13 @@ class Installs:
         lite = "0" if full else "${LITE:-1}"
         return SCRIPT.replace("@URL@", url).replace("@LITE@", lite)
 
+    def script_ps(self, code, base):
+        """Windows: `irm <url>/ps | iex` (zawsze instalacja lekka)."""
+        self.script(code, base, False)  # ten sam stan i kontrola kodu
+        if not os.path.isfile(os.path.join(HERE, "install.ps1")):
+            raise InstallError("ten serwer nie ma instalatora dla Windows (install.ps1) — zaktualizuj go", 409)
+        return SCRIPT_PS.replace("@URL@", f"{base}/i/{normalize_code(code)}")
+
     def bundle(self, code):
         c = self._get(code)
         c["downloads"] += 1
@@ -87,7 +95,7 @@ class Installs:
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             for name in sorted(os.listdir(HERE)):
                 full = os.path.join(HERE, name)
-                if (name.endswith(".py") and os.path.isfile(full)) or name in BUNDLE_FILES:
+                if (name.endswith(".py") and os.path.isfile(full)) or name in BUNDLE_FILES or name in BUNDLE_OPTIONAL:
                     tar.add(full, arcname=f"server/{name}")
             web = os.path.join(HERE, "web")
             if os.path.isdir(web):
@@ -121,6 +129,21 @@ class Installs:
             return {"state": c["state"], "server": c["server"], "downloads": c["downloads"],
                     "expires_in": int(c["exp"] - time.time())}
 
+
+# PowerShell dla `irm … | iex`: pobiera paczkę (tar.exe jest w Windows 10+) i uruchamia install.ps1.
+SCRIPT_PS = r"""& {
+  $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'
+  $u = '@URL@'
+  $t = Join-Path $env:TEMP ('magneticplayer-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  New-Item -ItemType Directory $t | Out-Null
+  Write-Host "== pobieram agenta z $u"
+  Invoke-WebRequest "$u/bundle.tar.gz" -OutFile "$t\mp.tgz" -UseBasicParsing
+  tar -xzf "$t\mp.tgz" -C $t
+  $env:MP_JOIN = $u
+  try { powershell -NoProfile -ExecutionPolicy Bypass -File "$t\server\install.ps1" }
+  finally { Remove-Item -Recurse -Force $t -ErrorAction SilentlyContinue; Remove-Item Env:MP_JOIN -ErrorAction SilentlyContinue }
+}
+"""
 
 # Skrypt dla `curl … | bash`. Całość w funkcji, żeby bash przeczytał go do końca, zanim cokolwiek ruszy stdin.
 SCRIPT = r"""#!/bin/bash

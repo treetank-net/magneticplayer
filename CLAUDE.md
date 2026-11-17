@@ -77,6 +77,12 @@ razem.
 - Android czyści `cacheDir`, gdy apka przekroczy limit cache: pobrane filmy są w `noBackupFilesDir/media`.
 - media3 `MediaSessionService`: sesję trzeba dodać `addSession()`, inaczej brak powiadomienia do czasu podłączenia kontrolera.
 - `systemctl --user restart magneticplayer` zabijał mpv (ten sam cgroup); dlatego mpv startuje przez `systemd-run --scope`.
+- **Windows:** `powershell -c "irm …/ps | iex"` (też przez ssh) Defender blokuje jako `Commando.B!ml`; wklejone do okna
+  PowerShell działa. Testy przez ssh: polecenie w pliku `.ps1` i `-File`.
+  - mpv: `os.path.exists` na `\\.\pipe\…` bywa False przy działającym mpv (lista potoków: `socket_exists()`); nowe
+    połączenie z potokiem trwa do 3 s, więc jest jedno trwałe; mpv nie kończy się po `quit`, dopóki klient trzyma potok.
+  - ssh do win11 to sesja 0: mpv startuje, ale nie widać okna. Agent w sesji użytkownika: `schtasks /IT`.
+  - Windows sam zakłada reguły zapory „Blokuj” dla bazowego `pythonw.exe` po „Anuluj”; `install.ps1` jako admin je usuwa.
 
 ## Otwarte sprawy
 

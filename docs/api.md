@@ -131,10 +131,11 @@ sterujące i kropka na początku są obcinane. Katalog docelowy: `upload_dir` w 
 
 | metoda i ścieżka | opis |
 |---|---|
-| `POST /api/install/code` | jednorazowy kod dołączenia (30 min) → `{"code", "expires_in", "url", "command", "command_full"}`; `command` to `curl -fsSL <url> \| bash` (instalacja lekka), `command_full` z `?full=1` (pełna, z hasłem administratora); `409`, gdy obok agenta nie ma skryptów instalacyjnych |
+| `POST /api/install/code` | jednorazowy kod dołączenia (30 min) → `{"code", "expires_in", "url", "command", "command_full", "command_windows"}`; `command` to `curl -fsSL <url> \| bash` (instalacja lekka), `command_full` z `?full=1` (pełna, z hasłem administratora), `command_windows` to `irm <url>/ps \| iex` (PowerShell, lekka); `409`, gdy obok agenta nie ma skryptów instalacyjnych |
 | `GET /api/install/status?code=` | tylko dla urządzenia, które utworzyło kod: `{"state": waiting\|downloading\|joined, "server": {host, port, id, name, pair_code, version} \| null, "downloads", "expires_in"}` |
 | `GET /i/<kod>[?full=1]` | bez tokenu: skrypt bash, który pobiera paczkę i uruchamia `install.sh` z `JOIN=<url>` |
-| `GET /i/<kod>/bundle.tar.gz` | bez tokenu: agent z tego serwera (`server/*.py`, `web/`, `install*.sh`, `uninstall.sh`; bez venv i APK) |
+| `GET /i/<kod>/ps` | bez tokenu: skrypt PowerShell, który pobiera paczkę (`tar` z Windows 10+) i uruchamia `install.ps1` z `MP_JOIN=<url>`; `409`, gdy serwer nie ma `install.ps1` |
+| `GET /i/<kod>/bundle.tar.gz` | bez tokenu: agent z tego serwera (`server/*.py`, `web/`, `install*.sh`, `uninstall.sh`, `install.ps1`, `uninstall.ps1`; bez venv i APK) |
 | `POST /api/install/join` | bez tokenu, od nowego agenta (`--join`): `{"code", "id", "name", "port", "pair_code", "version"}`; adres bierze z połączenia. Zużywa kod |
 
 Kody są w pamięci agenta (restart je kasuje). Zły, zużyty albo przeterminowany kod daje `403`, a po 10 złych

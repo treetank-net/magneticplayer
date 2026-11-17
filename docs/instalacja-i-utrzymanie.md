@@ -60,6 +60,36 @@ Starszy serwer dostaje je po ponownym `install.sh` (albo `scp` jak przy szybkiej
 Sprawdzone 17.11.2026: jmpc → czyste Ubuntu 24.04 w VirtualBox (instalacja lekka, zgłoszenie, parowanie kodem
 ze zgłoszenia, ponowne użycie kodu odrzucone).
 
+### Windows 10/11 (instalacja lekka)
+
+Z apki: w tym samym oknie przełącznik „Windows”. Polecenie `irm http://<serwer>:8765/i/<kod>/ps | iex` wkleja się
+**do otwartego okna PowerShell** (prawy klik na Start → Terminal). Podane wprost w wierszu poleceń (Win+R,
+`powershell -c "irm … | iex"`) Defender blokuje jako `Trojan:Win32/Commando.B!ml`; wklejone do okna przechodzi.
+Bez innego serwera: rozpakuj repozytorium i uruchom
+`powershell -ExecutionPolicy Bypass -File server\install.ps1`.
+
+`install.ps1` (bez administratora):
+- Python 3.10+ z `py`/`python` (pomija atrapę ze Sklepu), a gdy go brak, `winget install Python.Python.3.12 --scope user`;
+- agent w `%LOCALAPPDATA%\MagneticPlayer`, venv z `subliminal`, `pychromecast`, `qrcode`;
+- mpv (ekran): wydanie `mpv-*-x86_64-w64-mingw32-full.zip` z GitHuba do `…\MagneticPlayer\mpv` (wersja MSVC bez
+  VC++ runtime nie startuje, kod 0xC0000135);
+- port: pierwszy wolny od 8765 (bind wyłączny: zwykły `SO_REUSEADDR` na Windows pozwala dzielić port z innym
+  programem nasłuchującym na 127.0.0.1);
+- autostart: `HKCU\…\Run` → `pythonw -X utf8 magneticplayer_agent.py` (log w `agent.log` obok agenta);
+- zapora: uruchomiony jako administrator otwiera TCP portu i UDP 47700 dla sieci prywatnych i usuwa reguły
+  „Blokuj”, które Windows sam zakłada po „Anuluj” w okienku zapory (dotyczą bazowego `pythonw.exe`, bo launcher
+  z venv uruchamia bazowy interpreter). Bez administratora Windows zapyta o dostęp przy pierwszym starcie: trzeba
+  zaznaczyć sieci prywatne. W sieci „publicznej” zapora i tak blokuje telefon.
+
+Działa: Biblioteka, przesyłanie, napisy, ekran (mpv przez potok `\\.\pipe\magneticplayer-mpv`, jedno trwałe
+połączenie, bo nowe mpv zakłada nawet 3 s), Chromecast/DLNA z serwera. Nie ma: torrentów, usypiania, budzenia,
+odblokowania ekranu. Odinstalowanie: `uninstall.ps1 [-Purge]` z katalogu agenta.
+
+Sprawdzone 17.11.2026 na Windows 11 w VirtualBox: instalacja i ponowna instalacja, port zajęty przez inny program,
+parowanie, przesyłanie, odtwarzanie (open, pauza, przewijanie, stop), dołączenie z jmpc przez `irm … | iex`,
+odinstalowanie z `-Purge`. Ekran mpv wymaga, żeby agent działał w sesji zalogowanego użytkownika (autostart to
+zapewnia).
+
 ### Przez SSH
 
 Przez SSH `pkexec` nie działa, bo nie ma sesji polkit. Część rootową robisz wtedy przez `sudo`:

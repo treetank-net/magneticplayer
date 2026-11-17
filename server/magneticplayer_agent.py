@@ -59,8 +59,13 @@ def apk_version():
     except (OSError, ValueError):
         pass
     return {"version_code": 0}
-RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/magneticplayer-{os.getuid()}"
-MPV_SOCKET = os.path.join(RUNTIME_DIR, "magneticplayer-mpv.sock")
+WINDOWS = os.name == "nt"
+if WINDOWS:  # mpv na Windows: IPC przez named pipe zamiast gniazda unix
+    RUNTIME_DIR = os.path.join(os.environ.get("TEMP") or os.path.expanduser("~"), "magneticplayer")
+    MPV_SOCKET = r"\\.\pipe\magneticplayer-mpv"
+else:
+    RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/magneticplayer-{os.getuid()}"
+    MPV_SOCKET = os.path.join(RUNTIME_DIR, "magneticplayer-mpv.sock")
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}
 AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 
@@ -443,17 +448,28 @@ def wake_screen(unlock=None):
     return platform.wake_screen(AUTO_UNLOCK if unlock is None else unlock)
 
 
+def socket_exists():
+    """Czy mpv założył gniazdo IPC. Na Windows przez listę potoków: os.path.exists na potoku łączy się z nim
+    i bywa False, gdy wszystkie instancje są zajęte."""
+    if WINDOWS:
+        return os.path.basename(MPV_SOCKET) in os.listdir("\\\\.\\pipe\\")
+    return os.path.exists(MPV_SOCKET)
+
+
 class Mpv:
     def __init__(self, cfg):
         self.args = cfg.get("mpv_args", [])
         self.proc = None
         self.lock = threading.Lock()
         self.req = 0
+        self.pipe, self.pipe_buf, self.pipe_lock = None, b"", threading.Lock()  # Windows (_cmd_pipe)
 
     def running(self):
         if self.proc is not None:
             return self.proc.poll() is None
         # mpv sprzed restartu agenta (żyje w osobnym zakresie systemd): działa, jeśli odpowiada jego gniazdo
+        if WINDOWS:  # os.path.exists na potoku bywa False, gdy wszystkie jego instancje są zajęte
+            return self.pipe is not None or socket_exists()
         s = socket.socket(socket.AF_UNIX)
         s.settimeout(0.3)
         try:
@@ -470,6 +486,8 @@ class Mpv:
         with self.lock:
             self.req += 1
             rid = self.req
+        if WINDOWS:
+            return self._cmd_pipe(command, rid, timeout)
         s = socket.socket(socket.AF_UNIX)
         s.settimeout(timeout)
         try:
@@ -493,6 +511,71 @@ class Mpv:
         finally:
             s.close()
 
+    @staticmethod
+    def _answer(buf, rid):
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            msg = json.loads(line)
+            if msg.get("request_id") == rid:
+                if msg.get("error") not in ("success", None):
+                    raise ApiError(f"mpv: {msg['error']}", 400)
+                return True, msg.get("data"), buf
+        return False, None, buf
+
+    def _cmd_pipe(self, command, rid, timeout):
+        """Windows: named pipe mpv. Jedno trwałe połączenie: mpv zakłada nowe nawet 3 s, a Pilot pyta 4×/s.
+        Odczyt z potoku nie ma limitu czasu, więc idzie w wątku; po błędzie albo braku odpowiedzi łączymy od nowa."""
+        out = {}
+
+        def talk():
+            try:
+                with self.pipe_lock:
+                    if self.pipe is None:
+                        self.pipe = open(MPV_SOCKET, "r+b", buffering=0)
+                    f = out["f"] = self.pipe
+                    f.write(json.dumps({"command": list(command), "request_id": rid}).encode() + b"\n")
+                    if command[0] == "quit":  # mpv nie zamknie się, dopóki klient trzyma potok: rozłączamy od razu
+                        self._drop_pipe()
+                        return
+                    buf = self.pipe_buf
+                    while True:
+                        done, data, buf = self._answer(buf, rid)
+                        if done:
+                            if self.pipe is f:
+                                self.pipe_buf = buf
+                            out["data"] = data
+                            return
+                        chunk = f.read(65536)
+                        if not chunk:
+                            raise OSError("mpv zamknął połączenie")
+                        buf += chunk
+            except ApiError as e:
+                out["err"] = e
+            except OSError as e:
+                with self.pipe_lock:
+                    if self.pipe is out.get("f"):  # po timeoucie to już może być nowe połączenie
+                        self._drop_pipe()
+                out["err"] = ApiError(f"mpv IPC: {e}", 502)
+
+        t = threading.Thread(target=talk, daemon=True)
+        t.start()
+        t.join(timeout)
+        if t.is_alive():
+            # nie zamykamy z tego wątku (CloseHandle przy trwającym odczycie potrafi wisieć): odpinamy, wątek sam skończy
+            self.pipe, self.pipe_buf = None, b""
+            raise ApiError("mpv IPC: brak odpowiedzi", 502)
+        if "err" in out:
+            raise out["err"]
+        return out.get("data")
+
+    def _drop_pipe(self):
+        f, self.pipe, self.pipe_buf = self.pipe, None, b""
+        if f is not None:
+            try:
+                f.close()
+            except OSError:
+                pass
+
     def prop(self, name, default=None):
         try:
             return self.cmd("get_property", name)
@@ -502,11 +585,22 @@ class Mpv:
     def open(self, path, title=None, subs=(), start=None):
         """Plik lokalny albo URL (film z innego serwera, z biletem). `subs`: URL-e napisów, pierwsze wybrane."""
         wake_screen()
+        started = False
         if self.running():
-            self.cmd("set_property", "force-media-title", title or "")
-            self.cmd("loadfile", path, "replace")
-            self.cmd("set_property", "pause", False)
-        else:
+            try:
+                self.cmd("set_property", "force-media-title", title or "")
+                self.cmd("loadfile", path, "replace")
+                self.cmd("set_property", "pause", False)
+                started = True
+            except ApiError:
+                # mpv właśnie się zamyka („Stop” chwilę wcześniej): czekamy, aż zniknie, i startujemy nowy
+                for _ in range(50):
+                    if not self.running():
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise
+        if not started:
             self._start(path, title)
         if subs or start:
             self._after_load(path, subs, start)
@@ -528,22 +622,29 @@ class Mpv:
             self.cmd("seek", float(start), "absolute")
 
     def _start(self, path, title):
-        if not shutil.which("mpv"):
+        mpv = platform.mpv_path()
+        if not mpv:
             raise ApiError("brak mpv na komputerze (sudo apt install mpv)", 500)
-        try:
-            os.unlink(MPV_SOCKET)
-        except FileNotFoundError:
-            pass
-        argv = ["mpv", f"--input-ipc-server={MPV_SOCKET}", "--force-window=yes", "--idle=once",
+        if WINDOWS:
+            with self.pipe_lock:
+                self._drop_pipe()  # stare połączenie należy do poprzedniego mpv
+        else:
+            try:
+                os.unlink(MPV_SOCKET)
+            except FileNotFoundError:
+                pass
+        argv = [mpv, f"--input-ipc-server={MPV_SOCKET}", "--force-window=yes", "--idle=once",
                 "--keep-open=yes", *self.args, *([f"--force-media-title={title}"] if title else []), path]
         # osobny zakres systemd: restart/aktualizacja agenta nie zamyka filmu (inaczej systemd zabija całą usługę)
         if shutil.which("systemd-run") and os.environ.get("XDG_RUNTIME_DIR"):
             argv = ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--unit", f"magneticplayer-mpv-{os.getpid()}-{int(time.time())}", *argv]
         log("start:", " ".join(re.sub(r"(ticket|token)=[^&\s]+", r"\1=…", a) for a in argv))
+        extra = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB}
+                 if WINDOWS else {"start_new_session": True})
         self.proc = subprocess.Popen(argv, env=graphical_env(), stdin=subprocess.DEVNULL,
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **extra)
         for _ in range(50):
-            if os.path.exists(MPV_SOCKET):
+            if socket_exists():
                 return
             if not self.running():
                 raise ApiError("mpv nie wystartował (czy jest sesja graficzna?)", 500)
@@ -713,6 +814,8 @@ class App:
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
         threading.Thread(target=mp_media.detect_encoder, daemon=True).start()
+        # import subliminal trwa (na świeżym Windows ~30 s): w tle, żeby pierwsze /api/info (parowanie) nie czekało
+        threading.Thread(target=self.subs_available, daemon=True).start()
 
     def name(self):
         return self.cfg.get("name") or socket.gethostname()
@@ -732,7 +835,12 @@ class App:
         """Czy wolno tu odtwarzać: config "player" (domyślnie tak) + mpv i sesja graficzna."""
         return bool(self.cfg.get("player", True)) and platform.has_display()
 
-    def subs_available(self):
+    def subs_available(self, wait=True):
+        if self._subs_ok is None and not wait:  # import jeszcze trwa: wystarczy, że pakiet jest
+            import importlib.util
+            from mp_subs import add_venv_path
+            add_venv_path()
+            return importlib.util.find_spec("subliminal") is not None
         if self._subs_ok is None:
             try:
                 from mp_subs import _subliminal
@@ -766,7 +874,7 @@ class App:
                 "torrent": self.cfg["backend"] if has_torrent else None,
                 "library": library,
                 "player": self.is_screen(),
-                "subs_search": self.subs_available(),
+                "subs_search": self.subs_available(wait=False),
                 "unlock": AUTO_UNLOCK and platform.can_unlock(),
                 "apk": apk_version().get("version_code", 0) > 0,
                 "wake_others": True,
@@ -979,7 +1087,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_static(os.path.join(WEB_DIR, "index.html"), "text/html; charset=utf-8", method == "HEAD")
             a = self.app
             # instalacja na nowym komputerze: bez tokenu, ale z ważnym kodem dołączenia (mp_install.py)
-            if (m := re.fullmatch(r"/i/([A-Za-z0-9-]{4,12})(/bundle\.tar\.gz)?", p)) and method == "GET":
+            if (m := re.fullmatch(r"/i/([A-Za-z0-9-]{4,12})(/bundle\.tar\.gz|/ps)?", p)) and method == "GET":
+                if m.group(2) == "/ps":
+                    return self.send_bytes(a.installs.script_ps(m.group(1), self.base_url()).encode(), "text/plain; charset=utf-8")
                 if m.group(2):
                     return self.send_bytes(a.installs.bundle(m.group(1)), "application/gzip")
                 full = (q.get("full") or ["0"])[0] not in ("0", "")
@@ -1021,7 +1131,8 @@ class Handler(BaseHTTPRequestHandler):
                 url = f"{self.base_url()}/i/{code}"
                 return self.send_json({"code": code, "expires_in": ttl, "url": url,
                                        "command": f"curl -fsSL {url} | bash",
-                                       "command_full": f"curl -fsSL '{url}?full=1' | bash"})
+                                       "command_full": f"curl -fsSL '{url}?full=1' | bash",
+                                       "command_windows": f"irm {url}/ps | iex"})
             if p == "/api/install/status" and method == "GET":
                 return self.send_json(a.installs.status(qd0.get("code"), self.device))
             if p == "/api/devices" and method == "GET":
@@ -1415,6 +1526,14 @@ class Handler(BaseHTTPRequestHandler):
 
 class QuietServer(ThreadingHTTPServer):
     daemon_threads = True
+    # Windows: SO_REUSEADDR pozwala zająć port, na którym ktoś już słucha (np. na 127.0.0.1), i lokalne zapytania
+    # trafiają wtedy do niego; tam port musi być wyłącznie nasz
+    allow_reuse_address = not WINDOWS
+
+    def server_bind(self):
+        if WINDOWS:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def handle_error(self, request, client_address):
         if isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError, TimeoutError)):
@@ -1485,6 +1604,10 @@ def cli_join(cfg, devices, url):
 
 
 def main():
+    if sys.stderr is None or sys.stdout is None:  # pythonw na Windows (autostart): bez konsoli, log do pliku
+        f = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.log"), "a", encoding="utf-8", buffering=1)
+        sys.stderr = sys.stderr or f
+        sys.stdout = sys.stdout or f
     cfg = load_config()
     if "--print-token" in sys.argv:
         print(cfg["token"])
