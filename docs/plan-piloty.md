@@ -56,7 +56,13 @@ przestaje go śledzić.
 - Bez sekretów w pakiecie: tokenu nie ma, sterowanie DLNA i Chromecastem w LAN i tak nie wymaga logowania.
 - Android: uprawnienie `CHANGE_WIFI_MULTICAST_STATE` i `WifiManager.MulticastLock` na czas słuchania.
 
-## 3. Osobne powiadomienie na każdy grający ekran (A)
+## 3. Osobne powiadomienie na każdy grający ekran (A) — zrobione
+
+Sprawdzone 17.11.2026: mpv na jmpc i Chromecast „Duży pokój” naraz dały dwa powiadomienia (2001, 2003), oba
+zniknęły same ~10 s po zatrzymaniu. Android 17 nie pokazuje osobnej karty dla naszego Chromecasta, tylko systemową
+kartę Cast tego urządzenia (z tytułem „Default Media Receiver”); na każdy cel i tak jest jedna karta. Sesje mają id
+według rodzaju (`remote-screen`, `remote-dlna`, `remote-cast`), nie urządzenia: dwa telewizory DLNA naraz to rzadkość.
+
 
 - `RemoteSessionService` trzyma osobną `MediaSession` na każdy grający cel (`id` = rodzaj i urządzenie).
   Sesja powstaje, gdy cel zaczyna grać (ze stanu Pilota albo z rozgłoszenia), i znika po ~10 s ciszy.

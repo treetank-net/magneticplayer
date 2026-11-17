@@ -12,6 +12,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
@@ -23,14 +24,15 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Zdalny odtwarzacz ([Remote]: mpv na ekranie albo telewizor DLNA) jako „odtwarzacz” dla systemu: powiadomienie
+ * Jeden zdalny cel (`kind`: mpv na ekranie, telewizor DLNA albo Chromecast) jako „odtwarzacz” dla systemu: powiadomienie
  * z przyciskami i suwakiem (panel u góry, ekran blokady) i głośność urządzenia przyciskami telefonu także poza apką
- * (sesja zdalna, DeviceInfo REMOTE). Sam nic nie odtwarza, stan czyta co ~1,5 s.
- * Chromecast puszczony z tego telefonu ma powiadomienie z Cast SDK; ten widziany tylko przez agenta (strona, YouTube)
- * dostaje je stąd, gdy wybierze się go na Pilocie.
+ * (sesja zdalna, DeviceInfo REMOTE). Sam nic nie odtwarza, stan czyta co ~1,5 s. Każdy grający cel ma własną sesję
+ * i własne powiadomienie ([RemoteSessionService]).
+ * Chromecast puszczony z tego telefonu przez Cast SDK ma powiadomienie z SDK; ten sterowany bezpośrednio albo przez
+ * agenta (strona, inny telefon, YouTube) dostaje je stąd.
  */
 @OptIn(UnstableApi::class)
-class RemotePlayer(private val ctx: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
+class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlayer(Looper.getMainLooper()) {
     private val scope = MainScope()
     @Volatile private var remote: Remote? = null
     @Volatile private var st: RemoteState? = null
@@ -65,12 +67,11 @@ class RemotePlayer(private val ctx: Context) : SimpleBasePlayer(Looper.getMainLo
         Announce.send(msg)
     }
 
-    /** DLNA, gdy coś na nie wysłaliśmy; inaczej ekran z mpv (chyba że Pilot steruje Chromecastem). */
-    private fun pick(): Remote? = when {
-        Dlna.current != null -> DlnaRemote(ctx)
-        // Chromecast z Cast SDK ma własne powiadomienie; widziany tylko przez agenta dostaje nasze
-        Pilot.focus.value == "cast" -> if (Cast.session(ctx) == null) Pilot.remote(ctx, "cast") else null
-        else -> Pilot.remote(ctx, "screen")
+    private fun pick(): Remote? = when (kind) {
+        "dlna" -> if (Dlna.current != null) DlnaRemote(ctx) else null
+        // Chromecast z Cast SDK ma własne powiadomienie
+        "cast" -> if (Cast.session(ctx) == null) Pilot.remote(ctx, "cast") else null
+        else -> Pilot.remote(ctx, kind)
     }
 
     private val remoteDevice = DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMinVolume(0).setMaxVolume(100).build()
@@ -138,37 +139,65 @@ class RemotePlayer(private val ctx: Context) : SimpleBasePlayer(Looper.getMainLo
     }
 }
 
-/** Trzyma sesję, dopóki coś gra na ekranie albo telewizorze; media3 sama robi z niej usługę z powiadomieniem. */
+/**
+ * Sesja (i powiadomienie) dla każdego celu, który gra: ekran, telewizor, Chromecast, także kilka naraz. Cel znika
+ * po ~10 s ciszy, usługa kończy się razem z ostatnim. media3 sama robi z sesji usługę z powiadomieniami.
+ */
 @OptIn(UnstableApi::class)
 class RemoteSessionService : MediaSessionService() {
-    private var session: MediaSession? = null
+    private val sessions = linkedMapOf<String, MediaSession>()
     private val main = Handler(Looper.getMainLooper())
     private val watch = object : Runnable {
         override fun run() {
-            // ~10 s bez niczego grającego: koniec (mpv zamknięte, telewizor zatrzymany przez Zakończ)
-            if (((session?.player as? RemotePlayer)?.idlePolls ?: 99) >= 7) {
-                if (Dlna.last?.state in Dlna.IDLE_STATES) Dlna.forget()  // telewizor już nic nie gra: przestajemy go śledzić
-                stopSelf(); return
+            // ~10 s bez niczego grającego: koniec tego celu (mpv zamknięte, telewizor zatrzymany przez Zakończ)
+            for ((kind, s) in sessions.toList()) {
+                if ((s.player as RemotePlayer).idlePolls < 7) continue
+                // telewizor już nic nie gra: przestajemy go śledzić
+                if (kind == "dlna" && Dlna.last?.state in Dlna.IDLE_STATES) Dlna.forget()
+                drop(kind)
             }
+            if (sessions.isEmpty()) { stopSelf(); return }
             main.postDelayed(this, 3000)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
-        val open = android.app.PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            android.app.PendingIntent.FLAG_IMMUTABLE)
-        session = MediaSession.Builder(this, RemotePlayer(this)).setId("remote").setSessionActivity(open).build()
-            // bez tego media3 pokaże powiadomienie dopiero, gdy podłączy się jakiś kontroler (np. System UI)
-            .also { addSession(it) }
+        // osobne id na cel (domyślne 1001 ma też odtwarzacz w telefonie): powiadomienia się nie nadpisują
+        setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this)
+            .setNotificationIdProvider { s -> 2001 + KINDS.indexOf(s.id.removePrefix("remote-")).coerceAtLeast(0) }
+            .build())
         main.postDelayed(watch, 3000)
         stopListen = Announce.listen(this)  // odpowiada na „who” innych pilotów, póki coś gra
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra(EXTRA_KIND)?.takeIf { it in KINDS }?.let { add(it) }
+        if (sessions.isEmpty()) add("screen")  // stary start bez rodzaju (np. przycisk multimedialny)
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun add(kind: String) {
+        if (kind in sessions) return
+        val open = android.app.PendingIntent.getActivity(this, KINDS.indexOf(kind),
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            android.app.PendingIntent.FLAG_IMMUTABLE)
+        sessions[kind] = MediaSession.Builder(this, RemotePlayer(this, kind)).setId("remote-$kind").setSessionActivity(open).build()
+            // bez tego media3 pokaże powiadomienie dopiero, gdy podłączy się jakiś kontroler (np. System UI)
+            .also { addSession(it) }
+    }
+
+    private fun drop(kind: String) {
+        val s = sessions.remove(kind) ?: return
+        removeSession(s)
+        s.player.release(); s.release()
+    }
+
     private var stopListen: (() -> Unit)? = null
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
+    // kontrolery z zewnątrz (zegarek, Android Auto) dostają cel, który Pilot pokazuje
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) =
+        sessions[Pilot.focus.value] ?: sessions.values.firstOrNull()
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // apka zamknięta z listy: film na ekranie/telewizorze gra dalej, więc powiadomienie zostaje
@@ -177,14 +206,17 @@ class RemoteSessionService : MediaSessionService() {
     override fun onDestroy() {
         main.removeCallbacks(watch)
         stopListen?.invoke()
-        session?.run { player.release(); release() }
-        session = null
+        sessions.keys.toList().forEach { drop(it) }
         super.onDestroy()
     }
 
     companion object {
-        fun start(ctx: Context) {
-            runCatching { ctx.startService(Intent(ctx, RemoteSessionService::class.java)) }
+        private const val EXTRA_KIND = "kind"
+        private val KINDS = listOf("screen", "dlna", "cast")
+
+        /** Powiadomienie dla celu `kind` ("screen" | "dlna" | "cast"), dopóki coś na nim gra. */
+        fun start(ctx: Context, kind: String) {
+            runCatching { ctx.startService(Intent(ctx, RemoteSessionService::class.java).putExtra(EXTRA_KIND, kind)) }
         }
     }
 }

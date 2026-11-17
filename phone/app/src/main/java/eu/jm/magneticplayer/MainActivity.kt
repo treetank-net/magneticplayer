@@ -146,7 +146,7 @@ class MainActivity : ComponentActivity() {
         // bufor na dysku: obejrzane i stare filmy, także po ubiciu apki w trakcie oglądania
         Thread { MediaCache.sweep(this) }.start()
         // telewizor DLNA, który grał przed ubiciem apki: Pilot i powiadomienie wracają
-        lifecycleScope.launch(Dispatchers.IO) { if (Dlna.restore(this@MainActivity)) RemoteSessionService.start(applicationContext) }
+        lifecycleScope.launch(Dispatchers.IO) { if (Dlna.restore(this@MainActivity)) RemoteSessionService.start(applicationContext, "dlna") }
         handleIntent(intent)
         setContent { AppTheme { MainScreen(tab, settingsVersion) } }
     }
@@ -719,7 +719,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
                 val remote = remember { Pilot.remote(ctx, target) }
                 if (remote is AgentCastRemote || remote is DirectCastRemote || remote is DlnaRemote) LaunchedEffect(Unit) {
                     Pilot.focus.value = target  // powiadomienie ma pokazać ten cel (też przejęty od innego pilota)
-                    RemoteSessionService.start(ctx.applicationContext)
+                    RemoteSessionService.start(ctx.applicationContext, target)
                 }
                 if (remote != null) RemoteView(remote, snack, onGone = {
                     if (target == "cast") Pilot.agentCast.value = null
@@ -768,7 +768,7 @@ private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) ->
             }
         }
         running == true -> {
-            LaunchedEffect(Unit) { RemoteSessionService.start(ctx.applicationContext) }  // powiadomienie i głośność poza apką
+            LaunchedEffect(Unit) { RemoteSessionService.start(ctx.applicationContext, "screen") }  // powiadomienie i głośność poza apką
             RemoteView(remote, snack, onGone = { running = false }) { s -> MpvExtras(api, remote, s, snack) }
         }
     }

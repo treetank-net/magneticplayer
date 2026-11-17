@@ -82,10 +82,12 @@ Plan i decyzje: [plan-wiele-serwerow.md](plan-wiele-serwerow.md), makiety: `ux-w
     (tuż po starcie Samsung potrafi Seek zignorować). Log `MpDlna`.
   - Chromecast z apki (Cast SDK w telefonie) i ze strony (pychromecast w agencie) to osobni nadawcy: Pilot w apce
     nie widzi filmu puszczonego ze strony i odwrotnie.
-- **Powiadomienie i głośność poza apką** (`RemoteSession.kt`): mpv i DLNA mają sesję media3 (`RemotePlayer` na
-  `SimpleBasePlayer`, DeviceInfo REMOTE 0–100) w `RemoteSessionService`. Sesja jest dodana do usługi od razu
-  (`addSession`), bo bez tego powiadomienie pojawia się dopiero po podłączeniu kontrolera. Usługa kończy się po ~10 s
-  bez niczego grającego. Chromecast ma to samo z Cast SDK.
+- **Powiadomienie i głośność poza apką** (`RemoteSession.kt`): każdy grający cel (ekran z mpv, telewizor DLNA,
+  Chromecast sterowany bez Cast SDK) ma własną sesję media3 (`RemotePlayer(kind)` na `SimpleBasePlayer`, DeviceInfo
+  REMOTE 0–100) i własne powiadomienie (id 2001/2002/2003; 1001 ma odtwarzacz w telefonie) w `RemoteSessionService`.
+  `RemoteSessionService.start(ctx, kind)` dodaje sesję od razu (`addSession`), bo bez tego powiadomienie pojawia się
+  dopiero po podłączeniu kontrolera. Sesja znika po ~10 s ciszy, usługa razem z ostatnią. Chromecast z Cast SDK ma
+  powiadomienie z SDK. Android 17 i tak pokazuje jedną kartę na Chromecasta: naszą scala z systemową kartą Cast.
 - **Chromecast z przeglądarki**: klient webowy nie ma Cast SDK (wymaga HTTPS), więc steruje agent (`mp_cast.py`,
   pychromecast w venv), a film idzie z agenta pod adresem LAN. Agent słucha wszystkich Chromecastów, więc Pilot
   w apce (bez własnej sesji Cast) i strona widzą też to, co puścił ktoś inny.
@@ -210,7 +212,7 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 | `Announce.kt` | rozgłaszanie „co gra” (multicast, `MulticastLock`): telefon ogłasza telewizor DLNA, na którym puścił film, i słucha innych (Pilot przejmuje cudzy telewizor przez `Dlna.adopt`) |
 | `CastNet.kt` | Chromecasty z telefonu bez agenta i bez Cast SDK: wykrywanie mDNS (NsdManager, gdy Pilot jest na ekranie) i własny klient protokołu Cast v2 (TLS :8009, ręczny protobuf): stan dowolnego nadawcy, pauza, przewijanie, głośność, zamknięcie |
 | `Remote.kt` | wspólny „zdalny odtwarzacz” (mpv, Chromecast, DLNA) i wybór celu Pilota (`Pilot`) |
-| `RemoteSession.kt` | sesja media3 dla mpv i DLNA: powiadomienie, ekran blokady, głośność przyciskami poza apką |
+| `RemoteSession.kt` | sesje media3 dla każdego grającego celu (mpv, DLNA, Chromecast bez SDK): powiadomienia, ekran blokady, głośność przyciskami poza apką |
 | `Cast.kt`, `Dlna.kt` | Chromecast (Cast SDK, MediaRouter) i telewizory DLNA (SSDP, SOAP) |
 | `PhoneShare.kt` | telefon jako serwer plików dla ekranu, Chromecasta i DLNA |
 | `LibraryTab.kt` | biblioteka i wybór katalogu na komputerze |

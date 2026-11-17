@@ -226,9 +226,12 @@ object Pilot {
     /** Nazwa Chromecasta do chipa: z sesji Cast SDK albo od agenta. */
     fun castName(ctx: Context): String = Cast.deviceName(ctx) ?: CastNet.playing().firstOrNull()?.device?.name ?: agentCast.value?.second?.optString("device")?.takeIf { it.isNotBlank() } ?: "Chromecast"
 
-    /** Wysłano film na `kind`: Pilot pokazuje ten cel, a mpv i DLNA dostają powiadomienie (Chromecast ma swoje z Cast SDK). */
+    /**
+     * Wysłano film na `kind`: Pilot pokazuje ten cel, a cel dostaje powiadomienie (Chromecast z Cast SDK ma swoje
+     * i wtedy nasze samo znika).
+     */
     fun started(ctx: Context, kind: String) {
         focus.value = kind
-        if (kind != "cast") RemoteSessionService.start(ctx.applicationContext)
+        RemoteSessionService.start(ctx.applicationContext, kind)
     }
 }
