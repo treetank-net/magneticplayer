@@ -18,7 +18,7 @@ Odpowiadaj po polsku.
 | PC z agentem | `ssh jmpc` (Linux Mint 21, Cinnamon 5.4, 192.168.100.100), użytkownik `jm`, sesja graficzna `c1` (X11) |
 | agent na PC | `~/.local/share/magneticplayer/` (`*.py`, `web/`, `apk/`, `venv/`), usługa `systemctl --user … magneticplayer`, port 8765 |
 | kopia źródeł na PC | `~/.local/src/MagneticPlayer/server` (z niej działa `install.sh`) |
-| konfiguracja i token | `jmpc:~/.config/magneticplayer/config.json`. **Tokenu nie wypisuj ani nie wklejaj nigdzie** |
+| konfiguracja i token | `jmpc:~/.config/magneticplayer/config.json`; token do testów z terminala: `cli-token` obok (urządzenie „Testy z terminala (jmpc)”; stary wspólny token z `config.json` jest wyłączony). **Tokenów nie wypisuj ani nie wklejaj nigdzie** |
 | repo | **publiczne** (MIT): `origin` = gitlab.com/treetank/magneticplayer, CI lustruje na github.com/treetank-net/magneticplayer; `ovh` = `ovh-vps:git/MagneticPlayer.git` (prywatna kopia). Prywatne notatki w `CLAUDE.local.md` (poza gitem) |
 | kopia klucza podpisu | `ovh-vps:~/backup/MagneticPlayer/` (+ `README.txt`) |
 | telefony | Pixel 8a użytkownika (adb po Wi-Fi, port zmienia się co sesję debugowania) i telefon żony (tylko aktualizacje przez agenta) |
@@ -43,8 +43,7 @@ phone/tools/publish.sh --release latest
 Testy API na PC, bez wyciągania tokenu na zewnątrz:
 
 ```bash
-ssh jmpc 'T=$(python3 -c "import json;print(json.load(open(\".config/magneticplayer/config.json\"))[\"token\"])");
-  curl -s -H "Authorization: Bearer $T" localhost:8765/api/player/status'
+ssh jmpc 'T=$(cat .config/magneticplayer/cli-token); curl -s -H "Authorization: Bearer $T" localhost:8765/api/player/status'
 ```
 
 Polecenia w sesji graficznej przez ssh wymagają `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0`.
