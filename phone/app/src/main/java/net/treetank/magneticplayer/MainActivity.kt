@@ -703,10 +703,19 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
         }
     }
     val focus = Pilot.focus.value
-    // bezczynne Chromecasty w sieci (wykryte z telefonu): pigułka „idle:<id>” z podpowiedzią, skąd coś na nie wysłać
-    val idleCasts = if ("cast" in avail) emptyList() else CastNet.devices.values.sortedBy { it.name }
-    val target = focus?.takeIf { it in avail || (it.startsWith("idle:") && idleCasts.any { d -> "idle:" + d.id == it }) }
-        ?: avail.firstOrNull()
+    // telewizory DLNA w sieci (SSDP z telefonu; wyłączony telewizor nie odpowiada): co 30 s, póki Pilot jest na ekranie
+    var tvs by remember { mutableStateOf<List<DlnaTarget>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            tvs = withContext(Dispatchers.IO) { runCatching { Dlna.discover() }.getOrDefault(emptyList()) }
+            delay(30_000)
+        }
+    }
+    // bezczynne Chromecasty i telewizory (wykryte z telefonu): pigułka „idle:<id>” z podpowiedzią, skąd coś na nie wysłać
+    val idle: List<Triple<String, String, Boolean>> =  // klucz, nazwa, czy telewizor DLNA
+        (if ("cast" in avail) emptyList() else CastNet.devices.values.sortedBy { it.name }.map { Triple("idle:" + it.id, it.name, false) }) +
+        (if ("dlna" in avail) emptyList() else tvs.sortedBy { it.name }.map { Triple("idle:" + it.id, it.name, true) })
+    val target = focus?.takeIf { it in avail || idle.any { d -> d.first == it } } ?: avail.firstOrNull()
     val screens = remember { Servers.screens(ctx) }
     var menu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -723,9 +732,9 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             }
             if ("cast" in avail) FilterChip(target == "cast", { Pilot.focus.value = "cast" },
                 { Text(Pilot.castName(ctx)) }, leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
-            idleCasts.forEach { d ->
-                FilterChip(target == "idle:" + d.id, { Pilot.focus.value = "idle:" + d.id }, { Text(d.name) },
-                    leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
+            idle.forEach { (k, name, tv) ->
+                FilterChip(target == k, { Pilot.focus.value = k }, { Text(name) },
+                    leadingIcon = { Icon(if (tv) Icons.Filled.Tv else Icons.Filled.Cast, null, Modifier.size(18.dp)) })
             }
             if ("dlna" in avail) FilterChip(target == "dlna", { Pilot.focus.value = "dlna" },
                 { Text(Dlna.current?.name ?: Announce.foreignDlna()?.targetName ?: stringResource(R.string.main_tv)) }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
@@ -745,7 +754,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             }
             "screen" -> if (screenApi != null) key(screenApi.srv.key) { ScreenRemote(screenApi, snack, onWake) }
             else -> if (target?.startsWith("idle:") == true)
-                Hint(stringResource(R.string.main_cast_idle, idleCasts.firstOrNull { "idle:" + it.id == target }?.name ?: ""))
+                Hint(stringResource(R.string.main_cast_idle, idle.firstOrNull { it.first == target }?.second ?: ""))
             else Hint(stringResource(R.string.main_no_screen))
         }
     }
