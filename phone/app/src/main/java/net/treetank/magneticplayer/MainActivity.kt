@@ -679,7 +679,7 @@ private fun WatchableInfo(f: TFile) {
 // ---------------------------------------------------------------- Pilot
 
 /**
- * Pilot: na górze cele (ekrany z mpv, Chromecast i telewizor DLNA, gdy coś na nie wysłaliśmy), pod spodem ten sam
+ * Pilot: na górze cele (ekrany z mpv, Chromecast i telewizor DLNA, gdy coś na nie wysłaliśmy; bezczynne Chromecasty z podpowiedzią), pod spodem ten sam
  * układ przycisków dla każdego. Czego cel nie umie (ścieżki w DLNA, głośność Chromecasta ze stałą głośnością), tego nie ma.
  */
 @Composable
@@ -703,7 +703,10 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
         }
     }
     val focus = Pilot.focus.value
-    val target = focus?.takeIf { it in avail } ?: avail.firstOrNull()
+    // bezczynne Chromecasty w sieci (wykryte z telefonu): pigułka „idle:<id>” z podpowiedzią, skąd coś na nie wysłać
+    val idleCasts = if ("cast" in avail) emptyList() else CastNet.devices.values.sortedBy { it.name }
+    val target = focus?.takeIf { it in avail || (it.startsWith("idle:") && idleCasts.any { d -> "idle:" + d.id == it }) }
+        ?: avail.firstOrNull()
     val screens = remember { Servers.screens(ctx) }
     var menu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -720,6 +723,10 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             }
             if ("cast" in avail) FilterChip(target == "cast", { Pilot.focus.value = "cast" },
                 { Text(Pilot.castName(ctx)) }, leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
+            idleCasts.forEach { d ->
+                FilterChip(target == "idle:" + d.id, { Pilot.focus.value = "idle:" + d.id }, { Text(d.name) },
+                    leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
+            }
             if ("dlna" in avail) FilterChip(target == "dlna", { Pilot.focus.value = "dlna" },
                 { Text(Dlna.current?.name ?: Announce.foreignDlna()?.targetName ?: stringResource(R.string.main_tv)) }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
         }
@@ -737,7 +744,9 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
                 })
             }
             "screen" -> if (screenApi != null) key(screenApi.srv.key) { ScreenRemote(screenApi, snack, onWake) }
-            else -> Hint(stringResource(R.string.main_no_screen))
+            else -> if (target?.startsWith("idle:") == true)
+                Hint(stringResource(R.string.main_cast_idle, idleCasts.firstOrNull { "idle:" + it.id == target }?.name ?: ""))
+            else Hint(stringResource(R.string.main_no_screen))
         }
     }
 }

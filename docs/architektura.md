@@ -80,7 +80,8 @@ Plan i decyzje: [plan-wiele-serwerow.md](plan-wiele-serwerow.md), makiety: `ux-w
     w TRANSITIONING.
 - **Pilot** (`Remote.kt`, `MainActivity.PilotTab`): jedna warstwa `Remote` z trzema wariantami (`MpvRemote`,
   `CastRemote`, `DlnaRemote`) i jeden układ przycisków. Na górze żetony celów: ekran (▾ wybiera inny), Chromecast
-  i telewizor, gdy coś na nich gra. Wysłanie filmu przełącza Pilota na ten cel (`Pilot.started`). Czego cel nie umie,
+  i telewizor, gdy coś na nich gra. Bezczynne Chromecasty wykryte z telefonu też mają żeton, z podpowiedzią, że film
+  wysyła się z Biblioteki („Na ekran”). Wysłanie filmu przełącza Pilota na ten cel (`Pilot.started`). Czego cel nie umie,
   tego nie widać: ścieżki, napisy i pełny ekran są tylko dla mpv, a głośność nie pojawia się przy stałej głośności.
   Przyciski głośności telefonu sterują celem Pilota (mpv tylko na zakładce Pilot). Gdy coś gra, Pilot nie wygasza
   ekranu (ustawienie „Pilot nie wygasza ekranu”, domyślnie włączone).
