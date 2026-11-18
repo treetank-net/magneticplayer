@@ -119,4 +119,8 @@ Win11 w VirtualBox: protokół `~/.cache/winvm/LOCK` (wspólny z timeprotect), p
     przycisk „Sprawdź budzenie” usunięty jako zbędny);
   - Pilot odświeża się 4×/s, więc `uiautomator dump` często nie działa („could not get idle state”): przy testach zrzuty ekranu.
 
+- **Do sprawdzenia: „jmpc śpi”, choć działa.** Zdarza się, że przy długim odpytywaniu dysków (biblioteka, skan) telefon
+  pokazuje, że jmpc śpi. Podejrzenie: `Api.ping` ma 1,5 s timeoutu, a `/api/ping` w agencie czeka za wolnym żądaniem
+  (wątki, GIL, blokujące IO dysku albo budzenie HDD). Sprawdzić czas odpowiedzi `/api/ping` w trakcie skanu, czy ping
+  nie dotyka dysków, i czy apka nie powinna uznawać „śpi” dopiero po kilku nieudanych pingach.
 - Pomysł: zdalny dostęp spoza LAN (Tailscale/WireGuard, opisane w `docs/siec-i-bezpieczenstwo.md`).
