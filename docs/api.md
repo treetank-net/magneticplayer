@@ -183,5 +183,7 @@ Polecenia:
 | `POST /api/subs/job/stop` | `{"id"}`: „Wystarczy”, nie czekaj na wolne źródła i pomiń drugą rundę |
 | `GET /api/subs/job?id=` | postęp: `phase` (`file`/`search`/`match`/`done`), `round` (2 = tytuł z `[nawiasu]`), `query`, `matched`/`total`, `providers` (`state`: `pending`/`running`/`done`/`skip`/`error`, `count`, `error`, `secs`), `elapsed`, `done`, `result` albo `error` |
 | `POST /api/subs/download` | `ref` + `id`, `provider`, `languages` (i te same `title`/`year` co przy szukaniu) → `{"name", "provider"}`. Jeśli film gra w mpv, napisy włączają się od razu |
+| `GET /api/config/app_updates` | `{"mode": "auto"\|"manual", "last_check", "last_error", "published": {"version_code", "version_name"}}`: apka dla telefonów z wydań na GitHubie |
+| `POST /api/config/app_updates` | `{"mode": "auto"\|"manual"}`; po przełączeniu na `auto` sprawdza od razu |
 | `GET /api/config/opensubtitles` | `api_key` (czy ustawiony), `username`, `password` (czy ustawione) |
 | `POST /api/config/opensubtitles` | `{"api_key"?, "username"?, "password"?}`; puste pola nie nadpisują zapisanych |

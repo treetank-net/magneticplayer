@@ -34,6 +34,7 @@ from mp_announce import Announcer
 import mp_upload
 import mp_install
 import mp_access
+import mp_appupdate
 import mp_i18n
 from mp_i18n import T
 
@@ -44,7 +45,7 @@ from mp_jobs import AFTER, Jobs
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 API_LEVEL = 2  # /api/info: id, features, power; tokeny urządzeń, bilety, player/open z url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -818,6 +819,9 @@ class App:
         self.uploads = mp_upload.Uploads(cfg, self.library, log)  # przesyłanie filmów z telefonu
         self.installs = mp_install.Installs(log)  # instalacja na kolejnym komputerze (kod dołączenia)
         self.access = mp_access.AccessRequests(log)  # prośby o dostęp z sieci domowej (mp_access.py)
+        # apka dla telefonów z wydań na GitHubie (mp_appupdate.py); tryb ustawia telefon
+        self.app_updates = mp_appupdate.AppUpdates(cfg, lambda: save_config(cfg), APK_DIR, apk_version, log)
+        self.app_updates.start()
         # wykrywanie Chromecastów od startu: rejestr odbiorników zna model, zanim ktoś otworzy wybór urządzenia
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
@@ -885,6 +889,7 @@ class App:
                 "subs_search": self.subs_available(wait=False),
                 "unlock": AUTO_UNLOCK and platform.can_unlock(),
                 "apk": apk_version().get("version_code", 0) > 0,
+                "app_updates": self.app_updates.mode(),  # "auto" (z GitHuba) albo "manual" (publish.sh)
                 "wake_others": True,
                 # wersja „dla Chromecasta”: nazwa kodera (sprzętowy albo procesor) albo None (brak ffmpeg)
                 "transcode": (mp_media.encoder_info() or {}).get("label"),
@@ -1404,6 +1409,13 @@ class Handler(BaseHTTPRequestHandler):
                     except ApiError:
                         pass
                 return self.send_json(res)
+            if p == "/api/config/app_updates" and method == "GET":
+                return self.send_json(a.app_updates.status())
+            if p == "/api/config/app_updates" and method == "POST":
+                mode = self.body().get("mode")
+                if mode not in mp_appupdate.MODES:
+                    raise ApiError(T("mode must be auto or manual", "tryb to auto albo manual"), 400)
+                return self.send_json(a.app_updates.set_mode(mode))
             if p == "/api/config/opensubtitles" and method == "GET":
                 return self.send_json({"api_key": bool(a.cfg.get("opensubtitles_api_key")),
                                        "username": a.cfg.get("opensubtitles_username", ""),

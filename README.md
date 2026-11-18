@@ -41,7 +41,8 @@ docs/     documentation (in Polish for now)
     watch (for a day, a week or without a limit);
   - an unpaired device on the home network can request access, and a household member's phone gets a notification
     with “Guest (1 day)” / “Household member” / “Decline”;
-  - “Share app” sends the APK via WhatsApp etc.; updates published on the computer are offered by the apps.
+  - “Share app” sends the APK via WhatsApp etc.; the computer downloads new app releases from GitHub
+    (or only what you publish by hand) and the apps offer the update.
 - **Install on another computer** from the app: the phone shows a one-line command (`curl … | bash` on Linux,
   `irm … | iex` in PowerShell on Windows). The agent comes from an existing server or from the phone itself, and the
   new computer pairs with the phone automatically.

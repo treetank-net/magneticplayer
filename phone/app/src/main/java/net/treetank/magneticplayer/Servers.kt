@@ -45,6 +45,8 @@ data class Server(
     val canUnlock get() = features?.optBoolean("unlock", true) ?: true
     val canWakeOthers get() = features?.optBoolean("wake_others", false) ?: false
     val canSuspend get() = power?.optBoolean("suspend", true) ?: true
+    /** Skąd serwer bierze apkę dla telefonów (agent 1.3.1+): "auto" (wydania z GitHuba), "manual" (publish.sh), null. */
+    val appUpdates: String? get() = features?.optString("app_updates")?.ifEmpty { null }
     val canPoweroff get() = power?.optBoolean("poweroff", true) ?: true
     /** koder do wersji „dla Chromecasta” (np. „NVIDIA NVENC”, „procesor (x264)”), null = brak ffmpeg albo stary agent */
     val transcode: String? get() = features?.takeIf { !it.isNull("transcode") }?.optString("transcode")?.ifEmpty { null }

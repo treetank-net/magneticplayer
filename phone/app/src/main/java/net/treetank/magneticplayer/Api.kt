@@ -302,6 +302,7 @@ class Api(val s: Settings, val srv: Server) {
             .put("role", role).put("days", days))
     }
     fun devices(): JSONArray = JSONArray(call("GET", "/api/devices"))
+    fun setAppUpdates(auto: Boolean) { call("POST", "/api/config/app_updates", JSONObject().put("mode", if (auto) "auto" else "manual")) }
     fun revoke(id: String) { call("POST", "/api/devices/revoke", JSONObject().put("id", id)) }
     fun wakeOther(mac: String, host: String) { call("POST", "/api/wake", JSONObject().put("mac", mac).put("ip", host), 4000) }
 

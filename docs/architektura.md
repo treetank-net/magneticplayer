@@ -206,7 +206,13 @@ Opcja w Ustawieniach, domyślnie wyłączona (szczegóły i decyzje: [plan-przes
 - Przycisk „Uśpij” zamyka mpv i woła `systemctl suspend`. Polkit pozwala na to usłudze w tle.
 
 ### Aktualizacje apki
-`publish.sh` kopiuje APK i `version.json` do `~/.local/share/magneticplayer/apk/` (najpierw APK, potem wersję).
+Agent wystawia telefonom apkę z `~/.local/share/magneticplayer/apk/` (`MagneticPlayer.apk` i `version.json`).
+Trafia tam na dwa sposoby, zawsze najpierw APK, potem wersja:
+- **z wydań na GitHubie** (`mp_appupdate.py`, tryb `app_updates: "auto"`, domyślny): minutę po starcie agenta i potem
+  co 6 h agent czyta `releases/latest/download/version.json`. Gdy `version_code` jest wyższy od wystawionego,
+  pobiera APK i sprawdza odcisk certyfikatu z bloku podpisu APK v2/v3 (treetank `05f72b11…`). Podpis sprawdza Android
+  przy instalacji. Nigdy nie cofa wersji. Tryb przełącza telefon w szczegółach serwera („Aktualizacje apki z GitHuba”);
+- **ręcznie** `publish.sh` (w trybie `manual` jedyna droga).
 Apka porównuje wersje i pobiera nowszą prosto do sesji `PackageInstaller`. `UpdateReceiver` uruchamia systemowe
 okno potwierdzenia.
 

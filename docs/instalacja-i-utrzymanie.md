@@ -240,7 +240,9 @@ w repo (`phone/tools/agent-signing.pub`), a `build-apk.sh` kopiuje go do apki. W
 
 ### Aktualizacje dla domowników
 
-Najpierw przetestuj u siebie, potem:
+Agent sam pobiera każde nowe wydanie z GitHuba (do kilku godzin po wydaniu, od razu po restarcie agenta) i proponuje
+je telefonom; szczegóły w [architektura.md](architektura.md#aktualizacje-apki). Żeby publikować tylko ręcznie,
+wyłącz w apce: Ustawienia → serwer → „Aktualizacje apki z GitHuba”. Wtedy, po teście u siebie:
 
 ```bash
 phone/tools/publish.sh          # out/MagneticPlayer.apk + version.json → jmpc:~/.local/share/magneticplayer/apk/

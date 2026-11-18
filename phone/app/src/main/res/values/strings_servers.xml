@@ -95,6 +95,9 @@
     <string name="srv_pair_more">Pair another</string>
     <string name="srv_close">Close</string>
     <string name="srv_test">Test</string>
+    <string name="srv_app_updates">App updates from GitHub</string>
+    <string name="srv_app_updates_auto">The computer downloads new releases itself and offers them to phones</string>
+    <string name="srv_app_updates_manual">Only what is published by hand (publish.sh)</string>
     <string name="srv_disable_legacy_q">Disable the old shared token?</string>
     <string name="srv_revoke_q">Revoke access?</string>
     <string name="srv_disable_legacy_text">Devices that haven\'t been paired again (e.g. an older app version) will lose access to %1$s.</string>

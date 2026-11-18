@@ -21,7 +21,7 @@ Odpowiadaj po polsku.
 | konfiguracja i token | `jmpc:~/.config/magneticplayer/config.json`. **Tokenu nie wypisuj ani nie wklejaj nigdzie** |
 | repo | **publiczne** (MIT): `origin` = gitlab.com/treetank/magneticplayer, CI lustruje na github.com/treetank-net/magneticplayer; `ovh` = `ovh-vps:git/MagneticPlayer.git` (prywatna kopia). Prywatne notatki w `CLAUDE.local.md` (poza gitem) |
 | kopia klucza podpisu | `ovh-vps:~/backup/MagneticPlayer/` (+ `README.txt`) |
-| telefony | Pixel 8a użytkownika (adb po Wi-Fi, port zmienia się co sesję debugowania) i telefon żony (tylko aktualizacje przez `publish.sh`) |
+| telefony | Pixel 8a użytkownika (adb po Wi-Fi, port zmienia się co sesję debugowania) i telefon żony (tylko aktualizacje przez agenta) |
 
 ## Typowa praca
 
@@ -34,7 +34,8 @@ ssh jmpc systemctl --user restart magneticplayer
 ssh jmpc journalctl --user -u magneticplayer -n 50
 
 # apka: telefony mają klucz treetank, więc aktualizacja = wydanie z CI (lokalny build ma klucz deweloperski,
-# do emulatora). Tag → CI buduje i wystawia na GitHubie → publikacja dla wszystkich telefonów:
+# do emulatora). Tag → CI buduje i wystawia na GitHubie → agenci sami je pobierają (mp_appupdate, co 6 h i minutę
+# po restarcie agenta). Od razu, bez czekania (albo przy trybie „manual”):
 phone/tools/tag-release.sh            # po commicie i pushu; CI ~10 min
 phone/tools/publish.sh --release latest
 ```
@@ -76,8 +77,8 @@ Win11 w VirtualBox: protokół `~/.cache/winvm/LOCK` (wspólny z timeprotect), p
 - Sekrety: `phone/magneticplayer.keystore`, `phone/keystore.properties` i token są poza gitem. Hooki blokują dostęp
   do `.keystore` i `~/.ssh`: nie obchodź ich, tylko daj użytkownikowi polecenie (przez schowek, `xclip`).
 - Root na PC: `ssh -t jmpc sudo …` (pkexec przez ssh nie działa). Lokalnie `pkexec`.
-- Żona używa apki: `publish.sh` wypycha aktualizację wszystkim telefonom. Użytkownik zwykle testuje najpierw sam,
-  ale gdy prosi, publikuj od razu.
+- Żona używa apki: każde wydanie (tag) trafia do wszystkich telefonów, bo agenci pobierają je sami. Użytkownik uznał
+  wydania z CI za przetestowane, więc tag tylko z działającym kodem.
 - Nie blokuj ekranu i nie usypiaj PC bez potrzeby, bo ktoś może przy nim siedzieć albo oglądać.
 
 ## Pułapki, na które już się nadziałem

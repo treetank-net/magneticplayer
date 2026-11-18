@@ -55,6 +55,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -532,6 +533,25 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                     else -> stringResource(R.string.srv_wake_untested, s.wakeReason(ctx))
                 }
                 Text(stringResource(R.string.srv_suspend_line, if (s.canSuspend) stringResource(R.string.srv_yes) else stringResource(R.string.srv_no), wake), style = MaterialTheme.typography.bodySmall)
+                s.appUpdates?.takeIf { !s.isGuest }?.let { mode ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.srv_app_updates), style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(if (mode == "auto") R.string.srv_app_updates_auto else R.string.srv_app_updates_manual),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(mode == "auto", { on ->
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) { Api(Settings(ctx), s).run { setAppUpdates(on); info() } }
+                                    server = Servers.get(ctx, key)
+                                } catch (e: ApiException) {
+                                    snack.showSnackbar(e.message ?: ctx.getString(R.string.srv_error))
+                                }
+                            }
+                        })
+                    }
+                }
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_name_in_app)) }, singleLine = true)
                 HorizontalDivider()
                 Text(stringResource(R.string.srv_paired_devices), style = MaterialTheme.typography.titleSmall)

@@ -41,7 +41,8 @@ docs/     dokumentacja
     ogląda (na dzień, tydzień albo bez limitu);
   - niesparowane urządzenie z sieci domowej może poprosić o dostęp, a telefon domownika dostaje powiadomienie
     z „Gość (dzień)” / „Domownik” / „Odrzuć”;
-  - „Wyślij apkę” przez WhatsAppa itp.; aktualizacje publikowane na komputerze apki proponują same.
+  - „Wyślij apkę” przez WhatsAppa itp.; komputer sam pobiera nowe wydania apki z GitHuba (albo tylko
+    to, co opublikujesz ręcznie), a apki proponują aktualizację.
 - **Instalacja na innym komputerze** z apki: telefon pokazuje jednolinijkowe polecenie (`curl … | bash` na Linuksie,
   `irm … | iex` w PowerShellu na Windowsie). Agent pochodzi z istniejącego serwera albo z samego telefonu, a nowy
   komputer sam paruje się z telefonem.
