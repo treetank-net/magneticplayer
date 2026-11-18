@@ -340,7 +340,9 @@ agent errors come back in the same language.
 | `RemoteSession.kt` | media3 sessions for every playing target (mpv, DLNA, Chromecast without the SDK): notifications, lock screen, volume buttons outside the app |
 | `Cast.kt`, `Dlna.kt` | Chromecast (Cast SDK, MediaRouter) and DLNA TVs (SSDP, SOAP) |
 | `PhoneShare.kt` | the phone as a file server for a screen, Chromecast and DLNA |
-| `LibraryTab.kt` | the library and picking a folder on the computer |
+| `LibraryTab.kt` | the library (folders of every server, tag filter, search, covers), folder settings (tags, visibility, storage profile, "Also copy to") and picking a folder on the computer |
+| `LibraryTasks.kt` | agent 1.6+: "Disks and tidy-up" (disks with the library vs other files, trash, tasks with progress and cancel), the plan preview with checkboxes (free up space, move, tidy, shrink, duplicates, delete), profile choice, covers (`Covers`, `CoverThumb`) |
+| `Tasks.kt` | one notification per finished file task (checked with `Access` while the app is on screen) |
 | `MediaUi.kt` | Phone, screen and VLC buttons, subtitle dialog |
 | `PlayerActivity.kt` | the player on the phone |
 | `MagnetActivity.kt` | handling magnets |

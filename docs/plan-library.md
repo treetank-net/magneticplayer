@@ -5,7 +5,7 @@ server setup (for now a pencil next to the folder in the Library). Stage 2 (magn
 the app: recognition, downloading straight into the folder with the tag, "Change" with moving and remembering the
 choice. Missing: re-recognizing a magnet without a name (`dn=`) once the metadata has been downloaded. Stages 3–7 are
 in agent 1.6.0 (with its self-update): background tasks with moving and replication, disks, tidy-up, duplicates,
-covers, storage profiles with a trash, the MCP server; the app screens for them come with the next release. Not done
+covers, storage profiles with a trash, the MCP server; the app has screens for them (Library → "Disks and tidy-up", folder settings, plan preview, task notifications). Not done
 yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. The API still points to a folder by index;
 `id` is in the configuration for replication.
 

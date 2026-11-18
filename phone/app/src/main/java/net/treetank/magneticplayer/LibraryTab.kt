@@ -33,6 +33,15 @@ import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.horizontalScroll
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -68,25 +77,58 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Library: selected directories of the computer, only video/music. */
+/** A folder to open after switching the active server from the Library (folders of another server). */
+object LibraryNav {
+    @Volatile private var pending: Pair<String, Int>? = null
+    fun openAfterSwitch(srvKey: String, root: Int) { pending = srvKey to root }
+    fun take(srvKey: String): Int? = pending?.takeIf { it.first == srvKey }?.second?.also { pending = null }
+}
+
+/**
+ * Library: selected directories of the computer, only video/music. [onSwitchServer] makes another server active (its
+ * folders are listed too) and opens the given folder there.
+ */
 @Composable
-fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
-    var root by rememberSaveable { mutableStateOf<Int?>(null) }
+fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
+               onSwitchServer: (String, Int) -> Unit = { _, _ -> }) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var root by rememberSaveable { mutableStateOf(LibraryNav.take(api.srv.key)) }
     var path by rememberSaveable { mutableStateOf("") }
+    // disks and tidy-up, and a plan (preview) on top of whatever was open: its request body, or null
+    var disks by rememberSaveable { mutableStateOf(false) }
+    var plan by rememberSaveable { mutableStateOf<String?>(null) }
     if (!online) return Hint(stringResource(R.string.media_lib_offline))
     val r = root
-    if (r == null) {
-        RootsScreen(api, snack, onPlayingOnPc) { r0, p -> root = r0; path = p }
-    } else {
-        BackHandler { if (path.isEmpty()) root = null else path = path.substringBeforeLast('/', "") }
-        DirScreen(api, r, path, snack, onPlayingOnPc,
-            onOpen = { path = if (path.isEmpty()) it else "$path/$it" },
-            onUp = { if (path.isEmpty()) root = null else path = path.substringBeforeLast('/', "") })
+    val p = plan
+    when {
+        p != null -> {
+            BackHandler { plan = null }
+            PlanScreen(api, p, onBack = { plan = null }, onPlan = { plan = it }, onStarted = {
+                plan = null; disks = true
+                scope.launch { snack.showSnackbar(ctx.getString(R.string.lib_task_started)) }
+            })
+        }
+        disks -> {
+            BackHandler { disks = false }
+            DisksScreen(api, snack, onBack = { disks = false }) { plan = it }
+        }
+        r == null -> RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
+            root = r0; path = p0
+        }
+        else -> {
+            BackHandler { if (path.isEmpty()) root = null else path = path.substringBeforeLast('/', "") }
+            DirScreen(api, r, path, snack, onPlayingOnPc,
+                onOpen = { path = if (path.isEmpty()) it else "$path/$it" },
+                onUp = { if (path.isEmpty()) root = null else path = path.substringBeforeLast('/', "") },
+                onPlan = { plan = it })
+        }
     }
 }
 
 @Composable
-private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onOpen: (Int, String) -> Unit) {
+private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onSwitchServer: (String, Int) -> Unit,
+                        onDisks: () -> Unit, onPlan: (String) -> Unit, onOpen: (Int, String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var roots by remember { mutableStateOf<List<LibRoot>?>(null) }
@@ -104,22 +146,50 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
             snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); emptyList()
         }
     }
+    // folders of the other servers with a library that respond now (decision 11: one library across servers)
+    var others by remember { mutableStateOf<List<Pair<Server, List<LibRoot>>>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        val candidates = Servers.all(ctx).filter { it.key != api.srv.key && it.hasLibrary && it.host.isNotBlank() && it.token.isNotBlank() }
+        others = withContext(Dispatchers.IO) {
+            candidates.map { s ->
+                async {
+                    val a = Api(api.s, s)
+                    if (!a.ping(1500)) null
+                    else runCatching { s to a.libraryRoots().filter { it.exists && it.open && "kopia" !in it.tags } }.getOrNull()
+                        ?.takeIf { it.second.isNotEmpty() }
+                }
+            }.awaitAll().filterNotNull()
+        }
+    }
+    var tagFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+    val tasks = srv.libraryTasks && !srv.isGuest
     Column(Modifier.fillMaxSize()) {
-    if (srv.librarySearch) {
-        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
-            placeholder = { Text(stringResource(R.string.media_lib_search)) }, singleLine = true,
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
-            trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.media_cancel)) } })
+    if (srv.librarySearch || tasks) Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        if (srv.librarySearch) {
+            OutlinedTextField(query, { query = it }, Modifier.weight(1f),
+                placeholder = { Text(stringResource(R.string.media_lib_search)) }, singleLine = true,
+                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.media_cancel)) } })
+        } else Spacer(Modifier.weight(1f))
+        if (tasks) IconButton(onDisks) { Icon(Icons.Filled.CleaningServices, stringResource(R.string.lib_disks_title)) }
     }
     if (query.trim().length >= 2) {
         SearchResults(api, query.trim(), snack, onPlayingOnPc, onOpen)
         return@Column
     }
+    val allTags = ((roots ?: emptyList()) + others.flatMap { it.second }).flatMap { it.tags }.distinct()
+    if (allTags.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(tagFilter == null, { tagFilter = null }, label = { Text(stringResource(R.string.lib_tag_all)) })
+        allTags.forEach { t -> FilterChip(tagFilter == t, { tagFilter = if (tagFilter == t) null else t }, label = { Text(tagLabel(t)) }) }
+    }
+    fun shown(r: LibRoot) = tagFilter == null || tagFilter in r.tags
     Box(Modifier.fillMaxSize()) {
-        val list = roots
+        val list = roots?.filter { shown(it) }
         if (list == null) Hint(stringResource(R.string.media_loading))
-        else if (list.isEmpty()) Hint(stringResource(R.string.media_lib_no_roots))
+        else if (list.isEmpty() && others.isEmpty()) Hint(stringResource(if (tagFilter == null) R.string.media_lib_no_roots else R.string.lib_tag_none))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(list, key = { it.index }) { r ->
                 Card(Modifier.fillMaxWidth().clickable(enabled = r.exists && r.open) { onOpen(r.index, "") }) {
@@ -141,6 +211,26 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
                     }
                 }
             }
+            others.forEach { (s, rs) ->
+                val shownHere = rs.filter { shown(it) }
+                if (shownHere.isNotEmpty()) item(key = "srv/${s.key}") {
+                    Text(stringResource(R.string.lib_on_server, s.name), style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp, start = 4.dp))
+                }
+                items(shownHere, key = { "srv/${s.key}/${it.index}" }) { r ->
+                    Card(Modifier.fillMaxWidth().clickable { onSwitchServer(s.key, r.index) }) {
+                        Row(Modifier.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(r.name, style = MaterialTheme.typography.titleSmall)
+                                if (r.tags.isNotEmpty()) Text(r.tags.joinToString(" ") { "#$it" }, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            }
         }
         ExtendedFloatingActionButton(
             onClick = { picker = true }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text(stringResource(R.string.media_lib_add_folder)) },
@@ -159,7 +249,8 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
         }
     }
     editing?.let { r ->
-        RootEditDialog(api, r, onDismiss = { editing = null }) { list -> editing = null; roots = list }
+        RootEditDialog(api, srv, r, roots ?: emptyList(), onDismiss = { editing = null },
+            onShrink = { body -> editing = null; onPlan(body) }) { list -> editing = null; roots = list }
     }
     removing?.let { r ->
         AlertDialog(
@@ -193,6 +284,7 @@ private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onP
     }
     val list = hits ?: return Hint(stringResource(R.string.media_loading))
     if (list.isEmpty()) return Hint(stringResource(R.string.media_lib_search_none))
+    val covers = remember { (Servers.get(ctx, api.srv.key) ?: api.srv).libraryCovers }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
         items(list, key = { "${it.root}/${it.path}" }) { h ->
             val name = h.path.substringAfterLast('/')
@@ -201,7 +293,8 @@ private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onP
             if (h.dir) {
                 Row(Modifier.fillMaxWidth().clickable { onOpen(h.root, h.path) }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary)
+                    if (covers) CoverThumb(api, h.root, h.path, 48.dp) { Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary) }
+                    else Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(14.dp))
                     Column {
                         Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -212,6 +305,15 @@ private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onP
             } else {
                 val ref = MediaRef.InLibrary(h.root, h.path, api.srv.key)
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    if (covers && h.media != "audio") Row(Modifier.clickable { onOpen(h.root, parent) }, verticalAlignment = Alignment.CenterVertically) {
+                        CoverThumb(api, h.root, h.path) { Icon(Icons.Filled.Movie, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.tertiary) }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(name, fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Text("$where · ${humanBytes(h.size)}", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.StartEllipsis)
+                        }
+                    } else {
                     Row(Modifier.clickable { onOpen(h.root, parent) }, verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (h.media == "audio") Icons.Filled.MusicNote else Icons.Filled.Movie, null,
                             Modifier.size(20.dp), tint = MaterialTheme.colorScheme.tertiary)
@@ -221,6 +323,7 @@ private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onP
                     Text("$where · ${humanBytes(h.size)}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 30.dp),
                         maxLines = 2, overflow = TextOverflow.StartEllipsis)
+                    }
                     Box(Modifier.padding(start = 24.dp, top = 4.dp)) { MediaActions(api, ref, snack, onPlayingOnPc) }
                 }
             }
@@ -244,11 +347,21 @@ private fun rootSummary(r: LibRoot): String? {
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
-/** Directory settings: name, tags, who sees it, excluded subdirectories. */
+/**
+ * Directory settings: name, tags, who sees it, excluded subdirectories; on agent 1.6+ also the storage profile and
+ * the folder it is copied to ([all]: the other folders). [onShrink] opens the shrink preview (a plan request body).
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RootEditDialog(api: Api, r: LibRoot, onDismiss: () -> Unit, onSaved: (List<LibRoot>) -> Unit) {
+private fun RootEditDialog(api: Api, srv: Server, r: LibRoot, all: List<LibRoot>, onDismiss: () -> Unit, onShrink: (String) -> Unit,
+                           onSaved: (List<LibRoot>) -> Unit) {
     val scope = rememberCoroutineScope()
+    val tasks = srv.libraryTasks && !srv.isGuest
+    var profile by remember { mutableStateOf<String?>(null) }  // null until read from the agent
+    var savedProfile by remember { mutableStateOf<String?>(null) }
+    var replicateTo by remember { mutableStateOf(r.replicateTo) }
+    var diskOf by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }  // folder index → disk name
+    var repMenu by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf(r.name) }
     var tags by remember { mutableStateOf(r.tags) }
     var newTag by remember { mutableStateOf("") }
@@ -270,6 +383,11 @@ private fun RootEditDialog(api: Api, r: LibRoot, onDismiss: () -> Unit, onSaved:
             subdirs = try {
                 if (r.exists) api.fsDirs(r.path).second.map { it.removePrefix(r.path.trimEnd('/') + "/") } else emptyList()
             } catch (e: ApiException) { emptyList() }
+            if (tasks) runCatching { api.disks() }.getOrNull()?.let { d ->
+                diskOf = d.disks.flatMap { disk -> disk.roots.map { it.root to disk.name.ifEmpty { disk.mount } } }.toMap()
+                val p = d.disks.flatMap { it.roots }.firstOrNull { it.root == r.index }?.profile ?: "original"
+                profile = p; savedProfile = p
+            }
         }
     }
     AlertDialog(
@@ -331,6 +449,40 @@ private fun RootEditDialog(api: Api, r: LibRoot, onDismiss: () -> Unit, onSaved:
                         Text(d, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
+                if (tasks) {
+                    Section(stringResource(R.string.lib_profile))
+                    Text(stringResource(R.string.lib_profile_hint), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val p = profile
+                    if (p == null) Text(stringResource(R.string.media_loading), style = MaterialTheme.typography.bodySmall)
+                    else {
+                        ProfileChoice(profilesOf(srv), p) { profile = it }
+                        OutlinedButton({ onShrink(PlanBody.shrink(r.index, "", p)) }, enabled = p != "original" && r.exists) {
+                            Text(stringResource(R.string.lib_shrink_now))
+                        }
+                        Text(stringResource(R.string.lib_shrink_hint), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
+                    Section(stringResource(R.string.lib_replicate))
+                    Text(stringResource(R.string.lib_replicate_hint), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val targets = all.filter { it.index != r.index && it.id.isNotEmpty() }
+                    fun label(t: LibRoot?) = t?.let { x -> x.name + (diskOf[x.index]?.let { d -> " ($d)" } ?: "") }
+                    val noneLabel = stringResource(R.string.lib_replicate_none)
+                    Box {
+                        OutlinedButton({ repMenu = true }) {
+                            Text(label(targets.firstOrNull { it.id == replicateTo }) ?: replicateTo ?: noneLabel,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            Icon(Icons.Filled.ArrowDropDown, null)
+                        }
+                        DropdownMenu(repMenu, { repMenu = false }) {
+                            DropdownMenuItem({ Text(noneLabel) }, { replicateTo = null; repMenu = false })
+                            targets.forEach { t -> DropdownMenuItem({ Text(label(t)!!) }, { replicateTo = t.id; repMenu = false }) }
+                        }
+                    }
+                    if (replicateTo != null && replicateTo == r.replicateTo) ReplicaLine(r.replica)
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -340,7 +492,10 @@ private fun RootEditDialog(api: Api, r: LibRoot, onDismiss: () -> Unit, onSaved:
                 scope.launch {
                     try {
                         onSaved(withContext(Dispatchers.IO) {
-                            api.libraryUpdate(r.index, name.trim(), tags, visible, chosen.toList(), exclude.toList())
+                            val p = profile
+                            if (tasks && p != null && p != savedProfile) api.setProfile(r.index, "", p)
+                            api.libraryUpdate(r.index, name.trim(), tags, visible, chosen.toList(), exclude.toList(),
+                                if (tasks && replicateTo != r.replicateTo) true to replicateTo else null)
                         })
                     } catch (e: ApiException) { error = e.message; saving = false }
                 }
@@ -418,9 +573,12 @@ private fun DirPicker(api: Api, onDismiss: () -> Unit, onPick: (String) -> Unit)
 @Composable
 private fun DirScreen(
     api: Api, root: Int, path: String, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
-    onOpen: (String) -> Unit, onUp: () -> Unit,
+    onOpen: (String) -> Unit, onUp: () -> Unit, onPlan: (String) -> Unit,
 ) {
     val ctx = LocalContext.current
+    val srv = remember { Servers.get(ctx, api.srv.key) ?: api.srv }
+    val covers = srv.libraryCovers
+    var shrinking by remember { mutableStateOf(false) }
     var dir by remember(root, path) { mutableStateOf<LibDir?>(null) }
     LaunchedEffect(root, path) {
         dir = try { withContext(Dispatchers.IO) { api.browse(root, path) } } catch (e: ApiException) {
@@ -432,6 +590,13 @@ private fun DirScreen(
             IconButton(onUp) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up)) }
             Text(if (path.isEmpty()) "/" else path, style = MaterialTheme.typography.titleSmall, maxLines = 2,
                 overflow = TextOverflow.StartEllipsis, modifier = Modifier.weight(1f))
+            if (srv.libraryTasks && !srv.isGuest) IconButton({ shrinking = true }) {
+                Icon(Icons.Filled.Compress, stringResource(R.string.lib_shrink_folder))
+            }
+        }
+        if (shrinking) ShrinkDialog(srv, if (path.isEmpty()) "/" else path, onDismiss = { shrinking = false }) { profile ->
+            shrinking = false
+            onPlan(PlanBody.shrink(root, path, profile))
         }
         HorizontalDivider()
         val d = dir ?: return Hint(stringResource(R.string.media_loading))
@@ -440,7 +605,9 @@ private fun DirScreen(
             items(d.dirs, key = { "d/$it" }) { name ->
                 Row(Modifier.fillMaxWidth().clickable { onOpen(name) }.padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary)
+                    if (covers) CoverThumb(api, root, if (path.isEmpty()) name else "$path/$name", 48.dp) {
+                        Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary)
+                    } else Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(14.dp))
                     Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
@@ -448,18 +615,28 @@ private fun DirScreen(
             items(d.files, key = { "f/${it.name}" }) { f ->
                 val ref = MediaRef.InLibrary(root, if (path.isEmpty()) f.name else "$path/${f.name}", api.srv.key)
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    val info = buildList {
+                        add(humanBytes(f.size))
+                        if (f.subs.isNotEmpty()) add(ctx.getString(R.string.media_lib_subs, f.subs.joinToString()))
+                    }
+                    if (covers && f.media != "audio") Row(verticalAlignment = Alignment.CenterVertically) {
+                        CoverThumb(api, root, ref.path) { Icon(Icons.Filled.Movie, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.tertiary) }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(f.name, fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Text(info.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (f.media == "audio") Icons.Filled.MusicNote else Icons.Filled.Movie, null,
                             Modifier.size(20.dp), tint = MaterialTheme.colorScheme.tertiary)
                         Spacer(Modifier.width(10.dp))
                         Text(f.name, fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     }
-                    val info = buildList {
-                        add(humanBytes(f.size))
-                        if (f.subs.isNotEmpty()) add(ctx.getString(R.string.media_lib_subs, f.subs.joinToString()))
-                    }
                     Text(info.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 30.dp))
+                    }
                     Box(Modifier.padding(start = 24.dp, top = 4.dp)) { MediaActions(api, ref, snack, onPlayingOnPc) }
                 }
                 HorizontalDivider()

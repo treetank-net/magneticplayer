@@ -41,6 +41,13 @@ data class Server(
     /** Agent 1.5+: library search (`/api/library/search`). */
     val librarySearch get() = features?.optBoolean("library_search", false) ?: false
     val libraryGuess get() = features?.optBoolean("library_guess", false) ?: false
+    /** Agent 1.6+: disks, plans and background file tasks (moving, shrinking, tidy-up, duplicates, trash). */
+    val libraryTasks get() = features?.optBoolean("library_tasks", false) ?: false
+    /** Storage profiles the agent knows, in display order (empty on an old agent). */
+    val libraryProfiles: List<String> get() = features?.optJSONArray("library_profiles")
+        ?.let { a -> List(a.length()) { a.optString(it) }.filter { it.isNotEmpty() } } ?: emptyList()
+    /** Agent 1.6+: covers for folders and videos (`/api/library/cover`). */
+    val libraryCovers get() = features?.optBoolean("library_covers", false) ?: false
     /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */
     val canInstall get() = features?.optBoolean("install", false) ?: false
     val canAccessRequests get() = features?.optBoolean("access_requests", false) ?: false

@@ -98,6 +98,27 @@ data class LibRoot(
     val index: Int, val name: String, val path: String, val exists: Boolean,
     val tags: List<String> = emptyList(), val visible: String = "all", val devices: List<String> = emptyList(),
     val exclude: List<String> = emptyList(), val open: Boolean = true,
+    /** stable folder id (agent 1.4+), the folder this one is copied to (agent 1.6+) and the copying state */
+    val id: String = "", val replicateTo: String? = null, val replica: Replica? = null,
+)
+/** Replication of a library folder to another one: files waiting, copied, last run (epoch s), last error. */
+data class Replica(val pending: Int, val copied: Int, val last: Long?, val error: String?)
+
+/** A library folder on a disk (`/api/library/disks`); `profile`: storage profile, `profiles`: per subfolder. */
+data class DiskRoot(val root: Int, val id: String, val name: String, val tags: List<String>, val size: Long, val files: Int,
+                    val profile: String, val profiles: Map<String, String>)
+data class Disk(val id: String, val name: String, val mount: String, val total: Long, val free: Long, val used: Long,
+                val roots: List<DiskRoot>)
+data class TrashDay(val root: Int, val rootName: String, val day: String, val size: Long, val files: Int)
+data class Disks(val disks: List<Disk>, val trash: List<TrashDay>, val trashDays: Int)
+/** A plan (preview of a file task): `result` is the agent's JSON (kind-specific fields, see docs/api.md). */
+data class LibPlan(val id: String, val kind: String, val state: String, val progress: Int, val error: String?, val result: JSONObject?)
+data class TaskItem(val name: String, val path: String, val size: Long, val state: String, val error: String?, val saved: Long)
+/** A background file task on the agent (`/api/tasks`); times are epoch seconds. */
+data class LibTask(
+    val id: String, val kind: String, val title: String, val state: String, val created: Double, val finished: Double?,
+    val total: Long, val doneBytes: Long, val pct: Int, val current: String?, val saved: Long, val errors: Int,
+    val paused: Boolean, val items: List<TaskItem>,
 )
 /** Search hit: a folder or a media file somewhere in a library folder. */
 data class LibHit(val root: Int, val rootName: String, val path: String, val dir: Boolean, val size: Long, val media: String?)
@@ -420,18 +441,25 @@ class Api(val s: Settings, val srv: Server) {
         val r = a.getJSONObject(i)
         fun strs(x: JSONArray?) = x?.let { j -> List(j.length()) { j.getString(it) } } ?: emptyList()
         val vis = r.opt("visible")
+        val rep = r.optJSONObject("replica")
         LibRoot(r.getInt("index"), r.getString("name"), r.getString("path"), r.optBoolean("exists"),
             strs(r.optJSONArray("tags")), if (vis is JSONArray) "devices" else (vis as? String ?: "all"),
-            strs(vis as? JSONArray), strs(r.optJSONArray("exclude")), r.optBoolean("open", true))
+            strs(vis as? JSONArray), strs(r.optJSONArray("exclude")), r.optBoolean("open", true),
+            r.optString("id"), r.optStr("replicate_to"),
+            rep?.let { Replica(it.optInt("pending"), it.optInt("copied"), it.optLong("last").takeIf { v -> v > 0 && !it.isNull("last") },
+                it.optStr("error")) })
     }
 
     /** `manage`: also directories hidden from this phone (household member, for changing settings). */
     fun libraryRoots(manage: Boolean = false): List<LibRoot> =
         roots(JSONArray(call("GET", "/api/library" + if (manage) "?manage=1" else "")))
-    fun libraryUpdate(index: Int, name: String, tags: List<String>, visible: String, devices: List<String>, exclude: List<String>): List<LibRoot> =
+    /** `replicate`: when not null, also sets the replication target (its `second`: folder id, null = none; agent 1.6+). */
+    fun libraryUpdate(index: Int, name: String, tags: List<String>, visible: String, devices: List<String>, exclude: List<String>,
+                      replicate: Pair<Boolean, String?>? = null): List<LibRoot> =
         roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "update").put("index", index).put("name", name)
             .put("tags", JSONArray(tags)).put("visible", if (visible == "devices") JSONArray(devices) else visible)
-            .put("exclude", JSONArray(exclude)))))
+            .put("exclude", JSONArray(exclude))
+            .apply { if (replicate != null) put("replicate_to", replicate.second ?: JSONObject.NULL) })))
     fun libraryAdd(path: String): List<LibRoot> =
         roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "add").put("path", path))))
     fun libraryRemove(index: Int): List<LibRoot> =
@@ -447,6 +475,83 @@ class Api(val s: Settings, val srv: Server) {
             LibFile(x.getString("name"), x.optLong("size"), x.optString("media").takeIf { it.isNotEmpty() && it != "null" },
                 List(subs.length()) { subs.getString(it) })
         })
+    }
+
+    // ---- disks, plans and file tasks (agent 1.6+, household members)
+    fun disks(): Disks {
+        val o = JSONObject(call("GET", "/api/library/disks", timeout = 30000))
+        val d = o.optJSONArray("disks") ?: JSONArray()
+        val t = o.optJSONArray("trash") ?: JSONArray()
+        return Disks(List(d.length()) { i ->
+            val x = d.getJSONObject(i)
+            val rs = x.optJSONArray("roots") ?: JSONArray()
+            Disk(x.optString("id"), x.optString("name"), x.optString("mount"), x.optLong("total"), x.optLong("free"),
+                x.optLong("used"), List(rs.length()) { k ->
+                    val r = rs.getJSONObject(k)
+                    val tags = r.optJSONArray("tags") ?: JSONArray()
+                    val pr = r.optJSONObject("profiles") ?: JSONObject()
+                    DiskRoot(r.getInt("root"), r.optString("id"), r.optString("name"), List(tags.length()) { tags.getString(it) },
+                        r.optLong("size"), r.optInt("files"), r.optString("profile", "original"),
+                        pr.keys().asSequence().associateWith { pr.optString(it) })
+                })
+        }, List(t.length()) { i ->
+            val x = t.getJSONObject(i)
+            TrashDay(x.optInt("root"), x.optString("root_name"), x.optString("day"), x.optLong("size"), x.optInt("files"))
+        }, o.optInt("trash_days", 14))
+    }
+
+    private fun plan(o: JSONObject) = LibPlan(o.getString("id"), o.optString("kind"), o.optString("state"), o.optInt("progress"),
+        o.optStr("error"), o.optJSONObject("result"))
+
+    /** Starts a plan (a preview: nothing changes on disk); body as in docs/api.md (`kind`: free, shrink, tidy, dupes, trash, move). */
+    fun planStart(body: JSONObject): LibPlan = plan(JSONObject(call("POST", "/api/library/plan", body, 20000)))
+    fun planGet(id: String): LibPlan = plan(JSONObject(call("GET", "/api/library/plan/$id")))
+
+    /** Runs the picked items of a plan as a background task. */
+    fun taskStart(planId: String, pick: List<Int>): LibTask =
+        task(JSONObject(call("POST", "/api/tasks", JSONObject().put("plan", planId).put("pick", JSONArray(pick)), 20000)))
+    fun tasks(): List<LibTask> {
+        val a = JSONArray(call("GET", "/api/tasks"))
+        return List(a.length()) { task(a.getJSONObject(it)) }
+    }
+    fun taskCancel(id: String) { call("POST", "/api/tasks/$id/cancel", JSONObject()) }
+
+    private fun task(o: JSONObject): LibTask {
+        val arr = o.optJSONArray("items") ?: JSONArray()
+        return LibTask(o.optString("id"), o.optString("kind"), o.optString("title"), o.optString("state"),
+            o.optDouble("created", 0.0), o.optDouble("finished").takeIf { !it.isNaN() && it > 0 },
+            o.optLong("total"), o.optLong("done_bytes"), o.optInt("pct"), o.optStr("current"), o.optLong("saved"),
+            o.optInt("errors"), o.optBoolean("paused"), List(arr.length()) { i ->
+                val x = arr.getJSONObject(i)
+                TaskItem(x.optString("name").ifEmpty { x.optString("path").substringAfterLast('/') }, x.optString("path"),
+                    x.optLong("size"), x.optString("state"), x.optStr("error"), x.optLong("saved"))
+            })
+    }
+
+    /** Saves a storage profile for a folder (`path` "") or a subfolder. */
+    fun setProfile(root: Int, path: String, profile: String) {
+        call("POST", "/api/library/profile", JSONObject().put("root", root).put("path", path).put("profile", profile))
+    }
+    /** Empties the trash; returns the bytes freed. */
+    fun trashEmpty(): Long = JSONObject(call("POST", "/api/library/trash/empty", JSONObject(), 60000)).optLong("freed")
+
+    /** Cover of a folder or a video (agent 1.6+, also for guests), null when there is none. */
+    fun cover(root: Int, path: String): ByteArray? {
+        if (!configured) return null
+        val c = URL("$base/api/library/cover?root=$root&path=${Uri.encode(path)}").openConnection() as HttpURLConnection
+        try {
+            c.connectTimeout = 8000
+            c.readTimeout = 15000
+            c.setRequestProperty("Authorization", "Bearer ${srv.token}")
+            val code = c.responseCode
+            if (code == 404) return null
+            if (code >= 400) throw ApiException("HTTP $code", code)
+            return c.inputStream.use { it.readBytes() }
+        } catch (e: IOException) {
+            throw ApiException(e.javaClass.simpleName)
+        } finally {
+            c.disconnect()
+        }
     }
 
     /** Computer directories for choosing a new library directory; path "" = starting points. */
@@ -675,6 +780,9 @@ class Api(val s: Settings, val srv: Server) {
             throw last ?: ApiException(ctx.getString(R.string.media_err_add_failed))
         }
 }
+
+/** String field that is absent, JSON null or empty → null. */
+fun JSONObject.optStr(k: String): String? = if (isNull(k)) null else optString(k).ifEmpty { null }
 
 fun magnetName(magnet: String): String? =
     magnet.substringAfter('?', "").split('&').firstOrNull { it.startsWith("dn=") }

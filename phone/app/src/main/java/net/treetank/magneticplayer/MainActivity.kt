@@ -268,7 +268,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 infoVer++
             }
             // access requests from the home network (Access.kt): every ~15 s while the app is on screen and the server responds
-            if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) { Access.check(ctx, api) }
+            if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) { Access.check(ctx, api); Tasks.check(ctx, api) }
             delay(if (ok) 5000 else if (fails == 1) 1000 else 3000)  // after the first failure a quick second attempt
         }
     }
@@ -373,7 +373,9 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 else -> key(api.srv.key) {
                     when (t) {
                         TAB_TORRENTS -> TorrentsTab(api, online == true, snack, onPlaying)
-                        TAB_LIBRARY -> LibraryTab(api, online == true, snack, onPlaying)
+                        TAB_LIBRARY -> LibraryTab(api, online == true, snack, onPlaying) { key, root ->
+                            LibraryNav.openAfterSwitch(key, root); Servers.setActive(ctx, key); changed()
+                        }
                         TAB_REMOTE -> PilotTab(screenApi, snack, onPickScreen = { Servers.setScreen(ctx, it); screenKey = it }) { wake(it) }
                         TAB_OFFLINE -> OfflineTab(onPlaying)
                         else -> SettingsTab(api, ver, snack, addServer) { addServer = false; changed() }

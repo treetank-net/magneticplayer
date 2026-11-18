@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Library maintenance: disks, plans (previews), file tasks, storage profiles, replication, covers. English. -->
+<resources>
+    <string name="lib_disks_title">Disks and tidy-up</string>
+    <string name="lib_tidy">Tidy up</string>
+    <string name="lib_dupes">Duplicates</string>
+    <string name="lib_tools_hint">Each tool first shows a preview; nothing changes until you confirm it.</string>
+    <string name="lib_disk_free">%1$s free of %2$s</string>
+    <string name="lib_disk_split">library %1$s · other files %2$s</string>
+    <string name="lib_disk_mostly_other">Most of this disk is files outside the library: moving the library frees at most %1$s.</string>
+    <string name="lib_free_up">Free up space</string>
+    <string name="lib_free_default">Up to 15% free</string>
+    <string name="lib_free_amount">Free %1$s</string>
+    <string name="lib_free_hint">Videos move to folders with the same tag on other disks. Files still seeding move through the torrent client.</string>
+    <string name="lib_preview">Preview</string>
+    <string name="lib_trash">Trash</string>
+    <string name="lib_trash_empty_now">The trash is empty.</string>
+    <string name="lib_trash_empty">Empty trash</string>
+    <string name="lib_trash_empty_title">Empty the trash?</string>
+    <string name="lib_trash_empty_text">Files in the trash will be deleted for good. This can\'t be undone.</string>
+    <string name="lib_trash_freed">Freed %1$s</string>
+    <string name="lib_tasks">Tasks</string>
+    <string name="lib_task_queued">Waiting</string>
+    <string name="lib_task_running">Running</string>
+    <string name="lib_task_done">Done</string>
+    <string name="lib_task_cancelled">Cancelled</string>
+    <string name="lib_task_cancelling">Cancelling…</string>
+    <string name="lib_task_paused">Paused while someone is watching</string>
+    <string name="lib_task_saved">saved %1$s</string>
+    <string name="lib_task_started">Task started</string>
+    <string name="lib_item_pending">waiting</string>
+    <string name="lib_item_running">in progress</string>
+    <string name="lib_item_done">done</string>
+    <string name="lib_item_error">error</string>
+    <string name="lib_item_skipped">skipped</string>
+
+    <string name="lib_plan_preparing">Preparing the preview…</string>
+    <string name="lib_plan_nothing_changes">This is only a preview: nothing changes on the disks yet.</string>
+    <string name="lib_plan_expired">The preview has expired. Make it again.</string>
+    <string name="lib_plan_again">Make the preview again</string>
+    <string name="lib_plan_empty">Nothing to do.</string>
+    <string name="lib_move">Move</string>
+    <string name="lib_shrink">Shrink</string>
+    <string name="lib_delete">Delete</string>
+    <string name="lib_delete_selected">Delete selected</string>
+    <string name="lib_skipped">Skipped (%1$d)</string>
+    <string name="lib_via_torrent">via the torrent client</string>
+    <string name="lib_guess_line">%1$s · %2$s</string>
+    <string name="lib_guess_movie">movie</string>
+    <string name="lib_guess_series">series</string>
+    <string name="lib_conf_high">sure</string>
+    <string name="lib_conf_medium">probably</string>
+    <string name="lib_conf_low">unsure</string>
+    <string name="lib_sum_free">Free space: %1$s → %2$s (of %3$s)</string>
+    <string name="lib_sum_shrink">Size %1$s → about %2$s (saves %3$s)</string>
+    <string name="lib_sum_hours">%1$s h of video</string>
+    <string name="lib_sum_encoder">Encoder: %1$s</string>
+    <string name="lib_sum_move_hint">Unchecked items stay where they are.</string>
+    <string name="lib_dupes_none">No duplicates found.</string>
+    <string name="lib_dupes_hint">Tick the copies to delete. At least one file of each group always stays.</string>
+
+    <string name="lib_profile">Storage profile</string>
+    <string name="lib_profile_hint">How videos in this folder may be stored. Nothing changes until you confirm a preview; files still seeding are skipped.</string>
+    <string name="lib_profile_original">Original — never touch</string>
+    <string name="lib_profile_tidy">Tidy — lossless (extra audio tracks out)</string>
+    <string name="lib_profile_good">Good — HEVC up to 1080p</string>
+    <string name="lib_profile_compact">Compact — HEVC up to 720p</string>
+    <string name="lib_profile_tiny">Tiny — HEVC up to 480p</string>
+    <string name="lib_profile_original_short">original</string>
+    <string name="lib_profile_tidy_short">tidy</string>
+    <string name="lib_profile_good_short">good (1080p)</string>
+    <string name="lib_profile_compact_short">compact (720p)</string>
+    <string name="lib_profile_tiny_short">tiny (480p)</string>
+    <string name="lib_shrink_now">Shrink now…</string>
+    <string name="lib_shrink_folder">Shrink this folder…</string>
+    <string name="lib_shrink_folder_title">Shrink this folder</string>
+    <string name="lib_shrink_hint">You\'ll see a preview first: nothing changes before you confirm it. Files still seeding are skipped, and originals stay in the trash for a while.</string>
+
+    <string name="lib_replicate">Also copy to…</string>
+    <string name="lib_replicate_hint">New files in this folder are also copied to the chosen folder (e.g. on another disk).</string>
+    <string name="lib_replicate_none">None</string>
+    <string name="lib_replica_ok">Copy: up to date</string>
+    <string name="lib_replica_error">Copy: error: %1$s</string>
+
+    <string name="lib_tag_all">All</string>
+    <string name="lib_tag_none">No folders with this tag.</string>
+    <string name="lib_on_server">On %1$s</string>
+
+    <string name="lib_notif_channel">Library tasks</string>
+    <string name="lib_notif_cancelled">Cancelled</string>
+
+    <plurals name="lib_files">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+    <plurals name="lib_items">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <plurals name="lib_errors">
+        <item quantity="one">%1$d error</item>
+        <item quantity="other">%1$d errors</item>
+    </plurals>
+    <plurals name="lib_subfolder_profiles">
+        <item quantity="one">%1$d subfolder with its own profile</item>
+        <item quantity="other">%1$d subfolders with their own profile</item>
+    </plurals>
+    <plurals name="lib_trash_summary">
+        <item quantity="one">%1$d file, %2$s</item>
+        <item quantity="other">%1$d files, %2$s</item>
+    </plurals>
+    <plurals name="lib_trash_kept">
+        <item quantity="one">Kept for %1$d day, then deleted.</item>
+        <item quantity="other">Kept for %1$d days, then deleted.</item>
+    </plurals>
+    <plurals name="lib_picked">
+        <item quantity="one">%1$d picked, %2$s</item>
+        <item quantity="other">%1$d picked, %2$s</item>
+    </plurals>
+    <plurals name="lib_sum_checked">
+        <item quantity="one">Checked %1$d folder</item>
+        <item quantity="other">Checked %1$d folders</item>
+    </plurals>
+    <plurals name="lib_sum_originals_kept">
+        <item quantity="one">Originals are kept in the trash for %1$d day.</item>
+        <item quantity="other">Originals are kept in the trash for %1$d days.</item>
+    </plurals>
+    <plurals name="lib_sum_trash_kept">
+        <item quantity="one">Files go to the trash and are kept for %1$d day.</item>
+        <item quantity="other">Files go to the trash and are kept for %1$d days.</item>
+    </plurals>
+    <plurals name="lib_dupes_summary">
+        <item quantity="one">%1$d group of identical files, %2$s wasted</item>
+        <item quantity="other">%1$d groups of identical files, %2$s wasted</item>
+    </plurals>
+    <plurals name="lib_dupes_group">
+        <item quantity="one">%1$d copy, %2$s each</item>
+        <item quantity="other">%1$d copies, %2$s each</item>
+    </plurals>
+    <plurals name="lib_dupes_selected">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <plurals name="lib_replica_pending">
+        <item quantity="one">Copy: %1$d waiting</item>
+        <item quantity="other">Copy: %1$d waiting</item>
+    </plurals>
+    <plurals name="lib_notif_moved">
+        <item quantity="one">Moved %1$d item</item>
+        <item quantity="other">Moved %1$d items</item>
+    </plurals>
+    <plurals name="lib_notif_shrank">
+        <item quantity="one">Shrank %1$d file, saved %2$s</item>
+        <item quantity="other">Shrank %1$d files, saved %2$s</item>
+    </plurals>
+    <plurals name="lib_notif_deleted">
+        <item quantity="one">Deleted %1$d item</item>
+        <item quantity="other">Deleted %1$d items</item>
+    </plurals>
+</resources>

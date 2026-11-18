@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Porządki w bibliotece: dyski, podglądy, zadania na plikach, profile przechowywania, kopie, okładki. Polski. -->
+<resources>
+    <string name="lib_disks_title">Dyski i porządki</string>
+    <string name="lib_tidy">Porządki</string>
+    <string name="lib_dupes">Duplikaty</string>
+    <string name="lib_tools_hint">Każde narzędzie najpierw pokazuje podgląd; nic się nie zmienia, dopóki go nie potwierdzisz.</string>
+    <string name="lib_disk_free">%1$s wolne z %2$s</string>
+    <string name="lib_disk_split">biblioteka %1$s · inne pliki %2$s</string>
+    <string name="lib_disk_mostly_other">Większość dysku to pliki spoza biblioteki: przeniesienie biblioteki zwolni najwyżej %1$s.</string>
+    <string name="lib_free_up">Zwolnij miejsce</string>
+    <string name="lib_free_default">Do 15% wolnego</string>
+    <string name="lib_free_amount">Zwolnij %1$s</string>
+    <string name="lib_free_hint">Filmy przejdą do folderów z tym samym tagiem na innych dyskach. Pliki, które się jeszcze seedują, przeniesie klient torrentów.</string>
+    <string name="lib_preview">Podgląd</string>
+    <string name="lib_trash">Kosz</string>
+    <string name="lib_trash_empty_now">Kosz jest pusty.</string>
+    <string name="lib_trash_empty">Opróżnij kosz</string>
+    <string name="lib_trash_empty_title">Opróżnić kosz?</string>
+    <string name="lib_trash_empty_text">Pliki z kosza zostaną usunięte na dobre. Tego nie da się cofnąć.</string>
+    <string name="lib_trash_freed">Zwolniono %1$s</string>
+    <string name="lib_tasks">Zadania</string>
+    <string name="lib_task_queued">Czeka</string>
+    <string name="lib_task_running">W toku</string>
+    <string name="lib_task_done">Gotowe</string>
+    <string name="lib_task_cancelled">Anulowane</string>
+    <string name="lib_task_cancelling">Anulowanie…</string>
+    <string name="lib_task_paused">Wstrzymane, ktoś ogląda</string>
+    <string name="lib_task_saved">zaoszczędzono %1$s</string>
+    <string name="lib_task_started">Zadanie uruchomione</string>
+    <string name="lib_item_pending">czeka</string>
+    <string name="lib_item_running">w toku</string>
+    <string name="lib_item_done">gotowe</string>
+    <string name="lib_item_error">błąd</string>
+    <string name="lib_item_skipped">pominięte</string>
+
+    <string name="lib_plan_preparing">Przygotowuję podgląd…</string>
+    <string name="lib_plan_nothing_changes">To tylko podgląd: na dyskach jeszcze nic się nie zmienia.</string>
+    <string name="lib_plan_expired">Podgląd wygasł. Zrób go jeszcze raz.</string>
+    <string name="lib_plan_again">Zrób podgląd jeszcze raz</string>
+    <string name="lib_plan_empty">Nie ma nic do zrobienia.</string>
+    <string name="lib_move">Przenieś</string>
+    <string name="lib_shrink">Zmniejsz</string>
+    <string name="lib_delete">Usuń</string>
+    <string name="lib_delete_selected">Usuń zaznaczone</string>
+    <string name="lib_skipped">Pominięte (%1$d)</string>
+    <string name="lib_via_torrent">przez klienta torrentów</string>
+    <string name="lib_guess_line">%1$s · %2$s</string>
+    <string name="lib_guess_movie">film</string>
+    <string name="lib_guess_series">serial</string>
+    <string name="lib_conf_high">na pewno</string>
+    <string name="lib_conf_medium">raczej</string>
+    <string name="lib_conf_low">niepewne</string>
+    <string name="lib_sum_free">Wolne miejsce: %1$s → %2$s (z %3$s)</string>
+    <string name="lib_sum_shrink">Rozmiar %1$s → ok. %2$s (oszczędność %3$s)</string>
+    <string name="lib_sum_hours">%1$s h wideo</string>
+    <string name="lib_sum_encoder">Koder: %1$s</string>
+    <string name="lib_sum_move_hint">Niezaznaczone pozycje zostaną na miejscu.</string>
+    <string name="lib_dupes_none">Nie znaleziono duplikatów.</string>
+    <string name="lib_dupes_hint">Zaznacz kopie do usunięcia. Z każdej grupy zawsze zostaje co najmniej jeden plik.</string>
+
+    <string name="lib_profile">Profil przechowywania</string>
+    <string name="lib_profile_hint">Jak mogą być przechowywane filmy w tym folderze. Nic się nie zmienia, dopóki nie potwierdzisz podglądu; pliki, które się jeszcze seedują, są pomijane.</string>
+    <string name="lib_profile_original">Oryginał (nie ruszaj)</string>
+    <string name="lib_profile_tidy">Porządek — bezstratnie (zbędne ścieżki audio)</string>
+    <string name="lib_profile_good">Dobra (HEVC do 1080p)</string>
+    <string name="lib_profile_compact">Kompaktowa (HEVC do 720p)</string>
+    <string name="lib_profile_tiny">Mała (HEVC do 480p)</string>
+    <string name="lib_profile_original_short">oryginał</string>
+    <string name="lib_profile_tidy_short">porządek</string>
+    <string name="lib_profile_good_short">dobra (1080p)</string>
+    <string name="lib_profile_compact_short">kompaktowa (720p)</string>
+    <string name="lib_profile_tiny_short">mała (480p)</string>
+    <string name="lib_shrink_now">Zmniejsz teraz…</string>
+    <string name="lib_shrink_folder">Zmniejsz ten folder…</string>
+    <string name="lib_shrink_folder_title">Zmniejsz ten folder</string>
+    <string name="lib_shrink_hint">Najpierw zobaczysz podgląd: nic się nie zmieni, zanim go nie potwierdzisz. Pliki, które się jeszcze seedują, są pomijane, a oryginały zostają na jakiś czas w koszu.</string>
+
+    <string name="lib_replicate">Kopiuj także do…</string>
+    <string name="lib_replicate_hint">Nowe pliki z tego folderu są kopiowane także do wybranego folderu (np. na innym dysku).</string>
+    <string name="lib_replicate_none">Brak</string>
+    <string name="lib_replica_ok">Kopia: aktualna</string>
+    <string name="lib_replica_error">Kopia: błąd: %1$s</string>
+
+    <string name="lib_tag_all">Wszystko</string>
+    <string name="lib_tag_none">Brak folderów z tym tagiem.</string>
+    <string name="lib_on_server">Na %1$s</string>
+
+    <string name="lib_notif_channel">Zadania w bibliotece</string>
+    <string name="lib_notif_cancelled">Anulowane</string>
+
+    <plurals name="lib_files">
+        <item quantity="one">%1$d plik</item>
+        <item quantity="few">%1$d pliki</item>
+        <item quantity="many">%1$d plików</item>
+        <item quantity="other">%1$d pliku</item>
+    </plurals>
+    <plurals name="lib_items">
+        <item quantity="one">%1$d pozycja</item>
+        <item quantity="few">%1$d pozycje</item>
+        <item quantity="many">%1$d pozycji</item>
+        <item quantity="other">%1$d pozycji</item>
+    </plurals>
+    <plurals name="lib_errors">
+        <item quantity="one">%1$d błąd</item>
+        <item quantity="few">%1$d błędy</item>
+        <item quantity="many">%1$d błędów</item>
+        <item quantity="other">%1$d błędu</item>
+    </plurals>
+    <plurals name="lib_subfolder_profiles">
+        <item quantity="one">%1$d podfolder z własnym profilem</item>
+        <item quantity="few">%1$d podfoldery z własnym profilem</item>
+        <item quantity="many">%1$d podfolderów z własnym profilem</item>
+        <item quantity="other">%1$d podfolderu z własnym profilem</item>
+    </plurals>
+    <plurals name="lib_trash_summary">
+        <item quantity="one">%1$d plik, %2$s</item>
+        <item quantity="few">%1$d pliki, %2$s</item>
+        <item quantity="many">%1$d plików, %2$s</item>
+        <item quantity="other">%1$d pliku, %2$s</item>
+    </plurals>
+    <plurals name="lib_trash_kept">
+        <item quantity="one">Trzymane przez %1$d dzień, potem usuwane.</item>
+        <item quantity="few">Trzymane przez %1$d dni, potem usuwane.</item>
+        <item quantity="many">Trzymane przez %1$d dni, potem usuwane.</item>
+        <item quantity="other">Trzymane przez %1$d dnia, potem usuwane.</item>
+    </plurals>
+    <plurals name="lib_picked">
+        <item quantity="one">Wybrano %1$d, %2$s</item>
+        <item quantity="few">Wybrano %1$d, %2$s</item>
+        <item quantity="many">Wybrano %1$d, %2$s</item>
+        <item quantity="other">Wybrano %1$d, %2$s</item>
+    </plurals>
+    <plurals name="lib_sum_checked">
+        <item quantity="one">Sprawdzono %1$d folder</item>
+        <item quantity="few">Sprawdzono %1$d foldery</item>
+        <item quantity="many">Sprawdzono %1$d folderów</item>
+        <item quantity="other">Sprawdzono %1$d folderu</item>
+    </plurals>
+    <plurals name="lib_sum_originals_kept">
+        <item quantity="one">Oryginały zostają w koszu przez %1$d dzień.</item>
+        <item quantity="few">Oryginały zostają w koszu przez %1$d dni.</item>
+        <item quantity="many">Oryginały zostają w koszu przez %1$d dni.</item>
+        <item quantity="other">Oryginały zostają w koszu przez %1$d dnia.</item>
+    </plurals>
+    <plurals name="lib_sum_trash_kept">
+        <item quantity="one">Pliki trafią do kosza i zostaną w nim przez %1$d dzień.</item>
+        <item quantity="few">Pliki trafią do kosza i zostaną w nim przez %1$d dni.</item>
+        <item quantity="many">Pliki trafią do kosza i zostaną w nim przez %1$d dni.</item>
+        <item quantity="other">Pliki trafią do kosza i zostaną w nim przez %1$d dnia.</item>
+    </plurals>
+    <plurals name="lib_dupes_summary">
+        <item quantity="one">%1$d grupa identycznych plików, zmarnowane %2$s</item>
+        <item quantity="few">%1$d grupy identycznych plików, zmarnowane %2$s</item>
+        <item quantity="many">%1$d grup identycznych plików, zmarnowane %2$s</item>
+        <item quantity="other">%1$d grupy identycznych plików, zmarnowane %2$s</item>
+    </plurals>
+    <plurals name="lib_dupes_group">
+        <item quantity="one">%1$d kopia, po %2$s</item>
+        <item quantity="few">%1$d kopie, po %2$s</item>
+        <item quantity="many">%1$d kopii, po %2$s</item>
+        <item quantity="other">%1$d kopii, po %2$s</item>
+    </plurals>
+    <plurals name="lib_dupes_selected">
+        <item quantity="one">Zaznaczono %1$d</item>
+        <item quantity="few">Zaznaczono %1$d</item>
+        <item quantity="many">Zaznaczono %1$d</item>
+        <item quantity="other">Zaznaczono %1$d</item>
+    </plurals>
+    <plurals name="lib_replica_pending">
+        <item quantity="one">Kopia: %1$d czeka</item>
+        <item quantity="few">Kopia: %1$d czekają</item>
+        <item quantity="many">Kopia: %1$d czeka</item>
+        <item quantity="other">Kopia: %1$d czeka</item>
+    </plurals>
+    <plurals name="lib_notif_moved">
+        <item quantity="one">Przeniesiono %1$d pozycję</item>
+        <item quantity="few">Przeniesiono %1$d pozycje</item>
+        <item quantity="many">Przeniesiono %1$d pozycji</item>
+        <item quantity="other">Przeniesiono %1$d pozycji</item>
+    </plurals>
+    <plurals name="lib_notif_shrank">
+        <item quantity="one">Zmniejszono %1$d plik, zaoszczędzono %2$s</item>
+        <item quantity="few">Zmniejszono %1$d pliki, zaoszczędzono %2$s</item>
+        <item quantity="many">Zmniejszono %1$d plików, zaoszczędzono %2$s</item>
+        <item quantity="other">Zmniejszono %1$d pliku, zaoszczędzono %2$s</item>
+    </plurals>
+    <plurals name="lib_notif_deleted">
+        <item quantity="one">Usunięto %1$d pozycję</item>
+        <item quantity="few">Usunięto %1$d pozycje</item>
+        <item quantity="many">Usunięto %1$d pozycji</item>
+        <item quantity="other">Usunięto %1$d pozycji</item>
+    </plurals>
+</resources>
