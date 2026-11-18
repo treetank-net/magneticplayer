@@ -156,7 +156,7 @@
     <string name="main_tv_rejected">The TV rejected %1$s: %2$s</string>
     <string name="main_tv_rejected_http">The TV rejected %1$s (HTTP %2$d)</string>
     <string name="main_tv_no_answer">The TV isn\'t responding (%1$s)</string>
-    <string name="main_close_app_title">Close %1$s on %2$s?</string>
+    <string name="main_close_app_title">Close %1$s on “%2$s”?</string>
     <string name="main_close_app_text">This closes the app on the Chromecast, even if someone else is using it.</string>
     <string name="main_open_app">%1$s: %2$s is open</string>
     <string name="main_confirm_foreign_stop">Ask before closing other apps on Chromecast</string>
