@@ -13,6 +13,9 @@ set -euo pipefail
 # messages: Polish when the system locale is Polish (LC_ALL / LC_MESSAGES / LANG), English otherwise
 case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in pl*) MP_LANG=pl ;; *) MP_LANG=en ;; esac
 say() { if [ "$MP_LANG" = pl ]; then echo "$2"; else echo "$1"; fi; }
+# UPDATE=1: self-update (self-update.sh): files and Python packages only, then a restart. No root, no config, no
+# Deluge or unit changes, no pairing.
+[ -n "${UPDATE:-}" ] && SKIP_ROOT=1
 if [ -n "${LITE:-}" ] && [ "$LITE" != 0 ]; then
   SKIP_ROOT=1
   BACKEND=${BACKEND:-none}
@@ -49,6 +52,7 @@ install -m 644 "$SRC"/mp_*.py "$DEST/"
 install -d "$DEST/web" && install -m 644 "$SRC"/web/* "$DEST/web/"
 # scripts next to the agent: the server uses them to install the agent on further computers (mp_install.py, /i/<code>)
 install -m 755 "$SRC/uninstall.sh" "$SRC/install.sh" "$SRC/install-root.sh" "$SRC/join.sh" "$DEST/"
+[ -f "$SRC/self-update.sh" ] && install -m 755 "$SRC/self-update.sh" "$DEST/"
 [ -f "$SRC/join.ps1" ] && install -m 644 "$SRC/join.ps1" "$SRC/install.ps1" "$SRC/uninstall.ps1" "$DEST/"
 
 say "== subtitles: subliminal in a venv ($DEST/venv)" "== napisy: subliminal w venv ($DEST/venv)"
@@ -66,14 +70,22 @@ say "== subtitles: subliminal in a venv ($DEST/venv)" "== napisy: subliminal w v
         "UWAGA: nie da się założyć venv (brak pakietu python3-venv). Agent działa bez napisów i Chromecasta ze strony."
   fi
 }
+# a self-update only adds what is missing: upgrading subliminal and friends behind the user's back could break subtitles
+UPG=--upgrade; [ -n "${UPDATE:-}" ] && UPG=
 if [ -x "$DEST/venv/bin/pip" ]; then
-  "$DEST/venv/bin/pip" install --isolated -q --upgrade subliminal ||
+  "$DEST/venv/bin/pip" install --isolated -q $UPG subliminal ||
     say "WARNING: subliminal didn't install — subtitles won't work" "UWAGA: subliminal się nie zainstalował — napisy nie zadziałają"
   # Chromecast controlled from the web client (the phone app has its own Cast SDK)
-  "$DEST/venv/bin/pip" install --isolated -q --upgrade pychromecast ||
+  "$DEST/venv/bin/pip" install --isolated -q $UPG pychromecast ||
     say "WARNING: pychromecast didn't install — Chromecast from the browser won't work" "UWAGA: pychromecast się nie zainstalował — Chromecast z przeglądarki nie zadziała"
   # pairing QR in the terminal when qrencode is missing (the lite install doesn't install packages)
-  "$DEST/venv/bin/pip" install --isolated -q --upgrade qrcode || true
+  "$DEST/venv/bin/pip" install --isolated -q $UPG qrcode || true
+fi
+
+if [ -n "${UPDATE:-}" ]; then
+  systemctl --user restart magneticplayer
+  say "== agent updated and restarted" "== agent zaktualizowany i uruchomiony ponownie"
+  exit 0
 fi
 
 # settings given explicitly (BACKEND, PLAYER, POWER) go to config.json; the rest of the config is kept

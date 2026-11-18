@@ -98,6 +98,12 @@
     <string name="srv_app_updates">Aktualizacje apki z GitHuba</string>
     <string name="srv_app_updates_auto">Komputer sam pobiera nowe wydania i proponuje je telefonom</string>
     <string name="srv_app_updates_manual">Tylko to, co opublikowano ręcznie (publish.sh)</string>
+    <string name="srv_agent_updates">Aktualizacje agenta (%1$s)</string>
+    <string name="srv_agent_updates_auto">Agent sam instaluje nowe wersje, gdy nikt nie ogląda</string>
+    <string name="srv_agent_updates_manual">Tylko po \"Aktualizuj teraz\"</string>
+    <string name="srv_agent_available">Dostępna wersja %1$s</string>
+    <string name="srv_agent_update_now">Aktualizuj teraz</string>
+    <string name="srv_agent_update_started">Agent zaktualizuje się, gdy nikt nie będzie oglądał (około minuty)</string>
     <string name="srv_disable_legacy_q">Wyłączyć stary wspólny token?</string>
     <string name="srv_revoke_q">Odebrać dostęp?</string>
     <string name="srv_disable_legacy_text">Urządzenia, które nie zostały sparowane na nowo (np. starsza wersja apki), stracą dostęp do %1$s.</string>

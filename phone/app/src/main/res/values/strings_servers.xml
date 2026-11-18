@@ -98,6 +98,12 @@
     <string name="srv_app_updates">App updates from GitHub</string>
     <string name="srv_app_updates_auto">The computer downloads new releases itself and offers them to phones</string>
     <string name="srv_app_updates_manual">Only what is published by hand (publish.sh)</string>
+    <string name="srv_agent_updates">Agent updates (%1$s)</string>
+    <string name="srv_agent_updates_auto">The agent installs new versions itself when nobody is watching</string>
+    <string name="srv_agent_updates_manual">Only after \"Update now\"</string>
+    <string name="srv_agent_available">Version %1$s is available</string>
+    <string name="srv_agent_update_now">Update now</string>
+    <string name="srv_agent_update_started">The agent will update as soon as nobody is watching (about a minute)</string>
     <string name="srv_disable_legacy_q">Disable the old shared token?</string>
     <string name="srv_revoke_q">Revoke access?</string>
     <string name="srv_disable_legacy_text">Devices that haven\'t been paired again (e.g. an older app version) will lose access to %1$s.</string>

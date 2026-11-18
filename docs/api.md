@@ -197,5 +197,8 @@ Commands:
 | `POST /api/subs/download` | `ref` + `id`, `provider`, `languages` (and the same `title`/`year` as for the search) → `{"name", "provider"}`. If the video is playing in mpv, the subtitles are turned on right away |
 | `GET /api/config/app_updates` | `{"mode": "auto"\|"manual", "last_check", "last_error", "published": {"version_code", "version_name"}}`: the phone app from GitHub releases |
 | `POST /api/config/app_updates` | `{"mode": "auto"\|"manual"}`; switching to `auto` checks right away |
+| `GET /api/config/agent_updates` | `{"mode", "supported", "version", "available", "state": "idle"\|"downloading"\|"waiting"\|"installing"\|"failed"\|"error", "waiting_for": "stream"\|"conversion", "last_check", "last_error", "last_result": {"version", "ok", "error", "time"}}`: the agent's own updates (agent 1.6+) |
+| `POST /api/config/agent_updates` | `{"mode": "auto"\|"manual"}`; switching to `auto` checks right away |
+| `POST /api/agent/update` | check now and install a newer agent at the next quiet moment (also a version that was rolled back before); 409 where unsupported |
 | `GET /api/config/opensubtitles` | `api_key` (whether set), `username`, `password` (whether set) |
 | `POST /api/config/opensubtitles` | `{"api_key"?, "username"?, "password"?}`; empty fields don't overwrite saved ones |

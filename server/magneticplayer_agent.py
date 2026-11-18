@@ -35,6 +35,8 @@ import mp_upload
 import mp_install
 import mp_access
 import mp_appupdate
+import mp_selfupdate
+import mp_tasks
 import mp_i18n
 from mp_i18n import T
 
@@ -47,7 +49,7 @@ import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -843,6 +845,16 @@ class App:
         # app for phones from GitHub releases (mp_appupdate.py); the phone sets the mode
         self.app_updates = mp_appupdate.AppUpdates(cfg, lambda: save_config(cfg), APK_DIR, apk_version, log)
         self.app_updates.start()
+        # the agent itself from GitHub releases (mp_selfupdate.py): installed when nobody is streaming or converting
+        self.streams, self.stream_last, self.stream_lock = 0, 0.0, threading.Lock()
+        # background file tasks: moving between disks, shrinking by storage profiles (mp_tasks.py); encodes pause while
+        # somebody streams from the library
+        self.tasks = mp_tasks.Tasks(os.path.join(CONFIG_DIR, "tasks.json"), cfg, lambda: save_config(cfg), self.library,
+                                    lambda: self.backend, lambda: self.streams > 0 or time.time() - self.stream_last < 30,
+                                    self.renderers, log)
+        self.agent_updates = mp_selfupdate.AgentUpdates(cfg, lambda: save_config(cfg), os.path.dirname(os.path.abspath(__file__)),
+                                                        VERSION, cfg["port"], self.busy, log)
+        self.agent_updates.start()
         # discover Chromecasts from startup: the renderer registry knows the model before anyone opens the device picker
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # which H.264 encoder works on this hardware (NVENC/VAAPI/...): a trial encode takes seconds, so in the background
@@ -852,6 +864,17 @@ class App:
 
     def name(self):
         return self.cfg.get("name") or socket.gethostname()
+
+    def busy(self):
+        """Why a restart (self-update) should wait now, or None: a stream or upload in the last 5 minutes, a conversion."""
+        with self.stream_lock:
+            if self.streams or time.time() - self.stream_last < 300:
+                return "stream"
+        if any(j["state"] in ("queued", "running") for j in self.convert.all()):
+            return "conversion"
+        if self.tasks.busy():
+            return "task"
+        return None
 
     def wake_info(self, net):
         """Assessment from mp_platform + "yes" once wake over the network has worked (on the same NIC)."""
@@ -909,11 +932,17 @@ class App:
                 "library_tags": True,  # folder tags, visibility and exclusions (agent 1.4+)
                 "library_search": True,  # GET /api/library/search (agent 1.5+)
                 "library_guess": True,  # magnet identification and downloading straight into a folder (agent 1.5+)
+                # disks, background tasks (moving, shrinking), storage profiles, trash (agent 1.6+)
+                "library_tasks": True,
+                "library_profiles": list(mp_tasks.PROFILE_NAMES),
                 "player": self.is_screen(),
                 "subs_search": self.subs_available(wait=False),
                 "unlock": AUTO_UNLOCK and platform.can_unlock(),
                 "apk": apk_version().get("version_code", 0) > 0,
                 "app_updates": self.app_updates.mode(),  # "auto" (from GitHub) or "manual" (publish.sh)
+                # the agent's own updates (agent 1.6+): mode, or absent where unsupported (Windows); newer version if any
+                **({"agent_updates": self.agent_updates.mode(), "agent_available": self.agent_updates.available or ""}
+                   if self.agent_updates.supported() else {}),
                 "wake_others": True,
                 # the "for Chromecast" version: encoder name (hardware or CPU) or None (no ffmpeg)
                 "transcode": mp_media.encoder_label(mp_media.encoder_info()),
@@ -1113,6 +1142,20 @@ class Handler(BaseHTTPRequestHandler):
                                                           f"&ticket={urllib.parse.quote(t)}"))
 
     def dispatch(self, method):
+        # streams and uploads: a self-update waits until they have been quiet for a while (App.busy)
+        if not urllib.parse.urlsplit(self.path).path.startswith(("/lib/", "/media/", "/api/upload/")):
+            return self._dispatch(method)
+        a = self.app
+        with a.stream_lock:
+            a.streams += 1
+        try:
+            return self._dispatch(method)
+        finally:
+            with a.stream_lock:
+                a.streams -= 1
+                a.stream_last = time.time()
+
+    def _dispatch(self, method):
         self.extra_headers = []
         mp_i18n.set_from_header(self.headers.get("Accept-Language"))  # message language (errors in JSON)
         u = urllib.parse.urlsplit(self.path)
@@ -1420,6 +1463,45 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     a.library.add_root(b["path"], b.get("name"))
                 return self.send_json(a.library.visible_roots(True))
+            # ---- disks and background file tasks (mp_tasks.py)
+            if p == "/api/library/disks" and method == "GET":
+                return self.send_json({"disks": a.tasks.disks(), "trash": a.tasks.trash(), "trash_days": a.tasks.trash_days()})
+            if p == "/api/library/plan" and method == "POST":
+                b = self.body()
+                kind = b.get("kind")
+                if kind == "free":
+                    return self.send_json(a.tasks.plan_free(int(b["root"]), b.get("need")))
+                if kind == "shrink":
+                    if b.get("profile"):  # choosing a profile for this folder/file is remembered (new files follow it)
+                        a.tasks.set_profile(int(b["root"]), b.get("path", ""), b["profile"])
+                    return self.send_json(a.tasks.plan_shrink(int(b["root"]), b.get("path", "")))
+                if kind == "move":
+                    return self.send_json(a.tasks.plan_move(b.get("items") or []))
+                if kind == "tidy":
+                    return self.send_json(a.tasks.plan_tidy(a.ident))
+                if kind == "dupes":
+                    return self.send_json(a.tasks.plan_dupes())
+                if kind == "trash":
+                    return self.send_json(a.tasks.plan_trash(b.get("items") or []))
+                raise ApiError(T("kind must be free, shrink, move, tidy, dupes or trash", "kind to free, shrink, move, tidy, dupes albo trash"), 400)
+            if (m := re.fullmatch(r"/api/library/plan/([0-9a-f]{8})", p)) and method == "GET":
+                return self.send_json(a.tasks.plan_status(m.group(1)))
+            if p == "/api/library/profile" and method == "POST":
+                b = self.body()
+                a.tasks.set_profile(int(b["root"]), b.get("path", ""), b.get("profile"))
+                return self.send_json({"ok": True})
+            if p == "/api/library/trash/empty" and method == "POST":
+                return self.send_json({"freed": a.tasks.purge_trash(everything=True)})
+            if p == "/api/tasks" and method == "GET":
+                return self.send_json(a.tasks.list())
+            if p == "/api/tasks" and method == "POST":
+                b = self.body()
+                pick = b.get("pick")
+                return self.send_json(a.tasks.create(str(b.get("plan")), None if pick is None else {int(x) for x in pick}))
+            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})", p)) and method == "GET":
+                return self.send_json(a.tasks.get(m.group(1)))
+            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/cancel", p)) and method == "POST":
+                return self.send_json(a.tasks.cancel(m.group(1)))
             if p == "/api/library/search" and method == "GET":
                 return self.send_json(a.library.search(qd.get("q", "")))
             if p == "/api/library/browse" and method == "GET":
@@ -1475,6 +1557,17 @@ class Handler(BaseHTTPRequestHandler):
                 if mode not in mp_appupdate.MODES:
                     raise ApiError(T("mode must be auto or manual", "tryb to auto albo manual"), 400)
                 return self.send_json(a.app_updates.set_mode(mode))
+            if p == "/api/config/agent_updates" and method == "GET":
+                return self.send_json(a.agent_updates.status())
+            if p == "/api/config/agent_updates" and method == "POST":
+                mode = self.body().get("mode")
+                if mode not in mp_selfupdate.MODES:
+                    raise ApiError(T("mode must be auto or manual", "tryb to auto albo manual"), 400)
+                return self.send_json(a.agent_updates.set_mode(mode))
+            if p == "/api/agent/update" and method == "POST":
+                if not a.agent_updates.supported():
+                    raise ApiError(T("this system can't update the agent by itself yet", "ten system nie umie jeszcze sam zaktualizować agenta"), 409)
+                return self.send_json(a.agent_updates.update_now())
             if p == "/api/config/opensubtitles" and method == "GET":
                 return self.send_json({"api_key": bool(a.cfg.get("opensubtitles_api_key")),
                                        "username": a.cfg.get("opensubtitles_username", ""),
@@ -1484,7 +1577,7 @@ class Handler(BaseHTTPRequestHandler):
                 a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
                 return self.send_json({"ok": True})
             raise ApiError(T("no such endpoint", "nie ma takiego endpointu"), 404)
-        except (LibError, SubsError, CastError, mp_install.InstallError, mp_access.AccessError) as e:
+        except (LibError, SubsError, CastError, mp_install.InstallError, mp_access.AccessError, mp_tasks.TaskError) as e:
             self.send_json({"error": str(e)}, e.status)
         except ApiError as e:
             self.send_json({"error": str(e)}, e.status)

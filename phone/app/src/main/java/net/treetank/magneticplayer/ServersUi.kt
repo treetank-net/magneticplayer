@@ -552,6 +552,40 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                         })
                     }
                 }
+                s.agentUpdates?.takeIf { !s.isGuest }?.let { mode ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.srv_agent_updates, s.info?.optString("version") ?: "?"), style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(if (mode == "auto") R.string.srv_agent_updates_auto else R.string.srv_agent_updates_manual),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(mode == "auto", { on ->
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) { Api(Settings(ctx), s).run { setAgentUpdates(on); info() } }
+                                    server = Servers.get(ctx, key)
+                                } catch (e: ApiException) {
+                                    snack.showSnackbar(e.message ?: ctx.getString(R.string.srv_error))
+                                }
+                            }
+                        })
+                    }
+                    s.agentAvailable?.let { v ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.srv_agent_available, v), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            TextButton({
+                                scope.launch {
+                                    try {
+                                        withContext(Dispatchers.IO) { Api(Settings(ctx), s).updateAgent() }
+                                        snack.showSnackbar(ctx.getString(R.string.srv_agent_update_started))
+                                    } catch (e: ApiException) {
+                                        snack.showSnackbar(e.message ?: ctx.getString(R.string.srv_error))
+                                    }
+                                }
+                            }) { Text(stringResource(R.string.srv_agent_update_now)) }
+                        }
+                    }
+                }
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_name_in_app)) }, singleLine = true)
                 HorizontalDivider()
                 Text(stringResource(R.string.srv_paired_devices), style = MaterialTheme.typography.titleSmall)

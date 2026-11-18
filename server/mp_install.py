@@ -26,6 +26,7 @@ from mp_i18n import T
 TTL = 30 * 60
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUNDLE_FILES = ("install.sh", "install-root.sh", "uninstall.sh", "join.sh")
+BUNDLE_OPTIONAL_SH = ("self-update.sh",)
 BUNDLE_OPTIONAL = ("install.ps1", "uninstall.ps1", "join.ps1")  # Windows (light install)
 
 
@@ -104,7 +105,7 @@ class Installs:
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             for name in sorted(os.listdir(HERE)):
                 full = os.path.join(HERE, name)
-                if (name.endswith(".py") and os.path.isfile(full)) or name in BUNDLE_FILES or name in BUNDLE_OPTIONAL:
+                if (name.endswith(".py") and os.path.isfile(full)) or name in BUNDLE_FILES or name in BUNDLE_OPTIONAL or name in BUNDLE_OPTIONAL_SH:
                     tar.add(full, arcname=f"server/{name}")
             web = os.path.join(HERE, "web")
             if os.path.isdir(web):

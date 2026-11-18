@@ -149,11 +149,38 @@ encoder for "Prepare a Chromecast version" by itself at startup and the app show
 (GTX 970) it should be NVENC, as long as the NVIDIA driver with `libnvidia-encode` works. On Intel it's VAAPI, on a
 Mac VideoToolbox. The versions are stored in `.mp-cast/` next to the videos and can be deleted by hand.
 
-### Quick update of just the agent
+### Quick update of just the agent (development)
 
 ```bash
 scp server/*.py server/*.sh jmpc:.local/share/magneticplayer/ && ssh jmpc systemctl --user restart magneticplayer
 ```
+
+### Agent self-update (agent 1.6+, Linux)
+
+Like the app, the agent updates itself from GitHub releases (`server/mp_selfupdate.py`). Mode `agent_updates` in
+`config.json`: `auto` (default) or `manual`; in the app: Settings → server → "Agent updates", with "Update now" when a
+newer version exists.
+
+- 90 s after start and then every 6 hours the agent fetches `agent.json` and `agent.json.sig` from the latest
+  release and verifies the ECDSA P-256 signature itself (pure Python, the public key is in the module, the same as
+  `phone/tools/agent-signing.pub`). Only a **higher** `agent_version` than the running one counts, so the agent is
+  never downgraded and a hand-deployed development agent is left alone. That's why `tag-release.sh` refuses a release
+  where `server/` changed but `VERSION` didn't.
+- The bundle (`agent.tgz`, checked against the sha256 and size from the manifest; only `server/*.py|sh|ps1` and
+  `server/web/*` entries) is unpacked into `~/.local/share/magneticplayer/update/<version>/`.
+- It waits for a quiet moment: no stream or upload in the last 5 minutes and no conversion. mpv survives a restart,
+  so watching on the computer screen doesn't block it.
+- `self-update.sh` from the new bundle runs in its own systemd unit (`systemd-run --user`, it survives the agent
+  restart): it backs up the current agent to `prev/`, runs `install.sh` with `UPDATE=1` (files and missing Python
+  packages only: no root, no config, no Deluge, no unit changes, no pairing; nothing is upgraded with pip) and waits
+  up to 90 s for `/api/ping` with the new version. Otherwise it puts `prev/` back and restarts the old agent.
+- The outcome is in `update-result.json` and in the agent log after it starts; the details in `update.log` next to
+  the agent. A version that was rolled back isn't retried automatically, only after "Update now".
+- Apt packages (`install-root.sh`) aren't touched: a version that needs new ones needs a manual `install.sh`.
+- Windows: not yet (the feature is missing from `/api/info`, the app shows nothing).
+
+Tested on jmpc (18.11.2026): signature and download with the real release, a bundle with a wrong sha256 rejected,
+update 1.6.0 → 1.6.1 in 4 s, an agent that fails at start (1.6.2) rolled back to 1.6.1 after 90 s.
 
 ### Files on the computer
 

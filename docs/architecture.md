@@ -253,6 +253,13 @@ The agent serves the app to phones from `~/.local/share/magneticplayer/apk/` (`M
 The app compares versions and downloads a newer one straight into a `PackageInstaller` session. `UpdateReceiver`
 launches the system confirmation dialog.
 
+### Agent updates
+The agent updates itself from the same releases (`mp_selfupdate.py`, mode `agent_updates`, agent 1.6+, Linux): a
+signed manifest (ECDSA P-256, verified in the agent), only a higher `agent_version`, installation at a quiet moment by
+`self-update.sh` in its own systemd unit with a rollback when the new agent doesn't answer `/api/ping`. Details in
+[install-and-maintenance.md](install-and-maintenance.md#agent-self-update-agent-16-linux). The phone only switches the
+mode and can say "Update now"; it never sends code to the agent.
+
 ## Web client (`server/web/index.html`)
 
 A single file without dependencies (vanilla JS), served at `/` without a token. The data goes through the API with

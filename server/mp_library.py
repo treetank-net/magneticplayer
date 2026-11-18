@@ -279,6 +279,12 @@ class Library:
         os.makedirs(full, exist_ok=True)
         return full
 
+    @staticmethod
+    def invalidate():
+        """After moving or shrinking: the search sees the new names right away."""
+        with _search_lock:
+            _search_cache.clear()
+
     def remove_root(self, i):
         self.roots()
         if not 0 <= i < len(self.cfg["library"]):

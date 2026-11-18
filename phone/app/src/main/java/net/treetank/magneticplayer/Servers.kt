@@ -53,6 +53,10 @@ data class Server(
     val canSuspend get() = power?.optBoolean("suspend", true) ?: true
     /** Where the server gets the app for phones (agent 1.3.1+): "auto" (GitHub releases), "manual" (publish.sh), null. */
     val appUpdates: String? get() = features?.optString("app_updates")?.ifEmpty { null }
+    /** The agent's own updates from GitHub (agent 1.6+): "auto", "manual", null = not supported (old agent, Windows). */
+    val agentUpdates: String? get() = features?.optString("agent_updates")?.ifEmpty { null }
+    /** A newer agent version found in the latest release, or null. */
+    val agentAvailable: String? get() = features?.optString("agent_available")?.ifEmpty { null }
     val canPoweroff get() = power?.optBoolean("poweroff", true) ?: true
     /** encoder for the "for Chromecast" version (e.g. "NVIDIA NVENC", "CPU (x264)"), null = no ffmpeg or an old agent */
     val transcode: String? get() = features?.takeIf { !it.isNull("transcode") }?.optString("transcode")?.ifEmpty { null }
