@@ -33,7 +33,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -122,6 +124,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -326,11 +329,11 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         },
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(tab.intValue == TAB_TORRENTS, { tab.intValue = TAB_TORRENTS }, { Icon(Icons.Filled.Download, null) }, label = { Text(stringResource(R.string.main_tab_torrents)) })
-                NavigationBarItem(tab.intValue == TAB_LIBRARY, { tab.intValue = TAB_LIBRARY }, { Icon(Icons.Filled.VideoLibrary, null) }, label = { Text(stringResource(R.string.main_tab_library)) })
-                NavigationBarItem(tab.intValue == TAB_OFFLINE, { tab.intValue = TAB_OFFLINE }, { Icon(Icons.Filled.DownloadForOffline, null) }, label = { Text(stringResource(R.string.main_tab_offline), maxLines = 1) })
-                NavigationBarItem(tab.intValue == TAB_REMOTE, { tab.intValue = TAB_REMOTE }, { Icon(Icons.Filled.SmartDisplay, null) }, label = { Text(stringResource(R.string.main_tab_remote)) })
-                NavigationBarItem(tab.intValue == TAB_SETTINGS, { tab.intValue = TAB_SETTINGS }, { Icon(Icons.Filled.Settings, null) }, label = { Text(stringResource(R.string.main_tab_settings)) })
+                NavigationBarItem(tab.intValue == TAB_TORRENTS, { tab.intValue = TAB_TORRENTS }, { Icon(Icons.Filled.Download, null) }, label = { NavLabel(stringResource(R.string.main_tab_torrents)) })
+                NavigationBarItem(tab.intValue == TAB_LIBRARY, { tab.intValue = TAB_LIBRARY }, { Icon(Icons.Filled.VideoLibrary, null) }, label = { NavLabel(stringResource(R.string.main_tab_library)) })
+                NavigationBarItem(tab.intValue == TAB_OFFLINE, { tab.intValue = TAB_OFFLINE }, { Icon(Icons.Filled.DownloadForOffline, null) }, label = { NavLabel(stringResource(R.string.main_tab_offline)) })
+                NavigationBarItem(tab.intValue == TAB_REMOTE, { tab.intValue = TAB_REMOTE }, { Icon(Icons.Filled.SmartDisplay, null) }, label = { NavLabel(stringResource(R.string.main_tab_remote)) })
+                NavigationBarItem(tab.intValue == TAB_SETTINGS, { tab.intValue = TAB_SETTINGS }, { Icon(Icons.Filled.Settings, null) }, label = { NavLabel(stringResource(R.string.main_tab_settings)) })
             }
         },
         snackbarHost = { SnackbarHost(snack) },
@@ -1147,4 +1150,12 @@ private fun OpenSubsSettings(api: Api, snack: SnackbarHostState) {
             ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.opensubtitles.com/en/consumers")))
         }) { Text(stringResource(R.string.main_keys_page)) }
     }
+}
+
+/** Podpis zakładki w jednej linii; przy dużej czcionce systemowej zmniejsza się, zamiast się urywać („Na telefonie”). */
+@Composable
+private fun NavLabel(text: String) {
+    val style = androidx.compose.material3.LocalTextStyle.current
+    BasicText(text, style = style.copy(color = androidx.compose.material3.LocalContentColor.current), maxLines = 1, softWrap = false,
+        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = style.fontSize, stepSize = 0.5.sp))
 }

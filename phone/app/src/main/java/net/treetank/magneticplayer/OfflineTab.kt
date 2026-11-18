@@ -3,6 +3,8 @@ package net.treetank.magneticplayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -135,6 +137,7 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun OfflineCard(
     r: OfflineRow, dlStatus: String?,
@@ -167,7 +170,9 @@ private fun OfflineCard(
                 Text(stringResource(R.string.media_offline_from_start, clock(i.durationMs / 1000.0 * r.fromStart / i.size), clock(i.durationMs / 1000.0)),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // przyciski zawijają się do kolejnej linii (duża czcionka systemowa, wąski ekran), kosz zawsze z prawej
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onPlay) {
                     Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.media_play))
                 }
@@ -178,7 +183,7 @@ private fun OfflineCard(
                     Icon(Icons.Filled.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
                     Text(stringResource(if (i.pinned) R.string.media_resume else R.string.media_download_whole))
                 }
-                Spacer(Modifier.weight(1f))
+              }
                 IconButton(onDelete) { Icon(Icons.Filled.Delete, stringResource(R.string.media_cd_delete_from_phone)) }
             }
             if (i.pinned) Box {
