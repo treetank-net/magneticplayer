@@ -133,7 +133,8 @@ Win11 in VirtualBox: the `~/.cache/winvm/LOCK` protocol (shared with timeprotect
   - update after the app returns to the foreground (wake-up marks itself as verified on a normal wake from the app;
     the "Check wake-up" button was removed as redundant);
   - the Remote refreshes 4×/s, so `uiautomator dump` often fails ("could not get idle state"): use screenshots.
-- **Agent 1.5.0 (magnet → folder, player reconnect):** committed, not yet restarted on jmpc nor released/tested on the
-  phone.
+- **Agent 1.5.0 + app v1.261118.2108: verified on the Pixel** (magnet → recognised folder, "Change" moves the torrent
+  and remembers the choice, library search). The player's own reconnect wasn't really exercised: an agent restart
+  is covered by the buffer. Missing: re-recognising a magnet without `dn=` once metadata arrives.
 
 - Idea: remote access from outside the LAN (Tailscale/WireGuard, described in `docs/network-and-security.md`).
