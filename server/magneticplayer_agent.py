@@ -50,7 +50,7 @@ import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.6.1"
+VERSION = "1.6.2"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -1190,8 +1190,10 @@ class Handler(BaseHTTPRequestHandler):
                                                           f"&ticket={urllib.parse.quote(t)}"))
 
     def dispatch(self, method):
-        # streams and uploads: a self-update waits until they have been quiet for a while (App.busy)
-        if not urllib.parse.urlsplit(self.path).path.startswith(("/lib/", "/media/", "/api/upload/")):
+        # streams and uploads: a self-update and library encodes wait until they have been quiet for a while (App.busy).
+        # Only requests that carry data count: the app's HEAD probes (size, X-Ready-End) keep coming every few
+        # seconds while it plays from its own buffer or a downloaded copy, and would pause tasks for nothing.
+        if method == "HEAD" or not urllib.parse.urlsplit(self.path).path.startswith(("/lib/", "/media/", "/api/upload/")):
             return self._dispatch(method)
         a = self.app
         with a.stream_lock:
