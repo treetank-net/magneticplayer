@@ -4,6 +4,7 @@ The version lives next to the movie in a hidden directory `.mp-cast/<name>.cast.
 Library does not show it). H.264 8-bit video is left as is, otherwise a hardware encoder (NVENC, VAAPI, VideoToolbox,
 V4L2) or x264 is used. AAC/MP3 audio is kept, everything else → AAC stereo. One conversion at a time.
 """
+import hashlib
 import json
 import os
 import re
@@ -359,3 +360,88 @@ class Converter:
         os.replace(part, out)
         j.update(state="done", pct=100)
         self.log("conversion done:", os.path.basename(out), f"{time.time() - j['started']:.0f}s")
+
+
+# ---- covers (plan-library.md, stage 5): a picture next to the video first, otherwise a frame from ~10% in, cached
+COVER_NAMES = ("poster", "folder", "cover", "movie", "show")
+COVER_EXT = (".jpg", ".jpeg", ".png", ".webp")
+VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}  # as mp_library
+_cover_sem = threading.Semaphore(2)
+
+
+def cover_dir():
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    if sys.platform == "win32":
+        base = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "magneticplayer", "cache")
+        return os.path.join(base, "covers")
+    return os.path.join(base, "magneticplayer", "covers")
+
+
+def _first_video(folder, depth=2):
+    try:
+        names = sorted(os.listdir(folder), key=str.lower)
+    except OSError:
+        return None
+    vids = [n for n in names if not n.startswith(".") and os.path.splitext(n)[1].lower() in VIDEO_EXT
+            and "sample" not in n.lower()]
+    if vids:  # the biggest one: the movie, not an extra
+        return max((os.path.join(folder, n) for n in vids), key=lambda p: os.stat(p).st_size)
+    if depth:
+        for n in names:
+            p = os.path.join(folder, n)
+            if not n.startswith(".") and os.path.isdir(p):
+                v = _first_video(p, depth - 1)
+                if v:
+                    return v
+    return None
+
+
+def find_cover(full):
+    """(path of an existing picture or None, video to take a frame from or None)."""
+    if os.path.isdir(full):
+        for n in COVER_NAMES:
+            for e in COVER_EXT:
+                p = os.path.join(full, n + e)
+                if os.path.isfile(p):
+                    return p, None
+        return None, _first_video(full)
+    stem = os.path.splitext(full)[0]
+    for suf in ("", "-poster", ".poster", "-cover"):
+        for e in COVER_EXT:
+            if os.path.isfile(stem + suf + e):
+                return stem + suf + e, None
+    return None, full if os.path.splitext(full)[1].lower() in VIDEO_EXT else None
+
+
+def cover(full, width=360):
+    """Path of a JPEG/PNG cover for a folder or a video, or None (nothing to show)."""
+    pic, video = find_cover(full)
+    if pic:
+        return pic
+    if not video or not shutil.which("ffmpeg"):
+        return None
+    st = os.stat(video)
+    key = hashlib.sha1(f"{video}|{st.st_size}|{st.st_mtime}|{width}".encode()).hexdigest()
+    out = os.path.join(cover_dir(), key[:2], key + ".jpg")
+    if os.path.exists(out):
+        return out if os.path.getsize(out) else None
+    with _cover_sem:
+        if os.path.exists(out):
+            return out if os.path.getsize(out) else None
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        try:
+            dur = probe(video).get("duration") or 0
+        except Exception:  # noqa: BLE001
+            dur = 0
+        at = max(dur * 0.1, 0) if dur else 30
+        cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-y", "-ss", f"{at:.1f}", "-i", video, "-frames:v", "1",
+               "-vf", f"scale={width}:-2", "-q:v", "4", out + ".part.jpg"]
+        if sys.platform != "win32" and shutil.which("nice"):
+            cmd = ["nice", "-n", "10", *cmd]
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=60)
+            os.replace(out + ".part.jpg", out)
+        except (OSError, subprocess.TimeoutExpired):
+            open(out, "w").close()  # remember the failure (an empty file), don't try on every request
+            return None
+        return out if os.path.getsize(out) else None

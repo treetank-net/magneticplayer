@@ -37,6 +37,7 @@ import mp_access
 import mp_appupdate
 import mp_selfupdate
 import mp_tasks
+import mp_mcp
 import mp_i18n
 from mp_i18n import T
 
@@ -127,7 +128,7 @@ def save_config(cfg):
 # stay closed to guests until someone deliberately adds them here.
 GUEST_ALLOWED = {
     "GET": ("/api/info", "/api/announce", "/api/app/version", "/app/MagneticPlayer.apk", "/api/library",
-            "/api/library/browse", "/api/library/search", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
+            "/api/library/browse", "/api/library/search", "/api/library/cover", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
             "/api/media/converts", "/api/jobs", "/api/player/status", "/api/cast/status", "/api/cast/devices",
             "/api/renderers", "/api/torrents"),
     "POST": ("/api/media/ticket", "/api/player/open", "/api/player/cmd", "/api/cast/play", "/api/cast/cmd",
@@ -855,6 +856,8 @@ class App:
         self.agent_updates = mp_selfupdate.AgentUpdates(cfg, lambda: save_config(cfg), os.path.dirname(os.path.abspath(__file__)),
                                                         VERSION, cfg["port"], self.busy, log)
         self.agent_updates.start()
+        # MCP server for an AI assistant in the LAN, approved on the phone (mp_mcp.py)
+        self.mcp = mp_mcp.Mcp(self, VERSION, CONFIG_DIR, log)
         # discover Chromecasts from startup: the renderer registry knows the model before anyone opens the device picker
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # which H.264 encoder works on this hardware (NVENC/VAAPI/...): a trial encode takes seconds, so in the background
@@ -934,6 +937,7 @@ class App:
                 "library_guess": True,  # magnet identification and downloading straight into a folder (agent 1.5+)
                 # disks, background tasks (moving, shrinking), storage profiles, trash (agent 1.6+)
                 "library_tasks": True,
+                "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 "library_profiles": list(mp_tasks.PROFILE_NAMES),
                 "player": self.is_screen(),
                 "subs_search": self.subs_available(wait=False),
@@ -950,6 +954,7 @@ class App:
                 "upload": self.uploads.available(),  # PUT /api/upload/<id> (mp_upload.py)
                 "install": self.installs.available(),  # /api/install/* and /i/<code> (mp_install.py)
                 "access_requests": True,  # /api/access/* (mp_access.py)
+                "mcp": True,  # /mcp for an AI assistant, OAuth approved on the phone (agent 1.6+)
             },
             "power": {"suspend": POWER and platform.can_power(), "poweroff": POWER and platform.can_power(),
                       "wake": self.wake_info(net)},
@@ -1073,6 +1078,49 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def mcp_route(self, method, p, qd, q):
+        a, base = self.app, self.base_url()
+        try:
+            if p.startswith("/.well-known/oauth-protected-resource") and method == "GET":
+                return self.send_json(a.mcp.metadata_resource(base))
+            if p.startswith("/.well-known/oauth-authorization-server") and method == "GET":
+                return self.send_json(a.mcp.metadata_server(base))
+            if p == "/oauth/register" and method == "POST":
+                return self.send_json(a.mcp.register(self.body()), 201)
+            if p == "/oauth/authorize" and method == "GET":
+                return self.send_bytes(a.mcp.authorize_page(qd, self.client_address[0]).encode(), "text/html; charset=utf-8")
+            if p == "/oauth/authorize/wait" and method == "GET":
+                return self.send_json(a.mcp.authorize_wait(qd.get("session", "")))
+            if p == "/oauth/token" and method == "POST":
+                n = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(n).decode() if n else ""
+                form = json.loads(raw) if raw.lstrip().startswith("{") else dict(urllib.parse.parse_qsl(raw))
+                self.extra_headers.append(("Cache-Control", "no-store"))
+                return self.send_json(a.mcp.token(form))
+            if p == "/mcp":
+                self.device = self.authorized(q)
+                if not self.device:
+                    self.extra_headers.append(("WWW-Authenticate", f'Bearer resource_metadata="{base}/.well-known/oauth-protected-resource"'))
+                    return self.send_json({"error": "invalid_token"}, 401)
+                role = a.devices.role(self.device)
+                mp_library.set_viewer(self.device, role)
+                if method != "POST":
+                    self.extra_headers.append(("Allow", "POST"))
+                    return self.send_json({"error": "POST only (no server-initiated stream)"}, 405)
+                msg = self.body()
+                out = [r for r in (a.mcp.handle(m, role) for m in (msg if isinstance(msg, list) else [msg])) if r]
+                if not out:
+                    self.send_response(202)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                return self.send_json(out if isinstance(msg, list) else out[0])
+            raise ApiError(T("no such endpoint", "nie ma takiego endpointu"), 404)
+        except mp_mcp.McpError as e:
+            return self.send_json({"error": "invalid_request", "error_description": str(e)}, e.code if 400 <= e.code < 600 else 400)
+        except mp_access.AccessError as e:
+            return self.send_json({"error": "access_denied", "error_description": str(e)}, e.status)
+
     def authorized(self, query):
         """Id of the paired device (or "legacy" for the old shared token), or None."""
         h = self.headers.get("Authorization", "")
@@ -1193,6 +1241,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.access.request(self.body().get("name"), self.client_address[0]))
             if (m := re.fullmatch(r"/api/access/request/([0-9a-f]{16})", p)) and method == "GET":
                 return self.send_json(a.access.poll(m.group(1), (q.get("secret") or [""])[0]))
+            # ---- MCP for an AI assistant (mp_mcp.py): OAuth with approval on the phone, then the device token
+            if p.startswith(("/.well-known/oauth-", "/oauth/")) or p == "/mcp":
+                return self.mcp_route(method, p, {k: v[0] for k, v in q.items()}, q)
             mp_library.set_viewer(None)
             self.device = self.authorized(q)
             qd0 = {k: v[0] for k, v in q.items()}
@@ -1502,6 +1553,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.tasks.get(m.group(1)))
             if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/cancel", p)) and method == "POST":
                 return self.send_json(a.tasks.cancel(m.group(1)))
+            if p == "/api/library/cover" and method in ("GET", "HEAD"):
+                # a folder or a video: poster.jpg/folder.jpg/<name>.jpg next to it, otherwise a frame (mp_media.cover)
+                pic = mp_media.cover(a.library.resolve(int(qd.get("root", 0)), qd.get("path", "")))
+                if not pic:
+                    raise ApiError(T("no cover", "brak okładki"), 404)
+                return self.send_static(pic, "image/png" if pic.endswith(".png") else "image/webp" if pic.endswith(".webp")
+                                        else "image/jpeg", method == "HEAD", "private, max-age=86400")
             if p == "/api/library/search" and method == "GET":
                 return self.send_json(a.library.search(qd.get("q", "")))
             if p == "/api/library/browse" and method == "GET":
@@ -1598,7 +1656,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_static(self, path, ctype, head_only=False):
+    def send_static(self, path, ctype, head_only=False, cache="no-cache"):
         try:
             with open(path, "rb") as f:
                 body = f.read()
@@ -1607,7 +1665,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache)
         self.end_headers()
         if not head_only:
             self.wfile.write(body)
