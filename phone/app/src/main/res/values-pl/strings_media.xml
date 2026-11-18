@@ -174,6 +174,14 @@
     <string name="media_magnet_show">Pokaż</string>
     <string name="media_magnet_where">Gdzie pobrać?</string>
     <string name="media_magnet_remember">zapamiętaj (zmienisz w Ustawieniach)</string>
+    <string name="media_player_reconnecting">Przerwane połączenie, łączę ponownie…</string>
+    <string name="media_magnet_guessing">Rozpoznaję…</string>
+    <string name="media_magnet_to">Do: %1$s</string>
+    <string name="media_magnet_free">%1$s wolne</string>
+    <string name="media_magnet_change">Zmień</string>
+    <string name="media_magnet_unsure">Nie mam pewności, co to jest. Sprawdź katalog.</string>
+    <string name="media_magnet_pick_folder">Pobieraj do</string>
+    <string name="media_magnet_move_failed">Nie udało się przenieść: %1$s</string>
     <string name="media_share_not_whole">Tego filmu nie ma w całości na telefonie</string>
     <string name="media_share_no_wifi">Telefon nie jest w Wi-Fi, więc ekran go nie zobaczy</string>
     <string name="media_share_no_size">Nie znam rozmiaru pliku</string>
@@ -201,7 +209,7 @@
     <string name="media_lib_edit">Ustawienia katalogu</string>
     <string name="media_lib_name">Nazwa</string>
     <string name="media_lib_tags">Tagi</string>
-    <string name="media_lib_tags_hint">Co jest w tym katalogu. Później nowe pobrania będą trafiać do katalogu z pasującym tagiem.</string>
+    <string name="media_lib_tags_hint">Co jest w tym katalogu. Nowe pobrania trafiają do katalogu z pasującym tagiem.</string>
     <string name="media_lib_own_tag">Własny tag</string>
     <string name="media_lib_tag_add">Dodaj</string>
     <string name="media_lib_tag_movies">filmy</string>

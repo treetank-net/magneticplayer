@@ -41,12 +41,13 @@ from mp_i18n import T
 # DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 from mp_devices import Devices
-from mp_jobs import AFTER, Jobs
+from mp_jobs import AFTER, Jobs, magnet_name
+import mp_ident
 import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 API_LEVEL = 2  # /api/info: id, features, power; tokeny urządzeń, bilety, player/open z url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -274,13 +275,18 @@ class DelugeBackend:
         dirs = [c.get("download_location"), c.get("move_completed_path")]
         return dirs + sorted({t["save_path"] for t in self.list()})
 
-    def add_magnet(self, uri, sequential):
+    def add_magnet(self, uri, sequential, dest=None):
         opts = {"sequential_download": bool(sequential), "prioritize_first_last_pieces": bool(sequential)}
+        if dest:
+            opts["download_location"] = dest
         tid = self.call("core.add_torrent_magnet", uri, opts)
         if not tid:  # Deluge zwraca None, gdy torrent już jest na liście
             m = re.search(r"btih:([0-9a-fA-F]{40})", uri)
             tid = m.group(1).lower() if m else None
         return tid
+
+    def move(self, tid, dest):
+        self.call("core.move_storage", [tid], dest)
 
     def list(self):
         res = self.call("core.get_torrents_status", {}, self.FIELDS)
@@ -366,13 +372,18 @@ class TransmissionBackend:
         return [self.call("session-get", {"fields": ["download-dir"]}).get("download-dir")] + \
             sorted({t["save_path"] for t in self.list()})
 
-    def add_magnet(self, uri, sequential):
+    def add_magnet(self, uri, sequential, dest=None):
         args = {"filename": uri}
+        if dest:
+            args["download-dir"] = dest
         if sequential:
             args["sequential_download"] = True  # Transmission >= 4.1, starsze ignorują
         r = self.call("torrent-add", args)
         t = r.get("torrent-added") or r.get("torrent-duplicate") or {}
         return t.get("hashString")
+
+    def move(self, tid, dest):
+        self.call("torrent-set-location", {"ids": [tid], "location": dest, "move": True})
 
     def list(self):
         fields = ["hashString", "name", "percentDone", "status", "rateDownload", "rateUpload", "eta",
@@ -434,7 +445,10 @@ class NoBackend:
     def list(self):
         return []
 
-    def add_magnet(self, uri, sequential):
+    def add_magnet(self, uri, sequential, dest=None):
+        raise ApiError(T("this server doesn't download torrents", "ten serwer nie pobiera torrentów"), 409)
+
+    def move(self, tid, dest):
         raise ApiError(T("this server doesn't download torrents", "ten serwer nie pobiera torrentów"), 409)
 
     def files(self, tid):
@@ -818,6 +832,9 @@ class App:
         self.announce = Announcer(log, lambda: {"id": self.cfg["id"], "name": self.name()}, self._announce_mine)
         self.announce.start()
         self.uploads = mp_upload.Uploads(cfg, self.library, log)  # przesyłanie filmów z telefonu
+        # rozpoznawanie magnetów (film/serial/bajka → katalog): mały indeks IMDb odświeżany w tle + Wikidata
+        self.ident = mp_ident.Service(cfg, os.path.join(CONFIG_DIR, "ident-memory.json"), log)
+        self.ident.start()
         self.installs = mp_install.Installs(log)  # instalacja na kolejnym komputerze (kod dołączenia)
         self.access = mp_access.AccessRequests(log)  # prośby o dostęp z sieci domowej (mp_access.py)
         # apka dla telefonów z wydań na GitHubie (mp_appupdate.py); tryb ustawia telefon
@@ -887,6 +904,7 @@ class App:
                 "torrent": self.cfg["backend"] if has_torrent else None,
                 "library": library,
                 "library_tags": True,  # tagi, widoczność i wykluczenia katalogów (agent 1.4+)
+                "library_guess": True,  # rozpoznanie magnetu i pobieranie od razu do katalogu (agent 1.5+)
                 "player": self.is_screen(),
                 "subs_search": self.subs_available(wait=False),
                 "unlock": AUTO_UNLOCK and platform.can_unlock(),
@@ -1284,11 +1302,40 @@ class Handler(BaseHTTPRequestHandler):
                 uri = (b.get("magnet") or "").strip()
                 if not uri.startswith("magnet:?"):
                     raise ApiError(T("this isn't a magnet link", "to nie jest magnet link"), 400)
-                tid = a.backend.add_magnet(uri, b.get("sequential", True))
+                dest = a.library.dest(int(b["root"]), str(b.get("sub") or "")) if b.get("root") is not None else None
+                tid = a.backend.add_magnet(uri, b.get("sequential", True), dest)
                 if tid:
                     a.jobs.add(tid.lower(), uri, b.get("after", "none"))
-                log("dodano magnet:", tid)
-                return self.send_json({"id": tid})
+                    if dest:
+                        a.jobs.set_meta(tid.lower(), dest=dest, guess=b.get("guess"))
+                log("dodano magnet:", tid, "→", dest or "(domyślny katalog klienta)")
+                return self.send_json({"id": tid, "path": dest})
+            m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/move", p)
+            if m and method == "POST":  # zmiana katalogu po rozpoznaniu: klient przenosi (dalej seeduje)
+                b, tid = self.body(), m.group(1).lower()
+                dest = a.library.dest(int(b["root"]), str(b.get("sub") or ""))
+                a.backend.move(tid, dest)
+                j = a.jobs.get(tid) or {}
+                if b.get("learn") and j.get("guess"):  # następnym razem ten tytuł od razu tutaj
+                    tags = a.library.roots()[int(b["root"])]["tags"]
+                    if tags:
+                        a.ident.learn(j["guess"], tags[0])
+                a.jobs.set_meta(tid, dest=dest)
+                log("przeniesiono torrent:", tid, "→", dest)
+                return self.send_json({"ok": True, "path": dest})
+            if p == "/api/library/guess" and method == "POST":
+                b = self.body()
+                name, files = b.get("name"), None
+                if b.get("magnet"):
+                    name = magnet_name(b["magnet"]) or name
+                if b.get("torrent"):  # już w kliencie (np. magnet bez nazwy, gdy metadane już są)
+                    t = next((t for t in a.backend.list() if t["id"] == b["torrent"]), None)
+                    if t:
+                        name = t["name"]
+                        files = [(f["path"], f["size"]) for f in a.backend.files(b["torrent"])[1]] or None
+                g = a.ident.guess(name, files) if name else {"tag": None, "confidence": "low", "why": []}
+                kind = g.get("kind") if g.get("tag") in ("seriale", "bajki") else None
+                return self.send_json(dict(a.library.targets(g.get("tag"), g.get("title"), kind), guess=g, name=name))
             m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/files", p)
             if m and method == "GET":
                 save_path, files = a.backend.files(m.group(1))

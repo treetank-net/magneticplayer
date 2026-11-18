@@ -37,6 +37,8 @@ data class Server(
     val hasLibrary get() = features?.optBoolean("library", true) ?: true
     /** Tagi, widoczność i wykluczenia katalogów biblioteki (agent 1.4+). */
     val libraryTags get() = features?.optBoolean("library_tags", false) ?: false
+    /** Agent 1.5+: rozpoznaje magnet i pobiera od razu do katalogu biblioteki (`/api/library/guess`). */
+    val libraryGuess get() = features?.optBoolean("library_guess", false) ?: false
     /** Umie zainstalować agenta na kolejnym komputerze (`/api/install/code`, agent 1.3+). */
     val canInstall get() = features?.optBoolean("install", false) ?: false
     val canAccessRequests get() = features?.optBoolean("access_requests", false) ?: false

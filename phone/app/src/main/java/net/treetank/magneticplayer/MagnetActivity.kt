@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -101,6 +102,9 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
     var countdown by remember { mutableIntStateOf(8) }
     var after by remember { mutableStateOf(api.s.afterDefault) }
     var tid by remember { mutableStateOf<String?>(null) }
+    var guess by remember { mutableStateOf<DlGuess?>(null) }
+    var dest by remember { mutableStateOf<DlTarget?>(null) }
+    var picking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val name = magnet?.let { magnetName(it) } ?: "torrent"
 
@@ -114,8 +118,15 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
         phase = Phase.Working
         try {
             api.ensureAwake { status = it }
+            // agent 1.5+: rozpoznanie i katalog z tagiem, żeby pobierało się od razu we właściwe miejsce
+            if (guess == null && (Servers.get(ctx, api.srv.key) ?: api.srv).libraryGuess) {
+                status = ctx.getString(R.string.media_magnet_guessing)
+                guess = withContext(Dispatchers.IO) { runCatching { api.guess(magnet) }.getOrNull() }
+                dest = guess?.let { g -> g.pick?.let { g.targets.getOrNull(it) } }
+                if (guess?.let { it.confidence == "low" || dest == null } == true) autoClose = false
+            }
             status = ctx.getString(R.string.media_magnet_sending, api.srv.name)
-            tid = api.addMagnetRetrying(magnet, sequential, after) { status = it }
+            tid = api.addMagnetRetrying(magnet, sequential, after, dest, guess?.raw) { status = it }
             phase = Phase.Done
             status = ctx.getString(R.string.media_magnet_added, api.srv.name)
         } catch (e: ApiException) {
@@ -152,6 +163,36 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
                     }
                     Spacer(Modifier.size(12.dp))
                     Text(status, style = MaterialTheme.typography.bodyMedium)
+                }
+                val g = guess
+                if (phase == Phase.Done && tid != null && g != null && g.targets.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    if (g.title != null) {
+                        Text((g.tag?.let { tagLabel(it) + ": " } ?: "") + g.title + (g.year?.let { " ($it)" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val d = dest
+                        Text(stringResource(R.string.media_magnet_to, d?.let { targetLabel(it) } ?: "—"),
+                            Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        TextButton({ autoClose = false; picking = true }) { Text(stringResource(R.string.media_magnet_change)) }
+                    }
+                    if (g.confidence == "low" || dest == null) {
+                        Text(stringResource(R.string.media_magnet_unsure), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (picking && g != null && tid != null) {
+                    TargetPicker(g.targets, dest, { picking = false }) { t ->
+                        picking = false
+                        val id = tid!!
+                        val learn = g.tag == null || g.tag !in t.tags
+                        scope.launch {
+                            val err = withContext(Dispatchers.IO) { runCatching { api.moveTorrent(id, t, learn) }.exceptionOrNull() }
+                            if (err == null) dest = t
+                            else status = ctx.getString(R.string.media_magnet_move_failed, err.message ?: "")
+                        }
+                    }
                 }
                 if (phase == Phase.Done && tid != null) {
                     Spacer(Modifier.height(10.dp))
@@ -192,6 +233,36 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
             }
         }
     }
+}
+
+@Composable
+private fun targetLabel(t: DlTarget) = t.name + (if (t.sub.isNotEmpty()) " / ${t.sub}" else "") +
+    " · " + stringResource(R.string.media_magnet_free, humanBytes(t.free))
+
+/** Zmiana katalogu pobierania po rozpoznaniu (agent przenosi torrent i zapamiętuje wybór dla tego tytułu). */
+@Composable
+private fun TargetPicker(targets: List<DlTarget>, current: DlTarget?, onClose: () -> Unit, onPick: (DlTarget) -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(R.string.media_magnet_pick_folder)) },
+        text = {
+            Column {
+                targets.forEach { t ->
+                    Row(Modifier.fillMaxWidth().clickable { if (t != current) onPick(t) else onClose() }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(t == current, null)
+                        Spacer(Modifier.size(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(t.name + (if (t.sub.isNotEmpty()) " / ${t.sub}" else ""), style = MaterialTheme.typography.bodyLarge)
+                            Text((t.tags.map { tagLabel(it) } + stringResource(R.string.media_magnet_free, humanBytes(t.free))).joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClose) { Text(stringResource(R.string.media_cancel)) } },
+    )
 }
 
 /** Kilka serwerów pobiera torrenty: na który wysłać (z „zapamiętaj”, do zmiany w Ustawieniach). */

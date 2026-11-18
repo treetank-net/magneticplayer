@@ -87,6 +87,13 @@ data class Job(
 )
 
 /** Katalog biblioteki. `visible`: "all", "owners" albo lista id urządzeń (`devices`); `open`: czy ten telefon może go otworzyć. */
+/** Katalog, do którego można pobrać torrent (`sub`: podkatalog, np. istniejący serial). */
+data class DlTarget(val root: Int, val name: String, val sub: String, val free: Long, val tags: List<String>, val existing: Boolean)
+
+/** Rozpoznanie magnetu z agenta: co to jest i gdzie by pasowało (`pick`: indeks w `targets` albo null). */
+data class DlGuess(val tag: String?, val title: String?, val year: Int?, val confidence: String, val raw: JSONObject,
+                   val targets: List<DlTarget>, val pick: Int?)
+
 data class LibRoot(
     val index: Int, val name: String, val path: String, val exists: Boolean,
     val tags: List<String> = emptyList(), val visible: String = "all", val devices: List<String> = emptyList(),
@@ -350,10 +357,36 @@ class Api(val s: Settings, val srv: Server) {
         }
     }
 
-    fun addMagnet(uri: String, sequential: Boolean, after: String = s.afterDefault): String? =
-        JSONObject(call("POST", "/api/torrents",
-            JSONObject().put("magnet", uri).put("sequential", sequential).put("after", after), 20000))
+    fun addMagnet(uri: String, sequential: Boolean, after: String = s.afterDefault,
+                  dest: DlTarget? = null, guess: JSONObject? = null): String? {
+        val b = JSONObject().put("magnet", uri).put("sequential", sequential).put("after", after)
+        if (dest != null) b.put("root", dest.root).put("sub", dest.sub).put("guess", guess)
+        return JSONObject(call("POST", "/api/torrents", b, 20000))
             .optString("id").takeIf { it.isNotEmpty() && it != "null" }
+    }
+
+    /** Agent 1.5+: rozpoznanie (indeks IMDb, Wikidata dla niepewnych) i podpowiedź katalogu. */
+    fun guess(magnet: String): DlGuess {
+        val j = JSONObject(call("POST", "/api/library/guess", JSONObject().put("magnet", magnet), 30000))
+        val g = j.optJSONObject("guess") ?: JSONObject()
+        val a = j.optJSONArray("targets") ?: JSONArray()
+        val targets = List(a.length()) { i ->
+            val t = a.getJSONObject(i)
+            val tags = t.optJSONArray("tags")
+            DlTarget(t.getInt("root"), t.optString("name"), t.optString("sub"), t.optLong("free"),
+                List(tags?.length() ?: 0) { k -> tags!!.getString(k) }, t.optBoolean("existing"))
+        }
+        return DlGuess(g.optString("tag").takeIf { it.isNotEmpty() && it != "null" },
+            g.optString("title").takeIf { it.isNotEmpty() && it != "null" },
+            g.optInt("year", 0).takeIf { it > 0 }, g.optString("confidence", "low"), g, targets,
+            if (j.isNull("pick")) null else j.optInt("pick"))
+    }
+
+    /** Zmiana katalogu po dodaniu (klient przenosi pliki); `learn`: agent zapamięta wybór dla tego tytułu. */
+    fun moveTorrent(id: String, dest: DlTarget, learn: Boolean) {
+        call("POST", "/api/torrents/$id/move",
+            JSONObject().put("root", dest.root).put("sub", dest.sub).put("learn", learn), 20000)
+    }
 
     fun setAfter(id: String, after: String) {
         call("POST", "/api/torrents/$id/after", JSONObject().put("after", after))
@@ -612,12 +645,13 @@ class Api(val s: Settings, val srv: Server) {
     }
 
     /** Dodanie magneta z ponawianiem — po wybudzeniu deluged/deluge-web potrzebują chwili. */
-    suspend fun addMagnetRetrying(uri: String, sequential: Boolean, after: String, onStatus: (String) -> Unit): String? =
+    suspend fun addMagnetRetrying(uri: String, sequential: Boolean, after: String, dest: DlTarget? = null,
+                                  guess: JSONObject? = null, onStatus: (String) -> Unit): String? =
         withContext(Dispatchers.IO) {
             var last: ApiException? = null
             repeat(12) { attempt ->
                 try {
-                    return@withContext addMagnet(uri, sequential, after)
+                    return@withContext addMagnet(uri, sequential, after, dest, guess)
                 } catch (e: ApiException) {
                     if (e.code != 502 && e.code != 0) throw e
                     last = e

@@ -292,7 +292,7 @@ private val LIB_TAGS = listOf("filmy", "seriale", "bajki", "kopia")
 
 /** Wbudowane tagi pokazujemy w języku telefonu, ale zapisujemy zawsze po polsku (tak je zna agent). */
 @Composable
-private fun tagLabel(t: String) = when (t) {
+internal fun tagLabel(t: String) = when (t) {
     "filmy" -> stringResource(R.string.media_lib_tag_movies)
     "seriale" -> stringResource(R.string.media_lib_tag_series)
     "bajki" -> stringResource(R.string.media_lib_tag_kids)

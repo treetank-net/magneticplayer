@@ -1,7 +1,9 @@
 # Plan: biblioteka z tagami, porządkowanie dysków, okładki
 
 Stan (2026-11-18): etap 1 (tagi, widoczność, wykluczenia) w agencie 1.4.0 i w apce, bez ekranu przy setupie serwera
-(na razie ołówek przy katalogu w Bibliotece). API dalej wskazuje katalog indeksem; `id` jest w konfiguracji na
+(na razie ołówek przy katalogu w Bibliotece). Etap 2 (magnet → katalog) w agencie 1.5.0 i w apce: rozpoznanie,
+pobieranie od razu do katalogu z tagiem, „Zmień” z przeniesieniem i zapamiętaniem wyboru. Brakuje ponownego
+rozpoznania magnetu bez nazwy (`dn=`) po pobraniu metadanych. API dalej wskazuje katalog indeksem; `id` jest w konfiguracji na
 potrzeby replikacji. Etapy idą po kolei, bo każdy stoi na poprzednim.
 
 ## Dziś
@@ -56,7 +58,7 @@ potrzeby replikacji. Etapy idą po kolei, bo każdy stoi na poprzednim.
     przeniesieniem jest konieczny. Tego samego oczekujemy od użytkowników z własnym agentem AI.
 14. Pobierany torrent nie zmienia nazw plików (protokół), ale pobiera się od razu do katalogu wybranego regułami
     (punkt 6), więc kolekcja zostaje uporządkowana bez przenosin.
-15. **Rozpoznawanie (`server/mp_ident.py`, jeszcze niepodpięte do API):** sam `guessit` nie wystarcza (nie zna
+15. **Rozpoznawanie (`server/mp_ident.py`, `POST /api/library/guess`):** sam `guessit` nie wystarcza (nie zna
     gatunku, myli liczby w tytułach z odcinkami). Magnet ma tylko nazwę, torrent nazwę i listę plików, czasem `.nfo`
     z identyfikatorem IMDb. Dlatego agent trzyma mały indeks z darmowych zrzutów IMDb (datasets.imdbws.com, użytek
     osobisty): filmy i seriale z ≥300 głosami, gatunki jako maska bitów, znormalizowane tytuły; ~125 tys. tytułów,
@@ -64,9 +66,12 @@ potrzeby replikacji. Etapy idą po kolei, bo każdy stoi na poprzednim.
     (odcinki S01E01, muzyka, programy/komiksy, katalog bez filmów zostaje na miejscu). Serial tylko po oznaczeniach
     odcinków, nie po liczbie plików (kolekcja filmów to nie serial). Bajki: animacja + `Family` pewnie; sama animacja
     albo sam `Family` z niską pewnością, bo IMDb nie odróżnia anime dla dorosłych od bajek. Test na uporządkowanej
-    ręcznie kolekcji jmpc: 87/92 zgodnie, przy wysokiej pewności 61/62; chybienia to tytuły tylko po polsku
-    (później Wikidata), anime dla dorosłych, aktorskie remaki i serial animowany dla dzieci bez `Family`. Niska
-    pewność = pytanie na telefonie, a wybór użytkownika warto zapamiętać.
+    ręcznie kolekcji jmpc: 87/92 zgodnie, przy wysokiej pewności 61/62; chybienia to tytuły tylko po polsku,
+    anime dla dorosłych, aktorskie remaki i serial animowany dla dzieci bez `Family`. Dlatego niepewne pozycje
+    uzupełnia Wikidata (polskie tytuły, „film/serial dla dzieci”, kategorie wiekowe FSK/MPAA: animacja do 6 lat
+    albo aktorski familijny od 0 lat = bajka): 90/92, chybienie to film animowany z FSK 12, który użytkownik
+    trzyma w bajkach. Niska pewność = okno magnetu nie zamyka się samo, a zmiana katalogu („Zmień”) zapamiętuje
+    wybór dla tego tytułu.
 16. Zdjęcia i dokumenty (reguły typu `rok/miesiąc/nazwa.pdf`) — poza apką (Immich, PhotoPrism, Paperless-ngx).
 
 ## Model katalogu (config.json)

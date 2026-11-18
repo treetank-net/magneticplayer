@@ -228,6 +228,46 @@ class Library:
             r["exclude"] = [x for x in (str(e).strip().strip("/") for e in b["exclude"] or []) if x and ".." not in x.split("/")][:100]
         self.save_cfg()
 
+    def targets(self, tag=None, title=None, kind=None):
+        """Gdzie pobrać: katalogi, które pytający widzi i może zapisywać (bez `kopia`), z wolnym miejscem.
+        `pick`: katalog z tagiem z rozpoznania; serial tam, gdzie już leży (jego podkatalog), inaczej najwięcej wolnego."""
+        import shutil
+        from mp_ident import norm
+        v, out, key = current_viewer(), [], norm(title or "")
+        for r in self.roots():
+            if not r["exists"] or set(r["tags"]) & HIDDEN_TAGS or not can_see(r, v) or not os.access(r["path"], os.W_OK):
+                continue
+            try:
+                free = shutil.disk_usage(r["path"]).free
+            except OSError:
+                continue
+            t = {"root": r["index"], "id": r["id"], "name": r["name"], "path": r["path"], "tags": r["tags"],
+                 "free": free, "sub": "", "existing": False}
+            if kind == "series" and key and tag in r["tags"]:
+                try:
+                    names = os.listdir(r["path"])
+                except OSError:
+                    names = []
+                d = next((n for n in names if norm(n) == key and os.path.isdir(os.path.join(r["path"], n))), None)
+                if d:
+                    t.update(sub=d, existing=True)
+            out.append(t)
+        pick = None
+        if tag:
+            cand = [i for i, t in enumerate(out) if tag in t["tags"]]
+            if cand:
+                pick = max(cand, key=lambda i: (out[i]["existing"], out[i]["free"]))
+                t = out[pick]
+                if kind == "series" and title and not t["sub"]:
+                    t["sub"] = re.sub(r'[\\/:*?"<>|]+', " ", title).strip(" .")[:100]  # nowy serial: Seriale/<tytuł>/
+        return {"targets": out, "pick": pick}
+
+    def dest(self, i, sub=""):
+        """Katalog pobierania w katalogu biblioteki (tworzony, gdy go nie ma)."""
+        full = self.resolve(i, sub or "")
+        os.makedirs(full, exist_ok=True)
+        return full
+
     def remove_root(self, i):
         self.roots()
         if not 0 <= i < len(self.cfg["library"]):

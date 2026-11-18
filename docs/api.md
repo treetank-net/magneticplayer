@@ -102,7 +102,8 @@ Z konsoli: `magneticplayer_agent.py --pair` (kod + QR w terminalu), `--devices`,
 | metoda i ścieżka | opis |
 |---|---|
 | `GET /api/torrents` | lista: `id`, `name`, `progress`, `state`, prędkości, `eta`, `size`, `sequential`, `peers`, `mine` (zlecony z apki), `after` |
-| `POST /api/torrents` | `{"magnet", "sequential": true, "after": "none\|stop\|suspend"}` → `{"id"}` |
+| `POST /api/torrents` | `{"magnet", "sequential": true, "after": "none\|stop\|suspend", "root"?, "sub"?, "guess"?}` → `{"id", "path"}`; `root`/`sub` (agent 1.5+): pobieraj od razu do katalogu biblioteki (podkatalog tworzy), `guess`: rozpoznanie z `/api/library/guess`, do zapamiętania zmiany |
+| `POST /api/torrents/<id>/move` | `{"root", "sub"?, "learn"?}` (agent 1.5+): klient przenosi torrent (dalej seeduje); `learn`: następnym razem ten tytuł trafi do katalogu z tym tagiem |
 | `GET /api/torrents/<id>/files` | pliki: `index`, `path`, `size`, `progress`, `media`, `ready` (bajty ciągiem od początku), `duration`, `ready_sec` |
 | `POST /api/torrents/<id>/action` | `{"action": "pause\|resume\|remove\|remove_data\|sequential_on\|sequential_off"}` (zależnie od backendu) |
 | `POST /api/torrents/<id>/after` | `{"after": "none\|stop\|suspend"}` |
@@ -115,6 +116,7 @@ Z konsoli: `magneticplayer_agent.py --pair` (kod + QR w terminalu), `--devices`,
 |---|---|
 | `GET /api/library` | katalogi widoczne dla urządzenia: `index`, `id`, `name`, `path`, `exists`, `tags`, `visible`, `exclude`, `open`; `?manage=1` (domownik): także ukryte przed nim i z tagiem `kopia` (`open: false`, gdy nie może ich otworzyć) |
 | `POST /api/library` | `{"path", "name"?}` dodaje katalog, `{"op": "remove", "index"}` go usuwa, `{"op": "update", "index", "name"?, "tags"?, "visible"?, "exclude"?}` zmienia (agent 1.4+, `features.library_tags`); zwraca listę jak `?manage=1` |
+| `POST /api/library/guess` | `{"magnet"\|"name"\|"torrent"}` (agent 1.5+, `features.library_guess`) → `name`, `guess` (`tag`: filmy/seriale/bajki/muzyka/inne/null, `kind`, `title`, `year`, `imdb`, `season`, `genres`, `confidence`: high/medium/low, `why`), `targets` (katalogi do zapisu bez `kopia`: `root`, `id`, `name`, `path`, `tags`, `free`, `sub`, `existing`) i `pick` (indeks w `targets` albo null). Serial: istniejący podkatalog z jego tytułem, inaczej nowy `<tytuł>`; film: katalog z tagiem z największą ilością wolnego miejsca |
 | `GET /api/library/browse?root=&path=` | `root`, `path`, `dirs`, `files` (`name`, `size`, `mtime`, `media`, `subs`) |
 | `GET /api/fs?path=` | podkatalogi do wyboru nowego katalogu (`parent`, `dirs`) |
 | `GET /lib/<root>/<ścieżka>` | strumień pliku z biblioteki (Range) |

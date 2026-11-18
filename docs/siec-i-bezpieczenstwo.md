@@ -26,6 +26,12 @@ MagneticPlayer jest pomyślany do domowej sieci:
 - **Firewall.** `install-root.sh` otwiera port 8765 w ufw tylko dla `192.168.0.0/16` i `10.0.0.0/8`.
 - **deluge-web** słucha tylko na `127.0.0.1:8112`, więc z sieci jest dostępny wyłącznie przez agenta.
 - **Wake-on-LAN** to broadcast w lokalnej sieci, więc spoza niej nie zadziała.
+- **Rozpoznawanie magnetów (agent 1.5+)** wychodzi do internetu w dwóch miejscach: raz w tygodniu pobiera zrzuty
+  IMDb (datasets.imdbws.com, ~250 MB, z nich zostaje indeks ~12 MB w `~/.cache/magneticplayer/imdb/`), a dla
+  niepewnych pozycji pyta Wikidatę o tytuł i rok (nic więcej, bez identyfikatora urządzenia). Wyłączenie:
+  `"ident_online": false` w `config.json` (rozpoznawanie działa wtedy na tym, co już w indeksie);
+  `"ident_refresh_days"` zmienia częstotliwość odświeżania. Wybory użytkownika są w `ident-memory.json` obok
+  konfiguracji.
 
 ## Goście
 

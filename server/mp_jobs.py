@@ -49,6 +49,14 @@ class Jobs:
             del self.items[300:]
             self._save()
 
+    def set_meta(self, tid, **kw):
+        """Dodatkowe dane zlecenia (rozpoznanie, katalog docelowy), np. do zapamiętania zmiany katalogu."""
+        with self.lock:
+            j = self._find(tid)
+            if j is not None:
+                j.update(kw)
+                self._save()
+
     def set_after(self, tid, after):
         if after not in AFTER:
             raise ValueError(after)

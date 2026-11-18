@@ -168,7 +168,10 @@ class PlayerActivity : ComponentActivity() {
             override fun getContentBufferedPosition() = ahead(super.getContentBufferedPosition())
         }
         p.addListener(object : Player.Listener {
+            var retries = 0
+
             override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY) retries = 0
                 if (state == Player.STATE_ENDED) {
                     prefetchJob?.cancel()
                     val k = key
@@ -177,6 +180,18 @@ class PlayerActivity : ComponentActivity() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                // błąd sieci (restart agenta przy aktualizacji, chwilowy brak Wi-Fi): łączymy się ponownie przez
+                // ~minutę i gramy dalej od tego samego miejsca, zamiast zatrzymać film
+                if (error.errorCode in 2000..2999 && retries < 15) {
+                    if (retries++ == 0) Toast.makeText(this@PlayerActivity, R.string.media_player_reconnecting, Toast.LENGTH_SHORT).show()
+                    val pos = p.currentPosition
+                    lifecycleScope.launch {
+                        delay(minOf(1000L * retries, 5000L))
+                        p.seekTo(pos)
+                        p.prepare()
+                    }
+                    return
+                }
                 Toast.makeText(this@PlayerActivity,
                     getString(R.string.media_player_error, error.errorCodeName),
                     Toast.LENGTH_LONG).show()
