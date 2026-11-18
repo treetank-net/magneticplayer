@@ -43,10 +43,10 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
 /**
- * Okienko nad innymi aplikacjami (przeglądarką), gdy pojawi się pobrany film: „Pobrano X. Przesłać na jmpc?”
- * z przyciskami, jak pytanie menedżera haseł o zapisanie hasła. Wymaga uprawnienia „Wyświetlanie nad innymi
- * aplikacjami” (SYSTEM_ALERT_WINDOW, nadaje użytkownik w ustawieniach systemu). Bez niego, albo gdy nikt nie
- * kliknie przez [TIMEOUT_MS], zostaje zwykłe powiadomienie z tymi samymi przyciskami.
+ * A window above other apps (the browser) when a downloaded video appears: "X downloaded. Upload to jmpc?"
+ * with buttons, like a password manager's prompt to save a password. Requires the "Display over other
+ * apps" permission (SYSTEM_ALERT_WINDOW, granted by the user in system settings). Without it, or when nobody
+ * taps within [TIMEOUT_MS], an ordinary notification with the same buttons remains.
  */
 object UploadOverlay {
     private const val TIMEOUT_MS = 20_000L
@@ -57,11 +57,11 @@ object UploadOverlay {
 
     fun allowed(ctx: Context) = SysSettings.canDrawOverlays(ctx)
 
-    /** Ekran systemowy z przełącznikiem „Wyświetlanie nad innymi aplikacjami” dla tej apki. */
+    /** System screen with the "Display over other apps" switch for this app. */
     fun settingsIntent(ctx: Context) = Intent(SysSettings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    /** Pokazuje pytanie (z dowolnego wątku). false = brak uprawnienia, zostaje samo powiadomienie. */
+    /** Shows the prompt (from any thread). false = no permission, only the notification remains. */
     fun show(ctx: Context, v: Uploads.PhoneVideo, server: String): Boolean {
         val app = ctx.applicationContext
         if (!allowed(app)) return false
@@ -90,25 +90,25 @@ object UploadOverlay {
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            // bez fokusu: klawiatura i przeglądarka pod spodem działają dalej; ALT_FOCUSABLE_IM kładzie okno pod
-            // warstwą klawiatury (samo NOT_FOCUSABLE rysuje je na niej), więc dostaje jej wysokość i staje nad nią
+            // without focus: the keyboard and the browser underneath keep working; ALT_FOCUSABLE_IM puts the window below
+            // the keyboard layer (NOT_FOCUSABLE alone draws it on top), so it gets its height and sits above it
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.BOTTOM
-            // nad paskami systemu i nad klawiaturą (inaczej klawiatura je zasłania, gdy ktoś akurat pisze)
+            // above the system bars and above the keyboard (otherwise the keyboard covers it while someone is typing)
             if (Build.VERSION.SDK_INT >= 30) fitInsetsTypes = android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.ime()
-            windowAnimations = android.R.style.Animation_InputMethod  // wjeżdża od dołu
+            windowAnimations = android.R.style.Animation_InputMethod  // slides in from the bottom
         }
         try {
             wm.addView(view, lp)
-        } catch (e: Exception) {  // uprawnienie cofnięte w międzyczasie: zostaje powiadomienie
+        } catch (e: Exception) {  // permission revoked in the meantime: the notification remains
             o.destroy(); owner = null; return
         }
         o.resume()
         shown = view
-        main.postDelayed({ if (shown === view) close(app) }, TIMEOUT_MS)  // nietknięte: zostaje powiadomienie
+        main.postDelayed({ if (shown === view) close(app) }, TIMEOUT_MS)  // untouched: the notification remains
     }
 
     private fun close(app: Context) {
@@ -149,7 +149,7 @@ object UploadOverlay {
         }
     }
 
-    /** Cykl życia dla Compose w oknie bez aktywności. */
+    /** Lifecycle for Compose in a window without an activity. */
     private class Owner : SavedStateRegistryOwner {
         private val reg = LifecycleRegistry(this)
         private val ss = SavedStateRegistryController.create(this).apply { performRestore(null) }

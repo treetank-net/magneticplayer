@@ -1,21 +1,21 @@
 #!/bin/bash
-# Odinstalowanie agenta MagneticPlayer (jako zwykły użytkownik):
-#   bash ~/.local/share/magneticplayer/uninstall.sh          # agent i usługi; ustawienia i sparowane telefony zostają
-#   bash ~/.local/share/magneticplayer/uninstall.sh --purge  # także ~/.config/magneticplayer (token, urządzenia)
-# Filmów nie rusza (także „Z telefonu”). Pakietów systemowych (mpv, ffmpeg, deluge) nie odinstalowuje, bo mogą być
-# używane przez inne programy. Rootowe dodatki pełnej instalacji (polkit, WoL, zapora) usuwa przez sudo/pkexec.
+# Uninstall the MagneticPlayer agent (as a regular user):
+#   bash ~/.local/share/magneticplayer/uninstall.sh          # agent and services; settings and paired phones are kept
+#   bash ~/.local/share/magneticplayer/uninstall.sh --purge  # also ~/.config/magneticplayer (token, devices)
+# Does not touch videos (including "From phone"). Does not uninstall system packages (mpv, ffmpeg, deluge), as other
+# programs may use them. Removes the root extras of the full install (polkit, WoL, firewall) via sudo/pkexec.
 set -uo pipefail
 DEST=~/.local/share/magneticplayer
 UNITS=~/.config/systemd/user
 CONF=~/.config/magneticplayer
-# komunikaty: po polsku, gdy system ma polski (LC_ALL / LC_MESSAGES / LANG), inaczej po angielsku
+# messages: Polish when the system locale is Polish (LC_ALL / LC_MESSAGES / LANG), English otherwise
 case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in pl*) MP_LANG=pl ;; *) MP_LANG=en ;; esac
 say() { if [ "$MP_LANG" = pl ]; then echo "$2"; else echo "$1"; fi; }
 
 say "== services" "== usługi"
 for u in magneticplayer deluge-web deluged; do
   f="$UNITS/$u.service"
-  # usługi Deluge tylko wtedy, gdy założył je nasz install.sh
+  # Deluge services only if our install.sh created them
   if [ -f "$f" ] && { [ "$u" = magneticplayer ] || grep -q "MagneticPlayer" "$f"; }; then
     systemctl --user disable --now "$u" 2>/dev/null
     rm -f "$f"
@@ -44,7 +44,7 @@ echo "'"$(say "system extras removed" "dodatki systemowe usunięte")"'"'
   fi
 fi
 
-# linger włączony przez instalację lekką (znacznik w $DEST)
+# linger enabled by the lite install (marker in $DEST)
 [ -f "$DEST/.linger" ] && loginctl disable-linger </dev/null 2>/dev/null && say "linger disabled" "wyłączono linger"
 
 say "== agent files" "== pliki agenta"

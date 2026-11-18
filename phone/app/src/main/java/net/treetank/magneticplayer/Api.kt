@@ -21,19 +21,19 @@ class Settings(ctx: Context) {
     val ctx: Context = ctx.applicationContext
     private val p = ctx.applicationContext.getSharedPreferences("magneticplayer", Context.MODE_PRIVATE)
 
-    // adres, token i MAC serwerów: Servers (dawne pola host/port/token/mac czyta tylko migracja)
+    // server address, token and MAC: Servers (the old host/port/token/mac fields are read only by the migration)
     var sequential: Boolean
         get() = p.getBoolean("sequential", true)
         set(v) = p.edit().putBoolean("sequential", v).apply()
-    /** Pilot nie wygasza ekranu, gdy coś gra */
+    /** Remote does not dim the screen while something is playing */
     var pilotKeepScreen: Boolean
         get() = p.getBoolean("pilot_keep_screen", true)
         set(v) = p.edit().putBoolean("pilot_keep_screen", v).apply()
-    /** pytać przed zamknięciem cudzej aplikacji na Chromecaście (Spotify, YouTube…) */
+    /** ask before closing someone else's app on a Chromecast (Spotify, YouTube…) */
     var confirmForeignStop: Boolean
         get() = p.getBoolean("confirm_foreign_stop", true)
         set(v) = p.edit().putBoolean("confirm_foreign_stop", v).apply()
-    /** domyślna akcja po pobraniu: none | stop | suspend */
+    /** default action after a download: none | stop | suspend */
     var afterDefault: String
         get() = p.getString("after", "none")!!
         set(v) = p.edit().putString("after", v).apply()
@@ -41,21 +41,21 @@ class Settings(ctx: Context) {
         get() = p.getString("sub_langs", "en,pl")!!
         set(v) = p.edit().putString("sub_langs", v.replace(" ", "").lowercase()).apply()
 
-    /** ile minut filmu apka pobiera do przodu na dysk telefonu (MediaCache) */
+    /** how many minutes of video the app downloads ahead onto the phone's disk (MediaCache) */
     var bufferMinutes: Int
         get() = p.getInt("buffer_min", 5)
         set(v) = p.edit().putInt("buffer_min", v).apply()
 
-    /** nazwa ostatnio używanego telewizora (Chromecast albo DLNA), do „ostatnio” w wyborze ekranu */
+    /** name of the last used TV (Chromecast or DLNA), for "recent" in the screen picker */
     var lastTv: String?
         get() = p.getString("last_tv", null)
         set(v) = p.edit().putString("last_tv", v).apply()
 
-    /** pytać o przesłanie filmów pobranych przeglądarką na serwer (Uploads.kt) */
+    /** ask about uploading videos downloaded by the browser to the server (Uploads.kt) */
     var uploadAsk: Boolean
         get() = p.getBoolean("upload_ask", false)
         set(v) = p.edit().putBoolean("upload_ask", v).apply()
-    /** serwer docelowy przesyłania (klucz z Servers); null = serwer plików z features.upload */
+    /** target server for uploads (key from Servers); null = the file server with features.upload */
     var uploadServer: String?
         get() = p.getString("upload_server", null)
         set(v) = p.edit().putString("upload_server", v).apply()
@@ -64,7 +64,7 @@ class Settings(ctx: Context) {
     fun position(key: String): Long = p.getLong("pos:$key", 0)
     fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).apply()
 
-    // bufor na dysku: ile filmu obejrzano (0–1) i kiedy ostatnio oglądano, do sprzątania w MediaCache.sweep
+    // disk buffer: how much of the video was watched (0–1) and when last watched, for cleanup in MediaCache.sweep
     fun cacheWatched(key: String): Float = p.getFloat("cw:$key", 0f)
     fun cacheUsed(key: String): Long = p.getLong("cu:$key", 0)
     fun touchCache(key: String, watched: Float) =
@@ -77,7 +77,7 @@ data class Torrent(
     val id: String, val name: String, val progress: Double, val state: String,
     val downRate: Long, val upRate: Long, val eta: Long, val size: Long,
     val sequential: Boolean, val peers: Int,
-    /** dodany z apki */
+    /** added from the app */
     val mine: Boolean, val after: String,
 )
 
@@ -86,11 +86,11 @@ data class Job(
     val magnet: String?, val inClient: Boolean, val progress: Double?,
 )
 
-/** Katalog biblioteki. `visible`: "all", "owners" albo lista id urządzeń (`devices`); `open`: czy ten telefon może go otworzyć. */
-/** Katalog, do którego można pobrać torrent (`sub`: podkatalog, np. istniejący serial). */
+/** Library directory. `visible`: "all", "owners" or a list of device ids (`devices`); `open`: whether this phone can open it. */
+/** Directory a torrent can be downloaded into (`sub`: subdirectory, e.g. an existing series). */
 data class DlTarget(val root: Int, val name: String, val sub: String, val free: Long, val tags: List<String>, val existing: Boolean)
 
-/** Rozpoznanie magnetu z agenta: co to jest i gdzie by pasowało (`pick`: indeks w `targets` albo null). */
+/** Magnet recognition from the agent: what it is and where it would fit (`pick`: index into `targets` or null). */
 data class DlGuess(val tag: String?, val title: String?, val year: Int?, val confidence: String, val raw: JSONObject,
                    val targets: List<DlTarget>, val pick: Int?)
 
@@ -101,7 +101,7 @@ data class LibRoot(
 )
 data class LibFile(val name: String, val size: Long, val media: String?, val subs: List<String>)
 data class LibDir(val root: Int, val path: String, val dirs: List<String>, val files: List<LibFile>)
-/** Postęp wyszukiwania napisów na komputerze (każde źródło osobno). */
+/** Subtitle search progress on the computer (each source separately). */
 data class SubsProvider(val name: String, val state: String, val count: Int?, val error: String?, val secs: Double?)
 data class SubsFound(val query: String, val title: String, val year: Int?, val results: List<SubResult>, val hidden: Int)
 data class SubsProgress(
@@ -117,25 +117,25 @@ data class SubResult(
 }
 data class SubFile(val name: String, val lang: String, val ext: String)
 
-/** Etykiety akcji po pobraniu w języku telefonu (zasoby media_after_*). */
+/** Labels of after-download actions in the phone's language (resources media_after_*). */
 fun afterLabels(ctx: Context): Map<String, String> = linkedMapOf(
     "none" to ctx.getString(R.string.media_after_none),
     "stop" to ctx.getString(R.string.media_after_stop),
     "suspend" to ctx.getString(R.string.media_after_suspend),
 )
 
-/** Język telefonu dla agenta: wybiera po nim język komunikatów błędów. */
+/** Phone language for the agent: it picks the language of error messages accordingly. */
 fun HttpURLConnection.acceptPhoneLanguage() =
     setRequestProperty("Accept-Language", java.util.Locale.getDefault().toLanguageTag())
 
 /**
- * Wskazanie pliku na serwerze `srv` (klucz z [Servers]): z torrenta, z biblioteki albo „to, co gra teraz w mpv”.
- * [key] (bufor na dysku, pozycja oglądania) ma prefiks serwera, poza serwerem [LEGACY] (dawne klucze zostają).
+ * Pointer to a file on server `srv` (key from [Servers]): from a torrent, from the library, or "what is playing now in mpv".
+ * [key] (disk buffer, watch position) has the server prefix, except for server [LEGACY] (old keys stay).
  */
 sealed class MediaRef {
     abstract val title: String
     abstract val srv: String
-    /** wskazanie dla API serwera (bez `srv`) */
+    /** pointer for the server's API (without `srv`) */
     abstract fun json(o: JSONObject = JSONObject()): JSONObject
     abstract fun query(): String
     protected abstract fun localKey(): String
@@ -175,14 +175,14 @@ sealed class MediaRef {
     }
 }
 
-/** Film z innego serwera dla ekranu: URL i napisy z biletem (POST /api/media/ticket). */
+/** Video from another server for a screen: URL and subtitles with a ticket (POST /api/media/ticket). */
 data class Ticket(val url: String, val subs: List<String>, val title: String, val subInfo: List<SubSrc> = emptyList(),
-                  /** "video/mp4", gdy bilet wskazuje wersję „dla Chromecasta” */
+                  /** "video/mp4" when the ticket points to the "for Chromecast" version */
                   val contentType: String? = null)
 
 data class TFile(
     val index: Int, val path: String, val size: Long, val progress: Double, val media: String?,
-    /** bajty pobrane ciągiem od początku pliku — tyle da się obejrzeć */
+    /** bytes downloaded contiguously from the start of the file: that much can be watched */
     val ready: Long, val readySec: Double?, val duration: Double?,
 ) {
     val name get() = path.substringAfterLast('/')
@@ -191,11 +191,11 @@ data class TFile(
 object Wol {
     private fun packet(mac: String): ByteArray {
         val b = mac.split(':', '-').map { it.toInt(16).toByte() }
-        require(b.size == 6) { "zły MAC: $mac" }
+        require(b.size == 6) { "bad MAC: $mac" }
         return ByteArray(6) { 0xFF.toByte() } + ByteArray(16 * 6) { b[it % 6] }
     }
 
-    /** Magic packet na broadcast ogólny i podsieci /24 serwera, porty 9 i 7. */
+    /** Magic packet to the general broadcast and the server's /24 subnet, ports 9 and 7. */
     fun send(mac: String, host: String) {
         val data = packet(mac)
         val targets = mutableListOf("255.255.255.255")
@@ -209,7 +209,7 @@ object Wol {
     }
 }
 
-/** API jednego serwera. `srv` to migawka z [Servers]; zmiany (MAC, info) zapisuje z powrotem. */
+/** API of one server. `srv` is a snapshot from [Servers]; changes (MAC, info) are written back. */
 class Api(val s: Settings, val srv: Server) {
     val base get() = "http://${srv.host}:${srv.port}"
     val configured get() = srv.host.isNotBlank() && srv.token.isNotBlank()
@@ -218,7 +218,7 @@ class Api(val s: Settings, val srv: Server) {
     companion object {
         fun active(ctx: Context) = Api(Settings(ctx), Servers.active(ctx))
         fun of(ctx: Context, key: String?): Api? = Servers.get(ctx, key)?.let { Api(Settings(ctx), it) }
-        /** Serwer, z którego pochodzi film. */
+        /** The server the video comes from. */
         fun forRef(ctx: Context, ref: MediaRef): Api =
             of(ctx, ref.srv) ?: throw ApiException(ctx.getString(R.string.media_err_server_gone_for_video))
     }
@@ -255,10 +255,10 @@ class Api(val s: Settings, val srv: Server) {
     fun get(path: String): String = call("GET", path)
 
     /**
-     * Czy serwer odpowiada. Bez tokenu (/api/ping), a gdy pod adresem jest inny serwer (inne id), to tak jakby
-     * nie odpowiadał: wtedy [wrongServer] = true i nie wysyłamy mu tokenu.
-     * [timeout] dotyczy połączenia (śpiący komputer nie odpowiada na nie wcale); na odpowiedź czekamy dłużej, bo
-     * działający agent potrafi się spóźnić o kilka sekund, gdy budzi się stary dysk USB.
+     * Whether the server responds. Without a token (/api/ping), and when another server (a different id) is at the address, it is as if it
+     * did not respond: then [wrongServer] = true and we do not send it the token.
+     * [timeout] applies to the connection (a sleeping computer does not answer it at all); we wait longer for the response, because
+     * a running agent can be a few seconds late when an old USB disk spins up.
      */
     fun ping(timeout: Int = 1500, readTimeout: Int = 5000): Boolean {
         if (srv.host.isBlank()) return false
@@ -281,14 +281,14 @@ class Api(val s: Settings, val srv: Server) {
 
     fun infoRaw(): JSONObject = JSONObject(call("GET", "/api/info"))
 
-    /** Info o serwerze; zapisuje możliwości, id i MAC do Wake-on-LAN. */
+    /** Server info; stores capabilities, id and MAC for Wake-on-LAN. */
     fun info(): JSONObject {
         val j = infoRaw()
         val mac = j.optString("mac").takeIf { it.matches(Regex("([0-9a-f]{2}:){5}[0-9a-f]{2}")) && it != "00:00:00:00:00:00" }
         val uid = j.optString("id").takeIf { it.isNotEmpty() }
         val name = j.optString("name").ifEmpty { j.optString("hostname") }
-        // nazwa domyślna (adres, np. po migracji starego serwera) ustępuje nazwie z agenta; własnej nie ruszamy
-        // ten telefon już kiedyś obudził serwer, a agent jeszcze o tym nie wie: dosyłamy
+        // a default name (an address, e.g. after migrating an old server) yields to the name from the agent; we leave a custom name alone
+        // this phone already woke the server once and the agent does not know yet: send it along
         val agentKnows = j.optJSONObject("power")?.optJSONObject("wake")?.optString("confidence") == "yes"
         if (!agentKnows && Servers.get(ctx, srv.key)?.wakeOk == true && j.optInt("api") >= 2) {
             runCatching { call("POST", "/api/wake/verified", JSONObject(), 4000) }
@@ -300,14 +300,14 @@ class Api(val s: Settings, val srv: Server) {
         return j
     }
 
-    /** Kod parowania; gość: `role=guest`, `days` = ważność dostępu (0 = bez limitu), sam kod żyje dobę. */
+    /** Pairing code; guest: `role=guest`, `days` = access validity (0 = unlimited), the code itself lives for a day. */
     fun pairCode(guestDays: Int? = null): JSONObject = JSONObject(call("POST", "/api/pair/code",
         if (guestDays == null) JSONObject() else JSONObject().put("role", "guest").put("days", guestDays)))
-    /** Kod dołączenia nowego komputera: `{code, expires_in, url, command, command_full}` (mp_install.py). */
+    /** Code for joining a new computer: `{code, expires_in, url, command, command_full}` (mp_install.py). */
     fun installCode(): JSONObject = JSONObject(call("POST", "/api/install/code", JSONObject()))
     /** `{state: waiting|downloading|joined, server: {host, port, id, name, pair_code} | null, expires_in}` */
     fun installStatus(code: String): JSONObject = JSONObject(call("GET", "/api/install/status?code=$code", null, 4000))
-    /** Oczekujące prośby o dostęp z sieci domowej: `[{id, name, ip, age, expires_in}]` (mp_access.py). */
+    /** Pending access requests from the home network: `[{id, name, ip, age, expires_in}]` (mp_access.py). */
     fun accessRequests(): JSONArray = JSONObject(call("GET", "/api/access/requests", null, 4000)).getJSONArray("requests")
     fun accessDecide(id: String, approve: Boolean, role: String = "guest", days: Int = 0) {
         call("POST", "/api/access/requests/$id", JSONObject().put("action", if (approve) "approve" else "deny")
@@ -324,7 +324,7 @@ class Api(val s: Settings, val srv: Server) {
         val info = List(a.length()) { i ->
             a.getJSONObject(i).let { x ->
                 val u = x.getString("url")
-                // starszy agent nie podaje „vtt”, ale /sub umie &vtt=1
+                // an older agent does not provide "vtt", but /sub supports &vtt=1
                 SubSrc(x.optString("name"), x.optString("lang"), u, x.optString("vtt").ifEmpty { "$u&vtt=1" })
             }
         }
@@ -365,7 +365,7 @@ class Api(val s: Settings, val srv: Server) {
             .optString("id").takeIf { it.isNotEmpty() && it != "null" }
     }
 
-    /** Agent 1.5+: rozpoznanie (indeks IMDb, Wikidata dla niepewnych) i podpowiedź katalogu. */
+    /** Agent 1.5+: recognition (IMDb index, Wikidata for uncertain ones) and a directory suggestion. */
     fun guess(magnet: String): DlGuess {
         val j = JSONObject(call("POST", "/api/library/guess", JSONObject().put("magnet", magnet), 30000))
         val g = j.optJSONObject("guess") ?: JSONObject()
@@ -382,7 +382,7 @@ class Api(val s: Settings, val srv: Server) {
             if (j.isNull("pick")) null else j.optInt("pick"))
     }
 
-    /** Zmiana katalogu po dodaniu (klient przenosi pliki); `learn`: agent zapamięta wybór dla tego tytułu. */
+    /** Directory change after adding (the client moves the files); `learn`: the agent remembers the choice for this title. */
     fun moveTorrent(id: String, dest: DlTarget, learn: Boolean) {
         call("POST", "/api/torrents/$id/move",
             JSONObject().put("root", dest.root).put("sub", dest.sub).put("learn", learn), 20000)
@@ -412,7 +412,7 @@ class Api(val s: Settings, val srv: Server) {
             strs(vis as? JSONArray), strs(r.optJSONArray("exclude")), r.optBoolean("open", true))
     }
 
-    /** `manage`: także katalogi ukryte przed tym telefonem (domownik, do zmiany ustawień). */
+    /** `manage`: also directories hidden from this phone (household member, for changing settings). */
     fun libraryRoots(manage: Boolean = false): List<LibRoot> =
         roots(JSONArray(call("GET", "/api/library" + if (manage) "?manage=1" else "")))
     fun libraryUpdate(index: Int, name: String, tags: List<String>, visible: String, devices: List<String>, exclude: List<String>): List<LibRoot> =
@@ -436,14 +436,14 @@ class Api(val s: Settings, val srv: Server) {
         })
     }
 
-    /** Katalogi komputera do wyboru nowego katalogu biblioteki; path "" = punkty startowe. */
+    /** Computer directories for choosing a new library directory; path "" = starting points. */
     fun fsDirs(path: String): Pair<String?, List<String>> {
         val o = JSONObject(call("GET", "/api/fs?path=${Uri.encode(path)}"))
         val d = o.getJSONArray("dirs")
         return o.optString("parent").takeIf { !o.isNull("parent") } to List(d.length()) { d.getString(it) }
     }
 
-    // ---- napisy
+    // ---- subtitles
     fun subsList(ref: MediaRef): List<SubFile> {
         val a = JSONArray(call("GET", "/api/subs/list?${ref.query()}"))
         return List(a.length()) { i ->
@@ -459,11 +459,11 @@ class Api(val s: Settings, val srv: Server) {
         if (year != null) put("year", year)
     }
 
-    /** Startuje wyszukiwanie w tle; postęp przez [subsJob]. */
+    /** Starts a background search; progress via [subsJob]. */
     fun subsSearchStart(ref: MediaRef, title: String? = null, year: Int? = null): String =
         JSONObject(call("POST", "/api/subs/search", subsBody(ref, title, year).put("async", true))).getString("job")
 
-    /** „Wystarczy”: agent przestaje czekać na wolne źródła i oddaje to, co już ma. */
+    /** "Enough": the agent stops waiting for slow sources and returns what it already has. */
     fun subsStop(id: String) {
         call("POST", "/api/subs/job/stop", JSONObject().put("id", id))
     }
@@ -507,12 +507,12 @@ class Api(val s: Settings, val srv: Server) {
         call("POST", "/api/torrents/$id/action", JSONObject().put("action", action))
     }
 
-    /** Format pliku i ocena dla Chromecasta, wersja „dla Chromecasta” i jej przygotowywanie (agent 1.2+). */
+    /** File format and rating for Chromecast, the "for Chromecast" version and its preparation (agent 1.2+). */
     fun mediaProbe(ref: MediaRef): JSONObject = JSONObject(call("GET", "/api/media/probe?${ref.query()}", timeout = 30000))
     fun mediaConvert(ref: MediaRef, op: String? = null): JSONObject =
         JSONObject(call("POST", "/api/media/convert", ref.json().apply { if (op != null) put(op, true) }))
 
-    /** Chromecast widziany przez agenta (dowolny nadawca): `{active, device, id, app, title, state, pos, …, all: [...]}`. */
+    /** Chromecast seen by the agent (any sender): `{active, device, id, app, title, state, pos, …, all: [...]}`. */
     fun castStatus(): JSONObject = JSONObject(call("GET", "/api/cast/status", timeout = 3000))
 
     fun castCmd(cmd: String, value: Any? = null, device: String? = null) {
@@ -536,7 +536,7 @@ class Api(val s: Settings, val srv: Server) {
         call("POST", "/api/player/open", b, 20000)
     }
 
-    /** Film z innego serwera (URL z biletem). */
+    /** Video from another server (URL with a ticket). */
     fun playerOpenUrl(t: Ticket, startSec: Double? = null) {
         val b = JSONObject().put("url", t.url).put("subs", JSONArray(t.subs)).put("title", t.title)
         if (startSec != null && startSec > 0) b.put("start", startSec)
@@ -545,13 +545,13 @@ class Api(val s: Settings, val srv: Server) {
 
     fun suspendPc() { call("POST", "/api/system/suspend") }
 
-    // ---- przesyłanie filmów z telefonu na serwer (Uploads.kt; agent z features.upload)
-    /** `GET /api/upload/<id>` → kod HTTP i JSON (`received`, `done`); błędy HTTP nie rzucają, bo 404/409/507 niosą stan. */
+    // ---- uploading videos from the phone to the server (Uploads.kt; agent with features.upload)
+    /** `GET /api/upload/<id>` → HTTP code and JSON (`received`, `done`); HTTP errors do not throw, because 404/409/507 carry state. */
     fun uploadStatus(id: String): Pair<Int, JSONObject> = uploadRequest("GET", "/api/upload/$id", 0, null, null)
 
     /**
-     * `PUT /api/upload/<id>`: [length] bajtów z [input] (strumieniowo, bez ładowania do pamięci); [length] = 0 to samo
-     * sprawdzenie (offset, wolne miejsce). [onProgress] dostaje liczbę wysłanych bajtów i może przerwać wyjątkiem.
+     * `PUT /api/upload/<id>`: [length] bytes from [input] (streamed, without loading into memory); [length] = 0 is just
+     * a check (offset, free space). [onProgress] receives the number of bytes sent and may abort by throwing.
      */
     fun uploadPut(id: String, name: String, size: Long, offset: Long, input: java.io.InputStream?, length: Long,
                   onProgress: ((Long) -> Unit)? = null): Pair<Int, JSONObject> =
@@ -602,9 +602,9 @@ class Api(val s: Settings, val srv: Server) {
     }
 
     /**
-     * Jeśli serwer śpi: Wake-on-LAN i czekanie, aż agent odpowie (do 2 min). Pakiet idzie z telefonu, a po kilku
-     * sekundach także przez inne działające serwery (`wake_others`), bo z telefonu nie przejdzie do innej podsieci.
-     * Udane budzenie zapamiętujemy (`wakeOk`), wtedy „Uśpij” nie ostrzega.
+     * If the server sleeps: Wake-on-LAN and waiting until the agent answers (up to 2 min). The packet goes from the phone, and after a few
+     * seconds also through other running servers (`wake_others`), because it will not cross to another subnet from the phone.
+     * A successful wake is remembered (`wakeOk`), so "Suspend" does not warn.
      */
     suspend fun ensureAwake(onStatus: (String) -> Unit): Unit = withContext(Dispatchers.IO) {
         if (ping()) return@withContext
@@ -624,7 +624,7 @@ class Api(val s: Settings, val srv: Server) {
                 lastWol = now
             }
             if (via == null && now - start > 6_000) {
-                // pakiet z telefonu nie zadziałał (może inna podsieć): prosimy działający serwer
+                // packet from the phone did not work (maybe another subnet): ask a running server
                 via = Servers.all(ctx).filter { it.key != srv.key && it.canWakeOthers }.firstNotNullOfOrNull { o ->
                     val a = Api(s, o)
                     if (a.ping(1000) && runCatching { a.wakeOther(mac, srv.host) }.isSuccess) o.name else null
@@ -635,7 +635,7 @@ class Api(val s: Settings, val srv: Server) {
                 else ctx.getString(R.string.media_waking, name, secs))
             if (ping(1500)) {
                 Servers.update(ctx, srv.key) { it.copy(wakeOk = true) }
-                // agent zapamięta to dla wszystkich urządzeń (starszy agent nie zna endpointu: trudno)
+                // the agent remembers this for all devices (an older agent does not know the endpoint: too bad)
                 runCatching { call("POST", "/api/wake/verified", JSONObject(), 4000) }
                 return@withContext
             }
@@ -644,7 +644,7 @@ class Api(val s: Settings, val srv: Server) {
         throw ApiException(ctx.getString(R.string.media_err_wake_timeout, name))
     }
 
-    /** Dodanie magneta z ponawianiem — po wybudzeniu deluged/deluge-web potrzebują chwili. */
+    /** Adding a magnet with retries: after waking, deluged/deluge-web need a moment. */
     suspend fun addMagnetRetrying(uri: String, sequential: Boolean, after: String, dest: DlTarget? = null,
                                   guess: JSONObject? = null, onStatus: (String) -> Unit): String? =
         withContext(Dispatchers.IO) {

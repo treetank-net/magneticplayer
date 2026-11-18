@@ -22,9 +22,9 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
 /**
- * Chromecasty w sieci widziane z telefonu, bez agenta i bez Cast SDK: wykrywanie mDNS (NsdManager) i własny klient
- * protokołu Cast v2 (ten sam co w pychromecast). Pozwala Pilotowi zobaczyć i sterować tym, co gra na dowolnym
- * Chromecaście, kto by tego nie puścił (strona, inny telefon, YouTube), także poza domem. Opis: docs/urzadzenia.md.
+ * Chromecasts on the network seen from the phone, without the agent and without the Cast SDK: mDNS discovery (NsdManager) and our own client
+ * for the Cast v2 protocol (the same as in pychromecast). Lets Remote see and control what plays on any
+ * Chromecast, whoever started it (the web page, another phone, YouTube), also away from home. Description: docs/devices.md.
  */
 object CastNet {
     private const val TAG = "MpCastNet"
@@ -32,21 +32,21 @@ object CastNet {
 
     data class Device(val id: String, val name: String, val model: String, val host: String, val port: Int)
 
-    /** Stan jednego Chromecasta: aplikacja, głośność, a gdy coś gra, media. */
+    /** State of one Chromecast: app, volume, and media when something is playing. */
     data class Status(
         val device: Device, val app: String?, val volume: Double, val muted: Boolean, val fixedVolume: Boolean,
         val title: String?, val state: String?, val pos: Double, val dur: Double, val at: Long = System.currentTimeMillis(),
-        /** aplikacja to ekran bezczynności (Backdrop, tryb otoczenia), nie coś, co ktoś otworzył */
+        /** the app is the idle screen (Backdrop, ambient mode), not something someone opened */
         val idleScreen: Boolean = false,
     ) {
         val active get() = state == "PLAYING" || state == "PAUSED" || state == "BUFFERING"
-        /** otwarta aplikacja (np. Spotify po słuchaniu), która nic nie gra: Pilot pozwala ją zamknąć */
+        /** an open app (e.g. Spotify after listening) that plays nothing: Remote lets you close it */
         val openIdle get() = !active && !idleScreen && !app.isNullOrBlank()
     }
 
-    /** id (jak w TXT `id`, 32 znaki hex) → urządzenie; stan Compose, żeby Pilot odświeżał chipy */
+    /** id (as in TXT `id`, 32 hex chars) → device; Compose state so Remote refreshes the chips */
     val devices = mutableStateMapOf<String, Device>()
-    /** ostatni stan każdego urządzenia (null = jeszcze nie pytaliśmy albo nie odpowiada) */
+    /** last state of each device (null = not queried yet or not responding) */
     val status = mutableStateMapOf<String, Status>()
 
     private val clients = ConcurrentHashMap<String, Client>()
@@ -54,10 +54,10 @@ object CastNet {
     private var listener: NsdManager.DiscoveryListener? = null
     private val resolveQueue = LinkedBlockingQueue<NsdServiceInfo>()
     @Volatile private var resolving = false
-    /** do komunikatów w języku telefonu (ustawiane w [discover]) */
+    /** for messages in the phone's language (set in [discover]) */
     @Volatile private var app: Context? = null
 
-    /** Szuka Chromecastów, dopóki nie wywołasz zwróconej funkcji (Pilot na ekranie). */
+    /** Looks for Chromecasts until you call the returned function (Remote on screen). */
     fun discover(ctx: Context): () -> Unit {
         app = ctx.applicationContext
         val m = ctx.applicationContext.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -75,7 +75,7 @@ object CastNet {
         return { runCatching { m.stopServiceDiscovery(l) }; if (listener === l) listener = null }
     }
 
-    /** NsdManager rozwiązuje jedną usługę naraz (stare API), więc kolejka. */
+    /** NsdManager resolves one service at a time (old API), hence the queue. */
     @Suppress("DEPRECATION")
     private fun resolveNext() {
         val m = nsd ?: return
@@ -102,7 +102,7 @@ object CastNet {
         return Client(d.host, d.port).also { clients[d.id] = it }
     }
 
-    /** Odczyt stanu wszystkich znanych Chromecastów (wątek IO). */
+    /** Reads the state of all known Chromecasts (IO thread). */
     suspend fun refresh() = withContext(Dispatchers.IO) {
         for (d in devices.values.toList()) {
             val s = runCatching { readStatus(d) }.onFailure { Log.d(TAG, "${d.name}: ${it.message}") }.getOrNull()
@@ -110,10 +110,10 @@ object CastNet {
         }
     }
 
-    /** Chromecasty, na których coś teraz gra. */
+    /** Chromecasts where something is playing now. */
     fun playing(): List<Status> = status.values.filter { it.active }.sortedBy { it.device.name }
 
-    /** Chromecasty z otwartą aplikacją, która nic nie gra (Spotify zostawione po słuchaniu). */
+    /** Chromecasts with an open app that plays nothing (Spotify left over after listening). */
     fun openIdle(): List<Status> = status.values.filter { it.openIdle }.sortedBy { it.device.name }
 
     suspend fun statusOf(id: String): Status? = withContext(Dispatchers.IO) {
@@ -130,7 +130,7 @@ object CastNet {
         val base = Status(d, app?.optString("displayName"), vol.optDouble("level", 0.0), vol.optBoolean("muted"),
             vol.optString("controlType") == "fixed", null, null, 0.0, 0.0,
             idleScreen = app?.optBoolean("isIdleScreen") == true || app?.optString("displayName") == "Backdrop")
-        // sessionId także dla aplikacji bez mediów (np. Spotify na Google TV), żeby „Zakończ” mogło ją zamknąć
+        // sessionId also for apps without media (e.g. Spotify on Google TV), so "Stop" can close it
         c.appSession = app?.optString("sessionId")?.takeIf { it.isNotBlank() }
         if (app == null || !hasMedia(app)) return base
         val tid = app.getString("transportId")
@@ -151,7 +151,7 @@ object CastNet {
         return (0 until ns.length()).any { ns.optJSONObject(it)?.optString("name") == Client.NS_MEDIA }
     }
 
-    /** Polecenie dla mediów na urządzeniu `id`: PLAY, PAUSE, STOP, SEEK (z `currentTime`). */
+    /** Command for the media on device `id`: PLAY, PAUSE, STOP, SEEK (with `currentTime`). */
     suspend fun media(id: String, type: String, extra: JSONObject.() -> Unit = {}) = withContext(Dispatchers.IO) {
         val d = devices[id] ?: return@withContext
         val c = client(d)
@@ -166,19 +166,19 @@ object CastNet {
         client(d).request(Client.NS_RECEIVER, "receiver-0", JSONObject().put("type", "SET_VOLUME").put("volume", v))
     }
 
-    /** Zamyka aplikację na Chromecaście (także cudzą: tak działa „Zakończ”). */
+    /** Closes the app on the Chromecast (also someone else's: that is how "Stop" works). */
     suspend fun stopApp(id: String) = withContext(Dispatchers.IO) {
         val d = devices[id] ?: return@withContext
         val c = client(d)
-        readStatus(d)  // świeży sessionId: aplikacja mogła się zmienić
+        readStatus(d)  // fresh sessionId: the app may have changed
         val sid = c.appSession ?: return@withContext
         c.request(Client.NS_RECEIVER, "receiver-0", JSONObject().put("type", "STOP").put("sessionId", sid))
         status.remove(id)
     }
 
     /**
-     * Jedno połączenie Cast v2: TLS na :8009, ramki = 4 bajty długości + protobuf CastMessage (kodowany ręcznie).
-     * Wątek czytający odpowiada na PING i rozdaje odpowiedzi po `requestId`. Bez użycia przez minutę samo się zamyka.
+     * One Cast v2 connection: TLS on :8009, frames = 4 bytes of length + protobuf CastMessage (hand-encoded).
+     * The reader thread answers PING and dispatches replies by `requestId`. Closes itself after a minute of no use.
      */
     class Client(val host: String, port: Int) {
         companion object {
@@ -206,7 +206,7 @@ object CastNet {
         @Volatile var appSession: String? = null
 
         init {
-            // Chromecast ma certyfikat podpisany przez Google dla urządzenia, nie dla adresu: sprawdzamy tylko, że to TLS w LAN
+            // the Chromecast has a certificate signed by Google for the device, not for the address: we only check that it is TLS on the LAN
             val ssl = SSLContext.getInstance("TLS").apply { init(null, trustAll, null) }
             sock = ssl.socketFactory.createSocket() as SSLSocket
             sock.connect(java.net.InetSocketAddress(host, port), 3000)
@@ -259,7 +259,7 @@ object CastNet {
                 val inp = DataInputStream(sock.inputStream)
                 while (alive) {
                     val len = inp.readInt()
-                    if (len !in 1..1_000_000) throw java.io.IOException("zła ramka")
+                    if (len !in 1..1_000_000) throw java.io.IOException("bad frame")
                     val buf = ByteArray(len); inp.readFully(buf)
                     val (ns, payload) = parse(buf)
                     val j = runCatching { JSONObject(payload ?: continue) }.getOrNull() ?: continue
@@ -275,7 +275,7 @@ object CastNet {
             }
         }
 
-        /** Czyta pola 4 (namespace) i 6 (payload_utf8) z CastMessage; reszta pominięta. */
+        /** Reads fields 4 (namespace) and 6 (payload_utf8) from CastMessage; the rest is skipped. */
         private fun parse(b: ByteArray): Pair<String?, String?> {
             var i = 0
             fun varint(): Long { var r = 0L; var s = 0; while (true) { val x = b[i++].toInt() and 0xff; r = r or ((x and 0x7f).toLong() shl s); if (x and 0x80 == 0) return r; s += 7 } }

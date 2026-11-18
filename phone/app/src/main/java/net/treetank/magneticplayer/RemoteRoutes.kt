@@ -14,29 +14,29 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 
 /**
- * Nazwa urządzenia w systemie (kafelek multimediów, karta w panelu) zamiast „Ten telefon” dla mpv, telewizora DLNA
- * i Chromecasta sterowanego bez Cast SDK.
+ * Device name in the system (media tile, card in the panel) instead of "This phone" for mpv, DLNA TV
+ * and Chromecast controlled without the Cast SDK.
  *
- * System UI łączy sesję multimediów ze „zdalną sesją trasy” (MediaRouter2), gdy `controlId` z VolumeProvider sesji
- * (media3: `DeviceInfo.routingControllerId`) jest równe `originalId` sesji trasy, a jej właściciel to nasz pakiet.
- * Dlatego apka sama jest dostawcą tras ([RemoteRouteProvider]): na każdy grający cel publikuje trasę i od razu
- * zakłada dla niej sesję (`REQUEST_ID_NONE`, bez `transferTo`, więc kilka celów naraz się nie wypiera).
- * Android 11+; starsze zostają przy „Ten telefon”. Opis: docs/plan-piloty.md (krok 4).
+ * System UI links a media session to a "remote route session" (MediaRouter2) when the `controlId` from the session's VolumeProvider
+ * (media3: `DeviceInfo.routingControllerId`) equals the route session's `originalId` and its owner is our package.
+ * That is why the app is itself a route provider ([RemoteRouteProvider]): for every playing target it publishes a route and immediately
+ * creates a session for it (`REQUEST_ID_NONE`, no `transferTo`, so several targets at once do not displace each other).
+ * Android 11+; older versions keep "This phone". Description: docs/plan-remotes.md (step 4).
  */
 object RemoteRoutes {
     private const val TAG = "MpRoutes"
     const val FEATURE = "net.treetank.magneticplayer.REMOTE"
 
-    /** co gra: rodzaj → nazwa urządzenia */
+    /** what is playing: kind → device name */
     private val wanted = linkedMapOf<String, String>()
     private val main = Handler(Looper.getMainLooper())
     private var router: Any? = null  // MediaRouter2 (API 30)
     private var callback: Any? = null
 
-    /** id sesji trasy dla celu (`DeviceInfo.routingControllerId`); null poniżej Androida 11 */
+    /** route session id for a target (`DeviceInfo.routingControllerId`); null below Android 11 */
     fun controllerId(kind: String): String? = if (Build.VERSION.SDK_INT >= 30) "mp-session-$kind" else null
 
-    /** Cel `kind` gra na urządzeniu `name` (null = przestał). Z dowolnego wątku. */
+    /** Target `kind` plays on device `name` (null = stopped). From any thread. */
     fun set(ctx: Context, kind: String, name: String?) {
         if (Build.VERSION.SDK_INT < 30) return
         val app = ctx.applicationContext
@@ -51,8 +51,8 @@ object RemoteRoutes {
     fun current(): Map<String, String> = wanted.toMap()
 
     /**
-     * System wiąże dostawcę tras, dopóki ktoś szuka tras z jego cechą: nasz MediaRouter2 szuka (bez aktywnego
-     * skanowania), póki cokolwiek gra.
+     * The system binds the route provider as long as someone is looking for routes with its feature: our MediaRouter2 looks (without active
+     * scanning) as long as anything is playing.
      */
     @RequiresApi(30)
     private fun bind(app: Context) {
@@ -69,10 +69,10 @@ object RemoteRoutes {
     }
 }
 
-/** Dostawca tras: trasa i sesja na każdy grający cel ([RemoteRoutes]). Głośność i przełączanie zostają w apce. */
+/** Route provider: a route and a session for every playing target ([RemoteRoutes]). Volume and switching stay in the app. */
 @RequiresApi(30)
 class RemoteRouteProvider : MediaRoute2ProviderService() {
-    private val sessions = mutableMapOf<String, String>()  // rodzaj → nazwa, dla których jest sesja
+    private val sessions = mutableMapOf<String, String>()  // kind → name, for which a session exists
 
     override fun onCreate() {
         super.onCreate()
@@ -85,7 +85,7 @@ class RemoteRouteProvider : MediaRoute2ProviderService() {
         super.onDestroy()
     }
 
-    /** Publikuje trasy i sesje dokładnie dla `want` (wątek główny). */
+    /** Publishes routes and sessions exactly for `want` (main thread). */
     fun sync(want: Map<String, String>) {
         notifyRoutes(want.map { (kind, name) ->
             MediaRoute2Info.Builder(routeId(kind), name)
@@ -112,7 +112,7 @@ class RemoteRouteProvider : MediaRoute2ProviderService() {
     }
 
     override fun onCreateSession(requestId: Long, packageName: String, routeId: String, sessionHints: Bundle?) {
-        // przełączanie na nasze trasy z zewnątrz (systemowy wybór wyjścia) nic nie robi: cel wybiera się w apce
+        // switching to our routes from outside (the system output picker) does nothing: the target is chosen in the app
         notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
     }
 

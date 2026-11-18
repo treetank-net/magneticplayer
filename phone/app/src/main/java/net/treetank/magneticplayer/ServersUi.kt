@@ -87,19 +87,19 @@ import org.json.JSONObject
 val OK_GREEN = Color(0xFF3FA96B)
 private val WARN = Color(0xFFF2B84B)
 
-// ---------------------------------------------------------------- odtwarzanie na ekranie
+// ---------------------------------------------------------------- playback on a screen
 
 object Screens {
     /**
-     * Odtwarza `ref` na ekranie `screenKey` (mpv na serwerze), budząc go w razie potrzeby. Ten sam serwer: plik lokalny
-     * jak dawniej. Inny: URL z biletu serwera plików albo z telefonu ([source]). Zapamiętuje ekran dla Pilota.
+     * Plays `ref` on screen `screenKey` (mpv on a server), waking it if needed. Same server: a local file
+     * as before. Different one: a URL with a ticket from the file server or from the phone ([source]). Remembers the screen for Remote.
      */
     suspend fun play(ctx: Context, ref: MediaRef, screenKey: String, startSec: Double?, onStatus: (String) -> Unit) =
         withContext(Dispatchers.IO) {
             val screen = Api.of(ctx, screenKey) ?: throw ApiException(ctx.getString(R.string.srv_screen_gone))
             screen.ensureAwake(onStatus)
             if (screenKey == ref.srv) {
-                // pozycja z telefonu: film mógł być ostatnio oglądany gdzie indziej (Chromecast, telewizor, telefon)
+                // position from the phone: the video may have last been watched elsewhere (Chromecast, TV, phone)
                 screen.playerOpen(ref, startSec ?: savedStart(ctx, ref))
             } else {
                 val src = source(ctx, ref, onStatus)
@@ -111,7 +111,7 @@ object Screens {
             withContext(Dispatchers.Main) { Pilot.started(ctx, "screen") }
         }
 
-    /** Odtwarza `ref` na Chromecaście (odbiornik domyślny Google'a, napisy jako WebVTT). */
+    /** Plays `ref` on a Chromecast (Google's default receiver, subtitles as WebVTT). */
     suspend fun cast(ctx: Context, ref: MediaRef, target: CastTarget, startSec: Double?, onStatus: (String) -> Unit) {
         val src = withContext(Dispatchers.IO) { source(ctx, ref, onStatus, variant = "cast") }
         onStatus(ctx.getString(R.string.srv_connecting_to, target.name))
@@ -121,7 +121,7 @@ object Screens {
         Settings(ctx).lastTv = target.name
     }
 
-    /** Odtwarza `ref` na telewizorze DLNA (Samsung i inne): oryginalny plik, napisy SRT po swojemu. */
+    /** Plays `ref` on a DLNA TV (Samsung and others): the original file, SRT subtitles in its own way. */
     suspend fun dlna(ctx: Context, ref: MediaRef, target: DlnaTarget, startSec: Double?, onStatus: (String) -> Unit) =
         withContext(Dispatchers.IO) {
             val src = source(ctx, ref, onStatus)
@@ -134,8 +134,8 @@ object Screens {
         Settings(ctx).position(ref.key()).takeIf { it > 5_000 }?.let { it / 1000.0 }
 
     /**
-     * Skąd ekran weźmie plik: z serwera (bilet), gdy odpowiada albo telefon nie ma całego filmu (wtedy budzimy).
-     * Serwer nie odpowiada (np. u kogoś w gościach), a cały film jest na telefonie: telefon go udostępnia.
+     * Where the screen gets the file: from the server (ticket) when it responds or the phone does not have the whole video (then we wake it).
+     * The server does not respond (e.g. at someone's place as a guest), and the whole video is on the phone: the phone shares it.
      */
     suspend fun source(ctx: Context, ref: MediaRef, onStatus: (String) -> Unit, variant: String? = null): MediaSrc {
         val file = Api.of(ctx, ref.srv)
@@ -151,10 +151,10 @@ object Screens {
     }
 }
 
-/** Stan ekranu do listy wyboru: null = sprawdzam, false = nie odpowiada, true = działa (+ co gra). */
+/** Screen state for the picker list: null = checking, false = not responding, true = working (+ what is playing). */
 private data class ScreenState(val online: Boolean?, val playing: String? = null)
 
-/** „Gdzie odtworzyć?”: ten telefon albo mpv na którymś serwerze. */
+/** "Where to play?": this phone or mpv on some server. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScreenChooser(ref: MediaRef, onPhone: (() -> Unit)?, onPick: (String) -> Unit, onCast: (CastTarget) -> Unit,
@@ -170,7 +170,7 @@ fun ScreenChooser(ref: MediaRef, onPhone: (() -> Unit)?, onPick: (String) -> Uni
     val onPhoneWhole = remember { PhoneShare.hasWhole(ctx, ref.key()) }
     var searching by remember { mutableStateOf(true) }
     val lastTv = remember { Settings(ctx).lastTv }
-    // telewizory DLNA: najpierw znane z poprzedniego szukania, po 3 s te, które odpowiedziały teraz
+    // DLNA TVs: first those known from the previous search, after 3 s those that have responded now
     var dlnas by remember { mutableStateOf(Dlna.found.values.toList()) }
     LaunchedEffect(Unit) { dlnas = withContext(Dispatchers.IO) { Dlna.discover() } }
     LaunchedEffect(Unit) { delay(8_000); searching = false }
@@ -228,7 +228,7 @@ fun ScreenChooser(ref: MediaRef, onPhone: (() -> Unit)?, onPick: (String) -> Uni
     }
 }
 
-/** Pod Chromecastami: czy ten plik zagra, i „Przygotuj wersję dla Chromecasta” (agent 1.2+ z ffmpeg). */
+/** Under the Chromecasts: whether this file will play, and "Prepare version for Chromecast" (agent 1.2+ with ffmpeg). */
 @Composable
 private fun CastFormat(ref: MediaRef) {
     val ctx = LocalContext.current
@@ -268,7 +268,7 @@ private fun CastFormat(ref: MediaRef) {
                 val pct = j!!.optDouble("pct", 0.0)
                 val speed = j.optDouble("speed").takeIf { !it.isNaN() }?.let { " · " + stringResource(R.string.srv_speed, it) } ?: ""
                 if (j.optBoolean("finishing")) {
-                    // ffmpeg +faststart przepisuje plik na końcu: bez tego pasek stoi na 99% nawet minutę
+                    // ffmpeg +faststart rewrites the file at the end: without it the bar sits at 99% for up to a minute
                     Text(stringResource(R.string.srv_finishing), style = small)
                     androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
                 } else {
@@ -278,7 +278,7 @@ private fun CastFormat(ref: MediaRef) {
                 }
                 TextButton({ op("cancel") }) { Text(stringResource(R.string.srv_stop)) }
             }
-            // agent zna model naszych Chromecastów: ocena dla każdego, „Przygotuj” tylko gdy któryś ma kłopot
+            // the agent knows the model of our Chromecasts: a rating for each, "Prepare" only when one has trouble
             devs.isNotEmpty() && devs.all { it.optString("verdict") == "ok" } -> devs.forEach { d ->
                 Text(stringResource(R.string.srv_dev_plays_without, d.optString("name"), d.optString("label")), style = small, color = muted)
             }
@@ -336,9 +336,9 @@ private fun SheetRow(
     }
 }
 
-// ---------------------------------------------------------------- przełącznik serwera
+// ---------------------------------------------------------------- server switcher
 
-/** Panel od dołu: z którego serwera są filmy (Torrenty, Biblioteka). Serwer z samym ekranem jest, ale wyszarzony. */
+/** Bottom panel: which server the videos are from (Torrents, Library). A server with only a screen is there, but greyed out. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerSheet(current: String?, onPick: (String) -> Unit, onWake: (String) -> Unit, onAdd: () -> Unit,
@@ -372,7 +372,7 @@ fun ServerSheet(current: String?, onPick: (String) -> Unit, onWake: (String) -> 
     }
 }
 
-/** Wybrany serwer nie odpowiada: zamiast błędu „śpi” z przyciskiem budzenia. */
+/** The selected server does not respond: instead of an "asleep" error, with a wake button. */
 @Composable
 fun AsleepPane(server: Server, waking: String?, wrongServer: Boolean, onWake: () -> Unit) {
     val ctx = LocalContext.current
@@ -410,7 +410,7 @@ fun AsleepPane(server: Server, waking: String?, wrongServer: Boolean, onWake: ()
     }
 }
 
-/** „Uśpić?” z ostrzeżeniem zależnym od tego, czy da się go potem obudzić. */
+/** "Suspend?" with a warning depending on whether it can be woken afterwards. */
 @Composable
 fun SuspendDialog(server: Server, poweroff: Boolean = false, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
@@ -443,9 +443,9 @@ fun SuspendDialog(server: Server, poweroff: Boolean = false, onConfirm: () -> Un
     )
 }
 
-// ---------------------------------------------------------------- Ustawienia: serwery
+// ---------------------------------------------------------------- Settings: servers
 
-/** Lista serwerów w Ustawieniach: szczegóły, dodawanie, parowanie kolejnych urządzeń. */
+/** List of servers in Settings: details, adding, pairing further devices. */
 @Composable
 fun ServersSection(ver: Int, snack: SnackbarHostState, openAdd: Boolean, onChanged: () -> Unit) {
     val ctx = LocalContext.current
@@ -638,7 +638,7 @@ private fun lastSeen(ctx: Context, d: JSONObject): String {
     })
 }
 
-/** „Dodaj serwer”: adres + kod (albo link parowania ze schowka); po połączeniu podsumowanie możliwości. */
+/** "Add server": address + code (or a pairing link from the clipboard); after connecting, a summary of capabilities. */
 @Composable
 fun AddServerDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
@@ -706,7 +706,7 @@ fun AddServerDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     )
 }
 
-/** Co serwer umie, a czego nie (po dodaniu). */
+/** What the server can and cannot do (after adding). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ServerSummary(s: Server) {
@@ -729,8 +729,8 @@ fun ServerSummary(s: Server) {
 }
 
 /**
- * „Sparuj kolejne urządzenie”: jednorazowe kody z zaznaczonych serwerów w jednym QR (nowy telefon skanuje raz
- * i zna wszystkie). Kody działają raz i wygasają po 10 minutach.
+ * "Pair another device": one-time codes from the selected servers in one QR (a new phone scans once
+ * and knows all of them). Codes work once and expire after 10 minutes.
  */
 @Composable
 fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {

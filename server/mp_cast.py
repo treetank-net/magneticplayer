@@ -1,7 +1,9 @@
-"""Chromecast sterowany przez agenta (pychromecast z venv): dla klienta webowego, żeby „z kompa na telewizor” nie
-wymagało telefonu, i dla Pilota w apce, gdy na Chromecaście gra coś, czego apka nie puściła przez swój Cast SDK.
+"""Chromecast controlled by the agent (pychromecast from the venv): for the web client, so that "computer to TV" does
+not need a phone, and for the Remote in the app when something is playing on the Chromecast that the app did not
+start through its Cast SDK.
 
-Wykrywanie (mDNS) rusza przy pierwszym zapytaniu i trwa w tle; potem agent słucha stanu wszystkich Chromecastów.
+Discovery (mDNS) starts on the first query and keeps running in the background; after that the agent listens to the
+state of all Chromecasts.
 """
 import glob
 import os
@@ -44,18 +46,18 @@ PLAYING = ("PLAYING", "PAUSED", "BUFFERING")
 
 
 class Casts:
-    """Połączenia z każdym Chromecastem w sieci (nasłuch stanu, bez uruchamiania czegokolwiek), więc status widzi
-    także to, co puścił ktoś inny (telefon przez Cast SDK, YouTube, Spotify…), i można tym sterować."""
+    """Connections to every Chromecast on the network (listening to state, without launching anything), so the status
+    also sees what someone else started (a phone via Cast SDK, YouTube, Spotify…) and it can be controlled."""
 
     def __init__(self, log, renderers=None):
         self.log = log
-        self.renderers = renderers  # mp_renderers.Renderers: zapisuje, kim jest każdy Chromecast
+        self.renderers = renderers  # mp_renderers.Renderers: records who each Chromecast is
         self.lock = threading.Lock()
         self.browser = None
         self.zconf = None
         self.started = 0
-        self.casts = {}  # uuid → pychromecast.Chromecast (połączone w tle)
-        self.uuid = None  # urządzenie, na które ostatnio puściliśmy film z agenta
+        self.casts = {}  # uuid → pychromecast.Chromecast (connected in the background)
+        self.uuid = None  # the device we last started a video on from the agent
 
     def _ensure(self):
         if self.browser:
@@ -67,7 +69,7 @@ class Casts:
         self.started = time.time()
 
     def _watch_all(self):
-        """Dołącza nowe urządzenia: start() łączy w tle i sam wznawia połączenie po zerwaniu."""
+        """Attaches new devices: start() connects in the background and reconnects by itself after a drop."""
         pc, _ = _pychromecast()
         with self.lock:
             self._ensure()
@@ -82,10 +84,10 @@ class Casts:
                     c.start()
                     self.casts[u] = c
                 except Exception as e:  # noqa: BLE001
-                    self.log("chromecast: nie łączę z", info.friendly_name, e)
+                    self.log("chromecast: not connecting to", info.friendly_name, e)
 
     def devices(self):
-        """[{id, name, model}] — pierwsze wywołanie czeka do 3 s na odpowiedzi z sieci."""
+        """[{id, name, model}] — the first call waits up to 3 s for answers from the network."""
         with self.lock:
             self._ensure()
         while time.time() - self.started < 3 and not self.browser.devices:
@@ -109,7 +111,7 @@ class Casts:
         return c
 
     def play(self, dev_id, url, title, content_type, subs=None, start=None):
-        """`subs`: [{"url" (WebVTT), "lang"}], pierwsze włączone."""
+        """`subs`: [{"url" (WebVTT), "lang"}], the first one is enabled."""
         c = self._connect(dev_id)
         mc = c.media_controller
         kw = {"title": title, "current_time": start or 0, "autoplay": True, "stream_type": "BUFFERED"}
@@ -129,7 +131,7 @@ class Casts:
         return c.media_controller.status
 
     def _pick(self, dev_id=None):
-        """(uuid, Chromecast): wskazany, inaczej ten, na którym coś gra (najpierw nasz)."""
+        """(uuid, Chromecast): the given one, otherwise one that is playing something (ours first)."""
         if dev_id:
             return dev_id, self.casts.get(dev_id)
         order = sorted(self.casts.items(), key=lambda kv: kv[0] != self.uuid)
@@ -147,17 +149,17 @@ class Casts:
         return {
             "active": m.player_state in PLAYING or (u == self.uuid and bool(m.content_id) and m.player_state != "UNKNOWN"),
             "device": c.cast_info.friendly_name, "id": u,
-            # aplikacja na Chromecaście („Default Media Receiver” = my albo apka, YouTube, Spotify…)
+            # the application on the Chromecast ("Default Media Receiver" = us or the app, YouTube, Spotify…)
             "app": st.display_name if st else None, "mine": u == self.uuid,
             "title": m.title, "state": m.player_state, "pos": m.adjusted_current_time or m.current_time or 0,
             "duration": m.duration, "volume": round((st.volume_level if st else 0) * 100),
             "muted": bool(st and st.volume_muted),
-            # stała głośność (np. sterowana przez telewizor po HDMI-CEC): przyciski głośności nic nie dają
+            # fixed volume (e.g. controlled by the TV over HDMI-CEC): the volume buttons do nothing
             "volume_fixed": bool(st and st.volume_control_type == "fixed"),
         }
 
     def status(self):
-        """Stan Chromecasta, na którym coś gra (dowolny nadawca); `all`: wszystkie grające."""
+        """State of the Chromecast that is playing something (any sender); `all`: all playing ones."""
         self._watch_all()
         playing = [x for x in (self._one(u, c) for u, c in self.casts.items()) if x and x["active"]]
         if not playing:

@@ -1,8 +1,8 @@
-"""Rozgłaszanie „co gra” między pilotami (telefony z apką, agenci): UDP multicast 239.255.77.77:47700, TTL 1.
+"""Announcing "what is playing" between remotes (phones running the app, agents): UDP multicast 239.255.77.77:47700, TTL 1.
 
-Format jak w apce (`Announce.kt`): {"mp":1,"type":"playing"|"stopped"|"who","from":{kind,id,name},
-"target":{kind,id,name,ctl},"title","state","pos","dur","ts"}. Agent słucha (lista dla strony: GET /api/announce)
-i sam ogłasza mpv na swoim ekranie. Bez sekretów w pakietach. Opis: docs/plan-piloty.md.
+Format as in the app (`Announce.kt`): {"mp":1,"type":"playing"|"stopped"|"who","from":{kind,id,name},
+"target":{kind,id,name,ctl},"title","state","pos","dur","ts"}. The agent listens (list for the web page:
+GET /api/announce) and announces its own mpv screen itself. No secrets in the packets. Description: docs/plan-remotes.md.
 """
 import json
 import socket
@@ -15,7 +15,7 @@ GROUP, PORT, TTL = "239.255.77.77", 47700, 10
 
 class Announcer:
     def __init__(self, log, me, mine):
-        """`me()` → {"id", "name"} agenta; `mine()` → lista wiadomości „playing” (co gra u nas teraz)."""
+        """`me()` → the agent's {"id", "name"}; `mine()` → list of "playing" messages (what is playing here right now)."""
         self.log, self.me, self.mine = log, me, mine
         self.others = {}
         self.lock = threading.Lock()
@@ -32,7 +32,7 @@ class Announcer:
             s.settimeout(3)
             self.sock = s
         except OSError as e:
-            self.log("rozgłaszanie: nie słucham:", e)
+            self.log("announce: not listening:", e)
             return
         threading.Thread(target=self._listen, daemon=True).start()
         threading.Thread(target=self._beacon, daemon=True).start()
@@ -89,7 +89,7 @@ class Announcer:
                     self.others[key] = {**j, "at": time.time()}
 
     def list(self):
-        """Co grają inne piloty (bez wpisów starszych niż 10 s)."""
+        """What other remotes are playing (without entries older than 10 s)."""
         now = time.time()
         with self.lock:
             for k in [k for k, v in self.others.items() if now - v["at"] > TTL]:

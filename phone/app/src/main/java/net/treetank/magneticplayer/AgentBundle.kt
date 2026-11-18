@@ -15,11 +15,11 @@ import java.security.spec.X509EncodedKeySpec
 import java.util.zip.GZIPInputStream
 
 /**
- * Paczka agenta, którą telefon serwuje nowemu komputerowi (InstallShare): zaszyta w APK (build-apk.sh) albo nowsza
- * z ostatniego wydania na GitHubie (release-ci.sh). Z wydania bierzemy manifest `agent.json` podpisany ECDSA P-256
- * (klucz publiczny w assets/agent/signing.pub z phone/tools/agent-signing.pub), a paczkę tylko z pasującym sha256.
- * Wersja to czas ostatniego commita z server/ (w podpisanym manifeście), więc starszej paczki nie da się podsunąć
- * jako nowszej. Bez sieci, podpisu albo przy błędzie zostaje paczka z APK.
+ * Agent bundle that the phone serves to a new computer (InstallShare): embedded in the APK (build-apk.sh) or a newer
+ * from the latest GitHub release (release-ci.sh). From a release we take the `agent.json` manifest signed with ECDSA P-256
+ * (public key in assets/agent/signing.pub from phone/tools/agent-signing.pub), and the bundle only with a matching sha256.
+ * The version is the time of the last commit touching server/ (in the signed manifest), so an older bundle cannot be passed off
+ * as a newer one. With no network, no signature or on error, the bundle from the APK is used.
  */
 object AgentBundle {
     private const val BASE = "https://github.com/treetank-net/magneticplayer/releases/latest/download/"
@@ -33,7 +33,7 @@ object AgentBundle {
         runCatching { ct(ctx.assets.open("agent/version.txt").use { String(it.readBytes()) }) }.getOrNull() ?: 0L
     private fun cachedVersion(ctx: Context) = runCatching { File(dir(ctx), "version.txt").readText() }.getOrNull()
 
-    /** Paczka z wydania, gdy jest kompletna i nowsza niż ta w APK (po aktualizacji apki wbudowana może być nowsza). */
+    /** Bundle from a release, when complete and newer than the one in the APK (after an app update the built-in one may be newer). */
     private fun useCached(ctx: Context): Boolean {
         val d = dir(ctx)
         return listOf("agent.tgz", "join.sh", "join.ps1").all { File(d, it).isFile } &&
@@ -45,7 +45,7 @@ object AgentBundle {
     fun open(ctx: Context, name: String): InputStream =
         if (useCached(ctx)) File(dir(ctx), name).inputStream() else ctx.assets.open("agent/$name")
 
-    /** Opis dla okna instalacji, np. „agent 1.3.0 z wydania 18.11.2026” albo „agent z apki”. */
+    /** Description for the install window, e.g. "agent 1.3.0 from release 18.11.2026" or "agent from the app". */
     fun label(ctx: Context): String {
         if (!useCached(ctx)) return ctx.getString(R.string.srv_agent_from_app)
         val p = cachedVersion(ctx)!!.trim().split(" ")
@@ -53,7 +53,7 @@ object AgentBundle {
         return ctx.getString(R.string.srv_agent_from_release, p.getOrNull(2) ?: "", day).replace("  ", " ")
     }
 
-    /** Sprawdza wydanie na GitHubie (najwyżej co kilka godzin, chyba że force). Zwraca true, gdy pobrano nowszą paczkę. */
+    /** Checks the GitHub release (at most every few hours, unless force). Returns true if a newer bundle was downloaded. */
     fun refresh(ctx: Context, force: Boolean = false): Boolean {
         val now = System.currentTimeMillis()
         if (!force && now - lastCheck < CHECK_EVERY) return false
@@ -61,23 +61,23 @@ object AgentBundle {
         val pem = runCatching { ctx.assets.open("agent/signing.pub").use { String(it.readBytes()) } }.getOrNull() ?: return false
         val manifest = get(BASE + "agent.json", 64 shl 10)
         val sig = get(BASE + "agent.json.sig", 1 shl 10)
-        if (!verify(pem, manifest, sig)) throw SecurityException("zły podpis manifestu paczki agenta")
+        if (!verify(pem, manifest, sig)) throw SecurityException("bad signature on the agent bundle manifest")
         val m = JSONObject(String(manifest))
         val newCt = m.getLong("ct")
         if (newCt <= maxOf(embeddedCt(ctx), ct(cachedVersion(ctx)) ?: 0L)) return false
         val tgz = get(BASE + "agent.tgz", MAX_TGZ)
         val sha = MessageDigest.getInstance("SHA-256").digest(tgz).joinToString("") { "%02x".format(it) }
-        if (sha != m.getString("sha256")) throw SecurityException("paczka agenta nie zgadza się z podpisanym manifestem")
+        if (sha != m.getString("sha256")) throw SecurityException("agent bundle does not match the signed manifest")
         val files = untar(tgz, setOf("server/join.sh", "server/join.ps1"))
-        if (files.size != 2) throw IllegalStateException("w paczce agenta brak szablonów join.*")
-        // najpierw katalog obok, potem podmiana: InstallShare nigdy nie widzi połowy paczki
+        if (files.size != 2) throw IllegalStateException("agent bundle is missing the join.* templates")
+        // directory alongside first, then swap: InstallShare never sees half a bundle
         val d = dir(ctx)
         val tmp = File(d.parentFile, "agent.new").apply { deleteRecursively(); mkdirs() }
         File(tmp, "agent.tgz").writeBytes(tgz)
         files.forEach { (path, bytes) -> File(tmp, path.substringAfterLast('/')).writeBytes(bytes) }
         File(tmp, "version.txt").writeText("$newCt ${m.optString("commit").take(7)} ${m.optString("agent_version")}\n")
         d.deleteRecursively()
-        if (!tmp.renameTo(d)) throw IllegalStateException("nie udało się zapisać paczki agenta")
+        if (!tmp.renameTo(d)) throw IllegalStateException("could not save the agent bundle")
         return true
     }
 
@@ -93,7 +93,7 @@ object AgentBundle {
                 while (true) {
                     val n = inp.read(buf); if (n < 0) break
                     out.write(buf, 0, n)
-                    if (out.size() > max) throw IllegalStateException("za duży plik: $url")
+                    if (out.size() > max) throw IllegalStateException("file too large: $url")
                 }
                 return out.toByteArray()
             }
@@ -105,10 +105,10 @@ object AgentBundle {
     private fun verify(pem: String, data: ByteArray, sig: ByteArray): Boolean = runCatching {
         val der = Base64.decode(pem.lines().filter { it.isNotBlank() && !it.startsWith("-----") }.joinToString(""), Base64.DEFAULT)
         val key = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(der))
-        Signature.getInstance("SHA256withECDSA").run { initVerify(key); update(data); verify(sig) }  // podpis DER z openssl
+        Signature.getInstance("SHA256withECDSA").run { initVerify(key); update(data); verify(sig) }  // DER signature from openssl
     }.getOrDefault(false)
 
-    /** Minimalny czytnik tar (ustar z GNU tar): zwraca wybrane pliki. */
+    /** Minimal tar reader (ustar from GNU tar): returns the selected files. */
     private fun untar(tgz: ByteArray, want: Set<String>): Map<String, ByteArray> {
         val out = mutableMapOf<String, ByteArray>()
         GZIPInputStream(ByteArrayInputStream(tgz)).use { z ->

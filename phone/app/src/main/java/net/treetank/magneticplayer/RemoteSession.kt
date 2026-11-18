@@ -28,34 +28,34 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Jeden zdalny cel (`kind`: mpv na ekranie, telewizor DLNA albo Chromecast) jako „odtwarzacz” dla systemu: powiadomienie
- * z przyciskami i suwakiem (panel u góry, ekran blokady) i głośność urządzenia przyciskami telefonu także poza apką
- * (sesja zdalna, DeviceInfo REMOTE). Sam nic nie odtwarza, stan czyta co ~1,5 s. Każdy grający cel ma własną sesję
- * i własne powiadomienie ([RemoteSessionService]).
- * Chromecast puszczony z tego telefonu przez Cast SDK ma powiadomienie z SDK; ten sterowany bezpośrednio albo przez
- * agenta (strona, inny telefon, YouTube) dostaje je stąd.
+ * One remote target (`kind`: mpv on a screen, DLNA TV or Chromecast) as a "player" for the system: a notification
+ * with buttons and a slider (top panel, lock screen) and the device volume with the phone's buttons, also outside the app
+ * (remote session, DeviceInfo REMOTE). It plays nothing itself, reads the state every ~1.5 s. Each playing target has its own session
+ * and its own notification ([RemoteSessionService]).
+ * A Chromecast started from this phone through the Cast SDK has the SDK's notification; one controlled directly or through
+ * the agent (web page, another phone, YouTube) gets it from here.
  */
 @OptIn(UnstableApi::class)
 class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlayer(Looper.getMainLooper()) {
     private val scope = MainScope()
     @Volatile private var remote: Remote? = null
     @Volatile private var st: RemoteState? = null
-    /** ile odczytów z rzędu nic nie grało (usługa kończy się po kilku) */
+    /** how many reads in a row had nothing playing (the service ends after a few) */
     var idlePolls = 0
         private set
-    /** „Zakończ” z powiadomienia przy cudzej aplikacji: drugie dotknięcie do tej chwili zamyka (zamiast okna z pytaniem) */
+    /** "Stop" from the notification on someone else's app: a second tap before this moment closes it (instead of a confirmation dialog) */
     @Volatile private var armedUntil = 0L
 
-    /** Przycisk „Zakończ” w powiadomieniu. Cudzą aplikację (Spotify…) zamyka dopiero drugie dotknięcie w ciągu 5 s. */
+    /** "Stop" button in the notification. Someone else's app (Spotify…) is closed only by a second tap within 5 s. */
     fun stopTapped() {
         val now = System.currentTimeMillis()
         if (st?.app != null && Settings(ctx).confirmForeignStop && now > armedUntil) {
             armedUntil = now + 5000
-            // podpowiedź też jako toast: napis w karcie powiadomienia bywa ucięty
+            // hint also as a toast: text in the notification card is sometimes cut off
             val msg = ctx.getString(R.string.main_notif_confirm_stop, st?.app ?: "")
             Handler(Looper.getMainLooper()).post { android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show() }
             invalidateState()
-            scope.launch { delay(5100); invalidateState() }  // podpowiedź znika sama
+            scope.launch { delay(5100); invalidateState() }  // the hint disappears by itself
             return
         }
         armedUntil = 0
@@ -69,10 +69,10 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
                 val r = pick()
                 val s = r?.let { runCatching { it.status() }.getOrNull() }
                 remote = r; st = s
-                // zatrzymany telewizor (koniec filmu, ktoś wyłączył) liczy się jak „nic nie gra”
+                // a stopped TV (end of video, someone turned it off) counts as "nothing playing"
                 val idle = s == null || (r is DlnaRemote && Dlna.last?.state in Dlna.IDLE_STATES)
                 idlePolls = if (idle) idlePolls + 1 else 0
-                // nazwa urządzenia w systemie (kafelek, karta w panelu) zamiast „Ten telefon”
+                // device name in the system (tile, card in the panel) instead of "This phone"
                 RemoteRoutes.set(ctx, kind, if (s != null && r != null) r.name else null)
                 invalidateState()
                 if (n++ % 2 == 0) announce(r, s)
@@ -81,7 +81,7 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
         }
     }
 
-    /** Telewizor DLNA zna tylko telefon, który na nim puścił: mówimy innym pilotom, co na nim gra ([Announce]). */
+    /** A DLNA TV knows only the phone that started the video on it: we tell the other remotes what is playing on it ([Announce]). */
     private fun announce(r: Remote?, s: RemoteState?) {
         val t = Dlna.current
         if (r !is DlnaRemote || s == null || t == null) { Announce.mine = emptyList(); return }
@@ -93,7 +93,7 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
 
     private fun pick(): Remote? = when (kind) {
         "dlna" -> if (Dlna.current != null) DlnaRemote(ctx) else null
-        // Chromecast z Cast SDK ma własne powiadomienie
+        // a Chromecast with the Cast SDK has its own notification
         "cast" -> if (Cast.session(ctx) == null) Pilot.remote(ctx, "cast") else null
         else -> Pilot.remote(ctx, kind)
     }
@@ -168,8 +168,8 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
 }
 
 /**
- * Sesja (i powiadomienie) dla każdego celu, który gra: ekran, telewizor, Chromecast, także kilka naraz. Cel znika
- * po ~10 s ciszy, usługa kończy się razem z ostatnim. media3 sama robi z sesji usługę z powiadomieniami.
+ * A session (and notification) for every target that is playing: screen, TV, Chromecast, even several at once. A target disappears
+ * after ~10 s of silence, the service ends with the last one. media3 turns the session into a service with notifications by itself.
  */
 @OptIn(UnstableApi::class)
 class RemoteSessionService : MediaSessionService() {
@@ -177,10 +177,10 @@ class RemoteSessionService : MediaSessionService() {
     private val main = Handler(Looper.getMainLooper())
     private val watch = object : Runnable {
         override fun run() {
-            // ~10 s bez niczego grającego: koniec tego celu (mpv zamknięte, telewizor zatrzymany przez Zakończ)
+            // ~10 s with nothing playing: end of this target (mpv closed, TV stopped through Stop)
             for ((kind, s) in sessions.toList()) {
                 if ((s.player as RemotePlayer).idlePolls < 7) continue
-                // telewizor już nic nie gra: przestajemy go śledzić
+                // the TV plays nothing now: we stop tracking it
                 if (kind == "dlna" && Dlna.last?.state in Dlna.IDLE_STATES) Dlna.forget()
                 drop(kind)
             }
@@ -191,17 +191,17 @@ class RemoteSessionService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        // osobne id na cel (domyślne 1001 ma też odtwarzacz w telefonie): powiadomienia się nie nadpisują
+        // a separate id per target (the default 1001 is also used by the in-phone player): notifications do not overwrite each other
         setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this)
             .setNotificationIdProvider { s -> 2001 + KINDS.indexOf(s.id.removePrefix("remote-")).coerceAtLeast(0) }
             .build())
         main.postDelayed(watch, 3000)
-        stopListen = Announce.listen(this)  // odpowiada na „who” innych pilotów, póki coś gra
+        stopListen = Announce.listen(this)  // answers other remotes' "who" while something is playing
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         intent?.getStringExtra(EXTRA_KIND)?.takeIf { it in KINDS }?.let { add(it) }
-        if (sessions.isEmpty()) add("screen")  // stary start bez rodzaju (np. przycisk multimedialny)
+        if (sessions.isEmpty()) add("screen")  // old start without a kind (e.g. a media button)
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -227,7 +227,7 @@ class RemoteSessionService : MediaSessionService() {
             })
             .setMediaButtonPreferences(ImmutableList.of(stopBtn))
             .build()
-            // bez tego media3 pokaże powiadomienie dopiero, gdy podłączy się jakiś kontroler (np. System UI)
+            // without this media3 shows the notification only when some controller connects (e.g. System UI)
             .also { addSession(it) }
     }
 
@@ -239,12 +239,12 @@ class RemoteSessionService : MediaSessionService() {
 
     private var stopListen: (() -> Unit)? = null
 
-    // kontrolery z zewnątrz (zegarek, Android Auto) dostają cel, który Pilot pokazuje
+    // external controllers (watch, Android Auto) get the target that Remote shows
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) =
         sessions[Pilot.focus.value] ?: sessions.values.firstOrNull()
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // apka zamknięta z listy: film na ekranie/telewizorze gra dalej, więc powiadomienie zostaje
+        // app closed from the recents list: the video on the screen/TV keeps playing, so the notification stays
     }
 
     override fun onDestroy() {
@@ -259,7 +259,7 @@ class RemoteSessionService : MediaSessionService() {
         private const val CMD_STOP = "net.treetank.magneticplayer.STOP"
         private val KINDS = listOf("screen", "dlna", "cast")
 
-        /** Powiadomienie dla celu `kind` ("screen" | "dlna" | "cast"), dopóki coś na nim gra. */
+        /** Notification for target `kind` ("screen" | "dlna" | "cast"), as long as something is playing on it. */
         fun start(ctx: Context, kind: String) {
             runCatching { ctx.startService(Intent(ctx, RemoteSessionService::class.java).putExtra(EXTRA_KIND, kind)) }
         }

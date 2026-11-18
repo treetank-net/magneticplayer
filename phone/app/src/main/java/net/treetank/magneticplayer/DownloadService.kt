@@ -32,9 +32,9 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * „Pobierz na telefon”: pobiera całe filmy do MediaCache w tle (usługa pierwszoplanowa z powiadomieniem, blokada Wi-Fi
- * i CPU, więc działa przy zgaszonym ekranie). Kolejka = OfflineItem z `want && !complete`, po jednym naraz.
- * Tylko bajty, które komputer już ma (X-Ready-End): przy torrencie w trakcie czeka na kolejne kawałki.
+ * "Download to phone": downloads whole videos into MediaCache in the background (foreground service with a notification, Wi-Fi lock
+ * and CPU lock, so it works with the screen off). Queue = OfflineItem with `want && !complete`, one at a time.
+ * Only bytes the computer already has (X-Ready-End): for a torrent in progress it waits for further pieces.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 class DownloadService : Service() {
@@ -43,13 +43,13 @@ class DownloadService : Service() {
         private const val NOTIF_ID = 42
         private const val ACTION_STOP = "stop"
         private const val CHUNK = 8L shl 20
-        private const val MAX_FAILS = 20  // ~5 min bez komputera (co 15 s), potem „Przerwane”
+        private const val MAX_FAILS = 20  // ~5 min without the computer (every 15 s), then "Interrupted"
 
-        /** Stan dla listy „Na telefonie”: klucz filmu → opis (np. „Pobieranie 42%”). */
+        /** State for the "On the phone" list: video key → description (e.g. "Downloading 42%"). */
         val status = MutableStateFlow<Map<String, String>>(emptyMap())
         private val cancelled: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-        /** Dodaje film do pobranych (albo wznawia) i uruchamia usługę. */
+        /** Adds a video to downloads (or resumes) and starts the service. */
         fun start(ctx: Context, ref: MediaRef, policy: String? = null) {
             val key = ref.key()
             cancelled.remove(key)
@@ -60,7 +60,7 @@ class DownloadService : Service() {
             ContextCompat.startForegroundService(ctx, Intent(ctx, DownloadService::class.java))
         }
 
-        /** Zatrzymuje pobieranie filmu (usuwanie z dysku robi MediaCache.remove). */
+        /** Stops downloading a video (deleting from disk is done by MediaCache.remove). */
         fun cancel(key: String) {
             cancelled += key
         }
@@ -114,7 +114,7 @@ class DownloadService : Service() {
         return START_NOT_STICKY
     }
 
-    /** Android 15+: limit czasu usług dataSync. Przerywamy, wznowić można z listy. */
+    /** Android 15+: time limit for dataSync services. We stop, and it can be resumed from the list. */
     override fun onTimeout(startId: Int, fgsType: Int) {
         OfflineStore.all(this).filter { it.want && !it.complete }.forEach { i ->
             cancelled += i.key
@@ -137,7 +137,7 @@ class DownloadService : Service() {
                 OfflineStore.update(this, item.key) { it.copy(want = false, error = getString(R.string.media_dl_failed, e.message ?: e.javaClass.simpleName)) }
             }
             if (item.key in cancelled) {
-                // anulowane w trakcie kawałka: sprzątamy to, co CacheWriter zdążył dopisać po MediaCache.remove
+                // cancelled mid-chunk: clean up what CacheWriter managed to append after MediaCache.remove
                 if (OfflineStore.get(this, item.key) == null) runCatching { MediaCache.get(this).removeResource(item.key) }
                 cancelled -= item.key
             }
@@ -197,7 +197,7 @@ class DownloadService : Service() {
         }
     }
 
-    /** Napisy obok filmu → filesDir/offline/<hash>/, zapamiętane w OfflineItem (do odtwarzania bez sieci). */
+    /** Subtitles next to the video → filesDir/offline/<hash>/, stored in OfflineItem (for offline playback). */
     private fun saveSubs(api: Api, item: OfflineItem) {
         val dir = OfflineStore.subsDir(this, item.key)
         val list = api.subsList(item.ref)
@@ -218,13 +218,13 @@ class DownloadService : Service() {
         }
     }
 
-    /** [notifyToo] = false dla postępu (ten idzie do powiadomienia z paskiem w [progress]). */
+    /** [notifyToo] = false for progress (that goes to the notification with a bar in [progress]). */
     private fun setStatus(key: String, text: String, notifyToo: Boolean = true) {
         status.value = status.value + (key to text)
         if (notifyToo) notify(text, null)
     }
 
-    /** Brak miejsca na telefonie: bez ponawiania. */
+    /** No space on the phone: no retry. */
     private class NoSpaceException(msg: String) : IOException(msg)
 
     private fun notify(text: String, pct: Int?) {

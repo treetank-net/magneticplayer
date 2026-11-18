@@ -2,7 +2,7 @@
 # Wydanie w GitLab CI (job release w .gitlab-ci.yml) na chroniony tag v1.RRMMDD.GGMM, wzorem timeprotect:
 # build APK podpisanego kluczem treetank (ten sam co timeprotect, alias „treetank”; zmiana klucza = nowa instalacja),
 # kontrola odcisku certyfikatu, paczka agenta z manifestem podpisanym ECDSA P-256, wydanie na GitHubie.
-# Klucze tylko w chronionych zmiennych CI projektu ze środowiskiem „release” (nigdy w gicie ani w zwykłych jobach):
+# Keys only in protected CI variables of the project with the "release" environment (never in git or in ordinary jobs):
 #   MP_KEYSTORE_B64, MP_KEYSTORE_PASS (kopie TP_KEYSTORE_* z treetank/timeprotect-android), MP_KEY_PASS (opcjonalnie),
 #   MP_AGENT_KEY_B64 (PEM klucza paczki agenta, base64).
 # Buildy lokalne (emulator, testy) podpisuje klucz deweloperski phone/magneticplayer.keystore: inny certyfikat.
@@ -34,7 +34,7 @@ CERT=$(docker run --rm -v "$PWD/out:/o:ro" "$IMG" bash -c '/opt/android-sdk-linu
   | sed -n '0,/certificate SHA-256 digest: /s/.*certificate SHA-256 digest: //p')
 [ "$CERT" = "$EXPECTED_CERT" ] || { echo "certyfikat APK $CERT != $EXPECTED_CERT" >&2; exit 1; }
 
-# 2. paczka agenta i podpisany manifest (wersja w manifeście: apka nie przyjmie starszej paczki jako nowszej)
+# 2. agent bundle and signed manifest (version in the manifest: the app will not accept an older bundle as newer)
 REL=out/release
 tools/agent-bundle.sh "$REL"
 read -r CT _ < "$REL/version.txt"
@@ -61,7 +61,7 @@ PREV=$(git describe --tags --abbrev=0 "$CI_COMMIT_SHA^" 2>/dev/null || true)
 {
   echo "Agent $AGENT, apka $VN, commit ${CI_COMMIT_SHA:0:7}."
   echo
-  echo "Instalacja: README. Paczkę agenta (agent.tgz) apka pobiera sama i sprawdza podpis manifestu (agent.json.sig)."
+  echo "Installation: see README. The app downloads the agent bundle (agent.tgz) by itself and verifies the manifest signature (agent.json.sig)."
   echo
   echo "Zmiany:"
   git log -n 40 --no-merges --format='- %s' ${PREV:+"$PREV..$CI_COMMIT_SHA"}  # bez | head: SIGPIPE przy pipefail

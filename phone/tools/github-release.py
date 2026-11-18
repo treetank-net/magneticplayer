@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Wydanie na GitHubie przez API (bez gh): tworzy wydanie dla istniejącego tagu i wgrywa pliki.
+"""GitHub release via the API (no gh): creates a release for an existing tag and uploads files.
 
-Użycie: GITHUB_TOKEN=… github-release.py <owner/repo> <tag> <tytuł> <notatki.md> <plik>...
-Gdy wydanie dla tagu już jest (ponowione zadanie CI), wgrywa tylko brakujące pliki.
+Usage: GITHUB_TOKEN=… github-release.py <owner/repo> <tag> <title> <notes.md> <file>...
+If the release for the tag already exists (CI job retried), only the missing files are uploaded.
 """
 import json
 import mimetypes
@@ -39,7 +39,7 @@ def main():
     for path in files:
         name = os.path.basename(path)
         if name in have:
-            print(f"jest już: {name}")
+            print(f"already there: {name}")
             continue
         ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
         if name.endswith(".apk"):

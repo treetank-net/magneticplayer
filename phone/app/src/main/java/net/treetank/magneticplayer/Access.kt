@@ -15,15 +15,15 @@ import androidx.core.content.ContextCompat
 import kotlin.concurrent.thread
 
 /**
- * Prośby o dostęp (mp_access.py): niesparowane urządzenie w sieci domowej prosi, a ten telefon (domownika)
- * pokazuje powiadomienie z przyciskami „Gość (dzień)” / „Domownik” / „Odrzuć”.
- * Sprawdzamy przy połączeniu z serwerem (pętla w MainActivity), bez pracy w tle.
+ * Access requests (mp_access.py): an unpaired device on the home network asks, and this phone (a household member's)
+ * shows a notification with the buttons "Guest (day)" / "Household" / "Reject".
+ * Checked when connecting to the server (loop in MainActivity), no background work.
  */
 object Access {
     private const val CHANNEL = "access"
     private const val TAG = "access"
     const val ACTION = "net.treetank.magneticplayer.ACCESS"
-    private val shown = mutableSetOf<String>()  // id już pokazanych (do końca życia procesu)
+    private val shown = mutableSetOf<String>()  // ids already shown (until the process dies)
 
     fun check(ctx: Context, api: Api) {
         val srv = Servers.get(ctx, api.srv.key) ?: api.srv
@@ -36,7 +36,7 @@ object Access {
             now += id
             if (shown.add(id)) notify(ctx, srv, id, r.optString("name"), r.optString("ip"), r.optInt("expires_in", 300))
         }
-        // prośby rozpatrzone gdzie indziej (inny telefon, strona) albo wygasłe: chowamy powiadomienie
+        // requests handled elsewhere (another phone, the web page) or expired: remove the notification
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.activeNotifications.filter { it.tag == TAG && it.notification.extras.getString("srv") == srv.key &&
             it.notification.extras.getString("req") !in now }.forEach { nm.cancel(TAG, it.id) }

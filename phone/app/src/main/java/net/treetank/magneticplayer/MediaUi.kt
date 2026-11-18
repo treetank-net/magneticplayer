@@ -66,7 +66,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Przyciski dla filmu: telefon, ekran (mpv na którymś serwerze), a w menu VLC, napisy, pobieranie. */
+/** Buttons for a video: phone, screen (mpv on some server), and in the menu VLC, subtitles, download. */
 @Composable
 fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
     val ctx = LocalContext.current
@@ -89,7 +89,7 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
             opening = null
         }
     }
-    // powiadomienie z postępem pobierania (Android 13+ pyta o zgodę; bez niej pobieranie i tak działa)
+    // notification with download progress (Android 13+ asks for permission; downloading works without it anyway)
     val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -97,13 +97,13 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
             Icon(Icons.Filled.Smartphone, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.media_phone_button))
         }
         if (screens.isNotEmpty()) FilledTonalButton({
-            // jeden ekran i to ten sam serwer: od razu, jak dawniej; inaczej wybór ekranu
+            // one screen and on the same server: immediately, as before; otherwise a screen picker
             if (screens.size == 1 && screens[0].key == ref.srv) playOn(screens[0].key) else chooser = true
         }) {
             Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
             Text(if (screens.size == 1) screens[0].name.take(14) else stringResource(R.string.media_on_screen_ellipsis))
         }
-        // Chromecasty (i reszta ekranów) w jednym wyborze
+        // Chromecasts (and the other screens) in a single picker
         IconButton({ chooser = true }) { Icon(Icons.Filled.Cast, stringResource(R.string.media_cd_cast)) }
         Box {
             IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.media_cd_more)) }
@@ -146,7 +146,7 @@ private val PROVIDER_NAMES = mapOf(
     "gestdown" to "Gestdown (Addic7ed)", "napiprojekt" to "NapiProjekt", "tvsubtitles" to "TVsubtitles",
 )
 
-/** Napisy: te, które już leżą obok filmu, + wyszukiwanie na komputerze z podglądem postępu każdego źródła. */
+/** Subtitles: those already next to the video, + a search on the computer with progress for each source. */
 @Composable
 fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -156,7 +156,7 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
     var done by remember { mutableStateOf<String?>(null) }
-    // ręczna poprawka tytułu (np. plik po hiszpańsku, napisy pod angielskim tytułem)
+    // manual title correction (e.g. a Spanish file, subtitles under the English title)
     var title by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
     var override by remember { mutableStateOf<Pair<String?, Int?>>(null to null) }
@@ -212,7 +212,7 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
                     f == null -> {
                         SearchProgress(progress)
                         val p = progress
-                        // jedne źródło już coś ma, a inne jeszcze mieli — pozwól nie czekać
+                        // one source already has something while another is still working: let the user skip the wait
                         if (p != null && p.phase == "search" && p.providers.any { it.state == "running" || it.state == "pending" }) {
                             TextButton({
                                 stopping = true

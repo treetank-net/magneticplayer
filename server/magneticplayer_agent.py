@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""MagneticPlayer: agent na komputerze (Linux Mint).
+"""MagneticPlayer: the agent running on the computer (Linux Mint, also Windows).
 
-HTTP API dla apki na telefonie:
-  - dodawanie magnet linków do Deluge (deluge-web JSON-RPC) albo Transmission (RPC),
-  - lista torrentów i plików, strumieniowanie plików (HTTP Range) do odtwarzacza w telefonie,
-  - zdalne sterowanie mpv na komputerze (JSON IPC): play/pauza, przewijanie, fullscreen, głośność, napisy,
-  - blokada usypiania, gdy coś się pobiera albo leci film; uśpienie na żądanie.
+HTTP API for the phone app:
+  - adding magnet links to Deluge (deluge-web JSON-RPC) or Transmission (RPC),
+  - list of torrents and files, streaming files (HTTP Range) to the player on the phone,
+  - remote control of mpv on the computer (JSON IPC): play/pause, seek, fullscreen, volume, subtitles,
+  - sleep inhibition while something is downloading or a video is playing; suspend on request.
 
-Tylko biblioteka standardowa Pythona. Konfiguracja: ~/.config/magneticplayer/config.json
+Python standard library only. Configuration: ~/.config/magneticplayer/config.json
 """
 import json
 import mimetypes
@@ -38,7 +38,7 @@ import mp_appupdate
 import mp_i18n
 from mp_i18n import T
 
-# DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
+# DLNA: byte seeking (OP=01), no conversion, streaming + background (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 from mp_devices import Devices
 from mp_jobs import AFTER, Jobs, magnet_name
@@ -48,15 +48,15 @@ from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
 VERSION = "1.5.0"
-API_LEVEL = 2  # /api/info: id, features, power; tokeny urządzeń, bilety, player/open z url
+API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
-WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")  # klient webowy (server/web)
-APK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apk")  # tu publish.sh wrzuca apkę
+WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")  # web client (server/web)
+APK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apk")  # publish.sh puts the APK here
 
 
 def apk_version():
-    """Wersja apki opublikowanej na komputerze (phone/tools/publish.sh) — telefony same się aktualizują."""
+    """Version of the app published on the computer (phone/tools/publish.sh); phones update themselves."""
     try:
         with open(os.path.join(APK_DIR, "version.json")) as f:
             v = json.load(f)
@@ -66,7 +66,7 @@ def apk_version():
         pass
     return {"version_code": 0}
 WINDOWS = os.name == "nt"
-if WINDOWS:  # mpv na Windows: IPC przez named pipe zamiast gniazda unix
+if WINDOWS:  # mpv on Windows: IPC over a named pipe instead of a unix socket
     RUNTIME_DIR = os.path.join(os.environ.get("TEMP") or os.path.expanduser("~"), "magneticplayer")
     MPV_SOCKET = r"\\.\pipe\magneticplayer-mpv"
 else:
@@ -78,16 +78,16 @@ AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 DEFAULT_CONFIG = {
     "port": 8765,
     "token": "",
-    "id": "",  # stały identyfikator serwera (apka rozpoznaje po nim serwer, nie po IP)
-    "name": "",  # nazwa w apce; puste = hostname
-    "backend": "deluge",  # deluge | transmission | none (serwer bez torrentów, np. tylko ekran)
+    "id": "",  # stable server identifier (the app recognises a server by it, not by IP)
+    "name": "",  # name shown in the app; empty = hostname
+    "backend": "deluge",  # deluge | transmission | none (a server without torrents, e.g. screen only)
     "deluge_url": "http://127.0.0.1:8112/json",
     "deluge_password": "deluge",
     "transmission_url": "http://127.0.0.1:9091/transmission/rpc",
     "transmission_user": "",
     "transmission_password": "",
     "keep_awake": True,
-    # odblokowanie ekranu blokady przy "Na komputerze" i "Włącz ekran"; każdy z tokenem odblokuje wtedy pulpit
+    # unlock the lock screen on "On the computer" and "Turn on screen"; anyone with a token can then unlock the desktop
     "auto_unlock": True,
     "mpv_args": ["--fs", "--save-position-on-quit"],
 }
@@ -121,8 +121,8 @@ def save_config(cfg):
     os.replace(tmp, CONFIG_PATH)
 
 
-# Gość (rola „guest”, mp_devices.py): tylko oglądanie. Lista dozwolonych, nie zakazanych, żeby nowe endpointy
-# były dla gościa zamknięte, dopóki ktoś ich tu świadomie nie dopisze.
+# Guest (role "guest", mp_devices.py): watching only. An allow list, not a deny list, so new endpoints
+# stay closed to guests until someone deliberately adds them here.
 GUEST_ALLOWED = {
     "GET": ("/api/info", "/api/announce", "/api/app/version", "/app/MagneticPlayer.apk", "/api/library",
             "/api/library/browse", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
@@ -136,7 +136,7 @@ GUEST_ALLOWED = {
 
 def guest_allowed(method, p):
     allowed = GUEST_ALLOWED.get("GET" if method == "HEAD" else method, ())
-    if p.startswith("/api/torrents/"):  # lista plików torrenta tak, akcje (start, usuń, „po pobraniu”) nie
+    if p.startswith("/api/torrents/"):  # the torrent's file list is allowed, actions (start, remove, "after download") are not
         return method in ("GET", "HEAD") and p.endswith("/files")
     return any(p == a or (a.endswith("/") and p.startswith(a)) for a in allowed)
 
@@ -147,7 +147,7 @@ class ApiError(Exception):
         self.status = status
 
 
-# ---------------------------------------------------------------- backendy torrentowe
+# ---------------------------------------------------------------- torrent backends
 
 def is_media(path):
     ext = os.path.splitext(path)[1].lower()
@@ -155,8 +155,8 @@ def is_media(path):
 
 
 def ready_end(pieces, start, size):
-    """Do którego bajtu (wyłącznie) plik jest pobrany ciągiem od `start`. pieces = (offset pliku w torrencie,
-    rozmiar kawałka, lista pobranych kawałków albo None, gdy torrent kompletny)."""
+    """Up to which byte (exclusive) the file is downloaded contiguously from `start`. pieces = (offset of the file
+    in the torrent, piece size, list of downloaded pieces or None when the torrent is complete)."""
     if pieces is None or pieces[2] is None:
         return size
     offset, piece_len, have = pieces
@@ -169,7 +169,7 @@ def ready_end(pieces, start, size):
 
 
 def contiguous_ready(have, piece_len, offset, size):
-    """Ile bajtów pliku jest pobrane ciągiem od jego początku (tyle da się obejrzeć bez dziur)."""
+    """How many bytes of the file are downloaded contiguously from its start (that much can be watched without gaps)."""
     if size <= 0:
         return 0
     k = offset // piece_len
@@ -202,11 +202,11 @@ def _probe_duration(path):
 
 
 def media_duration(path):
-    """Długość filmu w sekundach albo None (wtedy odczyt rusza w tle — mpv czyta nagłówek, także niepełnego pliku)."""
+    """Video length in seconds, or None (then a read starts in the background: mpv reads the header, even of an incomplete file)."""
     with _durations_lock:
         if path in _durations:
             dur, when = _durations[path]
-            if dur is not None or when == 0 or time.time() - when < 60:  # when == 0: odczyt w toku
+            if dur is not None or when == 0 or time.time() - when < 60:  # when == 0: read in progress
                 return dur
         _durations[path] = (None, 0)
     threading.Thread(target=_probe_duration, args=(path,), daemon=True).start()
@@ -265,7 +265,7 @@ class DelugeBackend:
                 self._ensure()
                 return self._raw(method, list(params))
             except ApiError as e:
-                if e.status == 401:  # sesja wygasła
+                if e.status == 401:  # session expired
                     self._raw("auth.login", [self.password])
                     return self._raw(method, list(params))
                 raise
@@ -280,7 +280,7 @@ class DelugeBackend:
         if dest:
             opts["download_location"] = dest
         tid = self.call("core.add_torrent_magnet", uri, opts)
-        if not tid:  # Deluge zwraca None, gdy torrent już jest na liście
+        if not tid:  # Deluge returns None when the torrent is already in the list
             m = re.search(r"btih:([0-9a-fA-F]{40})", uri)
             tid = m.group(1).lower() if m else None
         return tid
@@ -308,7 +308,7 @@ class DelugeBackend:
         if not st:
             raise ApiError(T("no such torrent", "nie ma takiego torrenta"), 404)
         prog = st.get("file_progress") or []
-        pieces = st.get("pieces")  # None, gdy torrent kompletny; inaczej stan kawałka, 3 = pobrany
+        pieces = st.get("pieces")  # None when the torrent is complete; otherwise piece state, 3 = downloaded
         have = [p == 3 for p in pieces] if isinstance(pieces, list) else None
         files = []
         for f in st["files"]:
@@ -377,7 +377,7 @@ class TransmissionBackend:
         if dest:
             args["download-dir"] = dest
         if sequential:
-            args["sequential_download"] = True  # Transmission >= 4.1, starsze ignorują
+            args["sequential_download"] = True  # Transmission >= 4.1, older versions ignore it
         r = self.call("torrent-add", args)
         t = r.get("torrent-added") or r.get("torrent-duplicate") or {}
         return t.get("hashString")
@@ -434,7 +434,7 @@ class TransmissionBackend:
 
 
 class NoBackend:
-    """backend: none, serwer bez klienta torrentów (np. tylko ekran albo tylko biblioteka)."""
+    """backend: none, a server without a torrent client (e.g. screen only or library only)."""
 
     def __init__(self, cfg):
         pass
@@ -458,11 +458,11 @@ class NoBackend:
         raise ApiError(T("this server doesn't download torrents", "ten serwer nie pobiera torrentów"), 409)
 
 
-# ---------------------------------------------------------------- sesja graficzna, mpv
+# ---------------------------------------------------------------- graphical session, mpv
 
 graphical_env = platform.graphical_env
-AUTO_UNLOCK = True  # nadpisywane z configu w App.__init__
-POWER = True  # config "power": false — z sieci nie da się uśpić ani wyłączyć (np. laptop do pracy)
+AUTO_UNLOCK = True  # overridden from config in App.__init__
+POWER = True  # config "power": false: no suspend or power-off over the network (e.g. a work laptop)
 
 
 def wake_screen(unlock=None):
@@ -470,8 +470,8 @@ def wake_screen(unlock=None):
 
 
 def socket_exists():
-    """Czy mpv założył gniazdo IPC. Na Windows przez listę potoków: os.path.exists na potoku łączy się z nim
-    i bywa False, gdy wszystkie instancje są zajęte."""
+    """Whether mpv has created the IPC socket. On Windows via the pipe list: os.path.exists on a pipe connects to it
+    and can return False when all instances are busy."""
     if WINDOWS:
         return os.path.basename(MPV_SOCKET) in os.listdir("\\\\.\\pipe\\")
     return os.path.exists(MPV_SOCKET)
@@ -488,8 +488,8 @@ class Mpv:
     def running(self):
         if self.proc is not None:
             return self.proc.poll() is None
-        # mpv sprzed restartu agenta (żyje w osobnym zakresie systemd): działa, jeśli odpowiada jego gniazdo
-        if WINDOWS:  # os.path.exists na potoku bywa False, gdy wszystkie jego instancje są zajęte
+        # mpv from before the agent restart (it lives in a separate systemd scope): running if its socket answers
+        if WINDOWS:  # os.path.exists on a pipe can be False when all its instances are busy
             return self.pipe is not None or socket_exists()
         s = socket.socket(socket.AF_UNIX)
         s.settimeout(0.3)
@@ -544,8 +544,8 @@ class Mpv:
         return False, None, buf
 
     def _cmd_pipe(self, command, rid, timeout):
-        """Windows: named pipe mpv. Jedno trwałe połączenie: mpv zakłada nowe nawet 3 s, a Pilot pyta 4×/s.
-        Odczyt z potoku nie ma limitu czasu, więc idzie w wątku; po błędzie albo braku odpowiedzi łączymy od nowa."""
+        """Windows: mpv's named pipe. One persistent connection: mpv takes up to 3 s to accept a new one, and the Remote polls 4x/s.
+        Reading from the pipe has no timeout, so it runs in a thread; after an error or no answer we reconnect."""
         out = {}
 
         def talk():
@@ -555,7 +555,7 @@ class Mpv:
                         self.pipe = open(MPV_SOCKET, "r+b", buffering=0)
                     f = out["f"] = self.pipe
                     f.write(json.dumps({"command": list(command), "request_id": rid}).encode() + b"\n")
-                    if command[0] == "quit":  # mpv nie zamknie się, dopóki klient trzyma potok: rozłączamy od razu
+                    if command[0] == "quit":  # mpv won't exit while a client holds the pipe: disconnect right away
                         self._drop_pipe()
                         return
                     buf = self.pipe_buf
@@ -574,7 +574,7 @@ class Mpv:
                 out["err"] = e
             except OSError as e:
                 with self.pipe_lock:
-                    if self.pipe is out.get("f"):  # po timeoucie to już może być nowe połączenie
+                    if self.pipe is out.get("f"):  # after a timeout this may already be a new connection
                         self._drop_pipe()
                 out["err"] = ApiError(f"mpv IPC: {e}", 502)
 
@@ -582,7 +582,7 @@ class Mpv:
         t.start()
         t.join(timeout)
         if t.is_alive():
-            # nie zamykamy z tego wątku (CloseHandle przy trwającym odczycie potrafi wisieć): odpinamy, wątek sam skończy
+            # don't close from this thread (CloseHandle during a pending read can hang): detach, the thread will finish by itself
             self.pipe, self.pipe_buf = None, b""
             raise ApiError(T("mpv IPC: no response", "mpv IPC: brak odpowiedzi"), 502)
         if "err" in out:
@@ -604,7 +604,7 @@ class Mpv:
             return default
 
     def open(self, path, title=None, subs=(), start=None):
-        """Plik lokalny albo URL (film z innego serwera, z biletem). `subs`: URL-e napisów, pierwsze wybrane."""
+        """A local file or a URL (a video from another server, with a ticket). `subs`: subtitle URLs, the first one is selected."""
         wake_screen()
         started = False
         if self.running():
@@ -614,7 +614,7 @@ class Mpv:
                 self.cmd("set_property", "pause", False)
                 started = True
             except ApiError:
-                # mpv właśnie się zamyka („Stop” chwilę wcześniej): czekamy, aż zniknie, i startujemy nowy
+                # mpv is just closing ("Stop" a moment ago): wait until it is gone and start a new one
                 for _ in range(50):
                     if not self.running():
                         break
@@ -627,7 +627,7 @@ class Mpv:
             self._after_load(path, subs, start)
 
     def _after_load(self, path, subs, start):
-        """Czeka, aż mpv wczyta plik (po sieci to potrwa), potem napisy i przewinięcie."""
+        """Waits until mpv has loaded the file (over the network it takes a while), then subtitles and seeking."""
         for _ in range(150):
             if self.prop("path") == path and self.prop("duration") is not None:
                 break
@@ -638,7 +638,7 @@ class Mpv:
             try:
                 self.cmd("sub-add", u, "select" if i == 0 else "auto", timeout=15)
             except ApiError as e:
-                log("napisy z", u.split("?")[0], e)
+                log("subtitles from", u.split("?")[0], e)
         if start:
             self.cmd("seek", float(start), "absolute")
 
@@ -648,7 +648,7 @@ class Mpv:
             raise ApiError(T("mpv isn't installed on the computer (sudo apt install mpv)", "brak mpv na komputerze (sudo apt install mpv)"), 500)
         if WINDOWS:
             with self.pipe_lock:
-                self._drop_pipe()  # stare połączenie należy do poprzedniego mpv
+                self._drop_pipe()  # the old connection belongs to the previous mpv
         else:
             try:
                 os.unlink(MPV_SOCKET)
@@ -656,10 +656,10 @@ class Mpv:
                 pass
         argv = [mpv, f"--input-ipc-server={MPV_SOCKET}", "--force-window=yes", "--idle=once",
                 "--keep-open=yes", *self.args, *([f"--force-media-title={title}"] if title else []), path]
-        # osobny zakres systemd: restart/aktualizacja agenta nie zamyka filmu (inaczej systemd zabija całą usługę)
+        # separate systemd scope: restarting/updating the agent doesn't close the video (otherwise systemd kills the whole service)
         if shutil.which("systemd-run") and os.environ.get("XDG_RUNTIME_DIR"):
             argv = ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--unit", f"magneticplayer-mpv-{os.getpid()}-{int(time.time())}", *argv]
-        log("start:", " ".join(re.sub(r"(ticket|token)=[^&\s]+", r"\1=…", a) for a in argv))
+        log("starting:", " ".join(re.sub(r"(ticket|token)=[^&\s]+", r"\1=…", a) for a in argv))
         extra = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB}
                  if WINDOWS else {"start_new_session": True})
         self.proc = subprocess.Popen(argv, env=graphical_env(), stdin=subprocess.DEVNULL,
@@ -691,7 +691,7 @@ class Mpv:
         }
 
     def tracks(self):
-        """Ścieżki wideo/audio/napisów (wbudowane i zewnętrzne) do wyboru w pilocie."""
+        """Video/audio/subtitle tracks (embedded and external) to choose from in the remote."""
         out = []
         for t in self.prop("track-list") or []:
             if t.get("type") not in ("video", "audio", "sub") or t.get("albumart"):
@@ -738,10 +738,10 @@ class Mpv:
             raise ApiError(T(f"unknown command {c}", f"nieznane polecenie {c}"), 400)
 
 
-# ---------------------------------------------------------------- blokada usypiania
+# ---------------------------------------------------------------- sleep inhibition
 
 class SleepGuard(threading.Thread):
-    """Trzyma systemd-inhibit (sleep), gdy coś się pobiera albo gra mpv."""
+    """Holds systemd-inhibit (sleep) while something is downloading or mpv is playing."""
 
     def __init__(self, app):
         super().__init__(daemon=True)
@@ -755,12 +755,12 @@ class SleepGuard(threading.Thread):
             return
         self.proc = platform.inhibit_sleep(why)
         if self.proc:
-            log("blokada usypiania:", why)
+            log("sleep inhibited:", why)
 
     def release(self):
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
-            log("blokada usypiania zdjęta")
+            log("sleep inhibition released")
         self.proc = None
 
     def run(self):
@@ -769,12 +769,12 @@ class SleepGuard(threading.Thread):
                 why = None
                 if time.time() >= self.paused_until:
                     if self.app.mpv.running() and self.app.mpv.prop("pause") is False:
-                        why = "odtwarzanie"
+                        why = "playback"
                     else:
                         active = [t for t in self.app.backend.list()
                                   if t["state"] in ("Downloading", "Checking", "Allocating", "Moving")]
                         if active:
-                            why = f"pobieranie ({len(active)})"
+                            why = f"downloading ({len(active)})"
                 if why:
                     self.hold(why)
                 else:
@@ -782,7 +782,7 @@ class SleepGuard(threading.Thread):
                 self.reason = why or ""
                 playing = self.app.mpv.running() and self.app.mpv.prop("pause") is False
                 self.app.jobs.tick(self.app.backend.list(), playing, self.app.machine_action)
-            except Exception as e:  # noqa: BLE001 — wątek tła nie może paść
+            except Exception as e:  # noqa: BLE001 — a background thread must not die
                 log("SleepGuard:", e)
             time.sleep(20)
 
@@ -828,31 +828,31 @@ class App:
         self.convert = mp_media.Converter(log)
         self.renderers = mp_renderers.Renderers(os.path.join(CONFIG_DIR, "renderers.json"), log)
         self.casts = Casts(log, self.renderers)
-        # rozgłaszanie „co gra” między pilotami (multicast w LAN): mpv tego serwera + lista od innych dla strony
+        # announcing "what is playing" between remotes (LAN multicast): this server's mpv + a list from others for the page
         self.announce = Announcer(log, lambda: {"id": self.cfg["id"], "name": self.name()}, self._announce_mine)
         self.announce.start()
-        self.uploads = mp_upload.Uploads(cfg, self.library, log)  # przesyłanie filmów z telefonu
-        # rozpoznawanie magnetów (film/serial/bajka → katalog): mały indeks IMDb odświeżany w tle + Wikidata
+        self.uploads = mp_upload.Uploads(cfg, self.library, log)  # uploading videos from the phone
+        # magnet identification (movie/series/kids' show → folder): a small IMDb index refreshed in the background + Wikidata
         self.ident = mp_ident.Service(cfg, os.path.join(CONFIG_DIR, "ident-memory.json"), log)
         self.ident.start()
-        self.installs = mp_install.Installs(log)  # instalacja na kolejnym komputerze (kod dołączenia)
-        self.access = mp_access.AccessRequests(log)  # prośby o dostęp z sieci domowej (mp_access.py)
-        # apka dla telefonów z wydań na GitHubie (mp_appupdate.py); tryb ustawia telefon
+        self.installs = mp_install.Installs(log)  # installation on another computer (join code)
+        self.access = mp_access.AccessRequests(log)  # access requests from the home network (mp_access.py)
+        # app for phones from GitHub releases (mp_appupdate.py); the phone sets the mode
         self.app_updates = mp_appupdate.AppUpdates(cfg, lambda: save_config(cfg), APK_DIR, apk_version, log)
         self.app_updates.start()
-        # wykrywanie Chromecastów od startu: rejestr odbiorników zna model, zanim ktoś otworzy wybór urządzenia
+        # discover Chromecasts from startup: the renderer registry knows the model before anyone opens the device picker
         threading.Thread(target=self._cast_warmup, daemon=True).start()
-        # jaki koder H.264 działa na tym sprzęcie (NVENC/VAAPI/…): próbne kodowanie trwa sekundy, więc w tle
+        # which H.264 encoder works on this hardware (NVENC/VAAPI/...): a trial encode takes seconds, so in the background
         threading.Thread(target=mp_media.detect_encoder, daemon=True).start()
-        # import subliminal trwa (na świeżym Windows ~30 s): w tle, żeby pierwsze /api/info (parowanie) nie czekało
+        # importing subliminal is slow (~30 s on a fresh Windows): in the background so the first /api/info (pairing) doesn't wait
         threading.Thread(target=self.subs_available, daemon=True).start()
 
     def name(self):
         return self.cfg.get("name") or socket.gethostname()
 
     def wake_info(self, net):
-        """Ocena z mp_platform + „yes”, gdy budzenie przez sieć już raz zadziałało (na tej samej karcie)."""
-        if self.cfg.get("wake") is False:  # tryb lekki: cudzy komputer, nikt go z sieci nie budzi
+        """Assessment from mp_platform + "yes" once wake over the network has worked (on the same NIC)."""
+        if self.cfg.get("wake") is False:  # lite mode: someone else's computer, nobody wakes it over the network
             return {"method": None, "mac": None, "confidence": "no", "reason": T("wake disabled (lite install)", "budzenie wyłączone (instalacja lekka)")}
         w = platform.wake_info(net)
         v = self.cfg.get("wake_verified") or {}
@@ -862,11 +862,11 @@ class App:
         return w
 
     def is_screen(self):
-        """Czy wolno tu odtwarzać: config "player" (domyślnie tak) + mpv i sesja graficzna."""
+        """Whether playback is allowed here: config "player" (default yes) + mpv and a graphical session."""
         return bool(self.cfg.get("player", True)) and platform.has_display()
 
     def subs_available(self, wait=True):
-        if self._subs_ok is None and not wait:  # import jeszcze trwa: wystarczy, że pakiet jest
+        if self._subs_ok is None and not wait:  # the import is still running: it is enough that the package exists
             import importlib.util
             from mp_subs import add_venv_path
             add_venv_path()
@@ -876,12 +876,12 @@ class App:
                 from mp_subs import _subliminal
                 _subliminal()
                 self._subs_ok = True
-            except Exception:  # noqa: BLE001 — brak venv/subliminal
+            except Exception:  # noqa: BLE001 — no venv/subliminal
                 self._subs_ok = False
         return self._subs_ok
 
     def info(self, client_ip, device, role="owner"):
-        """Kim jest ten serwer i co umie (apka chowa to, czego nie ma; gościowi znika to, czego mu nie wolno)."""
+        """Who this server is and what it can do (the app hides what is missing; what a guest may not do is removed for them)."""
         out = self._info(client_ip, device)
         out["role"] = role
         if role == "guest":
@@ -903,19 +903,19 @@ class App:
             "features": {
                 "torrent": self.cfg["backend"] if has_torrent else None,
                 "library": library,
-                "library_tags": True,  # tagi, widoczność i wykluczenia katalogów (agent 1.4+)
-                "library_guess": True,  # rozpoznanie magnetu i pobieranie od razu do katalogu (agent 1.5+)
+                "library_tags": True,  # folder tags, visibility and exclusions (agent 1.4+)
+                "library_guess": True,  # magnet identification and downloading straight into a folder (agent 1.5+)
                 "player": self.is_screen(),
                 "subs_search": self.subs_available(wait=False),
                 "unlock": AUTO_UNLOCK and platform.can_unlock(),
                 "apk": apk_version().get("version_code", 0) > 0,
-                "app_updates": self.app_updates.mode(),  # "auto" (z GitHuba) albo "manual" (publish.sh)
+                "app_updates": self.app_updates.mode(),  # "auto" (from GitHub) or "manual" (publish.sh)
                 "wake_others": True,
-                # wersja „dla Chromecasta”: nazwa kodera (sprzętowy albo procesor) albo None (brak ffmpeg)
-                "transcode": (mp_media.encoder_info() or {}).get("label"),
+                # the "for Chromecast" version: encoder name (hardware or CPU) or None (no ffmpeg)
+                "transcode": mp_media.encoder_label(mp_media.encoder_info()),
                 "transcode_hw": bool((mp_media.encoder_info() or {}).get("hw")),
                 "upload": self.uploads.available(),  # PUT /api/upload/<id> (mp_upload.py)
-                "install": self.installs.available(),  # /api/install/* i /i/<kod> (mp_install.py)
+                "install": self.installs.available(),  # /api/install/* and /i/<code> (mp_install.py)
                 "access_requests": True,  # /api/access/* (mp_access.py)
             },
             "power": {"suspend": POWER and platform.can_power(), "poweroff": POWER and platform.can_power(),
@@ -923,7 +923,7 @@ class App:
         }
 
     def ref_scope(self, d):
-        """Zakres biletu dla wskazania pliku (ten sam dla filmu i jego napisów)."""
+        """Ticket scope for a file reference (the same for a video and its subtitles)."""
         if d.get("torrent_id"):
             return f"t:{d['torrent_id'].lower()}/{int(d['file_index'])}"
         if d.get("root") is not None and d.get("root") != "":
@@ -937,8 +937,8 @@ class App:
             return []
 
     def resolve_ref(self, d):
-        """Plik wskazany przez torrent (torrent_id + file_index) albo bibliotekę (root + path)."""
-        if d.get("playing") in (True, "1", "true"):  # plik, który właśnie gra w mpv
+        """A file given by a torrent (torrent_id + file_index) or by the library (root + path)."""
+        if d.get("playing") in (True, "1", "true"):  # the file currently playing in mpv
             path = self.mpv.prop("path") if self.mpv.running() else None
             if not path:
                 raise ApiError(T("nothing is playing on the computer", "na komputerze nic nie gra"), 409)
@@ -953,14 +953,14 @@ class App:
         raise ApiError(T("no file specified", "brak wskazania pliku"), 400)
 
     def ref_complete(self, d):
-        """Czy plik jest cały na dysku (torrent pobrany), bo konwersja niepełnego dałaby śmieci."""
+        """Whether the file is entirely on disk (torrent downloaded), since converting an incomplete one would produce garbage."""
         if d.get("torrent_id"):
             _, f = self.resolve_file(d["torrent_id"], int(d["file_index"]))
             return f.get("ready", 0) >= f.get("size", 1) or f.get("progress", 0) >= 100
         return True
 
     def _announce_mine(self):
-        """Co gra na ekranie tego serwera (mpv), jako wiadomość „playing” dla innych pilotów."""
+        """What is playing on this server's screen (mpv), as a "playing" message for other remotes."""
         if not self.is_screen() or not self.mpv.running():
             return []
         st = self.mpv.status()
@@ -975,12 +975,12 @@ class App:
         try:
             self.casts.devices()
             time.sleep(10)
-            self.casts.devices()  # urządzenia, które odpowiedziały później
-        except Exception as e:  # noqa: BLE001  (np. brak pychromecast)
-            log("chromecast: wykrywanie nie ruszyło:", e)
+            self.casts.devices()  # devices that answered later
+        except Exception as e:  # noqa: BLE001  (e.g. no pychromecast)
+            log("chromecast: discovery failed to start:", e)
 
     def ticket_urls(self, b, base, variant=None):
-        """Adres filmu i napisów z biletem dla innego urządzenia (ekranu, Chromecasta, telewizora DLNA)."""
+        """URLs of the video and subtitles with a ticket for another device (screen, Chromecast, DLNA TV)."""
         full = self.resolve_ref(b)
         scope = self.ref_scope(b)
         if not scope:
@@ -1041,13 +1041,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def authorized(self, query):
-        """Id sparowanego urządzenia (albo "legacy" dla starego wspólnego tokenu) lub None."""
+        """Id of the paired device (or "legacy" for the old shared token), or None."""
         h = self.headers.get("Authorization", "")
         given = h[7:] if h.startswith("Bearer ") else (query.get("token") or [""])[0]
         return self.app.devices.check(given)
 
     def ticket_ok(self, p, q):
-        """Bilet (?ticket=) otwiera tylko jeden plik i jego napisy: /media, /lib, /sub."""
+        """A ticket (?ticket=) opens only one file and its subtitles: /media, /lib, /sub."""
         t = (q.get("ticket") or [""])[0]
         if not t:
             return False
@@ -1063,7 +1063,7 @@ class Handler(BaseHTTPRequestHandler):
         return bool(scope) and self.app.devices.check_ticket(t, scope)
 
     def base_url(self):
-        """Adres tego serwera tak, jak widzi go klient (do URL-i dla innego ekranu w tej samej sieci)."""
+        """This server's address as the client sees it (for URLs for another screen on the same network)."""
         host = self.headers.get("Host") or f"{self.server.server_address[0]}:{self.server.server_address[1]}"
         return "http://" + host
 
@@ -1081,7 +1081,7 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatch("PUT")
 
     def do_OPTIONS(self):
-        # preflight odtwarzaczy webowych (Chromecast) przed Range na /media, /lib, /sub
+        # preflight from web players (Chromecast) before Range on /media, /lib, /sub
         self.send_response(204)
         self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Range, Authorization")
@@ -1089,7 +1089,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def end_headers(self):
-        # pliki (film, napisy) czyta też odbiornik Chromecasta z innego „origin”; bez CORS pomija napisy
+        # files (video, subtitles) are also read by the Chromecast receiver from another origin; without CORS it skips subtitles
         if urllib.parse.urlsplit(self.path).path.startswith(("/media/", "/lib/", "/sub")) or self.command == "OPTIONS":
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, X-Ready-End")
@@ -1102,7 +1102,7 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatch("HEAD")
 
     def caption_header(self, q, rq):
-        """Samsung (DLNA) pyta o napisy nagłówkiem getcaptionInfo.sec; podajemy pierwsze SRT obok filmu (`&cap=`)."""
+        """Samsung (DLNA) asks for subtitles with the getcaptionInfo.sec header; we give the first SRT next to the video (`&cap=`)."""
         cap, t = (q.get("cap") or [""])[0], (q.get("ticket") or [""])[0]
         if cap and t and self.headers.get("getcaptionInfo.sec"):
             self.extra_headers.append(("CaptionInfo.sec", f"{self.base_url()}/sub?{rq}&name={urllib.parse.quote(cap)}"
@@ -1110,19 +1110,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch(self, method):
         self.extra_headers = []
-        mp_i18n.set_from_header(self.headers.get("Accept-Language"))  # język komunikatów (błędy w JSON)
+        mp_i18n.set_from_header(self.headers.get("Accept-Language"))  # message language (errors in JSON)
         u = urllib.parse.urlsplit(self.path)
         q = urllib.parse.parse_qs(u.query)
         p = u.path.rstrip("/")
         try:
             if p == "/api/ping":
-                # id: apka sprawdza, czy pod znanym adresem jest ten sam serwer, zanim wyśle mu token
+                # id: the app checks that the same server is at a known address before sending it the token
                 return self.send_json({"ok": True, "app": "magneticplayer", "version": VERSION, "id": self.app.cfg["id"]})
             if p in ("", "/index.html") and method in ("GET", "HEAD"):
-                # klient webowy (laptop/tablet bez apki); statyczny plik, dane z API i tak wymagają tokenu
+                # web client (laptop/tablet without the app); a static file, API data requires a token anyway
                 return self.send_static(os.path.join(WEB_DIR, "index.html"), "text/html; charset=utf-8", method == "HEAD")
             a = self.app
-            # instalacja na nowym komputerze: bez tokenu, ale z ważnym kodem dołączenia (mp_install.py)
+            # installation on a new computer: no token, but with a valid join code (mp_install.py)
             if (m := re.fullmatch(r"/i/([A-Za-z0-9-]{4,12})(/bundle\.tar\.gz|/ps)?", p)) and method == "GET":
                 if m.group(2) == "/ps":
                     return self.send_bytes(a.installs.script_ps(m.group(1), self.base_url()).encode(), "text/plain; charset=utf-8")
@@ -1134,14 +1134,14 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/install/join" and method == "POST":
                 return self.send_json(a.installs.join(self.body(), self.client_address[0]))
             if p == "/api/pair" and method == "POST":
-                # bez tokenu: jednorazowy kod (z apki innego urządzenia albo --pair na komputerze) → token urządzenia
+                # no token: a one-time code (from another device's app or --pair on the computer) → device token
                 b = self.body()
                 res, err = a.devices.pair(b.get("code"), b.get("name"))
                 if err:
                     raise ApiError(err, 403)
-                log("sparowano urządzenie:", (b.get("name") or "?")[:60])
+                log("device paired:", (b.get("name") or "?")[:60])
                 return self.send_json({**res, "id": a.cfg["id"], "name": a.name()})
-            # prośba o dostęp: bez tokenu, tylko z sieci domowej; po akceptacji domownika zwraca kod parowania
+            # access request: no token, home network only; after a household member accepts it returns a pairing code
             if p == "/api/access/request" and method == "POST":
                 return self.send_json(a.access.request(self.body().get("name"), self.client_address[0]))
             if (m := re.fullmatch(r"/api/access/request/([0-9a-f]{16})", p)) and method == "GET":
@@ -1152,7 +1152,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
                 raise ApiError(T("invalid token", "zły token"), 401)
             self.role = a.devices.role(self.device)
-            mp_library.set_viewer(self.device, self.role)  # widoczność katalogów biblioteki dla tego urządzenia
+            mp_library.set_viewer(self.device, self.role)  # library folder visibility for this device
             if self.role == "guest" and not guest_allowed(method, p):
                 raise ApiError(T("guests don't have access to this (ask a household member)", "gość nie ma do tego dostępu (poproś domownika)"), 403)
             if p.startswith("/api/upload/") and method in ("GET", "PUT"):
@@ -1165,7 +1165,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.access.decide(m.group(1), self.body(), a.devices, self.device))
             if p == "/api/pair/code" and method == "POST":
                 b = self.body()
-                try:  # {"role": "guest", "days": 7}: zaproszenie dla gościa (kod ważny dobę, dostęp na `days`)
+                try:  # {"role": "guest", "days": 7}: a guest invitation (code valid for a day, access for `days`)
                     code, ttl = a.devices.new_code(str(b.get("role") or "owner"), float(b.get("days") or 0) or None)
                 except ValueError as e:
                     raise ApiError(str(e), 400)
@@ -1188,14 +1188,14 @@ class Handler(BaseHTTPRequestHandler):
                 dev = str(self.body().get("id") or "")
                 if not a.devices.revoke(dev):
                     raise ApiError(T("no such device", "nie ma takiego urządzenia"), 404)
-                log("odebrano dostęp urządzeniu", dev)
+                log("access revoked for device", dev)
                 return self.send_json({"ok": True})
             if p == "/api/wake/verified" and method == "POST":
-                # apka obudziła ten komputer przez sieć (wysłała WoL, potem odpowiedział): pamiętamy dla wszystkich
+                # the app woke this computer over the network (sent WoL, then it answered): remembered for everyone
                 net = platform.net_info(self.client_address[0])
                 a.cfg["wake_verified"] = {"at": time.time(), "mac": net.get("mac"), "by": self.device}
                 save_config(a.cfg)
-                log(f"budzenie przez sieć potwierdzone (urządzenie {self.device})")
+                log(f"wake over the network confirmed (device {self.device})")
                 return self.send_json({"ok": True})
             if p == "/api/wake" and method == "POST":
                 b = self.body()
@@ -1207,7 +1207,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/media/ticket" and method == "POST":
                 b = self.body()
                 return self.send_json(a.ticket_urls(b, self.base_url(), b.get("variant")))
-            # ---- format pliku i wersja dla Chromecasta
+            # ---- file format and the version for Chromecast
             if p == "/api/media/probe" and method == "GET":
                 full = a.resolve_ref(qd0)
                 if not mp_media.detect_encoder():
@@ -1217,7 +1217,7 @@ class Handler(BaseHTTPRequestHandler):
                 except (ValueError, OSError, subprocess.TimeoutExpired) as e:
                     raise ApiError(T(f"can't read the file: {e}", f"nie da się odczytać pliku: {e}"), 422)
                 v = mp_media.variant(full)
-                # ocena dla każdego znanego Chromecasta (rejestr odbiorników z modelem)
+                # assessment for every known Chromecast (renderer registry with the model)
                 per = []
                 for r in a.renderers.casts():
                     prof = mp_renderers.CAST_PROFILES.get(r.get("profile") or "")
@@ -1248,7 +1248,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(str(e), 409)
             if p == "/api/media/converts" and method == "GET":
                 return self.send_json(a.convert.all())
-            # ---- Chromecast sterowany z agenta (klient webowy)
+            # ---- Chromecast controlled from the agent (web client)
             if p == "/api/cast/devices" and method == "GET":
                 return self.send_json(a.casts.devices())
             if p == "/api/cast/play" and method == "POST":
@@ -1308,27 +1308,27 @@ class Handler(BaseHTTPRequestHandler):
                     a.jobs.add(tid.lower(), uri, b.get("after", "none"))
                     if dest:
                         a.jobs.set_meta(tid.lower(), dest=dest, guess=b.get("guess"))
-                log("dodano magnet:", tid, "→", dest or "(domyślny katalog klienta)")
+                log("magnet added:", tid, "→", dest or "(client default folder)")
                 return self.send_json({"id": tid, "path": dest})
             m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/move", p)
-            if m and method == "POST":  # zmiana katalogu po rozpoznaniu: klient przenosi (dalej seeduje)
+            if m and method == "POST":  # changing the folder after identification: the client moves it (keeps seeding)
                 b, tid = self.body(), m.group(1).lower()
                 dest = a.library.dest(int(b["root"]), str(b.get("sub") or ""))
                 a.backend.move(tid, dest)
                 j = a.jobs.get(tid) or {}
-                if b.get("learn") and j.get("guess"):  # następnym razem ten tytuł od razu tutaj
+                if b.get("learn") and j.get("guess"):  # next time this title goes straight here
                     tags = a.library.roots()[int(b["root"])]["tags"]
                     if tags:
                         a.ident.learn(j["guess"], tags[0])
                 a.jobs.set_meta(tid, dest=dest)
-                log("przeniesiono torrent:", tid, "→", dest)
+                log("torrent moved:", tid, "→", dest)
                 return self.send_json({"ok": True, "path": dest})
             if p == "/api/library/guess" and method == "POST":
                 b = self.body()
                 name, files = b.get("name"), None
                 if b.get("magnet"):
                     name = magnet_name(b["magnet"]) or name
-                if b.get("torrent"):  # już w kliencie (np. magnet bez nazwy, gdy metadane już są)
+                if b.get("torrent"):  # already in the client (e.g. a magnet without a name, once the metadata is there)
                     t = next((t for t in a.backend.list() if t["id"] == b["torrent"]), None)
                     if t:
                         name = t["name"]
@@ -1349,7 +1349,7 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/action", p)
             if m and method == "POST":
                 act = self.body().get("action")
-                if act == "remove_data":  # wersje „dla Chromecasta” leżą w katalogu torrenta: kasujemy razem z nim
+                if act == "remove_data":  # the "for Chromecast" versions live in the torrent's folder: delete them along with it
                     try:
                         save_path, files = a.backend.files(m.group(1))
                         for f in files:
@@ -1365,7 +1365,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.caption_header(q, f"torrent_id={tid}&file_index={idx}")
                 if qd0.get("v") == "cast" and mp_media.variant(full):
                     return self.stream(mp_media.variant(full), method == "HEAD")
-                # tylko pobrane kawałki: zamiast zer z niepobranego pliku czekamy na Deluge (patrz stream())
+                # downloaded pieces only: instead of zeros from a not-yet-downloaded file we wait for Deluge (see stream())
                 return self.stream(full, method == "HEAD", f.get("_pieces"),
                                    lambda: a.resolve_file(tid, idx)[1].get("_pieces"))
             if p == "/api/player/open" and method == "POST":
@@ -1373,7 +1373,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(T(f"{a.name()} isn't a screen (no mpv/session or config: player)",
                                      f"{a.name()} nie jest ekranem (brak mpv/sesji albo config: player)"), 409)
                 b = self.body()
-                if b.get("url"):  # film z innego serwera (URL z biletem z /api/media/ticket)
+                if b.get("url"):  # a video from another server (URL with a ticket from /api/media/ticket)
                     url = str(b["url"])
                     subs = [str(u) for u in b.get("subs") or [] if str(u).startswith(("http://", "https://"))]
                     if not url.startswith(("http://", "https://")):
@@ -1381,7 +1381,7 @@ class Handler(BaseHTTPRequestHandler):
                     a.mpv.open(url, b.get("title"), subs, b.get("start"))
                 else:
                     full = a.resolve_ref(b)
-                    # napisy obok filmu mpv znajdzie sam, a z podkatalogu (Subs/English.srt z torrentów) już nie
+                    # mpv finds subtitles next to the video by itself, but not those in a subfolder (Subs/English.srt from torrents)
                     extra = [os.path.join(os.path.dirname(full), x["name"]) for x in sidecar_subs(full) if os.sep in x["name"]]
                     a.mpv.open(full, start=b.get("start"), subs=extra)
                 return self.send_json({"ok": True})
@@ -1403,7 +1403,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True, "unlocked": wake_screen()})
             if p == "/api/system/unlock" and method == "POST":
                 return self.send_json({"ok": True, "unlocked": wake_screen(unlock=True)})
-            # ---- biblioteka
+            # ---- library
             qd = {k: v[0] for k, v in q.items()}
             if p == "/api/library" and method == "GET":
                 return self.send_json(a.library.visible_roots(qd.get("manage") == "1"))
@@ -1427,7 +1427,7 @@ class Handler(BaseHTTPRequestHandler):
                 if qd0.get("v") == "cast" and mp_media.variant(full):
                     return self.stream(mp_media.variant(full), method == "HEAD")
                 return self.stream(full, method == "HEAD")
-            # ---- napisy
+            # ---- subtitles
             if p == "/api/subs/list" and method == "GET":
                 return self.send_json(sidecar_subs(a.resolve_ref(qd)))
             if p == "/sub" and method in ("GET", "HEAD"):
@@ -1435,14 +1435,14 @@ class Handler(BaseHTTPRequestHandler):
                 names = {s["name"]: s for s in sidecar_subs(full)}
                 if qd.get("name") not in names:
                     raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
-                if qd.get("vtt") == "1":  # przeglądarki (<track>) rozumieją tylko WebVTT
+                if qd.get("vtt") == "1":  # browsers (<track>) understand only WebVTT
                     return self.send_vtt(os.path.join(os.path.dirname(full), qd["name"]))
                 return self.stream(os.path.join(os.path.dirname(full), qd["name"]), method == "HEAD")
             if p == "/api/subs/search" and method == "POST":
                 b = self.body()
                 langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
                 args = (a.resolve_ref(b), langs, (b.get("title") or "").strip() or None, b.get("year") or None)
-                if b.get("async"):  # apka pokazuje postęp, odpytując /api/subs/job
+                if b.get("async"):  # the app shows progress by polling /api/subs/job
                     return self.send_json({"job": a.subs.start_search(*args)})
                 return self.send_json(a.subs.search(*args))
             if p == "/api/subs/job" and method == "GET":
@@ -1456,7 +1456,7 @@ class Handler(BaseHTTPRequestHandler):
                 langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
                 res = a.subs.download(full, str(b["id"]), b["provider"], langs, (b.get("title") or "").strip() or None,
                                       b.get("year") or None)
-                if res.get("name") and a.mpv.running() and a.mpv.prop("path") == full:  # gra właśnie ten film — od razu włączamy
+                if res.get("name") and a.mpv.running() and a.mpv.prop("path") == full:  # this very video is playing: enable the subtitles right away
                     try:
                         a.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), res["name"]), "select")
                     except ApiError:
@@ -1485,7 +1485,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:  # noqa: BLE001
-            log("błąd:", repr(e))
+            log("error:", repr(e))
             try:
                 self.send_json({"error": repr(e)}, 500)
             except OSError:
@@ -1532,10 +1532,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    STALL_WAIT = 20  # s czekania na kolejne kawałki, potem zrywamy połączenie (odtwarzacz ponowi)
+    STALL_WAIT = 20  # seconds of waiting for further pieces, then we drop the connection (the player retries)
 
     def stream(self, full, head_only, pieces=None, refresh=None):
-        # diagnostyka: `touch ~/.config/magneticplayer/debug-stream` loguje każde żądanie (zakres, czas, wysłane bajty)
+        # diagnostics: `touch ~/.config/magneticplayer/debug-stream` logs every request (range, time, bytes sent)
         if not os.path.exists(os.path.join(os.path.dirname(CONFIG_PATH), "debug-stream")):
             return self._stream(full, head_only, pieces, refresh)
         t0, self._sent = time.time(), 0
@@ -1554,7 +1554,7 @@ class Handler(BaseHTTPRequestHandler):
             ctype = "application/vnd.android.package-archive"
         dlna = self.headers.get("getcontentFeatures.dlna.org") or "dlna" in (self.headers.get("User-Agent") or "").lower()
         if full.lower().endswith(".mkv"):
-            ctype = "video/x-mkv" if dlna else "video/x-matroska"  # Samsung (DLNA) nie zna x-matroska
+            ctype = "video/x-mkv" if dlna else "video/x-matroska"  # Samsung (DLNA) doesn't know x-matroska
         start, end = 0, size - 1
         rng = self.headers.get("Range")
         status = 200
@@ -1581,9 +1581,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-        # do którego bajtu da się czytać od `start` bez czekania (bufor na dysku w apce dociąga tylko tyle)
+        # up to which byte we can read from `start` without waiting (the app's on-disk buffer fetches only that much)
         self.send_header("X-Ready-End", str(ready_end(pieces, start, size)))
-        if dlna:  # telewizory DLNA bez tego potrafią stać w TRANSITIONING
+        if dlna:  # without this, DLNA TVs can get stuck in TRANSITIONING
             self.send_header("transferMode.dlna.org", "Streaming")
             self.send_header("contentFeatures.dlna.org", DLNA_FEATURES)
         self.end_headers()
@@ -1601,7 +1601,7 @@ class Handler(BaseHTTPRequestHandler):
                     pieces = refresh()
                     avail = ready_end(pieces, pos, size)
                 if avail <= pos:
-                    self.close_connection = True  # krócej niż Content-Length: klient wie, że ma ponowić
+                    self.close_connection = True  # shorter than Content-Length: the client knows to retry
                     return
                 chunk = f.read(min(1 << 20, avail - pos, stop - pos))
                 if not chunk:
@@ -1613,8 +1613,8 @@ class Handler(BaseHTTPRequestHandler):
 
 class QuietServer(ThreadingHTTPServer):
     daemon_threads = True
-    # Windows: SO_REUSEADDR pozwala zająć port, na którym ktoś już słucha (np. na 127.0.0.1), i lokalne zapytania
-    # trafiają wtedy do niego; tam port musi być wyłącznie nasz
+    # Windows: SO_REUSEADDR lets us take a port someone is already listening on (e.g. on 127.0.0.1), and local
+    # requests then go to that listener; there the port must be exclusively ours
     allow_reuse_address = not WINDOWS
 
     def server_bind(self):
@@ -1624,12 +1624,12 @@ class QuietServer(ThreadingHTTPServer):
 
     def handle_error(self, request, client_address):
         if isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError, TimeoutError)):
-            return  # telefon zerwał połączenie (przewijanie, zamknięcie playera) — normalne
+            return  # the phone dropped the connection (seeking, closing the player): normal
         super().handle_error(request, client_address)
 
 
 def lan_ip():
-    """Adres w sieci lokalnej (bez wysyłania czegokolwiek: connect na UDP tylko wybiera trasę)."""
+    """Address on the local network (nothing is sent: a UDP connect only picks the route)."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("192.168.0.1", 9))
@@ -1639,7 +1639,7 @@ def lan_ip():
 
 
 def cli_pair(cfg, devices):
-    """Kod parowania dla pierwszego telefonu (albo gdy nie ma pod ręką sparowanego): QR w terminalu."""
+    """Pairing code for the first phone (or when no paired one is at hand): a QR in the terminal."""
     code, ttl = devices.new_code()
     host = lan_ip()
     name = cfg.get("name") or socket.gethostname()
@@ -1652,7 +1652,7 @@ def cli_pair(cfg, devices):
     if shutil.which("qrencode"):
         subprocess.run(["qrencode", "-t", "ANSIUTF8", link])
     else:
-        try:  # tryb lekki: moduł qrcode z venv agenta (install.sh woła --pair pythonem z venv)
+        try:  # lite mode: the qrcode module from the agent's venv (install.sh calls --pair with the venv's python)
             import qrcode
             q = qrcode.QRCode(border=2)
             q.add_data(link)
@@ -1666,7 +1666,7 @@ def cli_pair(cfg, devices):
 
 
 def cli_join(cfg, devices, url):
-    """Po instalacji z innego serwera (`JOIN=<serwer>/i/<kod>`): zgłoszenie się z kodem parowania dla telefonu."""
+    """After installing from another server (`JOIN=<server>/i/<code>`): register with a pairing code for the phone."""
     m = re.fullmatch(r"(https?://[^/]+)/i/([A-Za-z0-9-]+)/?", url.strip())
     if not m:
         print(T(f"invalid join address: {url}", f"zły adres dołączenia: {url}"))
@@ -1695,12 +1695,12 @@ def cli_join(cfg, devices, url):
 
 
 def main():
-    if sys.stderr is None or sys.stdout is None:  # pythonw na Windows (autostart): bez konsoli, log do pliku
+    if sys.stderr is None or sys.stdout is None:  # pythonw on Windows (autostart): no console, log to a file
         f = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.log"), "a", encoding="utf-8", buffering=1)
         sys.stderr = sys.stderr or f
         sys.stdout = sys.stdout or f
     cfg = load_config()
-    mp_i18n.set_from_env()  # komunikaty w terminalu (--pair, --join, --devices); żądania HTTP mają własny język
+    mp_i18n.set_from_env()  # terminal messages (--pair, --join, --devices); HTTP requests have their own language
     if "--print-token" in sys.argv:
         print(cfg["token"])
         return
@@ -1727,7 +1727,7 @@ def main():
         app.guard.start()
     srv = QuietServer(("0.0.0.0", int(cfg["port"])), Handler)
     srv.daemon_threads = True
-    log(f"MagneticPlayer {VERSION} na porcie {cfg['port']}, backend {cfg['backend']}")
+    log(f"MagneticPlayer {VERSION} on port {cfg['port']}, backend {cfg['backend']}")
     srv.serve_forever()
 
 

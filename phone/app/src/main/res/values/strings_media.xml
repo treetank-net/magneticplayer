@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Teksty ekranów z filmami (biblioteka, „Na telefonie”, odtwarzacz, napisy, przesyłanie, magnet). Angielski (domyślny). -->
+<!-- Texts for the video screens (library, "On the phone", player, subtitles, uploads, magnet). English (default). -->
 <resources>
     <string name="media_error">Error</string>
     <string name="media_cancel">Cancel</string>

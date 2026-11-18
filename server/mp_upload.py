@@ -1,12 +1,12 @@
-"""Przesyłanie filmów z telefonu na serwer (wznawialne).
+"""Uploading movies from the phone to the server (resumable).
 
-Telefon wysyła plik kawałkami: `PUT /api/upload/<id>?name=&size=&offset=` (ciało = kawałek), a po przerwie pyta
-`GET /api/upload/<id>` o `received` i ciągnie dalej od tego miejsca. Kawałki trafiają do
-`<katalog docelowy>/.mp-upload/<id>.part` (ten sam dysk, więc na końcu wystarczy rename), a obok leży `<id>.json`
-z nazwą, rozmiarem i, po zakończeniu, nazwą końcową (żeby powtórzone po zerwanym połączeniu zapytanie dostało
-„gotowe”, a nie zaczynało od nowa). Katalog z kropką nie pokazuje się w Bibliotece.
+The phone sends the file in chunks: `PUT /api/upload/<id>?name=&size=&offset=` (body = chunk), and after an
+interruption asks `GET /api/upload/<id>` for `received` and continues from that point. Chunks go to
+`<target directory>/.mp-upload/<id>.part` (same disk, so a rename is enough at the end), and next to it lies `<id>.json`
+with the name, the size and, once finished, the final name (so that a request repeated after a dropped connection
+gets "done" instead of starting over). A directory starting with a dot is not shown in the Library.
 
-Katalog docelowy: `upload_dir` z config.json, domyślnie „Z telefonu” w pierwszym katalogu biblioteki.
+Target directory: `upload_dir` from config.json, by default "Z telefonu" (a data value, the folder name) in the first library directory.
 """
 import json
 import os
@@ -20,10 +20,10 @@ from mp_library import LibError, safe_join
 
 DEFAULT_SUBDIR = "Z telefonu"
 STATE_DIR = ".mp-upload"
-RESERVE = 512 << 20  # tyle zostawiamy wolnego na dysku ponad to, co jeszcze przyjdzie
+RESERVE = 512 << 20  # free space we leave on the disk on top of what is still to come
 CHUNK = 1 << 20
-READ_TIMEOUT = 60  # s ciszy w trakcie ciała, potem zrywamy (telefon wyszedł z Wi-Fi), wątek nie wisi
-DONE_TTL = 7 * 86400  # tyle pamiętamy zakończone przesyłania (powtórzone zapytanie dostaje „gotowe”)
+READ_TIMEOUT = 60  # seconds of silence during the body, then we drop the connection (the phone left Wi-Fi) so the thread doesn't hang
+DONE_TTL = 7 * 86400  # how long we remember finished uploads (a repeated request gets "done")
 ID_RE = re.compile(r"[A-Za-z0-9_-]{8,80}")
 
 
@@ -35,12 +35,12 @@ class UploadError(Exception):
 
 
 def clean_name(name):
-    """Sama nazwa pliku: bez katalogów, znaków sterujących i kropki na początku (ukryty plik)."""
+    """Bare file name: no directories, control characters or leading dot (hidden file)."""
     name = (name or "").replace("\\", "/").rsplit("/", 1)[-1]
     name = re.sub(r"[\x00-\x1f\x7f]", "", name).strip().lstrip(".").strip()
     if not name:
         raise UploadError(T("missing file name", "brak nazwy pliku"), 400)
-    if len(name.encode()) > 240:  # ext4: 255 bajtów, zostawiamy miejsce na „ (2)”
+    if len(name.encode()) > 240:  # ext4: 255 bytes, we leave room for " (2)"
         stem, ext = os.path.splitext(name)
         while len((stem + ext).encode()) > 240:
             stem = stem[:-1]
@@ -49,7 +49,7 @@ def clean_name(name):
 
 
 def free_name(directory, name):
-    """„film.mkv”, a gdy zajęte: „film (2).mkv”, „film (3).mkv”…"""
+    """\"film.mkv\", or when taken: \"film (2).mkv\", \"film (3).mkv\"..."""
     stem, ext = os.path.splitext(name)
     cand, n = name, 1
     while os.path.lexists(safe_join(directory, cand)):
@@ -66,9 +66,9 @@ class Uploads:
         self._locks = {}
         self._guard = threading.Lock()
 
-    # ---- katalog docelowy
+    # ---- target directory
     def target_dir(self):
-        """Katalog na przesłane filmy albo None (brak `upload_dir` i żadnego istniejącego katalogu biblioteki)."""
+        """Directory for uploaded movies, or None (no `upload_dir` and no existing library directory)."""
         d = self.cfg.get("upload_dir")
         if d:
             return os.path.realpath(os.path.expanduser(d))
@@ -118,7 +118,7 @@ class Uploads:
         os.replace(tmp, path)
 
     def _cleanup(self, state):
-        """Zapomina zakończone przesyłania po tygodniu, a porzucone kawałki po miesiącu."""
+        """Forgets finished uploads after a week and abandoned chunks after a month."""
         now = time.time()
         try:
             names = os.listdir(state)
@@ -139,7 +139,7 @@ class Uploads:
 
     @staticmethod
     def _discard(rfile, length, connection):
-        """Niepotrzebne ciało: małe czytamy do końca (połączenie zostaje), przy dużym zrywamy połączenie."""
+        """Unneeded body: a small one is read to the end (the connection stays), for a large one we drop the connection."""
         if length > 16 * CHUNK:
             raise UploadError(T("file already uploaded", "plik już przesłany"), 409, {"done": True})
         connection.settimeout(READ_TIMEOUT)
@@ -151,7 +151,7 @@ class Uploads:
 
     # ---- API
     def status(self, uid):
-        """GET /api/upload/<id> → {received, size, done, name}; 404, gdy serwer nic o nim nie wie."""
+        """GET /api/upload/<id> → {received, size, done, name}; 404 when the server knows nothing about it."""
         self._check_id(uid)
         target, state = self._dirs()
         meta = self._read_meta(os.path.join(state, uid + ".json"))
@@ -166,7 +166,7 @@ class Uploads:
         return {"received": received, "size": meta["size"], "done": False, "name": meta.get("name")}
 
     def put(self, uid, q, rfile, length, connection):
-        """PUT /api/upload/<id>?name=&size=&offset=: dopisuje ciało do .part; ostatni kawałek kończy plik."""
+        """PUT /api/upload/<id>?name=&size=&offset=: appends the body to .part; the last chunk finishes the file."""
         self._check_id(uid)
         try:
             size = int(q.get("size", ""))
@@ -180,7 +180,7 @@ class Uploads:
         name = clean_name(q.get("name"))
         target, state = self._dirs()
         lock = self._lock(uid)
-        # poprzednie połączenie tego samego pliku może jeszcze wisieć (telefon zgubił Wi-Fi): czekamy, aż wygaśnie
+        # the previous connection for the same file may still be hanging (the phone lost Wi-Fi): wait until it expires
         if not lock.acquire(timeout=READ_TIMEOUT + 10):
             raise UploadError(T("this file is being uploaded right now", "ten plik jest właśnie przesyłany"), 409)
         try:
@@ -188,10 +188,10 @@ class Uploads:
             part_p = os.path.join(state, uid + ".part")
             meta = self._read_meta(meta_p)
             if meta and meta.get("done"):
-                if meta.get("size") == size:  # już gotowe (odpowiedź poprzednio nie doszła)
+                if meta.get("size") == size:  # already done (the previous response never arrived)
                     self._discard(rfile, length, connection)
                     return {"received": size, "size": size, "done": True, "name": meta.get("final")}
-                meta = None  # ten sam id, inny plik: od nowa
+                meta = None  # same id, different file: start over
             if meta and meta.get("size") != size:
                 meta = None
             received = os.path.getsize(part_p) if meta and os.path.exists(part_p) else 0
@@ -208,10 +208,10 @@ class Uploads:
                 with open(part_p, "wb"):
                     pass
                 self._cleanup(state)
-                self.log(f"przesyłanie z telefonu: {name} ({size >> 20} MB)")
+                self.log(f"upload from phone: {name} ({size >> 20} MB)")
             meta.update(name=name, updated=time.time())
             self._write_meta(meta_p, meta)
-            # strumieniowo na dysk; przerwane połączenie zostawia to, co doszło (następny PUT od `received`)
+            # streamed to disk; an interrupted connection leaves what arrived (the next PUT starts at `received`)
             old_timeout = connection.gettimeout()
             connection.settimeout(READ_TIMEOUT)
             left = length
@@ -221,7 +221,7 @@ class Uploads:
                     while left > 0:
                         try:
                             chunk = rfile.read(min(CHUNK, left))
-                        except OSError:  # zerwane albo cisza dłuższa niż READ_TIMEOUT
+                        except OSError:  # dropped, or silence longer than READ_TIMEOUT
                             chunk = b""
                         if not chunk:
                             break
@@ -241,14 +241,14 @@ class Uploads:
             os.replace(part_p, safe_join(target, final))
             meta.update(done=True, done_at=time.time(), final=final)
             self._write_meta(meta_p, meta)
-            self.log(f"przesłano z telefonu: {final} → {target}")
+            self.log(f"uploaded from phone: {final} → {target}")
             return {"received": size, "size": size, "done": True, "name": final}
         finally:
             lock.release()
 
 
 def handle(handler, method, uid, q):
-    """Obsługa /api/upload/<id> w Handlerze agenta (token sprawdzony wcześniej)."""
+    """Handles /api/upload/<id> in the agent Handler (token already checked)."""
     up = handler.app.uploads
     try:
         if method == "GET":
@@ -260,7 +260,7 @@ def handle(handler, method, uid, q):
         raise UploadError(T("no such endpoint", "nie ma takiego endpointu"), 404)
     except UploadError as e:
         if method == "PUT":
-            # ciało mogło zostać nieprzeczytane: bez zamknięcia następne zapytanie w tym połączeniu byłoby śmieciem
+            # the body may have been left unread: without closing, the next request on this connection would be garbage
             handler.close_connection = True
         try:
             handler.send_json({"error": str(e), **e.extra}, e.status)

@@ -41,7 +41,7 @@ import kotlinx.coroutines.withContext
 
 const val VLC_PACKAGE = "org.videolan.vlc"
 
-/** Otwiera strumień w VLC (jeśli jest), inaczej wybór aplikacji. Napisy przekazuje przez extra VLC. */
+/** Opens the stream in VLC (if present), otherwise an app chooser. Passes subtitles via a VLC extra. */
 fun openInVlc(ctx: Context, url: String, title: String, subUrl: String? = null) {
     val i = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), "video/*")
         .putExtra("title", title)
@@ -55,7 +55,7 @@ fun openInVlc(ctx: Context, url: String, title: String, subUrl: String? = null) 
     }
 }
 
-/** Odtwarzacz w telefonie: strumień HTTP z komputera (ExoPlayer, przewijanie przez Range, napisy obok filmu). */
+/** In-phone player: HTTP stream from the computer (ExoPlayer, seeking via Range, subtitles next to the video). */
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 class PlayerActivity : ComponentActivity() {
     companion object {
@@ -70,19 +70,19 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var url: String
     private var subs: List<SubFile> = emptyList()
     private var prefetchJob: Job? = null
-    private var fileSize = 0L  // z prefetch (HEAD), do przeliczania bajtów na czas w nakładce
-    // koniec ciągłego zapasu na dysku telefonu (ms filmu); suwak rysuje go jako bufor (ForwardingPlayer niżej)
+    private var fileSize = 0L  // from prefetch (HEAD), for converting bytes to time in the overlay
+    // end of the contiguous reserve on the phone's disk (video ms); the slider draws it as a buffer (ForwardingPlayer below)
     @Volatile private var aheadEndMs = 0L
     private var info: android.widget.TextView? = null
     private val key get() = ref.key()
-    // agent czeka do 20 s na kolejne kawałki torrenta, więc timeout odczytu musi być dłuższy
+    // the agent waits up to 20 s for further torrent chunks, so the read timeout must be longer
     private val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(8_000).setReadTimeoutMs(30_000)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = Settings(this)
         ref = intent.getStringExtra("ref")?.let { MediaRef.decode(it) } ?: return finish()
-        // serwer mógł zniknąć z apki: pobrany film i tak gra z dysku telefonu (klucz bufora się nie zmienia)
+        // the server may have vanished from the app: a downloaded video plays from the phone's disk anyway (the buffer key does not change)
         api = Api.of(this, ref.srv) ?: Api(settings, Server.NONE.copy(key = ref.srv))
         url = try { api.mediaUrl(ref) } catch (e: ApiException) { return finish() }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -98,7 +98,7 @@ class PlayerActivity : ComponentActivity() {
             keepScreenOn = true
         }
         val dp = resources.displayMetrics.density
-        // u góry: tytuł i ile da się obejrzeć bez sieci; widoczne razem z kontrolkami
+        // top: title and how much can be watched without a network; visible together with the controls
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -127,13 +127,13 @@ class PlayerActivity : ComponentActivity() {
                 openInVlc(this@PlayerActivity, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
             })
         }
-        // napisy nad kontrolkami, gdy są widoczne (inaczej chowają się pod suwakiem)
+        // subtitles above the controls when they are visible (otherwise they hide under the slider)
         view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v ->
             buttons.visibility = v
             view.subtitleView?.setBottomPaddingFraction(if (v == android.view.View.VISIBLE) 0.24f
                 else androidx.media3.ui.SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION)
         })
-        // jasny pas „bufor” na suwaku = to, co jest na dysku telefonu (albo w pamięci, co dalej)
+        // light "buffer" strip on the slider = what is on the phone's disk (or in memory, further on)
         (view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_progress) as? androidx.media3.ui.DefaultTimeBar)
             ?.setBufferedColor(0xCC4FC3F7.toInt())
 
@@ -141,24 +141,24 @@ class PlayerActivity : ComponentActivity() {
             setBackgroundColor(Color.BLACK)
             addView(view, FrameLayout.LayoutParams(-1, -1))
             addView(buttons, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply {
-                // gradient pod tekstem, żeby był czytelny na jasnym obrazie
+                // gradient under the text so that it is legible on a bright picture
             })
             buttons.background = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x99000000.toInt(), 0)
             )
         })
 
-        // najpierw dekodery telefonu, FFmpeg gdy telefon nie umie (AC3/E-AC3/DTS…)
+        // phone decoders first, FFmpeg when the phone cannot (AC3/E-AC3/DTS…)
         val renderers = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        // w pamięci zostaje domyślne ~50 s; dalszy zapas jest na dysku (prefetch). Odtwarzacz czyta z bufora na dysku,
-        // a czego tam nie ma, bierze z sieci, ale sam do niego nie zapisuje.
+        // memory keeps the default ~50 s; the further reserve is on disk (prefetch). The player reads from the disk buffer,
+        // and what is not there, it takes from the network, but does not write to it itself.
         val source = CacheDataSource.Factory().setCache(MediaCache.get(this))
-            // DefaultDataSource: http z komputera, ale też file:// dla napisów pobranych lokalnie (localSubs)
+            // DefaultDataSource: http from the computer, but also file:// for locally downloaded subtitles (localSubs)
             .setUpstreamDataSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(this, http))
             .setCacheWriteDataSinkFactory(null)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        // torrent się dociąga: agent zrywa po 20 s bez nowych kawałków, a my ponawiamy zamiast pokazać błąd
+        // the torrent is still being pulled in: the agent drops the connection after 20 s without new chunks, and we retry instead of showing an error
         val sources = DefaultMediaSourceFactory(source).setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(60))
         val p = ExoPlayer.Builder(this, renderers).setMediaSourceFactory(sources).build()
         player = p
@@ -180,8 +180,8 @@ class PlayerActivity : ComponentActivity() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                // błąd sieci (restart agenta przy aktualizacji, chwilowy brak Wi-Fi): łączymy się ponownie przez
-                // ~minutę i gramy dalej od tego samego miejsca, zamiast zatrzymać film
+                // network error (agent restart during an update, a brief loss of Wi-Fi): we reconnect over
+                // ~a minute and keep playing from the same place instead of stopping the video
                 if (error.errorCode in 2000..2999 && retries < 15) {
                     if (retries++ == 0) Toast.makeText(this@PlayerActivity, R.string.media_player_reconnecting, Toast.LENGTH_SHORT).show()
                     val pos = p.currentPosition
@@ -197,17 +197,17 @@ class PlayerActivity : ComponentActivity() {
                     Toast.LENGTH_LONG).show()
             }
         })
-        // preferowany język napisów = kolejność z ustawień
+        // preferred subtitle language = order from settings
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .setPreferredTextLanguages(*settings.subLanguages.split(',').filter { it.isNotBlank() }.toTypedArray())
             .build()
         val start = savedInstanceState?.getLong("pos") ?: settings.position(ref.key())
-        // pobrany (albo buforowany) film: rozmiar znany bez sieci, dla nakładki zapasu na pasku
+        // downloaded (or buffered) video: size known without a network, for the reserve overlay on the bar
         val offline = OfflineStore.get(this, key)
         if (offline != null && offline.size > 0) fileSize = offline.size
 
         lifecycleScope.launch {
-            // pobrany film: napisy zapisane razem z nim (działa bez sieci); inaczej z komputera, kopiowane lokalnie
+            // downloaded video: subtitles saved with it (works offline); otherwise from the computer, copied locally
             val saved = offline?.subs.orEmpty().filter { java.io.File(it.file).exists() }
             val local: Map<String, Uri>
             if (saved.isNotEmpty()) {
@@ -261,17 +261,17 @@ class PlayerActivity : ComponentActivity() {
         setOnClickListener { onClick() }
     }
 
-    // Chromecasty w sieci, wykrywane, póki odtwarzacz jest na wierzchu
+    // Chromecasts on the network, discovered while the player is in front
     private var casts: List<CastTarget> = emptyList()
     private var stopDiscovery: (() -> Unit)? = null
 
     override fun onStart() {
         super.onStart()
         stopDiscovery = Cast.discover(this) { casts = it }
-        Thread { Dlna.discover() }.start()  // do listy „Na ekran” (Dlna.found)
+        Thread { Dlna.discover() }.start()  // for the "To screen" list (Dlna.found)
     }
 
-    /** „Na ekran”: jeden ekran (bez Chromecastów) od razu, inaczej wybór (ostatnio używany oznaczony). */
+    /** "To screen": a single screen (no Chromecasts) immediately, otherwise a picker (last used marked). */
     private fun handOffToPc() {
         val screens = Servers.screens(this)
         val cs = casts
@@ -317,8 +317,8 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /**
-     * Dociąga na dysk do [Settings.bufferMinutes] minut od bieżącej pozycji, ale tylko do X-Ready-End (bajty, które
-     * komputer już ma). Pozycję w bajtach liczy z czasu i średniego bitrate pliku, z zapasem 30 s wstecz.
+     * Pulls to disk up to [Settings.bufferMinutes] minutes from the current position, but only up to X-Ready-End (bytes the
+     * computer already has). Computes the byte position from the time and the file's average bitrate, with a 30 s margin backwards.
      */
     private fun prefetch(p: ExoPlayer): Job = lifecycleScope.launch(Dispatchers.IO) {
         val cache = MediaCache.get(this@PlayerActivity)
@@ -342,7 +342,7 @@ class PlayerActivity : ComponentActivity() {
                     val len = minOf(-cached, 8L shl 20, target - at)
                     CacheWriter(writer, DataSpec.Builder().setUri(url).setKey(key).setPosition(at).setLength(len).build(),
                         null, null).cache()
-                    return@runCatching true  // po każdym kawałku od nowa: widz mógł przewinąć
+                    return@runCatching true  // after each chunk anew: the viewer may have seeked
                 }
                 false
             }.getOrElse { false }
@@ -351,14 +351,14 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /**
-     * Napisy pobrane na telefon przy otwarciu filmu. ExoPlayer (media3 1.8, lazy loading napisów) czyta plik napisów
-     * od nowa przy przewijaniu i przełączaniu ścieżek. Z sieci, bez Wi-Fi, takie ładowanie wisi na ponowieniach
-     * i blokuje dociąganie filmu z bufora na dysku (CompositeSequenceableLoader czeka na najbardziej opóźnione źródło),
-     * więc obraz się tnie. Lokalny plik czyta się zawsze. Gdy pobranie się nie uda, zostaje URL z komputera.
+     * Subtitles downloaded to the phone when the video is opened. ExoPlayer (media3 1.8, lazy subtitle loading) reads the subtitle file
+     * again when seeking and switching tracks. From the network, without Wi-Fi, such loading hangs on retries
+     * and blocks pulling the video from the disk buffer (CompositeSequenceableLoader waits for the most delayed source),
+     * so the picture stutters. A local file is always readable. If the download fails, the URL from the computer remains.
      */
     private fun localSubs(list: List<SubFile>): Map<String, Uri> {
         val dir = java.io.File(cacheDir, "subs")
-        dir.deleteRecursively()  // tylko napisy bieżącego filmu
+        dir.deleteRecursively()  // only the current video's subtitles
         dir.mkdirs()
         val out = mutableMapOf<String, Uri>()
         list.forEachIndexed { i, s ->
@@ -368,8 +368,8 @@ class PlayerActivity : ComponentActivity() {
         return out
     }
 
-    /** Co sekundę: ile ciągłego zapasu leży na dysku od bieżącej pozycji (przeliczone średnim bitrate na czas). */
-    /** Co sekundę: zasięg ciągłego zapasu na dysku od bieżącej pozycji → suwak (bufor) i napis u góry. */
+    /** Every second: how much contiguous reserve is on disk from the current position (converted to time with the average bitrate). */
+    /** Every second: extent of the contiguous reserve on disk from the current position → slider (buffer) and caption at the top. */
     private fun showDiskAhead(p: ExoPlayer) = lifecycleScope.launch {
         val cache = MediaCache.get(this@PlayerActivity)
         while (isActive) {
@@ -405,10 +405,10 @@ class PlayerActivity : ComponentActivity() {
         player?.let {
             val pos = it.currentPosition
             val dur = it.duration
-            // pod koniec filmu zaczynamy następnym razem od początku
+            // at the end of the video we start from the beginning next time
             if (it.playbackState != Player.STATE_IDLE) {
                 settings.setPosition(ref.key(), if (dur > 0 && pos > dur - 60_000) 0 else pos)
-                // ekran zablokowany: nic nie kasujemy; wyjście z odtwarzacza po ≥80%: kasujemy od razu
+                // screen locked: we delete nothing; exiting the player at ≥80%: we delete at once
                 val watched = if (dur > 0) pos.toFloat() / dur else 0f
                 settings.touchCache(key, watched)
                 if (dur > 0) OfflineStore.update(this, key) { o -> o.copy(durationMs = dur) }

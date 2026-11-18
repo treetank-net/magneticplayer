@@ -1,12 +1,13 @@
-"""Rozpoznawanie filmów i seriali: nazwa (guessit) + zawartość + mały lokalny indeks IMDb.
+"""Identification of movies and series: name (guessit) + content + a small local IMDb index.
 
-Indeks: darmowe zrzuty IMDb (datasets.imdbws.com, użytek osobisty i niekomercyjny) przerobione na SQLite z samymi
-filmami i serialami, które mają co najmniej MIN_VOTES głosów. Gatunki jako maska bitów (GENRES), tytuły
-znormalizowane (`key`) do szybkiego dopasowania. Kilka MB zamiast 230 MB, działa offline.
+Index: the free IMDb dumps (datasets.imdbws.com, personal and non-commercial use) converted to SQLite, holding only
+movies and series with at least MIN_VOTES votes. Genres are a bit mask (GENRES), titles are normalised (`key`) for
+fast matching. A few MB instead of 230 MB, works offline.
 
-Niepewne przypadki (brak w indeksie, tytuł tylko po polsku, animacja bez „Family”) uzupełnia Wikidata: kategorie
-wiekowe (FSK, MPAA), „film animowany”, „film dla dzieci”. Do Wikidaty idzie tylko tytuł i rok, wynik zostaje
-w pamięci podręcznej. Wybory użytkownika (zmiana katalogu po rozpoznaniu) zapamiętuje `Service.learn`.
+Uncertain cases (missing from the index, title known only in Polish, animation without "Family") are completed from
+Wikidata: age ratings (FSK, MPAA), "animated film", "children's film". Only the title and year are sent to Wikidata,
+and the result is kept in an in-memory cache. User choices (changing the directory after identification) are
+remembered by `Service.learn`.
 """
 import gzip
 import io
@@ -23,7 +24,7 @@ import urllib.request
 
 DATASETS = "https://datasets.imdbws.com/"
 MIN_VOTES = 300
-KINDS = {"movie": 0, "tvMovie": 0, "tvSeries": 1, "tvMiniSeries": 1}  # 0 film, 1 serial
+KINDS = {"movie": 0, "tvMovie": 0, "tvSeries": 1, "tvMiniSeries": 1}  # 0 movie, 1 series
 GENRES = ["Action", "Adult", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama",
           "Family", "Fantasy", "Film-Noir", "Game-Show", "History", "Horror", "Music", "Musical", "Mystery", "News",
           "Reality-TV", "Romance", "Sci-Fi", "Short", "Sport", "Talk-Show", "Thriller", "War", "Western"]
@@ -43,13 +44,13 @@ STOP = {"the", "a", "an", "and"}
 
 
 def norm(s):
-    """Klucz tytułu: małe litery bez akcentów, interpunkcji, spacji i słów the/a/an/and, żeby „12:01” z dysku trafiło
-    na „1201”, a nadmiarowe „The” z nazwy wydania nie psuło dopasowania."""
+    """Title key: lowercase without accents, punctuation, spaces and the words the/a/an/and, so that "12:01" from the
+    disk matches "1201" and a stray "The" in the release name does not spoil the match."""
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower().replace("&", " and ")
     return "".join(w for w in re.sub(r"[^a-z0-9]+", " ", s).split() if w not in STOP)
 
 
-# ---- indeks
+# ---- index
 
 def _lines(url):
     with urllib.request.urlopen(url, timeout=60) as r:
@@ -59,7 +60,7 @@ def _lines(url):
 
 
 def build(path, src=DATASETS, log=print):
-    """Pobiera zrzuty i buduje indeks w `path` (podmiana atomowa). `src`: URL albo katalog z plikami .tsv.gz."""
+    """Downloads the dumps and builds the index at `path` (atomic replace). `src`: URL or a directory with .tsv.gz files."""
     t0 = time.time()
     get = (lambda f: _lines(src + f)) if src.startswith("http") else (lambda f: _local(os.path.join(src, f)))
     votes = {}
@@ -89,7 +90,7 @@ def build(path, src=DATASETS, log=print):
     db.execute("VACUUM")
     db.close()
     os.replace(tmp, path)
-    log(f"indeks IMDb: {n} tytułów, {os.path.getsize(path) // 1024} KB, {time.time() - t0:.0f} s")
+    log(f"IMDb index: {n} titles, {os.path.getsize(path) // 1024} KB, {time.time() - t0:.0f} s")
     return n
 
 
@@ -115,7 +116,7 @@ class Index:
         return _row(r) if r else None
 
     def find(self, title, year=None, kind=None):
-        """Najlepszy tytuł: dokładny klucz, potem rok (±1) i rodzaj, na końcu popularność."""
+        """Best title: exact key first, then year (±1) and kind, finally popularity."""
         if not self.db or not title:
             return None
         rows = self.db.execute("SELECT t.* FROM k JOIN t USING(id) WHERE k.key=?", (norm(title),)).fetchall()
@@ -123,7 +124,7 @@ class Index:
             return None
 
         def score(r):
-            s = r[6] ** 0.3  # popularność: łagodnie
+            s = r[6] ** 0.3  # popularity: gently
             if year and r[3]:
                 s += 1000 if r[3] == year else 400 if abs(r[3] - year) == 1 else -300
             if kind is not None and r[1] == kind:
@@ -137,10 +138,10 @@ def _row(r):
             "genres": genres(r[5]), "votes": r[6]}
 
 
-# ---- rozpoznanie
+# ---- identification
 
 def content(files):
-    """Co jest w środku: lista (ścieżka, rozmiar) → rodzaj zawartości i ile odcinków."""
+    """What is inside: list of (path, size) → kind of content and number of episodes."""
     vids = [(p, s) for p, s in files if os.path.splitext(p)[1].lower() in VIDEO and "sample" not in p.lower()]
     audio = sum(s for p, s in files if os.path.splitext(p)[1].lower() in AUDIO)
     other = sum(s for p, s in files if os.path.splitext(p)[1].lower() in OTHER)
@@ -151,7 +152,7 @@ def content(files):
     if other / total > 0.6:
         return {"what": "other"}
     if not vids:
-        return {"what": "leftover"}  # same napisy i obrazki, np. po usuniętym filmie
+        return {"what": "leftover"}  # only subtitles and images, e.g. after the movie was deleted
     big = [(p, s) for p, s in vids if s > 0.15 * max(s for _, s in vids)]
     eps = [p for p, _ in big if EPISODE.search(os.path.basename(p)) or EPISODE.search(p)]
     return {"what": "video", "videos": len(big), "episodes": len(eps)}
@@ -164,9 +165,9 @@ UA = {"User-Agent": "MagneticPlayer (home media agent; https://gitlab.com/treeta
 WD_FILM = {"Q11424", "Q202866", "Q20650540", "Q24869", "Q506240", "Q229390", "Q24862", "Q17517379", "Q93204"}
 WD_SERIES = {"Q5398426", "Q581714", "Q63952888", "Q117467246", "Q1259759", "Q526877", "Q21191270", "Q15416"}
 WD_ANIM = {"Q202866", "Q20650540", "Q581714", "Q63952888", "Q117467246", "Q11425", "Q17517379", "Q1107"}
-WD_KIDS = {"Q2143665", "Q1273568", "Q4006590"}  # film dla dzieci, serial dla dzieci, program dla dzieci
+WD_KIDS = {"Q2143665", "Q1273568", "Q4006590"}  # children's film, children's series, children's programme
 WD_FAMILY = {"Q1361932"}
-# kategorie wiekowe → minimalny wiek: FSK 0/6/12/16/18, MPAA G/PG/PG-13/R/NC-17
+# age ratings → minimum age: FSK 0/6/12/16/18, MPAA G/PG/PG-13/R/NC-17
 WD_AGE = {"Q20644794": 0, "Q20644795": 6, "Q20644796": 12, "Q20644797": 16, "Q20644798": 18,
           "Q18665330": 0, "Q18665334": 6, "Q18665339": 12, "Q18665344": 16, "Q18665349": 18}
 
@@ -178,7 +179,7 @@ def _wd(params, timeout=8):
 
 
 def wikidata(title, year=None, kind=None):
-    """Film/serial z Wikidaty po tytule (polskim albo oryginalnym) i roku. None, gdy nie ma pewnego kandydata."""
+    """Movie/series from Wikidata by title (Polish or original) and year. None when there is no confident candidate."""
     cands = []
     for lang in ("pl", "en"):
         r = _wd({"action": "wbsearchentities", "search": title, "language": lang, "uselang": lang, "type": "item", "limit": 7})
@@ -218,12 +219,12 @@ def wikidata(title, year=None, kind=None):
         return s
     best = max(cands, key=score, default=None)
     if best and year and best["year"] and abs(best["year"] - year) > 1:
-        return None  # inny film o tym samym tytule: lepiej nic niż zła podpowiedź
+        return None  # a different film with the same title: better nothing than a wrong suggestion
     return best
 
 
 def wd_kids(w):
-    """Czy to dla dzieci według Wikidaty: True/False albo None, gdy brak danych."""
+    """Whether it is for children according to Wikidata: True/False, or None when there is no data."""
     if w["children"]:
         return True
     if w["age"] is not None:
@@ -233,9 +234,9 @@ def wd_kids(w):
 
 def _guessit(name):
     try:
-        import guessit  # w venv agenta (zależność subliminal)
+        import guessit  # in the agent venv (a subliminal dependency)
         return dict(guessit.guessit(name))
-    except ImportError:  # bez guessit: tytuł do roku, sezon/odcinek z nazwy
+    except ImportError:  # without guessit: title up to the year, season/episode from the name
         n = re.sub(r"[._]", " ", name)
         m = re.search(r"\b(19\d\d|20\d\d)\b", n)
         g = {"title": re.split(r"[\[(]?\b(?:19|20)\d\d\b|\bS\d{1,2}E\d|\b(?:720|1080|2160)p\b", n)[0].strip(" -[("),
@@ -253,31 +254,31 @@ def mem_key(r):
 
 
 def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
-    """Nazwa (+ lista plików, + treść .nfo) → propozycja: tag, tytuł, rok, IMDb, pewność i powody.
-    `wd(title, year, kind)`: Wikidata dla niepewnych (albo None offline), `memory`: {klucz: tag} z wyborów użytkownika."""
+    """Name (+ file list, + .nfo text) → proposal: tag, title, year, IMDb, confidence and reasons.
+    `wd(title, year, kind)`: Wikidata for uncertain cases (or None offline), `memory`: {key: tag} from user choices."""
     why = []
     c = content(files) if files else {"what": "video", "videos": 1, "episodes": 0}
     if c["what"] == "music":
         return {"tag": "muzyka", "confidence": "high", "why": ["audio"]}
     if c["what"] == "other":
-        return {"tag": "inne", "confidence": "high", "why": ["programy, archiwa, komiksy"]}
+        return {"tag": "inne", "confidence": "high", "why": ["programs, archives, comics"]}
     if c["what"] == "leftover":
-        return {"tag": None, "confidence": "high", "why": ["bez filmów: nie przenosimy"]}
+        return {"tag": None, "confidence": "high", "why": ["no videos: not moving"]}
     g = _guessit(name)
     title, year = g.get("title"), g.get("year")
-    # serial tylko po oznaczeniach odcinków: sama liczba plików to też kolekcja filmów
+    # series only from episode markers: a large number of files alone may also be a movie collection
     series_hint = (g.get("type") == "episode" and "episode" in g or "season" in g) or c.get("episodes", 0) >= 2
     if series_hint:
-        why.append(f"odcinki ({c.get('episodes', 0)}/{c.get('videos', 0)})" if files else "nazwa jak odcinek")
+        why.append(f"episodes ({c.get('episodes', 0)}/{c.get('videos', 0)})" if files else "name looks like an episode")
     hit = None
-    # guessit bywa mylony liczbą na początku tytułu (bierze ją za numer odcinka): druga próba z tekstem przed rokiem
+    # guessit can be fooled by a number at the start of the title (takes it for an episode number): second try with the text before the year
     alt = re.split(r"[\[(]?\b(?:19|20)\d\d\b", re.sub(r"[._]", " ", name))[0].strip(" -[(") if year else None
     if index:
         m = re.search(r"tt\d{7,8}", nfo_text or "")
         if m:
             hit = index.get(m.group(0))
             if hit:
-                why.append("IMDb z .nfo")
+                why.append("IMDb from .nfo")
         for t in dict.fromkeys(x for x in (title, alt) if x):
             if hit:
                 break
@@ -286,17 +287,17 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
                 why.append(f"IMDb: {hit['title']} ({hit['year']})")
     kind = hit["kind"] if hit else ("series" if series_hint else "movie")
     if hit and hit["kind"] == "movie" and series_hint and c.get("episodes", 0) >= 2:
-        kind = "series"  # zawartość ma pierwszeństwo przed bazą (np. zbiór odcinków o tytule jak film)
+        kind = "series"  # content takes precedence over the database (e.g. a set of episodes titled like a movie)
     gen = set(hit["genres"]) if hit else set()
-    # IMDb trzyma 3 gatunki, więc „Family” często wypada: animowany film bez mrocznych gatunków traktujemy jak bajkę;
-    # animowany serial tylko z „Family” (seriale animowane dla dorosłych to zwykle „Animation, Adventure, Comedy”)
+    # IMDb keeps 3 genres, so "Family" often drops out: an animated movie without dark genres is treated as a cartoon;
+    # an animated series only with "Family" (adult animated series are usually "Animation, Adventure, Comedy")
     dark = gen & {"Horror", "Thriller", "Crime", "War"}
     anim, family = "Animation" in gen, "Family" in gen
     kids = not dark and ((anim and family) or (anim and kind == "movie") or (family and kind == "movie"))
-    conf = "high" if hit and (hit.get("year") == year or "IMDb z .nfo" in why) else "medium" if hit else "low"
+    conf = "high" if hit and (hit.get("year") == year or "IMDb from .nfo" in why) else "medium" if hit else "low"
     if kids and not (anim and family):
-        conf = "low"  # sama animacja (anime dla dorosłych) albo sam „Family” (aktorskie remaki) to za mało
-    # niepewne: pytamy Wikidatę (kategorie wiekowe, „film dla dzieci”, polskie tytuły)
+        conf = "low"  # animation alone (adult anime) or "Family" alone (live-action remakes) is not enough
+    # uncertain: ask Wikidata (age ratings, "children's film", Polish titles)
     if wd and (title or alt) and (conf == "low" or not hit or (anim and not family)):
         w = None
         for t in dict.fromkeys(x for x in (title, alt) if x):
@@ -313,12 +314,12 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
             k = wd_kids(w)
             if k is not None:
                 kids = k and not dark
-                why.append(("dla dzieci" if kids else "nie dla dzieci") + (f" (od {w['age']} lat)" if w["age"] is not None else ""))
+                why.append(("for children" if kids else "not for children") + (f" (age {w['age']}+)" if w["age"] is not None else ""))
                 conf = "high" if w["year"] == year or not year else "medium"
             elif conf == "low" and not kids:
                 conf = "medium"
     if kids:
-        why.append("animacja/familijny: " + ",".join(sorted(gen)))
+        why.append("animation/family: " + ",".join(sorted(gen)))
     tag = "bajki" if kids else "seriale" if kind == "series" else "filmy"
     out = {"tag": tag, "kind": kind, "title": hit["title"] if hit else title, "year": (hit or {}).get("year") or year,
            "imdb": (hit or {}).get("imdb"), "genres": sorted(gen), "confidence": conf, "why": why}
@@ -327,11 +328,11 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
     k = mem_key(out)
     if memory and k in memory:
         out.update(tag=memory[k], confidence="high")
-        why.append("twój wcześniejszy wybór")
+        why.append("your earlier choice")
     return out
 
 
-# ---- usługa w agencie
+# ---- service in the agent
 
 def cache_dir():
     if sys.platform == "win32":
@@ -342,7 +343,7 @@ def cache_dir():
 
 
 class Service:
-    """Indeks (odświeżany co `refresh_days` w tle), pamięć podręczna Wikidaty i pamięć wyborów użytkownika."""
+    """Index (refreshed in the background every `refresh_days`), Wikidata cache and memory of user choices."""
 
     def __init__(self, cfg, memory_path, log):
         self.cfg, self.log = cfg, log
@@ -367,7 +368,7 @@ class Service:
         threading.Thread(target=self._refresh_loop, daemon=True).start()
 
     def _refresh_loop(self):
-        time.sleep(120)  # po starcie agenta najpierw ważniejsze rzeczy
+        time.sleep(120)  # after the agent starts, more important things come first
         while True:
             days = float(self.cfg.get("ident_refresh_days", 7))
             try:
@@ -387,8 +388,8 @@ class Service:
             build(self.path, log=self.log)
             with self.lock:
                 self.index = Index(self.path)
-        except Exception as e:  # sieć, dysk: spróbujemy przy następnym obrocie
-            self.log("indeks IMDb: nie udało się:", e)
+        except Exception as e:  # network, disk: we will retry on the next round
+            self.log("IMDb index: failed:", e)
         finally:
             self.building = False
 
@@ -415,7 +416,7 @@ class Service:
         return r
 
     def learn(self, guess, tag):
-        """Użytkownik wybrał inny katalog niż podpowiedź: następnym razem ten sam tytuł trafi tam od razu."""
+        """The user picked a different directory than suggested: next time the same title goes there right away."""
         k = mem_key(guess)
         if not k or not tag or self.memory.get(k) == tag:
             return

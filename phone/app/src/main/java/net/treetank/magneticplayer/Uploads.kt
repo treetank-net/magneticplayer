@@ -62,19 +62,19 @@ import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 /**
- * Przesyłanie filmów pobranych na telefonie (przeglądarką, np. u znajomych) na serwer.
+ * Uploading videos downloaded on the phone (by the browser, e.g. at friends' places) to the server.
  *
- * 1. Wykrywanie: [UploadScanWorker] z wyzwalaczem na MediaStore (działa przy zamkniętej apce; po każdym uruchomieniu
- *    zakłada się od nowa) i ContentObserver, gdy proces żyje. Bierzemy tylko wideo z `Download/…` (nie aparat),
- *    skończone (`IS_PENDING = 0`) i dodane po włączeniu opcji.
- * 2. Od razu powiadomienie z pytaniem: „Prześlij” albo „Prześlij i usuń z telefonu”.
- * 3. Wybór → [UploadWorker] (unikalne zlecenie na plik, tylko Wi-Fi/sieć bez limitu). Gdy serwer nie odpowiada
- *    (telefon poza domem), zlecenie czeka i próbuje co ~15 min. Przesyłanie wznawia się od `received` z serwera.
- *    Z uprawnieniem „Wyświetlanie nad innymi aplikacjami” pytanie wyskakuje też jako okienko nad przeglądarką
- *    ([UploadOverlay]), a powiadomienie przychodzi po cichu.
- * 4. Po przesłaniu z usuwaniem: z „Dostępem do wszystkich plików” (MANAGE_EXTERNAL_STORAGE, opcjonalny) apka usuwa
- *    plik sama; bez niego powiadomienie „Dotknij, aby usunąć” → systemowe potwierdzenie (plik należy do
- *    przeglądarki: `MediaStore.createDeleteRequest`, Android 11+).
+ * 1. Detection: [UploadScanWorker] with a MediaStore trigger (works with the app closed; after every run
+ *    it is set up again) and a ContentObserver while the process is alive. We take only video from `Download/…` (not the camera),
+ *    finished (`IS_PENDING = 0`) and added after the option was enabled.
+ * 2. Immediately a notification with a question: "Upload" or "Upload and delete from phone".
+ * 3. Choice → [UploadWorker] (a unique job per file, Wi-Fi/unmetered network only). When the server does not respond
+ *    (phone away from home), the job waits and retries every ~15 min. Uploading resumes from the server's `received`.
+ *    With the "Display over other apps" permission the question also pops up as a window above the browser
+ *    ([UploadOverlay]), and the notification arrives silently.
+ * 4. After upload with deletion: with "All files access" (MANAGE_EXTERNAL_STORAGE, optional) the app deletes
+ *    the file itself; without it a notification "Tap to delete" → system confirmation (the file belongs to
+ *    the browser: `MediaStore.createDeleteRequest`, Android 11+).
  */
 object Uploads {
     const val CH_ASK = "upload_ask"
@@ -95,12 +95,12 @@ object Uploads {
 
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences("uploads", Context.MODE_PRIVATE)
 
-    /** Id powiadomień tego pliku (pytanie, czekanie, postęp, wynik). */
+    /** Notification ids of this file (question, waiting, progress, result). */
     fun notifId(mediaId: Long) = 30_000 + (mediaId % 1_000_000).toInt()
 
-    // ---- uprawnienia i ustawienia
+    // ---- permissions and settings
 
-    /** O co prosić przy włączaniu: filmy innych apek (+ powiadomienia na Androidzie 13+). */
+    /** What to ask for when enabling: videos of other apps (+ notifications on Android 13+). */
     fun permissions(): Array<String> =
         if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.POST_NOTIFICATIONS)
         else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -109,13 +109,13 @@ object Uploads {
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_EXTERNAL_STORAGE
     ) == PackageManager.PERMISSION_GRANTED
 
-    /** „Dostęp do wszystkich plików”: wtedy plik przeglądarki da się usunąć bez systemowego pytania. */
+    /** "All files access": then the browser's file can be deleted without a system prompt. */
     fun canDeleteSilently() = Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()
 
     fun allFilesIntent(ctx: Context) = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
         Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    /** Usuwa film bez pytania (wymaga [canDeleteSilently]); najpierw przez MediaStore, potem po ścieżce. */
+    /** Deletes a video without asking (requires [canDeleteSilently]); first via MediaStore, then by path. */
     fun deleteSilently(ctx: Context, v: PhoneVideo): Boolean {
         if (!canDeleteSilently()) return false
         if (runCatching { ctx.contentResolver.delete(v.uri, null, null) > 0 }.getOrDefault(false)) return true
@@ -132,17 +132,17 @@ object Uploads {
 
     fun canUpload(s: Server) = s.info?.optJSONObject("features")?.optBoolean("upload") == true
 
-    /** Serwer docelowy: wybrany w Ustawieniach, a bez wyboru serwer plików (lub pierwszy) z `features.upload`. */
+    /** Target server: the one chosen in Settings, and without a choice the file server (or the first) with `features.upload`. */
     fun target(ctx: Context): Server? {
         val all = Servers.all(ctx)
         Settings(ctx).uploadServer?.let { k -> all.firstOrNull { it.key == k }?.let { return it } }
         val ok = all.filter { canUpload(it) }
         return ok.firstOrNull { it.key == Servers.activeKey(ctx) } ?: ok.firstOrNull()
-            // stary /api/info w pamięci (sprzed aktualizacji agenta): próbujemy serwer plików, najwyżej odmówi
+            // old /api/info in memory (from before the agent update): we try the file server, at worst it refuses
             ?: Servers.active(ctx).takeIf { it.key.isNotEmpty() && it.hasFiles }
     }
 
-    /** Włączenie: od teraz (stare pliki z Download nie są pytane), wyzwalacz i obserwator. */
+    /** Enabling: from now on (old files in Download are not asked about), trigger and observer. */
     fun enable(ctx: Context) {
         Settings(ctx).uploadAsk = true
         prefs(ctx).edit().putLong("since", System.currentTimeMillis() / 1000).putString("seen", "{}").apply()
@@ -156,7 +156,7 @@ object Uploads {
         observer = null
     }
 
-    /** Przy każdym starcie apki (MainActivity): wyzwalacz WorkManagera, obserwator i jedno przejrzenie. */
+    /** On every app start (MainActivity): WorkManager trigger, observer and one scan. */
     fun onAppStart(ctx: Context) {
         val app = ctx.applicationContext
         if (!Settings(app).uploadAsk || !canReadVideos(app)) return
@@ -166,8 +166,8 @@ object Uploads {
     }
 
     /**
-     * Zlecenie z wyzwalaczem „zmiana w MediaStore.Video”. Odpala się raz, więc po każdym uruchomieniu zakłada kolejne
-     * (APPEND_OR_REPLACE: dopisuje się za bieżącym; KEEP przy starcie apki nie dubluje czekającego).
+     * Job with a "change in MediaStore.Video" trigger. It fires once, so after each run it sets up the next
+     * (APPEND_OR_REPLACE: appended after the current one; KEEP at app start does not duplicate a waiting one).
      */
     fun scheduleScan(ctx: Context, fromWorker: Boolean) {
         val c = Constraints.Builder()
@@ -189,14 +189,14 @@ object Uploads {
         observer = object : ContentObserver(h) {
             override fun onChange(selfChange: Boolean) {
                 h.removeCallbacks(run)
-                h.postDelayed(run, 3000)  // przeglądarka zmienia wpis kilka razy pod koniec pobierania
+                h.postDelayed(run, 3000)  // the browser changes the entry several times near the end of the download
             }
         }.also { app.contentResolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, it) }
     }
 
-    // ---- wykrywanie
+    // ---- detection
 
-    /** Nowe, skończone filmy z Download/ od włączenia opcji, o które jeszcze nie pytaliśmy → powiadomienia. */
+    /** New, finished videos from Download/ since the option was enabled that we have not asked about yet → notifications. */
     @Synchronized
     fun scan(ctx: Context) {
         if (!Settings(ctx).uploadAsk || !canReadVideos(ctx)) return
@@ -204,7 +204,7 @@ object Uploads {
         val now = System.currentTimeMillis() / 1000
         val since = maxOf(p.getLong("since", now), now - WINDOW_SEC)
         val seen = runCatching { JSONObject(p.getString("seen", "{}")!!) }.getOrDefault(JSONObject())
-        val M = MediaStore.MediaColumns.DATE_ADDED  // sekundy
+        val M = MediaStore.MediaColumns.DATE_ADDED  // seconds
         val (sel, cols) = if (Build.VERSION.SDK_INT >= 29)
             "$M >= ? AND ${MediaStore.MediaColumns.IS_PENDING} = 0 AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE 'Download/%'" to
                 arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE, M)
@@ -222,7 +222,7 @@ object Uploads {
                     if (v.size >= MIN_SIZE) found += v
                 }
             }
-        // zapominamy wpisy starsze niż okno (i tak nie wrócą)
+        // we forget entries older than the window (they will not come back anyway)
         seen.keys().asSequence().toList().forEach { k -> if (seen.optLong(k) < now - WINDOW_SEC - 86400) seen.remove(k) }
         p.edit().putString("seen", seen.toString()).apply()
         found.forEach { ask(ctx, it) }
@@ -262,11 +262,11 @@ object Uploads {
     fun cancelAction(ctx: Context, v: PhoneVideo) =
         receiverIntent(ctx, ACTION_CANCEL, v, false, notifId(v.id) * 4 + 2)
 
-    /** „Pobrano X (1,2 GB). Przesłać na jmpc?” z przyciskami. */
+    /** "X downloaded (1.2 GB). Upload to jmpc?" with buttons. */
     fun ask(ctx: Context, v: PhoneVideo) {
         val srv = target(ctx) ?: return
         val id = notifId(v.id)
-        // okienko nad przeglądarką; powiadomienie zostaje na później (po cichu, żeby nie pytać dwa razy naraz)
+        // window above the browser; the notification stays for later (silent, so as not to ask twice at once)
         val overlay = UploadOverlay.show(ctx, v, srv.name)
         notify(ctx, id, NotificationCompat.Builder(ctx, CH_ASK)
             .setSilent(overlay)
@@ -281,9 +281,9 @@ object Uploads {
             .build())
     }
 
-    // ---- zlecenie przesłania
+    // ---- upload job
 
-    /** Stały identyfikator przesyłania tego pliku (wznawianie po przerwie trafia w ten sam `.part` na serwerze). */
+    /** Stable identifier of this file's upload (resuming after a break lands in the same `.part` on the server). */
     private fun uploadId(ctx: Context, v: PhoneVideo): String {
         val p = prefs(ctx)
         val salt = p.getString("salt", null) ?: java.util.UUID.randomUUID().toString().also { p.edit().putString("salt", it).apply() }
@@ -303,7 +303,7 @@ object Uploads {
         waiting(ctx, v, srv.name)
     }
 
-    /** Kolejna próba za [delay] min (serwer nie odpowiadał). Dopisana za bieżącym zleceniem, więc go nie przerywa. */
+    /** Next attempt in [delay] min (the server did not respond). Appended after the current job, so it does not interrupt it. */
     fun enqueueData(ctx: Context, data: Data, policy: ExistingWorkPolicy, delay: Long) {
         val req = OneTimeWorkRequestBuilder<UploadWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED).build())
@@ -320,7 +320,7 @@ object Uploads {
         cancelNotif(ctx, v.id)
     }
 
-    /** „Czeka na jmpc — prześle się, gdy telefon będzie w jego sieci”. */
+    /** "Waiting for jmpc — will upload when the phone is on its network". */
     fun waiting(ctx: Context, v: PhoneVideo, server: String) {
         ctx.getSystemService(NotificationManager::class.java).cancel(notifId(v.id))
         notify(ctx, notifId(v.id), NotificationCompat.Builder(ctx, CH_PROGRESS)
@@ -338,7 +338,7 @@ object Uploads {
     fun intentVideo(i: Intent) = i.video()
 }
 
-/** Wyzwalacz „coś się zmieniło w filmach na telefonie”: przegląda Download/ i zakłada kolejny wyzwalacz. */
+/** Trigger "something changed in the videos on the phone": scans Download/ and sets up the next trigger. */
 class UploadScanWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         if (!Settings(applicationContext).uploadAsk) return Result.success()
@@ -348,7 +348,7 @@ class UploadScanWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker
     }
 }
 
-/** Przyciski z powiadomień: „Prześlij”, „Prześlij i usuń”, „Anuluj”. */
+/** Notification buttons: "Upload", "Upload and delete", "Cancel". */
 class UploadReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val v = Uploads.intentVideo(intent)
@@ -361,9 +361,9 @@ class UploadReceiver : BroadcastReceiver() {
 }
 
 /**
- * Jedno przesłanie: pinguje serwer (poza jego siecią czeka i próbuje co [Uploads.WAIT_MIN] min), pyta o `received`
- * i dosyła resztę kawałkami po 64 MB. Usługa pierwszoplanowa dataSync, gdy system pozwoli; inaczej zwykłe zlecenie
- * (system może je przerwać po ~10 min, wtedy następne wznawia od miejsca na serwerze).
+ * One upload: pings the server (off its network it waits and retries every [Uploads.WAIT_MIN] min), asks for `received`
+ * and sends the rest in 64 MB chunks. A foreground dataSync service when the system allows; otherwise an ordinary job
+ * (the system may interrupt it after ~10 min, then the next one resumes from the place on the server).
  */
 class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     private val ctx get() = applicationContext
@@ -413,7 +413,7 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         if (size == null || size < 0) return failed(ctx.getString(R.string.media_upload_err_file_gone))
         if (size != v.size) return failed(ctx.getString(R.string.media_upload_err_file_changed, humanBytes(v.size), humanBytes(size)))
         if (!api.ping(3000)) {
-            // poza siecią serwera: następna próba za kwadrans; nowe zlecenie zamiast retry(), bo backoff liniowy rośnie
+            // off the server's network: next attempt in a quarter of an hour; a new job instead of retry(), because linear backoff grows
             Uploads.waiting(ctx, v, srv.name)
             Uploads.enqueueData(ctx, d, ExistingWorkPolicy.APPEND_OR_REPLACE, Uploads.WAIT_MIN)
             return Result.success()
@@ -430,7 +430,7 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 if (code >= 400 && code != 404) return failed(st.optString("error").ifEmpty { "HTTP $code" })
                 if (st.optBoolean("done")) return done(srv, st.optString("name"))
                 var off = st.optLong("received")
-                // sprawdzenie bez danych: wolne miejsce i zgodność miejsca, zanim popłyną gigabajty
+                // check without data: free space and place consistency, before gigabytes start flowing
                 val (c0, r0) = api.uploadPut(id, v.name, size, off, null, 0)
                 if (c0 == 507) return failed(ctx.getString(R.string.media_upload_err_no_space, srv.name, r0.optString("error")))
                 if (c0 == 409) { if (++conflicts > 3) return Result.retry(); continue }
@@ -452,7 +452,7 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                                 }
                             }
                             if (c == 507) return failed(ctx.getString(R.string.media_upload_err_no_space, srv.name, r.optString("error")))
-                            if (c >= 400) break  // 409 i inne: od nowa od stanu na serwerze
+                            if (c >= 400) break  // 409 and others: start over from the state on the server
                             if (r.optBoolean("done")) return done(srv, r.optString("name"))
                             off = r.optLong("received")
                         }
@@ -461,11 +461,11 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 if (++conflicts > 3) return Result.retry()
             }
         } catch (e: ApiException) {
-            // zerwane połączenie (wyjście z Wi-Fi, uśpiony serwer): spróbujemy później, od miejsca na serwerze
+            // broken connection (leaving Wi-Fi, a sleeping server): we will try later, from the place on the server
             if (isStopped) return Result.retry()
             Uploads.waiting(ctx, v, srv.name)
             return Result.retry()
-        } catch (e: IOException) {  // odczyt pliku na telefonie
+        } catch (e: IOException) {  // reading the file on the phone
             return if (isStopped) Result.retry() else failed(ctx.getString(R.string.media_upload_err_read, e.message.toString()))
         } catch (e: SecurityException) {
             return failed(ctx.getString(R.string.media_upload_err_permission))
@@ -494,7 +494,7 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
     }
 }
 
-/** Przezroczysta: systemowe „Usunąć ten film?” dla pliku przeglądarki (Android 11+), potem znika. */
+/** Transparent: the system "Delete this video?" for the browser's file (Android 11+), then it disappears */
 class UploadDeleteActivity : ComponentActivity() {
     private val launcher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
         Toast.makeText(this, getString(if (r.resultCode == Activity.RESULT_OK) R.string.media_upload_deleted else R.string.media_upload_kept),
@@ -506,7 +506,7 @@ class UploadDeleteActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val uri = intent.data
         getSystemService(NotificationManager::class.java).cancel(Uploads.TAG_NOTIF, intent.getIntExtra("nid", 0))
-        if (savedInstanceState != null) return  // obrót ekranu: okno systemowe już jest
+        if (savedInstanceState != null) return  // screen rotation: the system window is already there
         if (uri == null || Build.VERSION.SDK_INT < 30) { finish(); return }
         try {
             val pi = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
@@ -518,7 +518,7 @@ class UploadDeleteActivity : ComponentActivity() {
     }
 }
 
-/** Ustawienia → „Pytaj o przesłanie pobranych filmów” i serwer docelowy. */
+/** Settings → "Ask about uploading downloaded videos" and the target server. */
 @Composable
 fun UploadSettings() {
     val ctx = LocalContext.current
@@ -543,7 +543,7 @@ fun UploadSettings() {
         })
     }
     if (!on) return
-    // stan uprawnień systemowych odświeżany po powrocie z ustawień systemu
+    // permission state refreshed after returning from system settings
     var resumed by remember { mutableStateOf(0) }
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(owner) {
@@ -577,7 +577,7 @@ fun UploadSettings() {
     }
 }
 
-/** Wiersz z uprawnieniem systemowym: opis i przełącznik, który otwiera ustawienia systemu (tam się je daje i cofa). */
+/** A row with a system permission: description and a switch that opens system settings (where it is granted and revoked). */
 @Composable
 private fun PermRow(title: String, desc: String, ok: Boolean, open: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = open), verticalAlignment = Alignment.CenterVertically) {

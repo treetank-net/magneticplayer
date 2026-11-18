@@ -53,10 +53,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Wiersz listy: wpis + ile faktycznie leży na dysku. */
+/** List row: entry + how much is actually on disk. */
 private data class OfflineRow(val item: OfflineItem, val cached: Long, val fromStart: Long)
 
-/** „Na telefonie”: pobrane filmy i bufor z oglądania. Działa bez sieci. */
+/** "On the phone": downloaded videos and the watching buffer. Works offline. */
 @Composable
 fun OfflineTab(onPlaying: () -> Unit = {}) {
     val ctx = LocalContext.current
@@ -67,14 +67,14 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     var confirmDelete by remember { mutableStateOf<OfflineItem?>(null) }
     var chooser by remember { mutableStateOf<OfflineItem?>(null) }
     var opening by remember { mutableStateOf<String?>(null) }
-    val canScreen = true  // ekrany mpv, Chromecasty, telewizory DLNA: wybór pokaże, co jest w sieci
+    val canScreen = true  // mpv screens, Chromecasts, DLNA TVs: the picker shows what is on the network
     fun playOn(item: OfflineItem, key: String?, cast: CastTarget?, tv: DlnaTarget? = null) = scope.launch {
         opening = ctx.getString(R.string.media_opening)
         try {
             if (cast != null) Screens.cast(ctx, item.ref, cast, null) { opening = it }
             else if (tv != null) Screens.dlna(ctx, item.ref, tv, null) { opening = it }
             else Screens.play(ctx, item.ref, key!!, null) { opening = it }
-            onPlaying()  // jak z Biblioteki: od razu Pilot
+            onPlaying()  // as from the Library: Remote right away
         } catch (e: ApiException) {
             android.widget.Toast.makeText(ctx, e.message, android.widget.Toast.LENGTH_LONG).show()
         } finally {
@@ -160,17 +160,17 @@ private fun OfflineCard(
                 else -> humanBytes(r.cached)
             }
             Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // z którego serwera (gdy jest ich kilka): tam idzie „Wznów” i stamtąd są napisy
+            // which server (when there are several): "Resume" goes there and the subtitles come from there
             val ctx = androidx.compose.ui.platform.LocalContext.current
             val from = remember(i.ref.srv) { if (Servers.all(ctx).size > 1) Servers.get(ctx, i.ref.srv)?.name ?: ctx.getString(R.string.media_offline_deleted_server) else null }
             if (from != null) Text(stringResource(R.string.media_offline_from, from), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             if (!done && i.size > 0) LinearProgressIndicator({ frac.toFloat() }, Modifier.fillMaxWidth())
-            // ile da się obejrzeć od początku bez sieci (szacunek ze średniego bitrate)
+            // how much can be watched from the start without a network (estimate from the average bitrate)
             if (i.durationMs > 0 && i.size > 0 && !done && r.fromStart > 0) {
                 Text(stringResource(R.string.media_offline_from_start, clock(i.durationMs / 1000.0 * r.fromStart / i.size), clock(i.durationMs / 1000.0)),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            // przyciski zawijają się do kolejnej linii (duża czcionka systemowa, wąski ekran), kosz zawsze z prawej
+            // buttons wrap onto the next line (large system font, narrow screen), the trash can is always on the right
             Row(verticalAlignment = Alignment.CenterVertically) {
               FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onPlay) {
@@ -202,7 +202,7 @@ private fun OfflineCard(
     }
 }
 
-/** Dla zasady „po N dniach”: ile zostało (liczone od pobrania albo zmiany zasady). */
+/** For the "after N days" policy: how much is left (counted from the download or from the policy change). */
 private fun daysLeft(ctx: android.content.Context, i: OfflineItem): String {
     val days = i.policy.removePrefix("days:").toLongOrNull() ?: return ""
     val leftH = (i.created + days * 24 * 3600_000L - System.currentTimeMillis()) / 3600_000L

@@ -1,16 +1,16 @@
-"""Sparowane urządzenia, kody parowania i bilety na pojedynczy plik.
+"""Paired devices, pairing codes and single-file tickets.
 
-- Każde urządzenie ma własny token. Plik trzyma tylko skrót SHA-256 tokenu, więc wyciek pliku nie daje dostępu.
-- Kod parowania: jednorazowy, ważny PAIR_TTL s. Wymienia się go na token (`POST /api/pair`). Kody tworzy już
-  sparowane urządzenie albo ktoś z dostępem do komputera (`magneticplayer_agent.py --pair`).
-- Rola: „owner” (domownik, wszystko) albo „guest” (gość: oglądanie, bez ustawień, torrentów, usypiania; lista
-  w magneticplayer_agent.GUEST_ALLOWED). Gość może mieć termin ważności (`expires`), po nim token przestaje działać.
-- Stary wspólny token z config.json działa dalej jako urządzenie „legacy”, dopóki ktoś go nie wyłączy.
-- Bilet: podpis HMAC na jeden plik (klucz MediaRef) z czasem ważności. Ekran (mpv na innym komputerze) dostaje URL
-  z biletem zamiast tokenu, więc nie musi być sparowany z serwerem plików.
+- Each device has its own token. The file stores only the SHA-256 hash of the token, so a leaked file grants no access.
+- Pairing code: single-use, valid for PAIR_TTL s. It is exchanged for a token (`POST /api/pair`). Codes are created
+  by an already paired device or by someone with access to the computer (`magneticplayer_agent.py --pair`).
+- Role: "owner" (household member, everything) or "guest" (watching only: no settings, torrents or suspending; the
+  list is magneticplayer_agent.GUEST_ALLOWED). A guest may have an expiry (`expires`), after which the token stops working.
+- The old shared token from config.json keeps working as the "legacy" device until someone disables it.
+- Ticket: an HMAC signature for a single file (MediaRef key) with an expiry time. A screen (mpv on another computer)
+  gets a URL with a ticket instead of a token, so it does not have to be paired with the file server.
 
-Plik devices.json obok config.json czytają też polecenia CLI (--pair, --devices, --revoke) w osobnym procesie,
-więc agent sprawdza mtime i wczytuje go ponownie po zmianie.
+The devices.json file next to config.json is also read by CLI commands (--pair, --devices, --revoke) in a separate
+process, so the agent checks the mtime and reloads it after a change.
 """
 import hashlib
 import hmac
@@ -23,10 +23,10 @@ import time
 from mp_i18n import T
 
 PAIR_TTL = 600
-GUEST_CODE_TTL = 24 * 3600  # kod dla gościa idzie komunikatorem, więc żyje dłużej (dalej działa raz)
+GUEST_CODE_TTL = 24 * 3600  # a guest code is sent via a messenger, so it lives longer (still works once)
 ROLES = ("owner", "guest")
 TICKET_TTL = 12 * 3600
-CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # bez 0/O, 1/I
+CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # without 0/O, 1/I
 
 
 def _hash(token):
@@ -45,10 +45,10 @@ class Devices:
         self.data = None
         self.mtime = None
         self.dirty_seen = 0.0
-        self.fails = []  # czasy nieudanych prób parowania (ochrona przed zgadywaniem)
+        self.fails = []  # times of failed pairing attempts (protection against guessing)
         self._load()
 
-    # ---- plik
+    # ---- file
 
     def _load(self):
         try:
@@ -80,10 +80,10 @@ class Devices:
         os.replace(tmp, self.path)
         self.mtime = os.stat(self.path).st_mtime
 
-    # ---- uwierzytelnianie
+    # ---- authentication
 
     def check(self, token):
-        """Id urządzenia dla tokenu albo None. Zapisuje „ostatnio widziane” najwyżej raz na minutę."""
+        """Device id for a token, or None. Saves "last seen" at most once a minute."""
         if not token:
             return None
         with self.lock:
@@ -103,7 +103,7 @@ class Devices:
         return None
 
     def role(self, dev_id):
-        """Rola urządzenia (po `check`); „legacy” i stare wpisy bez roli to domownicy."""
+        """Device role (after `check`); "legacy" and old entries without a role are household members."""
         if dev_id in (None, "legacy"):
             return "owner" if dev_id else None
         with self.lock:
@@ -117,14 +117,14 @@ class Devices:
             self.dirty_seen = time.time()
             self._save()
 
-    # ---- parowanie
+    # ---- pairing
 
     @staticmethod
     def _exp(v):
-        return v if isinstance(v, (int, float)) else v.get("exp", 0)  # stary zapis: sam czas wygaśnięcia
+        return v if isinstance(v, (int, float)) else v.get("exp", 0)  # old format: just the expiry time
 
     def new_code(self, role="owner", days=None):
-        """Jednorazowy kod. Gość: kod ważny dobę, a `days` (>0) ogranicza ważność samego dostępu."""
+        """Single-use code. Guest: the code is valid for a day, and `days` (>0) limits the validity of the access itself."""
         if role not in ROLES:
             raise ValueError(T("unknown role", "nieznana rola"))
         ttl = GUEST_CODE_TTL if role == "guest" else PAIR_TTL
@@ -141,7 +141,7 @@ class Devices:
             return code, ttl
 
     def pair(self, code, name):
-        """Kod → nowy token urządzenia (zwracany raz, potem znany tylko jego skrót)."""
+        """Code → new device token (returned once, afterwards only its hash is known)."""
         now = time.time()
         with self.lock:
             self.fails = [t for t in self.fails if now - t < 60]
@@ -189,7 +189,7 @@ class Devices:
             self._save()
             return found
 
-    # ---- bilety
+    # ---- tickets
 
     def _sig(self, scope, exp):
         return hmac.new(self.data["ticket_secret"].encode(), f"{scope}|{exp}".encode(), hashlib.sha256).hexdigest()[:32]

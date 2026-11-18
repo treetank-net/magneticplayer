@@ -71,18 +71,20 @@ i `adb install -r phone/out/MagneticPlayer.apk`.
 
 Projekt zakłada zaufaną sieć domową: zwykłe HTTP w LAN, token per urządzenie po sparowaniu, goście ograniczeni do
 listy dozwolonych endpointów, prośby o dostęp tylko z adresów prywatnych. Nie wystawiaj portu agenta do internetu.
-Szczegóły: [docs/siec-i-bezpieczenstwo.md](docs/siec-i-bezpieczenstwo.md).
+Szczegóły: [docs/network-and-security.md](docs/network-and-security.md).
 
 ## Dokumentacja
 
-- [docs/instalacja-i-utrzymanie.md](docs/instalacja-i-utrzymanie.md): instalacja (też przez SSH, z innego serwera,
+Dokumentacja jest po angielsku:
+
+- [docs/install-and-maintenance.md](docs/install-and-maintenance.md): instalacja (też przez SSH, z innego serwera,
   z telefonu, Windows), aktualizacje, wydania, klucze podpisu, logi, typowe problemy.
-- [docs/architektura.md](docs/architektura.md): komponenty, przepływy (magnet, oglądanie, napisy, usypianie),
+- [docs/architecture.md](docs/architecture.md): komponenty, przepływy (magnet, oglądanie, napisy, usypianie),
   pliki i konfiguracja.
 - [docs/api.md](docs/api.md): HTTP API agenta.
-- [docs/siec-i-bezpieczenstwo.md](docs/siec-i-bezpieczenstwo.md): założenie „tylko LAN”, tokeny, role.
-- [docs/urzadzenia.md](docs/urzadzenia.md): Chromecast, DLNA i Samsung: wykrywanie i profile kodeków.
-- [docs/plan-wiele-serwerow.md](docs/plan-wiele-serwerow.md): etap 1 (wdrożony): kilka serwerów, osobne
+- [docs/network-and-security.md](docs/network-and-security.md): założenie „tylko LAN”, tokeny, role.
+- [docs/devices.md](docs/devices.md): Chromecast, DLNA i Samsung: wykrywanie i profile kodeków.
+- [docs/plan-multi-server.md](docs/plan-multi-server.md): etap 1 (wdrożony): kilka serwerów, osobne
   serwery plików i ekranu, tokeny per urządzenie.
 
 ## Wydania

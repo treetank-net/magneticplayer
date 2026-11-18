@@ -147,11 +147,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (Servers.all(this).isEmpty()) tab.intValue = TAB_SETTINGS
-        // bufor na dysku: obejrzane i stare filmy, także po ubiciu apki w trakcie oglądania
+        // disk buffer: watched and old videos, also after the app is killed mid-watching
         Thread { MediaCache.sweep(this) }.start()
-        // telewizor DLNA, który grał przed ubiciem apki: Pilot i powiadomienie wracają
+        // a DLNA TV that was playing before the app was killed: Remote and the notification come back
         lifecycleScope.launch(Dispatchers.IO) { if (Dlna.restore(this@MainActivity)) RemoteSessionService.start(applicationContext, "dlna") }
-        Uploads.onAppStart(this)  // przesyłanie pobranych filmów: wyzwalacz w tle i obserwator (Uploads.kt)
+        Uploads.onAppStart(this)  // uploading downloaded videos: background trigger and observer (Uploads.kt)
         handleIntent(intent)
         setContent { AppTheme { MainScreen(tab, settingsVersion) } }
     }
@@ -161,7 +161,7 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
-    /** magneticplayer://pair… (QR z komputera albo z innego telefonu): parowanie z jednym lub kilkoma serwerami. */
+    /** magneticplayer://pair… (QR from a computer or from another phone): pairing with one or several servers. */
     private fun handleIntent(i: Intent) {
         if (i.hasExtra("tab")) tab.intValue = i.getIntExtra("tab", 0)
         val data = i.data ?: return
@@ -194,10 +194,10 @@ class MainActivity : ComponentActivity() {
         appResumes.intValue++
     }
 
-    /** Na zakładce Pilot przyciski głośności telefonu sterują głośnością mpv na wybranym ekranie. */
+    /** On the Remote tab the phone's volume buttons control the mpv volume on the selected screen. */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         val vol = keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
-        // głośność celu Pilota: Chromecast i telewizor na każdej zakładce, ekran z mpv tylko na Pilocie
+        // volume of the Remote target: Chromecast and TV on every tab, an mpv screen only on Remote
         val target = if (vol) Pilot.effective(this) else null
         if (target != null && (target != "screen" || tab.intValue == TAB_REMOTE)) {
             val r = Pilot.remote(this, target) ?: return super.onKeyDown(keyCode, event)
@@ -209,7 +209,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** Wywołanie API w tle; błąd trafia do snackbara. */
+/** An API call in the background; an error goes to the snackbar. */
 private fun CoroutineScope.io(ctx: Context, snack: SnackbarHostState, block: suspend () -> Unit) = launch {
     try {
         withContext(Dispatchers.IO) { block() }
@@ -218,7 +218,7 @@ private fun CoroutineScope.io(ctx: Context, snack: SnackbarHostState, block: sus
     }
 }
 
-/** licznik powrotów apki na ekran (onResume), do sprawdzania aktualizacji */
+/** counter of the app returning to the screen (onResume), for checking updates */
 private val appResumes = androidx.compose.runtime.mutableIntStateOf(0)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -229,7 +229,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     val ctx = LocalContext.current
     val ver = settingsVersion.intValue
     fun changed() { settingsVersion.intValue++ }
-    // serwer plików (Torrenty, Biblioteka, Uśpij) i ekran Pilota
+    // file server (Torrents, Library, Suspend) and the Remote screen
     val servers = remember(ver) { Servers.all(ctx) }
     val api = remember(ver) { Api.active(ctx) }
     var screenKey by remember(ver) { mutableStateOf(Servers.screenKey(ctx)) }
@@ -244,8 +244,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     var addServer by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<AppUpdate?>(null) }
     var updating by remember { mutableStateOf<Int?>(null) }
-    // aktualizacja: przy otwarciu apki i powrocie na ekran (po połączeniu z serwerem) oraz po zmianie serwera; jedno
-    // zapytanie, bez pamięci podręcznej. W trakcie (np. na Pilocie przy oglądaniu) nie sprawdza.
+    // update: on opening the app and returning to the screen (after connecting to the server) and after a server change; one
+    // request, no cache. It does not check while busy (e.g. on Remote while watching).
     LaunchedEffect(online == true, ver, appResumes.intValue) {
         if (online == true) update = withContext(Dispatchers.IO) { Updater.check(ctx, api) }
     }
@@ -255,21 +255,21 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         var pings = 0
         var fails = 0
         while (true) {
-            // 3 s na połączenie: po dłuższej przerwie Wi-Fi telefonu i pierwsze połączenie bywają wolne
+            // 3 s for connecting: after a longer break the phone's Wi-Fi and the first connection can be slow
             val ok = withContext(Dispatchers.IO) { api.ping(3000) }
-            // „śpi” dopiero po dwóch nieudanych próbach z rzędu, także zaraz po otwarciu apki (do tego czasu „…”)
+            // "asleep" only after two failed attempts in a row, also right after opening the app (until then "…")
             fails = if (ok) 0 else fails + 1
             if (ok || fails >= 2) online = ok
             wrong = api.wrongServer
-            // możliwości serwera (przyciski, budzenie) odświeżane raz po połączeniu
+            // server capabilities (buttons, wake-up) refreshed once after connecting
             if (ok && first) {
                 first = false
                 withContext(Dispatchers.IO) { runCatching { api.info() } }
                 infoVer++
             }
-            // prośby o dostęp z sieci domowej (Access.kt): co ~15 s, póki apka jest na ekranie i serwer odpowiada
+            // access requests from the home network (Access.kt): every ~15 s while the app is on screen and the server responds
             if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) { Access.check(ctx, api) }
-            delay(if (ok) 5000 else if (fails == 1) 1000 else 3000)  // po pierwszej porażce szybko druga próba
+            delay(if (ok) 5000 else if (fails == 1) 1000 else 3000)  // after the first failure a quick second attempt
         }
     }
     val srv = remember(ver, online, infoVer) { Servers.get(ctx, api.srv.key) ?: api.srv }
@@ -398,7 +398,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     }) { confirmSuspend = false }
 }
 
-// ---------------------------------------------------------------- Torrenty
+// ---------------------------------------------------------------- Torrents
 
 @Composable
 private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
@@ -656,7 +656,7 @@ fun AfterDialog(current: String, onDismiss: () -> Unit, onPick: (String) -> Unit
     )
 }
 
-/** Ile da się obejrzeć: część pliku pobrana ciągiem od początku (pasek + minuty). */
+/** How much can be watched: the part of the file downloaded contiguously from the start (bar + minutes). */
 @Composable
 private fun WatchableInfo(f: TFile) {
     val frac = if (f.size > 0) (f.ready.toDouble() / f.size).coerceIn(0.0, 1.0) else 0.0
@@ -677,34 +677,34 @@ private fun WatchableInfo(f: TFile) {
     Text(text, style = MaterialTheme.typography.labelMedium, color = color)
 }
 
-// ---------------------------------------------------------------- Pilot
+// ---------------------------------------------------------------- Remote
 
 /**
- * Pilot: na górze cele (ekrany z mpv, Chromecast i telewizor DLNA, gdy coś na nie wysłaliśmy; bezczynne Chromecasty z podpowiedzią), pod spodem ten sam
- * układ przycisków dla każdego. Czego cel nie umie (ścieżki w DLNA, głośność Chromecasta ze stałą głośnością), tego nie ma.
+ * Remote: targets on top (mpv screens, Chromecast and DLNA TV once something was sent to them; idle Chromecasts with a hint), below them the same
+ * button layout for each. What a target cannot do (tracks on DLNA, volume of a fixed-volume Chromecast) is absent.
  */
 @Composable
 private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (String) -> Unit, onWake: (String) -> Unit) {
     val ctx = LocalContext.current
     var avail by remember { mutableStateOf(Pilot.available(ctx)) }
-    // Chromecasty w sieci szukane z telefonu (działa też bez agenta, np. w gościach)
+    // Chromecasts on the network searched from the phone (works without the agent too, e.g. for guests)
     DisposableEffect(Unit) {
         val stop = CastNet.discover(ctx)
-        val stopListen = Announce.listen(ctx)  // co grają inne piloty (telewizory DLNA)
+        val stopListen = Announce.listen(ctx)  // what other remotes play (DLNA TVs)
         onDispose { stop(); stopListen() }
     }
     LaunchedEffect(Unit) {
         var n = 0
         while (true) {
             if (n++ % 3 == 0 && Cast.session(ctx) == null) {
-                CastNet.refresh()  // co gra na Chromecastach (dowolny nadawca)
+                CastNet.refresh()  // what is playing on Chromecasts (any sender)
                 if (CastNet.playing().isEmpty()) Pilot.refreshAgentCast(ctx)  // zapas: agent
             }
             avail = Pilot.available(ctx); delay(1000)
         }
     }
     val focus = Pilot.focus.value
-    // telewizory DLNA w sieci (SSDP z telefonu; wyłączony telewizor nie odpowiada): co 30 s, póki Pilot jest na ekranie
+    // DLNA TVs on the network (SSDP from the phone; a TV that is off does not respond): every 30 s while Remote is on screen
     var tvs by remember { mutableStateOf<List<DlnaTarget>>(emptyList()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -712,8 +712,8 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             delay(30_000)
         }
     }
-    // bezczynne Chromecasty i telewizory (wykryte z telefonu): pigułka „idle:<id>” z podpowiedzią, skąd coś na nie wysłać
-    val idle: List<Triple<String, String, Boolean>> =  // klucz, nazwa, czy telewizor DLNA
+    // idle Chromecasts and TVs (detected from the phone): an "idle:<id>" pill with a hint on where to send something to them from
+    val idle: List<Triple<String, String, Boolean>> =  // key, name, whether it is a DLNA TV
         (if ("cast" in avail) emptyList() else CastNet.devices.values.sortedBy { it.name }.map { Triple("idle:" + it.id, it.name, false) }) +
         (if ("dlna" in avail) emptyList() else tvs.sortedBy { it.name }.map { Triple("idle:" + it.id, it.name, true) })
     val target = focus?.takeIf { it in avail || idle.any { d -> d.first == it } } ?: avail.firstOrNull()
@@ -745,7 +745,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             "cast", "dlna" -> key(target, target == "cast" && Cast.session(ctx) == null) {
                 val remote = remember { Pilot.remote(ctx, target) }
                 if (remote is AgentCastRemote || remote is DirectCastRemote || remote is DlnaRemote) LaunchedEffect(Unit) {
-                    Pilot.focus.value = target  // powiadomienie ma pokazać ten cel (też przejęty od innego pilota)
+                    Pilot.focus.value = target  // the notification should show this target (also one taken over from another remote)
                     RemoteSessionService.start(ctx.applicationContext, target)
                 }
                 if (remote != null) RemoteView(remote, snack, onGone = {
@@ -761,7 +761,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
     }
 }
 
-/** „Zamknąć Spotify na Duży pokój?”: zamknięcie cudzej aplikacji na Chromecaście (ktoś może z niej korzystać). */
+/** "Close Spotify on Living room?": closing someone else's app on a Chromecast (someone may be using it). */
 @Composable
 private fun CloseAppDialog(app: String, device: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(onDismissRequest = onDismiss,
@@ -772,8 +772,8 @@ private fun CloseAppDialog(app: String, device: String, onDismiss: () -> Unit, o
 }
 
 /**
- * Chromecasty z otwartą aplikacją, która nic nie gra (Spotify zostawione po słuchaniu dalej pokazuje okładkę na
- * telewizorze): wiersz z „Zamknij”. Stan z [CastNet.refresh] w pętli Pilota.
+ * Chromecasts with an open app that plays nothing (Spotify left over after listening still shows the cover on
+ * the TV): a row with "Close". State from [CastNet.refresh] in the Remote loop.
  */
 @Composable
 private fun OpenCastApps(snack: SnackbarHostState) {
@@ -793,7 +793,7 @@ private fun OpenCastApps(snack: SnackbarHostState) {
     ask?.let { st -> CloseAppDialog(st.app ?: "", st.device.name, { ask = null }) { ask = null; close(st) } }
 }
 
-/** mpv na ekranie serwera: budzenie, „nic nie gra”, a gdy gra, wspólny pilot plus ścieżki, napisy i pełny ekran. */
+/** mpv on the server's screen: wake-up, "nothing playing", and when playing, the common remote plus tracks, subtitles and full screen. */
 @Composable
 private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) -> Unit) {
     val ctx = LocalContext.current
@@ -806,7 +806,7 @@ private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) ->
             val r = runCatching { remote.status() }
             running = r.getOrNull() != null
             reachable = r.isSuccess || withContext(Dispatchers.IO) { api.ping() }
-            delay(if (running == true) 5000 else 1500)  // gdy gra, stan czyta RemoteView
+            delay(if (running == true) 5000 else 1500)  // when playing, the state is read by RemoteView
         }
     }
     when {
@@ -829,13 +829,13 @@ private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) ->
             }
         }
         running == true -> {
-            LaunchedEffect(Unit) { RemoteSessionService.start(ctx.applicationContext, "screen") }  // powiadomienie i głośność poza apką
+            LaunchedEffect(Unit) { RemoteSessionService.start(ctx.applicationContext, "screen") }  // notification and volume outside the app
             RemoteView(remote, snack, onGone = { running = false }) { s -> MpvExtras(api, remote, s, snack) }
         }
     }
 }
 
-/** Wspólny pilot: tytuł, suwak, przewijanie, pauza, głośność, Zakończ; `extras` = to, co umie tylko dany cel. */
+/** Common remote: title, slider, seeking, pause, volume, Stop; `extras` = what only the given target can do. */
 @Composable
 private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> Unit,
                        extras: @Composable ColumnScope.(RemoteState) -> Unit = {}) {
@@ -849,7 +849,7 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
         while (true) {
             val s = runCatching { remote.status() }.getOrNull()
             if (s != null) { st = s; misses = 0 } else if (++misses >= 3) { st = null; onGone() }
-            repeat(4) { delay(250); tick++ }  // pozycja płynie między odczytami
+            repeat(4) { delay(250); tick++ }  // position advances between reads
         }
     }
     fun act(f: suspend Remote.() -> Unit) = scope.launch {
@@ -862,7 +862,7 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
     }
     val s = st ?: return Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     @Suppress("UNUSED_EXPRESSION") tick
-    // jak w odtwarzaczach: ekran z pilotem nie gaśnie, gdy coś gra (ustawienie)
+    // as in the players: the screen with the remote does not turn off while something is playing (setting)
     val view = androidx.compose.ui.platform.LocalView.current
     val keep = remember { Settings(view.context).pilotKeepScreen } && s.playing
     DisposableEffect(keep) {
@@ -924,7 +924,7 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
     }
 }
 
-/** Tylko mpv: pełny ekran, ścieżki, opóźnienie i wyszukiwanie napisów. */
+/** mpv only: full screen, tracks, delay and subtitle search. */
 @Composable
 private fun ColumnScope.MpvExtras(api: Api, remote: MpvRemote, st: RemoteState, snack: SnackbarHostState) {
     val ctx = LocalContext.current
@@ -964,7 +964,7 @@ private fun ColumnScope.MpvExtras(api: Api, remote: MpvRemote, st: RemoteState, 
     if (subsDialog) SubsDialog(api, MediaRef.Playing(st.title, api.srv.key)) { subsDialog = false }
 }
 
-/** Wybór ścieżki w mpv: lista z językiem, tytułem, kodekiem; dla napisów też „wyłączone”. */
+/** Track picker in mpv: a list with language, title, codec; for subtitles also "off". */
 @Composable
 private fun TrackDialog(type: String, tracks: List<JSONObject>, onDismiss: () -> Unit, onPick: (Int?) -> Unit) {
     val title = when (type) { "sub" -> stringResource(R.string.main_subtitles); "audio" -> stringResource(R.string.main_audio_track); else -> stringResource(R.string.main_video_track) }
@@ -996,7 +996,7 @@ private fun TrackDialog(type: String, tracks: List<JSONObject>, onDismiss: () ->
     )
 }
 
-/** kodeki z opisem zależnym od języka */
+/** codecs with a description depending on the language */
 private val CODECS_RES = mapOf(
     "hdmv_pgs_subtitle" to R.string.main_codec_pgs, "dvd_subtitle" to R.string.main_codec_vobsub, "mov_text" to R.string.main_codec_text,
 )
@@ -1022,7 +1022,7 @@ private fun RemoteButton(icon: ImageVector, desc: String, onClick: () -> Unit) {
     FilledTonalIconButton(onClick, Modifier.size(56.dp)) { Icon(icon, desc) }
 }
 
-// ---------------------------------------------------------------- Ustawienia
+// ---------------------------------------------------------------- Settings
 
 @Composable
 private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: Boolean, onSaved: () -> Unit) {
@@ -1101,7 +1101,7 @@ fun copyText(ctx: Context, label: String, text: String) {
         .setPrimaryClip(android.content.ClipData.newPlainText(label, text))
 }
 
-/** Bufor na dysku (PlayerActivity.prefetch, MediaCache); działa od następnego otwarcia filmu. */
+/** Disk buffer (PlayerActivity.prefetch, MediaCache); takes effect from the next time a video is opened. */
 @Composable
 private fun BufferSettings(s: Settings) {
     var text by remember { mutableStateOf(s.bufferMinutes.toString()) }
@@ -1110,7 +1110,7 @@ private fun BufferSettings(s: Settings) {
     Text(stringResource(R.string.main_buffer_title), style = MaterialTheme.typography.titleMedium)
     Text(stringResource(R.string.main_buffer_desc, maxGb),
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    // zapis od razu przy każdej poprawnej wartości 1–999; przy błędnej zostaje poprzednia
+    // saved at once on every valid value 1–999; on an invalid one the previous stays
     val v = text.toIntOrNull()
     val ok = v != null && v in 1..999
     OutlinedTextField(text, { t ->
@@ -1121,7 +1121,7 @@ private fun BufferSettings(s: Settings) {
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
 }
 
-/** Konto OpenSubtitles trzyma agent na komputerze (to on szuka i zapisuje napisy obok filmów). */
+/** The OpenSubtitles account is kept by the agent on the computer (it searches for and saves subtitles next to the videos). */
 @Composable
 private fun OpenSubsSettings(api: Api, snack: SnackbarHostState) {
     val scope = rememberCoroutineScope()
@@ -1171,7 +1171,7 @@ private fun OpenSubsSettings(api: Api, snack: SnackbarHostState) {
     }
 }
 
-/** Podpis zakładki w jednej linii; przy dużej czcionce systemowej zmniejsza się, zamiast się urywać („Na telefonie”). */
+/** Tab label on one line; with a large system font it shrinks instead of being cut off ("On the phone"). */
 @Composable
 private fun NavLabel(text: String) {
     val style = androidx.compose.material3.LocalTextStyle.current

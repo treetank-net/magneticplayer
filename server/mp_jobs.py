@@ -1,4 +1,4 @@
-"""Zlecenia z telefonu: historia magnetów wysłanych z apki + akcja po pobraniu."""
+"""Jobs from the phone: history of magnets sent from the app + the after-download action."""
 import json
 import os
 import threading
@@ -50,7 +50,7 @@ class Jobs:
             self._save()
 
     def set_meta(self, tid, **kw):
-        """Dodatkowe dane zlecenia (rozpoznanie, katalog docelowy), np. do zapamiętania zmiany katalogu."""
+        """Extra job data (identification, target directory), e.g. to remember a directory change."""
         with self.lock:
             j = self._find(tid)
             if j is not None:
@@ -78,7 +78,7 @@ class Jobs:
             return [dict(j) for j in self.items]
 
     def tick(self, torrents, playing, do_action):
-        """Wołane co ~20 s. torrents: lista z backendu; playing: czy mpv gra; do_action(tid|None, akcja)."""
+        """Called every ~20 s. torrents: list from the backend; playing: whether mpv is playing; do_action(tid|None, action)."""
         by_id = {t["id"]: t for t in torrents}
         machine = []
         with self.lock:
@@ -96,7 +96,7 @@ class Jobs:
                     do_action(j["id"], "pause")
                     j["after_done"] = True
                     changed = True
-                    self.log("po pobraniu zatrzymano:", j["name"])
+                    self.log("stopped after download:", j["name"])
                 else:
                     if not j.get("finished"):
                         j["finished"] = time.time()
@@ -113,5 +113,5 @@ class Jobs:
             if changed:
                 self._save()
         if act:
-            self.log("wszystko pobrane, akcja:", act)
+            self.log("everything downloaded, action:", act)
             do_action(None, act)

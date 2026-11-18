@@ -43,10 +43,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * „Zainstaluj na innym komputerze”: serwer daje jednorazowe polecenie (`curl … /i/<kod> | bash`), nowy komputer
- * pobiera z niego agenta, instaluje się i zgłasza z kodem parowania, a ten telefon paruje się sam (mp_install.py).
- * Bez serwera (albo z wyboru) źródłem jest sam telefon: agent zaszyty w APK, serwer HTTP na czas okna (InstallShare).
- * Zależności (pip, mpv, Python na Windows) nowy komputer i tak pobiera z internetu.
+ * "Install on another computer": the server gives a one-time command (`curl … /i/<code> | bash`), the new computer
+ * downloads the agent from it, installs itself and reports in with a pairing code, and this phone pairs itself (mp_install.py).
+ * Without a server (or by choice) the phone itself is the source: agent embedded in the APK, an HTTP server for the duration of the window (InstallShare).
+ * Dependencies (pip, mpv, Python on Windows) are downloaded from the internet by the new computer anyway.
  */
 @Composable
 fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
@@ -57,7 +57,7 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     val phoneOk = remember { InstallShare.available(ctx) }
     var fromPhone by remember { mutableStateOf(source == null) }
     DisposableEffect(Unit) { onDispose { InstallShare.stop() } }
-    // nowsza paczka agenta z wydania na GitHubie (podpisana); bez sieci zostaje ta z apki
+    // newer agent bundle from a GitHub release (signed); without a network the one from the app stays
     var bundleLabel by remember { mutableStateOf(AgentBundle.label(ctx)) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { runCatching { AgentBundle.refresh(ctx) } }
@@ -70,10 +70,10 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var added by remember { mutableStateOf<Server?>(null) }
 
-    // czekanie na nowy komputer: co 2 s stan kodu; po zgłoszeniu parowanie jego kodem
+    // waiting for the new computer: code state every 2 s; after it reports in, pairing with its code
     LaunchedEffect(code) {
         val c = code ?: return@LaunchedEffect
-        if (c.optBoolean("phone")) {  // źródłem jest ten telefon: stan prosto z InstallShare
+        if (c.optBoolean("phone")) {  // the source is this phone: state straight from InstallShare
             while (added == null) {
                 delay(1000)
                 state = InstallShare.state

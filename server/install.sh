@@ -1,16 +1,16 @@
 #!/bin/bash
-# Instalacja agenta MagneticPlayer na komputerze (Linux Mint). Uruchom jako zwykły użytkownik:
-#   bash install.sh            # pełna instalacja (część rootowa przez pkexec)
-#   SKIP_ROOT=1 bash install.sh  # tylko część użytkownika (gdy install-root.sh puszczony osobno)
-#   BACKEND=none bash install.sh # serwer bez torrentów (tylko ekran z mpv i/lub biblioteka), bez Deluge
-#   PLAYER=0 POWER=0 …           # nie ekran (bez mpv) / bez usypiania i wyłączania z sieci (np. laptop do pracy)
-#   PORT=8766 …                  # inny port (gdy 8765 jest zajęty)
-#   LITE=1 bash install.sh       # tryb lekki (cudzy komputer): bez roota i hasła, bez torrentów, bez usypiania
-#                                  z sieci i WoL; zostają pliki, przesyłanie z telefonu i ekran, jeśli jest mpv
-#   JOIN=http://<serwer>:8765/i/<kod> …  # ustawia skrypt z /i/<kod>: po instalacji zgłasza się tam, telefon paruje sam
-# Odinstalowanie: bash ~/.local/share/magneticplayer/uninstall.sh [--purge]
+# Install the MagneticPlayer agent on a computer (Linux Mint). Run as a regular user:
+#   bash install.sh            # full install (root part via pkexec)
+#   SKIP_ROOT=1 bash install.sh  # user part only (when install-root.sh is run separately)
+#   BACKEND=none bash install.sh # server without torrents (only a mpv screen and/or a library), no Deluge
+#   PLAYER=0 POWER=0 …           # no screen (no mpv) / no sleep and power-off from the network (e.g. a work laptop)
+#   PORT=8766 …                  # another port (when 8765 is taken)
+#   LITE=1 bash install.sh       # lite mode (someone else's computer): no root or password, no torrents, no sleep
+#                                  from the network and no WoL; files, upload from the phone and the screen (if mpv exists) remain
+#   JOIN=http://<serwer>:8765/i/<kod> …  # set by the script from /i/<code>: after install it reports there, the phone pairs by itself
+# Uninstall: bash ~/.local/share/magneticplayer/uninstall.sh [--purge]
 set -euo pipefail
-# komunikaty: po polsku, gdy system ma polski (LC_ALL / LC_MESSAGES / LANG), inaczej po angielsku
+# messages: Polish when the system locale is Polish (LC_ALL / LC_MESSAGES / LANG), English otherwise
 case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in pl*) MP_LANG=pl ;; *) MP_LANG=en ;; esac
 say() { if [ "$MP_LANG" = pl ]; then echo "$2"; else echo "$1"; fi; }
 if [ -n "${LITE:-}" ] && [ "$LITE" != 0 ]; then
@@ -34,9 +34,9 @@ BACKEND_SET=${BACKEND+x}
 BACKEND=${BACKEND:-deluge}
 
 if [ -z "${SKIP_ROOT:-}" ]; then
-  # pkexec tylko w lokalnej sesji graficznej; przez SSH polkit nie ma sesji ("No session for cookie")
+  # pkexec only in a local graphical session; over SSH polkit has no session ("No session for cookie")
   if [ -z "${SSH_CONNECTION:-}" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && ! sudo -n true 2>/dev/null; then
-    pkexec bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND" "$MP_LANG"  # pkexec gubi LANG
+    pkexec bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND" "$MP_LANG"  # pkexec drops LANG
   else
     sudo bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND" "$MP_LANG"
   fi
@@ -47,13 +47,14 @@ mkdir -p "$DEST" "$UNITS"
 install -m 755 "$SRC/magneticplayer_agent.py" "$DEST/"
 install -m 644 "$SRC"/mp_*.py "$DEST/"
 install -d "$DEST/web" && install -m 644 "$SRC"/web/* "$DEST/web/"
-# skrypty obok agenta: z nich serwer instaluje agenta na kolejnych komputerach (mp_install.py, /i/<kod>)
+# scripts next to the agent: the server uses them to install the agent on further computers (mp_install.py, /i/<code>)
 install -m 755 "$SRC/uninstall.sh" "$SRC/install.sh" "$SRC/install-root.sh" "$SRC/join.sh" "$DEST/"
 [ -f "$SRC/join.ps1" ] && install -m 644 "$SRC/join.ps1" "$SRC/install.ps1" "$SRC/uninstall.ps1" "$DEST/"
 
 say "== subtitles: subliminal in a venv ($DEST/venv)" "== napisy: subliminal w venv ($DEST/venv)"
-# --clear: po nieudanej próbie (brak python3-venv); bez venv agent działa, tylko bez napisów i Chromecasta ze strony
-# Bez python3-venv (świeże Ubuntu/Debian): venv bez pip i pip z bootstrap.pypa.io, więc bez roota.
+# --clear: after a failed attempt (python3-venv missing); without a venv the agent works, only without subtitles and
+# Chromecast from the web page.
+# Without python3-venv (fresh Ubuntu/Debian): a venv without pip plus pip from bootstrap.pypa.io, so no root needed.
 [ -x "$DEST/venv/bin/pip" ] || python3 -m venv --clear "$DEST/venv" >/dev/null 2>&1 || {
   rm -rf "$DEST/venv"
   if python3 -m venv --without-pip "$DEST/venv" >/dev/null 2>&1 && command -v curl >/dev/null &&
@@ -68,14 +69,14 @@ say "== subtitles: subliminal in a venv ($DEST/venv)" "== napisy: subliminal w v
 if [ -x "$DEST/venv/bin/pip" ]; then
   "$DEST/venv/bin/pip" install --isolated -q --upgrade subliminal ||
     say "WARNING: subliminal didn't install — subtitles won't work" "UWAGA: subliminal się nie zainstalował — napisy nie zadziałają"
-  # Chromecast sterowany z klienta webowego (apka na telefonie ma własny Cast SDK)
+  # Chromecast controlled from the web client (the phone app has its own Cast SDK)
   "$DEST/venv/bin/pip" install --isolated -q --upgrade pychromecast ||
     say "WARNING: pychromecast didn't install — Chromecast from the browser won't work" "UWAGA: pychromecast się nie zainstalował — Chromecast z przeglądarki nie zadziała"
-  # QR parowania w terminalu, gdy nie ma qrencode (tryb lekki nie instaluje pakietów)
+  # pairing QR in the terminal when qrencode is missing (the lite install doesn't install packages)
   "$DEST/venv/bin/pip" install --isolated -q --upgrade qrcode || true
 fi
 
-# ustawienia podane jawnie (BACKEND, PLAYER, POWER) trafiają do config.json; reszta configu zostaje
+# settings given explicitly (BACKEND, PLAYER, POWER) go to config.json; the rest of the config is kept
 LITE_ON=; [ -n "${LITE:-}" ] && [ "$LITE" != 0 ] && LITE_ON=1
 if [ -n "$BACKEND_SET$PORT_SET${PLAYER+x}${POWER+x}$LITE_ON" ]; then
   echo "== config: ${BACKEND_SET:+backend=$BACKEND }${PORT_SET:+port=$PORT }${PLAYER+player=$PLAYER }${POWER+power=$POWER}"
@@ -100,8 +101,8 @@ os.chmod(p, 0o600)
 EOF
 fi
 
-# bez torrentów biblioteka to tylko katalog z filmami: gdy go nie ma, zakładamy ~/Wideo (XDG), żeby przesyłanie
-# z telefonu i Biblioteka miały dokąd zapisywać (agent sam bierze ~/Wideo, ~/Videos, ~/Filmy)
+# without torrents the library is just a directory of videos: when none exists we create the XDG videos dir, so that
+# upload from the phone and the Library have somewhere to write (the agent itself picks ~/Wideo, ~/Videos, ~/Filmy)
 if [ "$BACKEND" = none ]; then
   VID=$(xdg-user-dir VIDEOS 2>/dev/null || true)
   [ -z "$VID" ] || [ "$VID" = "$HOME" ] && VID=$HOME/Videos
@@ -120,7 +121,7 @@ import json, os, re
 p = os.path.expanduser("~/.config/deluge/gtk3ui.conf")
 if os.path.exists(p):
     raw = open(p).read()
-    # format Deluge: dwa obiekty JSON jeden po drugim (wersja formatu + dane)
+    # Deluge format: two JSON objects one after another (format version + data)
     dec = json.JSONDecoder()
     head, i = dec.raw_decode(raw)
     data, _ = dec.raw_decode(raw, re.compile(r"\s*").match(raw, i).end())
@@ -177,10 +178,10 @@ EOF
 systemctl --user daemon-reload
 [ "$BACKEND" = deluge ] && systemctl --user enable --now deluged deluge-web
 systemctl --user enable magneticplayer
-# linger: agent startuje z komputerem i działa po wylogowaniu (cudzy komputer bywa bez zalogowanego właściciela)
+# linger: the agent starts with the computer and keeps running after logout (someone else's computer may have no owner logged in)
 if [ -n "${LITE:-}" ] && [ "$LITE" != 0 ]; then
   if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" != yes ]; then
-    # znacznik: uninstall.sh wyłącza linger tylko wtedy, gdy włączyliśmy go my
+    # marker: uninstall.sh disables linger only if we enabled it
     loginctl enable-linger </dev/null 2>/dev/null && touch "$DEST/.linger" &&
       say "linger: the agent runs even when nobody is logged in" "linger: agent działa także bez zalogowania" ||
       say "WARNING: without linger the agent only runs while $USER is logged in" "UWAGA: bez linger agent działa tylko, gdy $USER jest zalogowany"

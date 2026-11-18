@@ -1,4 +1,4 @@
-"""Biblioteka: przeglądanie wybranych katalogów komputera (tylko filmy/muzyka + napisy obok)."""
+"""Library: browsing selected directories of the computer (only video/music + subtitles next to them)."""
 import os
 import re
 import secrets
@@ -12,12 +12,12 @@ AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 SUB_EXT = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
 
 
-TAGS = ("filmy", "seriale", "bajki", "kopia")  # podpowiedzi w apce; własne tagi też wolno
-HIDDEN_TAGS = {"kopia"}  # katalog z takim tagiem nie pokazuje się w bibliotece (tylko w zarządzaniu)
-VISIBLE = ("all", "owners")  # albo lista id urządzeń
+TAGS = ("filmy", "seriale", "bajki", "kopia")  # suggestions in the app; custom tags are allowed too
+HIDDEN_TAGS = {"kopia"}  # a directory with such a tag is not shown in the library (only in management)
+VISIBLE = ("all", "owners")  # or a list of device ids
 
-# Kto pyta w tym wątku (handler ustawia po sprawdzeniu tokenu). None = wewnętrzne wywołanie albo bilet na jeden plik,
-# czyli dostęp już sprawdzony wcześniej; wtedy widoczność katalogów nie ogranicza.
+# Who is asking in this thread (the handler sets it after checking the token). None = an internal call or a
+# single-file ticket, i.e. access was already checked earlier; directory visibility then does not restrict anything.
 _viewer = threading.local()
 
 
@@ -30,7 +30,7 @@ def current_viewer():
 
 
 def can_see(r, viewer, manage=False):
-    """Czy urządzenie widzi katalog. `manage`: lista do zarządzania (domownik widzi wtedy wszystkie)."""
+    """Whether the device sees the directory. `manage`: management list (a household member then sees all)."""
     if viewer is None:
         return True
     dev, role = viewer
@@ -47,7 +47,7 @@ def can_see(r, viewer, manage=False):
 
 
 def excluded(r, rel):
-    """Czy ścieżka (względna w katalogu) leży w wykluczonym podkatalogu."""
+    """Whether the path (relative to the directory) lies in an excluded subdirectory."""
     rel = rel.strip("/")
     return any(rel == x or rel.startswith(x + "/") for x in (e.strip("/") for e in r.get("exclude") or []) if x)
 
@@ -64,7 +64,7 @@ def media_kind(name):
 
 
 def sidecar_subs(full):
-    """Napisy leżące obok filmu: <nazwa>.srt, <nazwa>.pl.srt itd."""
+    """Subtitles next to the movie: <name>.srt, <name>.pl.srt etc."""
     d, base = os.path.split(full)
     stem = os.path.splitext(base)[0]
     out = []
@@ -76,8 +76,8 @@ def sidecar_subs(full):
                 out.append({"name": n, "lang": lang, "ext": ext.lower()[1:]})
     except OSError:
         pass
-    # torrenty: Subs/English.srt albo Subs/<nazwa>/2_English.srt (nazwa ze ścieżką względem katalogu filmu)
-    seen = set()  # NTFS/exFAT: „subs” i „Subs” to ten sam katalog
+    # torrents: Subs/English.srt or Subs/<name>/2_English.srt (name with a path relative to the movie directory)
+    seen = set()  # NTFS/exFAT: "subs" and "Subs" are the same directory
     for sd in ("Subs", "subs", "Subtitles", "subtitles", "Sub", "sub"):
         for rel in (sd, os.path.join(sd, stem)):
             try:
@@ -101,7 +101,7 @@ _LANGS = {"english": "en", "eng": "en", "polish": "pl", "pol": "pl", "polski": "
 
 
 def _lang_guess(s):
-    """„2_English” → „en”; nieznane zostaje jak jest (do etykiety)."""
+    """\"2_English\" → \"en\"; unknown names stay as they are (used as a label)."""
     w = re.sub(r"^[\d_\-. ]+", "", s).strip()
     return _LANGS.get(w.lower().split(" ")[0].split(".")[0], w)
 
@@ -118,21 +118,21 @@ class Library:
     def __init__(self, cfg, save_cfg, default_dirs):
         self.cfg = cfg
         self.save_cfg = save_cfg
-        self.default_dirs = default_dirs  # () -> lista katalogów (z klienta torrentów)
+        self.default_dirs = default_dirs  # () -> list of directories (from the torrent client)
 
     def roots(self):
         lib = self.cfg.get("library")
-        if not lib:  # pierwsze uruchomienie: katalogi pobierania + ~/Wideo
+        if not lib:  # first run: download directories + ~/Wideo
             seen, lib = set(), []
             cands = list(self.default_dirs()) + [os.path.expanduser(p) for p in ("~/Wideo", "~/Videos", "~/Filmy")]
             downloads = {os.path.realpath(os.path.expanduser(p)) for p in ("~/Downloads", "~/Pobrane")}
-            for p in cands:  # bez ~/Downloads: tam trafia wszystko z przeglądarki, nie tylko filmy
+            for p in cands:  # without ~/Downloads: everything from the browser lands there, not only movies
                 if p and os.path.isdir(p) and os.path.realpath(p) not in seen | downloads:
                     seen.add(os.path.realpath(p))
                     lib.append({"name": os.path.basename(p.rstrip("/")) or p, "path": p})
             self.cfg["library"] = lib
             self.save_cfg()
-        if any("id" not in r for r in lib):  # stały identyfikator (replikacja, później API zamiast indeksu)
+        if any("id" not in r for r in lib):  # stable identifier (replication; later the API instead of the index)
             for r in lib:
                 r.setdefault("id", secrets.token_hex(3))
             self.save_cfg()
@@ -140,7 +140,7 @@ class Library:
                      exclude=r.get("exclude") or []) for i, r in enumerate(lib)]
 
     def visible_roots(self, manage=False):
-        """Katalogi, które widzi pytające urządzenie (indeksy zostają globalne)."""
+        """Directories visible to the asking device (indexes stay global)."""
         v = current_viewer()
         return [dict(r, open=can_see(r, v)) for r in self.roots() if can_see(r, v, manage)]
 
@@ -165,8 +165,8 @@ class Library:
         if not os.path.isdir(full):
             raise LibError(T("not a folder", "to nie katalog"), 400)
         dirs, files = [], []
-        # os.stat zamiast DirEntry.is_dir()/stat(): te w Pythonie 3.10 (jmpc) robią stat() bez zwolnienia GIL, a budzący się
-        # stary dysk USB (ntfs-3g) odpowiada po kilka sekund; cały agent stał wtedy w miejscu, także /api/ping
+        # os.stat instead of DirEntry.is_dir()/stat(): in Python 3.10 (jmpc) those call stat() without releasing the GIL, and a
+        # waking-up old USB disk (ntfs-3g) takes a few seconds to respond; the whole agent then froze, /api/ping included
         for e in os.scandir(full):
             if e.name.startswith("."):
                 continue
@@ -199,7 +199,7 @@ class Library:
         self.save_cfg()
 
     def update_root(self, i, b):
-        """Zmiana nazwy, tagów, widoczności i wykluczeń katalogu (tylko podane pola)."""
+        """Changes the name, tags, visibility and exclusions of a directory (only the given fields)."""
         self.roots()
         if not 0 <= i < len(self.cfg["library"]):
             raise LibError(T("no such folder", "nie ma takiego katalogu"), 404)
@@ -229,8 +229,8 @@ class Library:
         self.save_cfg()
 
     def targets(self, tag=None, title=None, kind=None):
-        """Gdzie pobrać: katalogi, które pytający widzi i może zapisywać (bez `kopia`), z wolnym miejscem.
-        `pick`: katalog z tagiem z rozpoznania; serial tam, gdzie już leży (jego podkatalog), inaczej najwięcej wolnego."""
+        """Where to download: directories the asker can see and write to (without `kopia`), with free space.
+        `pick`: the directory with the tag from identification; a series goes where it already is (its subdirectory), otherwise where there is most free space."""
         import shutil
         from mp_ident import norm
         v, out, key = current_viewer(), [], norm(title or "")
@@ -259,11 +259,11 @@ class Library:
                 pick = max(cand, key=lambda i: (out[i]["existing"], out[i]["free"]))
                 t = out[pick]
                 if kind == "series" and title and not t["sub"]:
-                    t["sub"] = re.sub(r'[\\/:*?"<>|]+', " ", title).strip(" .")[:100]  # nowy serial: Seriale/<tytuł>/
+                    t["sub"] = re.sub(r'[\\/:*?"<>|]+', " ", title).strip(" .")[:100]  # new series: Seriale/<title>/
         return {"targets": out, "pick": pick}
 
     def dest(self, i, sub=""):
-        """Katalog pobierania w katalogu biblioteki (tworzony, gdy go nie ma)."""
+        """Download directory inside a library directory (created if missing)."""
         full = self.resolve(i, sub or "")
         os.makedirs(full, exist_ok=True)
         return full
@@ -277,7 +277,7 @@ class Library:
 
     @staticmethod
     def fs_dirs(path):
-        """Lista podkatalogów do wybierania nowego katalogu biblioteki."""
+        """List of subdirectories for choosing a new library directory."""
         if not path:
             user = os.environ.get("USER", "")
             starts = [os.path.expanduser("~")] + [os.path.join(b, n) for b in (f"/media/{user}", "/mnt")
@@ -285,7 +285,7 @@ class Library:
             return {"path": "", "parent": None, "dirs": [p for p in starts if os.path.isdir(p)]}
         path = os.path.realpath(path)
         try:
-            dirs = sorted((e.path for e in os.scandir(path)  # os.path.isdir: zwalnia GIL (patrz browse)
+            dirs = sorted((e.path for e in os.scandir(path)  # os.path.isdir releases the GIL (see browse)
                            if not e.name.startswith(".") and os.path.isdir(e.path)), key=str.lower)
         except OSError as e:
             raise LibError(T(f"can't open: {e.strerror}", f"nie da się otworzyć: {e.strerror}"), 403)

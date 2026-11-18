@@ -1,8 +1,8 @@
-"""Format pliku a Chromecast (ffprobe) i wersja „dla Chromecasta” (ffmpeg, sprzętowo, gdy maszyna umie).
+"""File format vs Chromecast (ffprobe) and the "for Chromecast" version (ffmpeg, hardware-accelerated when the machine can).
 
-Wersja leży obok filmu w ukrytym katalogu `.mp-cast/<nazwa>.cast.mp4` (ten sam dysk co film, Biblioteka jej nie
-pokazuje). Obraz H.264 8-bit zostaje bez zmian, inaczej koder sprzętowy (NVENC, VAAPI, VideoToolbox, V4L2) albo x264.
-Dźwięk AAC/MP3 zostaje, reszta → AAC stereo. Jedna konwersja naraz.
+The version lives next to the movie in a hidden directory `.mp-cast/<name>.cast.mp4` (same disk as the movie, the
+Library does not show it). H.264 8-bit video is left as is, otherwise a hardware encoder (NVENC, VAAPI, VideoToolbox,
+V4L2) or x264 is used. AAC/MP3 audio is kept, everything else → AAC stereo. One conversion at a time.
 """
 import json
 import os
@@ -17,7 +17,7 @@ from mp_i18n import T, bind
 
 CAST_DIR = ".mp-cast"
 
-# koder → (etykieta dla ludzi, argumenty przed -i, filtr obrazu, argumenty kodera)
+# encoder → (human-readable label, arguments before -i, video filter, encoder arguments)
 _SCALE = "scale=-2:'min(1080,ih)'"
 ENCODERS = [
     ("h264_nvenc", "NVIDIA NVENC", [], f"{_SCALE},format=yuv420p",
@@ -28,17 +28,25 @@ ENCODERS = [
     ("h264_vaapi", "VAAPI (Intel/AMD)", ["-vaapi_device", "/dev/dri/renderD128"], f"{_SCALE},format=nv12,hwupload",
      ["-qp", "23", "-profile:v", "high"]),
     ("h264_qsv", "Intel Quick Sync", [], f"{_SCALE},format=nv12", ["-global_quality", "23", "-profile:v", "high"]),
-    ("h264_v4l2m2m", "V4L2 (np. Raspberry Pi)", [], f"{_SCALE},format=yuv420p", ["-b:v", "8M"]),
-    ("libx264", "procesor (x264)", [], f"{_SCALE},format=yuv420p",
+    ("h264_v4l2m2m", "V4L2 (e.g. Raspberry Pi)", [], f"{_SCALE},format=yuv420p", ["-b:v", "8M"]),
+    ("libx264", "CPU (x264)", [], f"{_SCALE},format=yuv420p",
      ["-preset", "veryfast", "-crf", "21", "-profile:v", "high"]),
 ]
+
+LABEL_PL = {"h264_v4l2m2m": "V4L2 (np. Raspberry Pi)", "libx264": "procesor (x264)"}
+
+
+def encoder_label(enc):
+    """Encoder label in the language of the current request."""
+    return T(enc["label"], LABEL_PL.get(enc["encoder"], enc["label"])) if enc else None
+
 
 _hw = None
 _hw_lock = threading.Lock()
 
 
 def _test_encoder(name, pre, vf, args):
-    """Czy koder naprawdę działa (lista z `ffmpeg -encoders` mówi tylko, z czym ffmpeg zbudowano)."""
+    """Whether the encoder really works (the `ffmpeg -encoders` list only says what ffmpeg was built with)."""
     if name == "h264_vaapi" and not os.path.exists("/dev/dri/renderD128"):
         return False
     cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", *pre,
@@ -51,7 +59,7 @@ def _test_encoder(name, pre, vf, args):
 
 
 def detect_encoder():
-    """Najlepszy działający koder H.264: {"encoder", "label", "hw"} albo None (brak ffmpeg). Liczone raz."""
+    """Best working H.264 encoder: {"encoder", "label", "hw"} or None (no ffmpeg). Computed once."""
     global _hw
     with _hw_lock:
         if _hw is not None:
@@ -74,7 +82,7 @@ def detect_encoder():
 
 
 def encoder_info():
-    """Bez czekania: wynik wykrywania albo None, gdy jeszcze trwa (startuje w tle przy starcie agenta)."""
+    """Without waiting: the detection result, or None while it is still running (starts in the background at agent start)."""
     return (_hw or None) if _hw is not None else None
 
 
@@ -83,7 +91,7 @@ _probe_lock = threading.Lock()
 
 
 def probe(path):
-    """Strumienie pliku (ffprobe), z pamięcią po (mtime, size)."""
+    """Streams of the file (ffprobe), cached by (mtime, size)."""
     st = os.stat(path)
     key = (path, st.st_mtime, st.st_size)
     with _probe_lock:
@@ -116,7 +124,7 @@ def probe(path):
 
 
 def pick_audio(info, langs=("pol", "pl")):
-    """Ścieżka dźwięku dla wersji Chromecasta: polska, potem domyślna, potem pierwsza."""
+    """Audio track for the Chromecast version: Polish, then the default one, then the first."""
     a = info["audio"]
     return (next((x for x in a if (x["lang"] or "") in langs), None) or next((x for x in a if x["default"]), None)
             or (a[0] if a else None))
@@ -127,7 +135,7 @@ AUDIO_MAYBE = {"ac3", "eac3", "opus", "vorbis", "flac"}
 
 
 def cast_check(info):
-    """Ocena dla Chromecasta: "ok" | "maybe" | "no", powody i co by robiła konwersja."""
+    """Chromecast verdict: "ok" | "maybe" | "no", the reasons and what a conversion would do."""
     v, a = info["video"], pick_audio(info)
     problems, verdict = [], "ok"
     v_copy = bool(v and v["codec"] == "h264" and v["bits"] == 8 and (v["height"] or 0) <= 1088)
@@ -161,7 +169,7 @@ def cast_check(info):
 
 
 def cast_check_for(info, prof):
-    """Ocena dla konkretnego Chromecasta (profil z mp_renderers.CAST_PROFILES): "ok" | "maybe" | "no" i powody."""
+    """Verdict for a specific Chromecast (profile from mp_renderers.CAST_PROFILES): "ok" | "maybe" | "no" and the reasons."""
     v, a = info["video"], pick_audio(info)
     problems, verdict = [], "ok"
 
@@ -213,18 +221,18 @@ def remove_variant(full):
         except OSError:
             pass
     try:
-        os.rmdir(os.path.dirname(p))  # tylko gdy pusty
+        os.rmdir(os.path.dirname(p))  # only when empty
     except OSError:
         pass
 
 
 class Converter:
-    """Kolejka konwersji „dla Chromecasta”, po jednej naraz. Stan w pamięci (po restarcie agenta: od nowa)."""
+    """Queue of "for Chromecast" conversions, one at a time. State is in memory (after an agent restart: starts over)."""
 
     def __init__(self, log):
         self.log = log
         self.lock = threading.Lock()
-        self.jobs = {}  # pełna ścieżka → stan
+        self.jobs = {}  # full path → state
         self.queue = []
         self.proc = None
         self.worker = None
@@ -280,11 +288,11 @@ class Converter:
                 j.update(state="running", started=time.time())
             try:
                 self._run(full, j)
-            except Exception as e:  # noqa: BLE001 — błąd jednej konwersji nie zatrzymuje kolejki
+            except Exception as e:  # noqa: BLE001 — a failure of one conversion does not stop the queue
                 with self.lock:
                     if j["state"] != "cancelled":
                         j.update(state="error", error=str(e)[-300:])
-                self.log("konwersja nieudana:", os.path.basename(full), e)
+                self.log("conversion failed:", os.path.basename(full), e)
 
     def _cmd(self, full, out, info, chk, enc):
         name, label, pre, vf, args = next(e for e in ENCODERS if e[0] == enc["encoder"])
@@ -312,9 +320,9 @@ class Converter:
         out = variant_path(full)
         os.makedirs(os.path.dirname(out), exist_ok=True)
         part = out + ".part"
-        j["encoder"] = T("no video encoding", "bez kodowania obrazu") if chk["video_copy"] else enc["label"]
+        j["encoder"] = T("no video encoding", "bez kodowania obrazu") if chk["video_copy"] else encoder_label(enc)
         cmd = self._cmd(full, part, info, chk, enc)
-        self.log("konwersja:", os.path.basename(full), "→", j["encoder"])
+        self.log("conversion:", os.path.basename(full), "→", j["encoder"])
         dur = info["duration"] or 0
         with self.lock:
             self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -323,7 +331,7 @@ class Converter:
             k, _, v = line.strip().partition("=")
             if k == "out_time_us" and v.isdigit() and dur:
                 j["pct"] = min(99.9, int(v) / 1e6 / dur * 100)
-                # na końcu +faststart przepisuje cały plik (indeks na początek): na dysku USB to i minuta przy 99%
+                # at the end +faststart rewrites the whole file (index moved to the front): on a USB disk that can take a minute at 99%
                 if j["pct"] >= 99.5:
                     j["finishing"] = True
             elif k == "progress" and v == "end":
@@ -350,4 +358,4 @@ class Converter:
             raise RuntimeError((err or T(f"ffmpeg exited with code {p.returncode}", f"ffmpeg zakończył się kodem {p.returncode}")).strip())
         os.replace(part, out)
         j.update(state="done", pct=100)
-        self.log("konwersja gotowa:", os.path.basename(out), f"{time.time() - j['started']:.0f}s")
+        self.log("conversion done:", os.path.basename(out), f"{time.time() - j['started']:.0f}s")

@@ -1,10 +1,10 @@
 #!/bin/bash
-# MagneticPlayer: instalacja z innego serwera albo z telefonu w tej sieci (kod jednorazowy). Szablon: adres i tryb
-# podstawia serwer (mp_install.py) albo telefon (InstallShare.kt).
+# MagneticPlayer: install from another server or from a phone on this network (one-time code). Template: the
+# address and mode are filled in by the server (mp_install.py) or the phone (InstallShare.kt).
 mp_main() {
   set -euo pipefail
   local url="@URL@"
-  # komunikaty: po polsku, gdy system ma polski (LC_ALL / LC_MESSAGES / LANG), inaczej po angielsku
+  # messages: Polish when the system locale is Polish (LC_ALL / LC_MESSAGES / LANG), English otherwise
   local pl=
   case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in pl*) pl=1 ;; esac
   say() { if [ -n "$pl" ]; then echo "$2"; else echo "$1"; fi; }

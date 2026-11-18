@@ -6,43 +6,43 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** Stan zdalnego odtwarzacza, wspólny dla Pilota i powiadomienia. Czasy w sekundach. */
+/** State of the remote player, shared by Remote and the notification. Times in seconds. */
 data class RemoteState(
     val title: String, val pos: Double, val dur: Double, val playing: Boolean, val buffering: Boolean = false,
-    /** 0–100; null = głośności nie da się sterować (np. Chromecast ze stałą głośnością) */
+    /** 0–100; null = volume cannot be controlled (e.g. a Chromecast with fixed volume) */
     val volume: Int? = null, val muted: Boolean = false,
-    /** dopisek pod tytułem: „film z telefonu”, „telewizor nie odpowiada”… */
+    /** note under the title: "video from the phone", "TV not responding"… */
     val note: String? = null,
-    /** cudza aplikacja na Chromecaście (Spotify, YouTube…); „Zakończ” ją zamyka, więc najpierw pytamy */
+    /** someone else's app on a Chromecast (Spotify, YouTube…); "Stop" closes it, so we ask first */
     val app: String? = null,
-    /** pełny stan mpv (ścieżki, napisy, pełny ekran) */
+    /** full mpv state (tracks, subtitles, full screen) */
     val mpv: JSONObject? = null,
     val at: Long = System.currentTimeMillis(),
 ) {
-    /** pozycja teraz: między odczytami płynie sama */
+    /** position now: it advances on its own between reads */
     fun posNow() = if (playing && !buffering) (pos + (System.currentTimeMillis() - at) / 1000.0).let { if (dur > 0) it.coerceAtMost(dur) else it } else pos
 }
 
 /**
- * Zdalny odtwarzacz: mpv na ekranie serwera, Chromecast albo telewizor DLNA. Ten sam Pilot i to samo powiadomienie
- * dla wszystkich. Metody wolno wołać z dowolnego wątku (każda sama wybiera wątek).
+ * Remote player: mpv on the server's screen, Chromecast or DLNA TV. The same Remote and the same notification
+ * for everyone. Methods may be called from any thread (each picks its own thread).
  */
 interface Remote {
     val kind: String  // "screen" | "cast" | "dlna"
     val name: String
-    /** null = nic nie gra (albo urządzenie zniknęło) */
+    /** null = nothing is playing (or the device disappeared) */
     suspend fun status(): RemoteState?
     suspend fun setPlaying(play: Boolean)
     suspend fun seekTo(sec: Double)
     suspend fun seekBy(sec: Double)
-    /** krok głośności (±1 = przycisk telefonu) */
+    /** volume step (±1 = phone button) */
     suspend fun volumeBy(steps: Int)
     suspend fun setVolume(v: Int)
     suspend fun setMuted(m: Boolean)
     suspend fun stop()
 }
 
-/** mpv na serwerze z ekranem (polecenia /api/player/cmd). */
+/** mpv on a server with a screen (commands /api/player/cmd). */
 class MpvRemote(private val ctx: Context, val api: Api) : Remote {
     override val kind = "screen"
     override val name: String get() = api.srv.name
@@ -53,7 +53,7 @@ class MpvRemote(private val ctx: Context, val api: Api) : Remote {
         if (!o.optBoolean("running")) return@withContext null.also { last = null }
         fun d(k: String) = o.optDouble(k, 0.0).takeIf { !it.isNaN() } ?: 0.0
         val pos = d("pos")
-        // film otwarty z innego serwera (URL z biletem): mpv nie zapamięta pozycji, więc zapisuje ją telefon
+        // video opened from another server (URL with a ticket): mpv will not remember the position, so the phone saves it
         val ref = Servers.screenRef(ctx, api.srv.key)
         if (ref != null && o.optString("title") == ref.title && pos > 5) Settings(ctx).setPosition(ref.key(), (pos * 1000).toLong())
         RemoteState(o.optString("title"), pos, d("duration"), !o.optBoolean("paused"),
@@ -76,7 +76,7 @@ class MpvRemote(private val ctx: Context, val api: Api) : Remote {
     suspend fun raw(c: String, v: Any? = null) = cmd(c, v)
 }
 
-/** Chromecast (sesja Cast SDK; ta sama robi powiadomienie i głośność poza apką). */
+/** Chromecast (Cast SDK session; the same one drives the notification and volume outside the app). */
 class CastRemote(private val ctx: Context) : Remote {
     override val kind = "cast"
     override val name: String get() = Cast.deviceName(ctx) ?: "Chromecast"
@@ -98,8 +98,8 @@ class CastRemote(private val ctx: Context) : Remote {
 }
 
 /**
- * Chromecast, na którym gra coś, czego ten telefon nie puścił przez Cast SDK (strona, inny telefon, YouTube…):
- * stan i polecenia idą przez agenta, który słucha wszystkich Chromecastów w sieci (/api/cast/status).
+ * A Chromecast playing something this phone did not start through the Cast SDK (web page, another phone, YouTube…):
+ * state and commands go through the agent, which listens to all Chromecasts on the network (/api/cast/status).
  */
 class AgentCastRemote(private val ctx: Context, val api: Api, private val device: String) : Remote {
     override val kind = "cast"
@@ -135,7 +135,7 @@ class AgentCastRemote(private val ctx: Context, val api: Api, private val device
     override suspend fun stop() = cmd("stop")
 }
 
-/** Chromecast widziany bezpośrednio z telefonu ([CastNet], protokół Cast v2): działa bez agenta i bez Cast SDK. */
+/** A Chromecast seen directly from the phone ([CastNet], Cast v2 protocol): works without the agent and without the Cast SDK. */
 class DirectCastRemote(private val id: String) : Remote {
     override val kind = "cast"
     override val name: String get() = CastNet.devices[id]?.name ?: "Chromecast"
@@ -159,7 +159,7 @@ class DirectCastRemote(private val id: String) : Remote {
     override suspend fun stop() = CastNet.stopApp(id)
 }
 
-/** Telewizor DLNA, do którego wysłaliśmy film ([Dlna.current]). */
+/** A DLNA TV we sent a video to ([Dlna.current]). */
 class DlnaRemote(private val ctx: Context) : Remote {
     override val kind = "dlna"
     override val name: String get() = Dlna.current?.name ?: ctx.getString(R.string.main_tv)
@@ -167,7 +167,7 @@ class DlnaRemote(private val ctx: Context) : Remote {
 
     override suspend fun status(): RemoteState? = withContext(Dispatchers.IO) {
         if (Dlna.current == null) return@withContext null
-        // Pilot i powiadomienie pytają naraz: świeży odczyt bierzemy z pamięci
+        // Remote and the notification ask at the same time: a fresh read is taken from memory
         val s = Dlna.last?.takeIf { System.currentTimeMillis() - it.at < 1200 } ?: Dlna.status(ctx) ?: return@withContext null
         val note = when (s.state) {
             null -> ctx.getString(R.string.main_note_tv_not_responding); "TRANSITIONING" -> ctx.getString(R.string.main_loading)
@@ -184,14 +184,14 @@ class DlnaRemote(private val ctx: Context) : Remote {
     override suspend fun stop() = io { Dlna.stop() }
 }
 
-/** Czym steruje Pilot: ostatnio wysłany film albo wybór na Pilocie; bez wyboru Chromecast → DLNA → ekran. */
+/** What Remote controls: the last video sent or a choice made in Remote; without a choice Chromecast → DLNA → screen. */
 object Pilot {
     /** "screen" | "cast" | "dlna" */
     val focus = mutableStateOf<String?>(null)
-    /** Chromecast grający według agenta (klucz serwera, wpis z /api/cast/status), gdy telefon nie ma sesji Cast SDK */
+    /** Chromecast playing according to the agent (server key, entry from /api/cast/status), when the phone has no Cast SDK session */
     val agentCast = mutableStateOf<Pair<String, JSONObject>?>(null)
 
-    /** Pyta agentów (najpierw ekran, potem wybrany serwer, potem reszta), czy na jakimś Chromecaście coś gra. */
+    /** Asks the agents (first the screen, then the selected server, then the rest) whether anything is playing on any Chromecast. */
     suspend fun refreshAgentCast(ctx: Context) = withContext(Dispatchers.IO) {
         val keys = (listOfNotNull(Servers.screenKey(ctx), Servers.activeKey(ctx)) + Servers.all(ctx).map { it.key }).distinct()
         for (k in keys) {
@@ -203,7 +203,7 @@ object Pilot {
         agentCast.value = null
     }
 
-    /** Dostępne cele w kolejności domyślnej. Wątek UI (sesja Cast). */
+    /** Available targets in default order. UI thread (Cast session). */
     fun available(ctx: Context): List<String> = buildList {
         if (Cast.session(ctx) != null || CastNet.playing().isNotEmpty() || agentCast.value != null) add("cast")
         if (Dlna.current != null || Announce.foreignDlna() != null) add("dlna")
@@ -217,7 +217,7 @@ object Pilot {
             else CastNet.playing().firstOrNull()?.let { DirectCastRemote(it.device.id) }
             ?: agentCast.value?.let { (k, o) -> Api.of(ctx, k)?.let { AgentCastRemote(ctx.applicationContext, it, o.optString("id")) } }
         "dlna" -> {
-            // film na telewizorze puścił inny pilot (rozgłoszenie): przejmujemy sterowanie
+            // a video on the TV was started by another remote (announcement): we take over control
             if (Dlna.current == null) Announce.foreignDlna()?.let { Dlna.adopt(it) }
             DlnaRemote(ctx.applicationContext)
         }
@@ -225,12 +225,12 @@ object Pilot {
         else -> null
     }
 
-    /** Nazwa Chromecasta do chipa: z sesji Cast SDK albo od agenta. */
+    /** Chromecast name for the chip: from the Cast SDK session or from the agent. */
     fun castName(ctx: Context): String = Cast.deviceName(ctx) ?: CastNet.playing().firstOrNull()?.device?.name ?: agentCast.value?.second?.optString("device")?.takeIf { it.isNotBlank() } ?: "Chromecast"
 
     /**
-     * Wysłano film na `kind`: Pilot pokazuje ten cel, a cel dostaje powiadomienie (Chromecast z Cast SDK ma swoje
-     * i wtedy nasze samo znika).
+     * Video sent to `kind`: Remote shows that target, and the target gets a notification (a Chromecast with the Cast SDK has its own
+     * and then ours disappears by itself).
      */
     fun started(ctx: Context, kind: String) {
         focus.value = kind

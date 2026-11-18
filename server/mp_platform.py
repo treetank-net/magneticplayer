@@ -1,8 +1,8 @@
-"""Wszystko, co zależy od systemu: sesja graficzna, ekran blokady, usypianie, sieć, Wake-on-LAN.
+"""Everything that depends on the operating system: graphical session, lock screen, suspend, network, Wake-on-LAN.
 
-Pełnie Linux (systemd, logind, X11/Wayland). Windows (instalacja lekka, install.ps1): ekran przez mpv, adres IP;
-bez odblokowania, usypiania i Wake-on-LAN. Czego system nie umie, funkcje zwracają „nie umiem” (False/None),
-a agent nie zgłasza tego w /api/info, więc apka chowa odpowiednie przyciski.
+Full support on Linux (systemd, logind, X11/Wayland). Windows (light install, install.ps1): screen via mpv, IP address;
+no unlocking, suspending or Wake-on-LAN. Whatever the system cannot do, the functions answer "can't" (False/None),
+and the agent does not advertise it in /api/info, so the app hides the corresponding buttons.
 """
 import os
 import re
@@ -26,7 +26,7 @@ def _log(*a):
 
 
 def _session_env():
-    """Środowisko procesu sesji graficznej tego użytkownika albo None, gdy nikt nie jest zalogowany graficznie."""
+    """Environment of this user's graphical session process, or None when nobody is logged in graphically."""
     if not LINUX:
         return None
     uid = os.getuid()
@@ -45,7 +45,7 @@ def _session_env():
 
 
 def graphical_env():
-    """Zmienne środowiskowe sesji graficznej użytkownika (usługa systemd ich nie ma)."""
+    """Environment variables of the user's graphical session (a systemd service does not have them)."""
     env = dict(os.environ)
     penv = _session_env() or {}
     for k in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_SESSION_TYPE"):
@@ -58,29 +58,29 @@ def graphical_env():
 
 
 def mpv_path():
-    """mpv z PATH albo obok agenta (Windows: install.ps1 kładzie go w <agent>/mpv/mpv.exe)."""
+    """mpv from PATH or next to the agent (Windows: install.ps1 puts it in <agent>/mpv/mpv.exe)."""
     local = os.path.join(HERE, "mpv", "mpv.exe" if WINDOWS else "mpv")
     return shutil.which("mpv") or (local if os.path.isfile(local) else None)
 
 
 def has_display():
-    """Czy da się tu wyświetlić film: mpv + zalogowana sesja graficzna (albo jawnie ustawiony DISPLAY)."""
+    """Whether a video can be shown here: mpv + a logged-in graphical session (or an explicitly set DISPLAY)."""
     if not mpv_path():
         return False
-    if WINDOWS:  # agent startuje z logowaniem użytkownika (HKCU\...\Run), więc działa w jego sesji
+    if WINDOWS:  # the agent starts at user login (HKCU\...\Run), so it runs in the user's session
         return True
     return _session_env() is not None or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
-# ---------------------------------------------------------------- ekran
+# ---------------------------------------------------------------- screen
 
 def can_unlock():
     return LINUX and bool(shutil.which("loginctl"))
 
 
 def unlock_screen():
-    """Zdejmuje ekran blokady przez logind (sygnał Unlock); cinnamon-screensaver, GNOME i KDE go słuchają.
-    polkit pozwala na to właścicielowi sesji bez hasła. Zwraca True, gdy się udało."""
+    """Removes the lock screen via logind (Unlock signal); cinnamon-screensaver, GNOME and KDE listen to it.
+    polkit lets the session owner do this without a password. Returns True on success."""
     if not can_unlock():
         return False
     try:
@@ -98,29 +98,29 @@ def unlock_screen():
 
 
 def wake_screen(unlock):
-    """Budzi monitor i (gdy `unlock`) zdejmuje ekran blokady."""
+    """Wakes the monitor and (when `unlock`) removes the lock screen."""
     if not LINUX:
         return False
     env = graphical_env()
-    # bez "cinnamon-screensaver-command --deactivate": w Cinnamon 5.4 wywala wygaszacz (brak grab_helper)
-    # i wisi; ekran blokady zdejmuje unlock_screen() przez logind
+    # no "cinnamon-screensaver-command --deactivate": in Cinnamon 5.4 it crashes the screensaver (no grab_helper)
+    # and hangs; the lock screen is removed by unlock_screen() via logind
     for cmd in (["xset", "dpms", "force", "on"], ["xdg-screensaver", "reset"]):
         if shutil.which(cmd[0]):
             try:
                 subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
             except (OSError, subprocess.SubprocessError) as e:
-                _log("ekran:", cmd[0], e)
+                _log("screen:", cmd[0], e)
     return unlock_screen() if unlock else False
 
 
-# ---------------------------------------------------------------- usypianie i zasilanie
+# ---------------------------------------------------------------- suspend and power
 
 def can_power():
     return LINUX and bool(shutil.which("systemctl"))
 
 
 def inhibit_sleep(why):
-    """Proces trzymający blokadę usypiania (zabicie go zdejmuje blokadę) albo None."""
+    """A process holding the sleep inhibitor (killing it releases the lock), or None."""
     if not (LINUX and shutil.which("systemd-inhibit")):
         return None
     proc = subprocess.Popen(
@@ -128,27 +128,27 @@ def inhibit_sleep(why):
          "sleep", "infinity"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     time.sleep(0.5)
     if proc.poll() is not None:
-        _log("systemd-inhibit odmówił:", proc.stderr.read().decode().strip(), "(brak reguły polkit? uruchom install.sh)")
+        _log("systemd-inhibit refused:", proc.stderr.read().decode().strip(), "(missing polkit rule? run install.sh)")
         return None
     return proc
 
 
 def power(action):
-    """`suspend` albo `poweroff`. Zwraca komunikat błędu albo None."""
+    """`suspend` or `poweroff`. Returns an error message or None."""
     if not can_power():
-        return "ten system nie umie tego z agenta"
+        return T("this system can't do that from the agent", "ten system nie umie tego z agenta")
     r = subprocess.run(["systemctl", action], capture_output=True, text=True, timeout=15)
     if r.returncode != 0:
         return f"{r.stderr.strip()} " + T("(polkit rule from install.sh?)", "(reguła polkit z install.sh?)")
     return None
 
 
-# ---------------------------------------------------------------- sieć i Wake-on-LAN
+# ---------------------------------------------------------------- network and Wake-on-LAN
 
 def net_info(client_ip):
-    """Karta, przez którą widać klienta: nazwa, IP, MAC, ustawienie Wake-on (ethtool/nmcli), czy Wi-Fi."""
+    """The interface through which the client is reachable: name, IP, MAC, Wake-on setting (ethtool/nmcli), whether Wi-Fi."""
     dev, src = None, None
-    if not LINUX:  # bez nazwy karty i MAC: adres z trasy do klienta (connect na UDP nic nie wysyła)
+    if not LINUX:  # no interface name or MAC: the address from the route to the client (a UDP connect sends nothing)
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect((client_ip if client_ip and not client_ip.startswith("127.") else "192.168.0.1", 9))
@@ -156,7 +156,7 @@ def net_info(client_ip):
         except OSError:
             pass
         return {"iface": None, "ip": src, "mac": None, "wake_on": None, "wireless": False}
-    # klient na tym samym komputerze (lo): karta z trasy domyślnej
+    # client on the same computer (lo): the interface of the default route
     for target in (client_ip, "1.1.1.1"):
         try:
             out = subprocess.run(["ip", "-o", "route", "get", target], capture_output=True, text=True).stdout
@@ -180,7 +180,7 @@ def net_info(client_ip):
         out = subprocess.run(["ethtool", dev], capture_output=True, text=True).stdout
         m = re.search(r"^\s*Wake-on:\s*(\S+)", out, re.M)
         wol = m.group(1) if m else None
-    if dev and not wol and shutil.which("nmcli"):  # ethtool bez roota nie czyta Wake-on
+    if dev and not wol and shutil.which("nmcli"):  # ethtool without root cannot read Wake-on
         out = subprocess.run(["nmcli", "-t", "-f", "GENERAL.CONNECTION", "device", "show", dev],
                              capture_output=True, text=True).stdout
         con = out.strip().partition(":")[2]
@@ -193,8 +193,8 @@ def net_info(client_ip):
 
 
 def wake_info(net):
-    """Czy da się obudzić ten komputer przez sieć: confidence `maybe` albo `no` (z powodem). `yes` wie tylko apka,
-    gdy raz się udało; BIOS może mieć WoL wyłączony, czego stąd nie widać."""
+    """Whether this computer can be woken over the network: confidence `maybe` or `no` (with a reason). Only the app
+    knows `yes`, once a wake has worked; the BIOS may have WoL disabled, which is not visible from here."""
     mac = net.get("mac")
     if not mac or mac == "00:00:00:00:00:00":
         return {"method": None, "mac": None, "confidence": "no", "reason": T("network card unknown", "nie znam karty sieciowej")}
@@ -212,7 +212,7 @@ def wake_info(net):
 
 
 def send_wol(mac, ip=None):
-    """Magic packet na broadcast ogólny i /24 adresu `ip`, porty 9 i 7."""
+    """Magic packet to the general broadcast and the /24 of address `ip`, ports 9 and 7."""
     b = bytes(int(x, 16) for x in re.split(r"[:-]", mac))
     if len(b) != 6:
         raise ValueError(T(f"invalid MAC: {mac}", f"zły MAC: {mac}"))

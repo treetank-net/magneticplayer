@@ -49,7 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-/** Otwierana przez kliknięty magnet link albo „Udostępnij”: budzi serwer i wysyła mu magneta (kilka serwerów z torrentami: wybór). */
+/** Opened by a tapped magnet link or "Share": wakes the server and sends it the magnet (with several torrent servers: a choice). */
 class MagnetActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,7 +83,7 @@ private enum class Phase { Working, Done, Error }
 private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val targets = remember { Servers.all(ctx).filter { it.hasTorrent && !it.isGuest } }
-    // zapamiętany wybór, jedyny serwer z torrentami albo null = zapytaj
+    // remembered choice, the only torrent server, or null = ask
     var target by remember {
         mutableStateOf(Servers.magnetKey(ctx)?.takeIf { k -> targets.any { it.key == k } } ?: targets.singleOrNull()?.key)
     }
@@ -118,7 +118,7 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
         phase = Phase.Working
         try {
             api.ensureAwake { status = it }
-            // agent 1.5+: rozpoznanie i katalog z tagiem, żeby pobierało się od razu we właściwe miejsce
+            // agent 1.5+: recognition and a tagged directory, so the download goes straight to the right place
             if (guess == null && (Servers.get(ctx, api.srv.key) ?: api.srv).libraryGuess) {
                 status = ctx.getString(R.string.media_magnet_guessing)
                 guess = withContext(Dispatchers.IO) { runCatching { api.guess(magnet) }.getOrNull() }
@@ -239,7 +239,7 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
 private fun targetLabel(t: DlTarget) = t.name + (if (t.sub.isNotEmpty()) " / ${t.sub}" else "") +
     " · " + stringResource(R.string.media_magnet_free, humanBytes(t.free))
 
-/** Zmiana katalogu pobierania po rozpoznaniu (agent przenosi torrent i zapamiętuje wybór dla tego tytułu). */
+/** Changing the download directory after recognition (the agent moves the torrent and remembers the choice for this title). */
 @Composable
 private fun TargetPicker(targets: List<DlTarget>, current: DlTarget?, onClose: () -> Unit, onPick: (DlTarget) -> Unit) {
     androidx.compose.material3.AlertDialog(
@@ -265,7 +265,7 @@ private fun TargetPicker(targets: List<DlTarget>, current: DlTarget?, onClose: (
     )
 }
 
-/** Kilka serwerów pobiera torrenty: na który wysłać (z „zapamiętaj”, do zmiany w Ustawieniach). */
+/** Several servers download torrents: which to send to (with "remember", changeable in Settings). */
 @Composable
 private fun MagnetTargetDialog(targets: List<Server>, name: String, onClose: () -> Unit, onPick: (String, Boolean) -> Unit) {
     var keep by remember { mutableStateOf(false) }

@@ -12,7 +12,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Wersja apki opublikowana na komputerze (phone/tools/publish.sh). */
+/** App version published on the computer (phone/tools/publish.sh). */
 data class AppUpdate(val code: Long, val name: String)
 
 object Updater {
@@ -21,7 +21,7 @@ object Updater {
         return if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
     }
 
-    /** Wysyła własny plik apki (WhatsApp, Messenger, mail…) — do instalacji na kolejnym telefonie. */
+    /** Sends the app's own file (WhatsApp, Messenger, mail…) for installing on another phone. */
     fun shareApk(ctx: Context) {
         val dir = java.io.File(ctx.cacheDir, "share").apply { mkdirs() }
         val name = runCatching {
@@ -36,14 +36,14 @@ object Updater {
         ctx.startActivity(Intent.createChooser(send, ctx.getString(R.string.srv_share_apk_chooser)))
     }
 
-    /** Nowsza wersja na komputerze albo null. */
+    /** Newer version on the computer, or null. */
     fun check(ctx: Context, api: Api): AppUpdate? = runCatching {
         val j = JSONObject(api.get("/api/app/version"))
         val code = j.optLong("version_code")
         if (code > installedCode(ctx)) AppUpdate(code, j.optString("version_name")) else null
     }.getOrNull()
 
-    /** Pobiera apkę z komputera prosto do sesji PackageInstallera; system pokaże „Zaktualizować?”. */
+    /** Downloads the app from the computer straight into a PackageInstaller session; the system shows "Update?". */
     fun downloadAndInstall(ctx: Context, api: Api, onProgress: (Int) -> Unit) {
         val c = URL(api.base + "/app/MagneticPlayer.apk").openConnection() as HttpURLConnection
         c.connectTimeout = 8000
@@ -90,7 +90,7 @@ object Updater {
     }
 }
 
-/** Wynik instalacji: system prosi o potwierdzenie (i za 1. razem o zgodę na instalowanie z tej apki). */
+/** Install result: the system asks for confirmation (and, the first time, for permission to install from this app). */
 class UpdateReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
@@ -99,7 +99,7 @@ class UpdateReceiver : BroadcastReceiver() {
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
                 ctx.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
-            PackageInstaller.STATUS_SUCCESS -> Unit // apka się przeładuje
+            PackageInstaller.STATUS_SUCCESS -> Unit // the app reloads
             else -> Toast.makeText(ctx, ctx.getString(R.string.srv_update_failed,
                 intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "?"), Toast.LENGTH_LONG).show()
         }

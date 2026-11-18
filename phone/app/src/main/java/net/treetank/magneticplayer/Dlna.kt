@@ -50,30 +50,30 @@ import java.net.SocketTimeoutException
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 
-/** Telewizor DLNA (UPnP MediaRenderer): adresy sterowania AVTransport i (jeśli jest) RenderingControl. */
+/** DLNA TV (UPnP MediaRenderer): AVTransport and (if present) RenderingControl control addresses. */
 data class DlnaTarget(
     val id: String, val name: String, val model: String, val avTransport: String, val rendering: String?,
     val samsung: Boolean,
 )
 
 /**
- * Telewizory DLNA (Samsung, LG, Sony…): SSDP M-SEARCH w LAN-ie i sterowanie SOAP (SetAVTransportURI, Play, Seek…).
- * Samsung bierze napisy SRT z `sec:CaptionInfoEx` w metadanych i z nagłówka `CaptionInfo.sec` odpowiedzi z filmem
- * (podaje go agent przy `&cap=`, a telefon sam przy udostępnianiu).
+ * DLNA TVs (Samsung, LG, Sony…): SSDP M-SEARCH on the LAN and SOAP control (SetAVTransportURI, Play, Seek…).
+ * Samsung takes SRT subtitles from `sec:CaptionInfoEx` in the metadata and from the `CaptionInfo.sec` header of the video response
+ * (the agent provides it with `&cap=`, and the phone itself when sharing).
  */
 object Dlna {
     private const val AVT = "urn:schemas-upnp-org:service:AVTransport:1"
     private const val RC = "urn:schemas-upnp-org:service:RenderingControl:1"
 
-    /** ostatnio znalezione (do listy w odtwarzaczu, gdzie nie ma czasu na szukanie) */
+    /** last found (for the list in the player, where there is no time to search) */
     val found = ConcurrentHashMap<String, DlnaTarget>()
 
-    /** co gra przez nas: telewizor, film, od kiedy */
+    /** what plays through us: TV, video, since when */
     @Volatile var current: DlnaTarget? = null
     @Volatile private var currentRef: MediaRef? = null
     @Volatile var currentTitle: String? = null
 
-    /** Szuka telewizorów przez `timeoutMs`. Poza wątkiem UI. */
+    /** Looks for TVs for `timeoutMs`. Off the UI thread. */
     fun discover(timeoutMs: Int = 3000): List<DlnaTarget> {
         val locations = linkedSetOf<String>()
         runCatching {
@@ -165,7 +165,7 @@ object Dlna {
         }
     }
 
-    /** Przewijanie po bajtach, bez konwersji, strumień (jak w agencie). */
+    /** Seeking by bytes, no conversion, a stream (as in the agent). */
     const val DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 
     private fun mime(name: String) = when (name.substringAfterLast('.', "").lowercase()) {
@@ -184,13 +184,13 @@ object Dlna {
     private fun secs(t: String?): Double = t?.split(':')?.takeIf { it.size == 3 }
         ?.let { (h, m, s) -> (h.toDoubleOrNull() ?: 0.0) * 3600 + (m.toDoubleOrNull() ?: 0.0) * 60 + (s.toDoubleOrNull() ?: 0.0) } ?: 0.0
 
-    /** Wysyła film i włącza go od `startSec`. Poza wątkiem UI. */
+    /** Sends the video and starts it from `startSec`. Off the UI thread. */
     fun play(ctx: Context, t: DlnaTarget, ref: MediaRef, src: MediaSrc, startSec: Double) {
         res = ctx.applicationContext
         val srt = src.subs.firstOrNull { it.name.endsWith(".srt", ignoreCase = true) }
-        // agent poda CaptionInfo.sec, gdy wie, które napisy (telefon wybiera pierwsze sam)
+        // the agent provides CaptionInfo.sec when it knows which subtitles (the phone picks the first itself)
         val url = if (srt != null && t.samsung && !src.viaPhone) "${src.url}&cap=${android.net.Uri.encode(srt.name)}" else src.url
-        // Samsung nie zna video/x-matroska; bilet z serwera podaje typ tylko dla wersji dla Chromecasta
+        // Samsung does not know video/x-matroska; the ticket from the server gives the type only for the "for Chromecast" version
         val type = (src.contentType ?: mime(ref.title)).let { if (it == "video/x-matroska") "video/x-mkv" else it }
         val didl = buildString {
             append("""<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" """)
@@ -209,17 +209,17 @@ object Dlna {
         soap(t.avTransport, AVT, "Play", "InstanceID" to "0", "Speed" to "1")
         current = t; currentRef = ref; currentTitle = src.title
         remember(ctx, t, ref, src.title, url)
-        Pilot.started(ctx, "dlna")  // Pilot na telewizor, powiadomienie i głośność poza apką
+        Pilot.started(ctx, "dlna")  // Remote for the TV, notification and volume outside the app
         if (startSec > 5) {
-            // przewinąć da się dopiero, gdy telewizor zacznie grać; tuż po starcie Samsung potrafi Seek zignorować,
-            // więc sprawdzamy pozycję i próbujemy jeszcze raz
+            // seeking is only possible once the TV starts playing; right after the start Samsung may ignore Seek,
+            // so we check the position and try again
             val end = System.currentTimeMillis() + 20_000
             while (System.currentTimeMillis() < end && state(t) != "PLAYING") Thread.sleep(700)
             for (attempt in 1..4) {
                 runCatching { soap(t.avTransport, AVT, "Seek", "InstanceID" to "0", "Unit" to "REL_TIME", "Target" to hms(startSec)) }
                 Thread.sleep(2_000)
                 val pos = runCatching { secs(tag(soap(t.avTransport, AVT, "GetPositionInfo", "InstanceID" to "0"), "RelTime")) }.getOrNull()
-                android.util.Log.i("MpDlna", "start: seek do ${hms(startSec)}, próba $attempt, pozycja ${pos?.let(::hms)}")
+                android.util.Log.i("MpDlna", "start: seek to ${hms(startSec)}, attempt $attempt, position ${pos?.let(::hms)}")
                 if (pos != null && pos >= startSec - 15) break
             }
         }
@@ -236,11 +236,11 @@ object Dlna {
         val playing get() = state == "PLAYING"
     }
 
-    /** ostatni odczyt (dla sesji multimedialnej i karty, żeby nie pytać telewizora dwa razy) */
+    /** last read (for the media session and the card, so we do not ask the TV twice) */
     @Volatile var last: Status? = null
         private set
 
-    /** Stan bieżącego telewizora (zapisuje też pozycję filmu). Poza wątkiem UI. */
+    /** State of the current TV (also saves the video position). Off the UI thread. */
     fun status(ctx: Context): Status? {
         res = ctx.applicationContext
         val t = current ?: return null
@@ -280,7 +280,7 @@ object Dlna {
         soap(t.avTransport, AVT, "Seek", "InstanceID" to "0", "Unit" to "REL_TIME", "Target" to hms(seekTarget))
     }
 
-    /** Głośność 0–100; false, gdy telewizor nie daje nią sterować. */
+    /** Volume 0–100; false if the TV cannot be controlled this way. */
     fun setVolume(v: Int): Boolean {
         val rc = current?.rendering ?: return false
         val x = v.coerceIn(0, 100)
@@ -295,7 +295,7 @@ object Dlna {
         last = last?.copy(muted = m)
     }
 
-    // kolejne kliknięcia w ciągu kilku sekund liczymy od poprzedniego celu: telewizor podaje pozycję z opóźnieniem
+    // consecutive taps within a few seconds count from the previous target: the TV reports the position with a delay
     private var seekTarget = 0.0
     private var seekAt = 0L
 
@@ -322,11 +322,11 @@ object Dlna {
         return true
     }
 
-    /** Jak sterować tym telewizorem bez nas (do rozgłoszenia: [Announce]). */
+    /** How to control this TV without us (for announcing: [Announce]). */
     fun ctl(t: DlnaTarget): org.json.JSONObject = org.json.JSONObject().put("avt", t.avTransport).put("rc", t.rendering ?: "")
         .put("samsung", t.samsung).put("model", t.model)
 
-    /** Przejmuje sterowanie telewizorem, na który film puścił inny pilot (z rozgłoszenia). */
+    /** Takes over control of a TV that another remote started a video on (from an announcement). */
     fun adopt(e: Announce.Entry) {
         val c = e.ctl
         val t = DlnaTarget(e.targetId, e.targetName, c.optString("model"), c.getString("avt"),
@@ -335,10 +335,10 @@ object Dlna {
         found[t.id] = t
     }
 
-    /** Stany, w których na telewizorze nic nie gra. */
+    /** States in which nothing is playing on the TV. */
     val IDLE_STATES = setOf("STOPPED", "NO_MEDIA_PRESENT")
 
-    /** Zapomina telewizor bez wysyłania mu Stop (film się skończył albo zatrzymał go ktoś inny). */
+    /** Forgets the TV without sending it Stop (the video ended or someone else stopped it). */
     fun forget() {
         val t = current ?: return
         Announce.stopped("dlna", t.id)
@@ -354,10 +354,10 @@ object Dlna {
         app?.let { prefs(it).edit().remove("dlna_session").apply() }
     }
 
-    // Co wysłaliśmy, zapisane na dysku: po ubiciu apki (np. aktualizacja) telewizor gra dalej, a Pilot ma go odzyskać.
+    // What we sent, saved on disk: after the app is killed (e.g. an update) the TV keeps playing, and Remote should recover it.
     @Volatile private var app: Context? = null
 
-    /** do komunikatów w języku telefonu (pierwszy play/status/restore); bez niego angielski zapas */
+    /** for messages in the phone's language (first play/status/restore); without it, English fallback */
     @Volatile private var res: Context? = null
     private fun tr(id: Int, fallback: String, vararg args: Any): String = res?.getString(id, *args) ?: fallback.format(*args)
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("dlna", Context.MODE_PRIVATE)
@@ -369,7 +369,7 @@ object Dlna {
         prefs(ctx).edit().putString("dlna_session", o.toString()).apply()
     }
 
-    /** Przy starcie apki: jeśli telewizor dalej gra nasz film, wracamy do sterowania nim. Poza wątkiem UI. */
+    /** At app start: if the TV is still playing our video, we resume controlling it. Off the UI thread. */
     fun restore(ctx: Context): Boolean {
         res = ctx.applicationContext
         if (current != null) return true
@@ -381,7 +381,7 @@ object Dlna {
         val uri = runCatching { tag(soap(t.avTransport, AVT, "GetMediaInfo", "InstanceID" to "0"), "CurrentURI") }.getOrNull()?.let(::unescape)
         val ours = uri == null || uri == o.getString("url")
         if (st !in setOf("PLAYING", "PAUSED_PLAYBACK", "TRANSITIONING") || !ours) {
-            if (st != null) prefs(ctx).edit().remove("dlna_session").apply()  // telewizor odpowiada, ale gra co innego
+            if (st != null) prefs(ctx).edit().remove("dlna_session").apply()  // the TV responds, but plays something else
             return false
         }
         current = t; currentTitle = o.optString("title")

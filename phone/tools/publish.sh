@@ -1,9 +1,9 @@
 #!/bin/bash
-# Publikuje przetestowaną apkę na komputerze (agent MagneticPlayer) — inne telefony dostaną „Jest aktualizacja”.
-# Użycie: phone/tools/publish.sh [--release vTAG|latest] [host-ssh]   (domyślnie jmpc)
-# Telefony mają apkę z kluczem treetank (wydania z CI), więc aktualizacją może być tylko APK z wydania:
-# --release pobiera MagneticPlayer.apk i version.json z GitHuba do out/. Bez niego publikuje out/ (np. własny build
-# na komputerze z apką podpisaną tym samym kluczem co out/).
+# Publishes a tested app on the computer (MagneticPlayer agent); other phones will get "Update available".
+# Usage: phone/tools/publish.sh [--release vTAG|latest] [ssh-host]   (default jmpc)
+# Phones have the app signed with the treetank key (CI releases), so only an APK from a release can serve as an update:
+# --release downloads MagneticPlayer.apk and version.json from GitHub into out/. Without it, it publishes out/ (e.g. your own build
+# on a computer with an app signed with the same key as out/).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ "${1:-}" = --release ]; then
@@ -21,6 +21,6 @@ cat out/version.json; echo
 ssh "$HOST" 'mkdir -p ~/.local/share/magneticplayer/apk'
 scp -q out/MagneticPlayer.apk "$HOST":.local/share/magneticplayer/apk/MagneticPlayer.apk.new
 scp -q out/version.json "$HOST":.local/share/magneticplayer/apk/version.json.new
-# apka najpierw, wersja na końcu — telefon nie zobaczy nowej wersji, zanim plik będzie kompletny
+# app first, version last: the phone won't see the new version before the file is complete
 ssh "$HOST" 'cd ~/.local/share/magneticplayer/apk && mv -f MagneticPlayer.apk.new MagneticPlayer.apk && mv -f version.json.new version.json'
 echo "opublikowano na $HOST"

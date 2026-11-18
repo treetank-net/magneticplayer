@@ -8,13 +8,13 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Lokalny klucz serwera sprzed obsługi wielu serwerów: jego filmy mają klucze bez prefiksu (bufor, pozycje). */
+/** Local server key from before multi-server support: its videos have keys without a prefix (buffer, positions). */
 const val LEGACY = "legacy"
 
 /**
- * Sparowany serwer. `key` to lokalny identyfikator: [LEGACY] dla serwera z czasów jednego komputera, a dla
- * kolejnych id serwera z /api/info. `uid` to id zgłoszone przez serwer (sprawdzane przy połączeniu, żeby pod
- * starym adresem nie wysłać tokenu innemu serwerowi). `info` to ostatnia odpowiedź /api/info (możliwości).
+ * A paired server. `key` is a local identifier: [LEGACY] for the server from the single-computer days, and for
+ * later ones the server id from /api/info. `uid` is the id reported by the server (checked on connecting, so that
+ * a token is not sent to a different server at the old address). `info` is the last /api/info response (capabilities).
  */
 data class Server(
     val key: String,
@@ -24,50 +24,50 @@ data class Server(
     val port: Int,
     val token: String,
     val mac: String = "",
-    /** budzenie przez sieć już raz zadziałało */
+    /** Wake-on-LAN has already worked once */
     val wakeOk: Boolean = false,
     val info: JSONObject? = null,
 ) {
     private val features get() = info?.optJSONObject("features")
     private val power get() = info?.optJSONObject("power")
 
-    /** Bez /api/info w nowym formacie (stary agent) zakładamy wszystko, jak dawniej na jmpc. */
+    /** Without /api/info in the new format (old agent) we assume everything, as before on jmpc. */
     val knowsFeatures get() = features != null
     val hasTorrent get() = features?.let { !it.isNull("torrent") && it.optString("torrent").isNotEmpty() } ?: true
     val hasLibrary get() = features?.optBoolean("library", true) ?: true
-    /** Tagi, widoczność i wykluczenia katalogów biblioteki (agent 1.4+). */
+    /** Tags, visibility and exclusions of library directories (agent 1.4+). */
     val libraryTags get() = features?.optBoolean("library_tags", false) ?: false
-    /** Agent 1.5+: rozpoznaje magnet i pobiera od razu do katalogu biblioteki (`/api/library/guess`). */
+    /** Agent 1.5+: recognizes a magnet and downloads straight into a library directory (`/api/library/guess`). */
     val libraryGuess get() = features?.optBoolean("library_guess", false) ?: false
-    /** Umie zainstalować agenta na kolejnym komputerze (`/api/install/code`, agent 1.3+). */
+    /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */
     val canInstall get() = features?.optBoolean("install", false) ?: false
     val canAccessRequests get() = features?.optBoolean("access_requests", false) ?: false
-    /** Ten telefon jest tu gościem (agent 1.3+): bez zapraszania, torrentów, ustawień i zasilania. */
+    /** This phone is a guest here (agent 1.3+): no inviting, torrents, settings or power control. */
     val isGuest get() = info?.optString("role") == "guest"
     val hasFiles get() = hasTorrent || hasLibrary
     val hasPlayer get() = features?.optBoolean("player", true) ?: true
     val canUnlock get() = features?.optBoolean("unlock", true) ?: true
     val canWakeOthers get() = features?.optBoolean("wake_others", false) ?: false
     val canSuspend get() = power?.optBoolean("suspend", true) ?: true
-    /** Skąd serwer bierze apkę dla telefonów (agent 1.3.1+): "auto" (wydania z GitHuba), "manual" (publish.sh), null. */
+    /** Where the server gets the app for phones (agent 1.3.1+): "auto" (GitHub releases), "manual" (publish.sh), null. */
     val appUpdates: String? get() = features?.optString("app_updates")?.ifEmpty { null }
     val canPoweroff get() = power?.optBoolean("poweroff", true) ?: true
-    /** koder do wersji „dla Chromecasta” (np. „NVIDIA NVENC”, „procesor (x264)”), null = brak ffmpeg albo stary agent */
+    /** encoder for the "for Chromecast" version (e.g. "NVIDIA NVENC", "CPU (x264)"), null = no ffmpeg or an old agent */
     val transcode: String? get() = features?.takeIf { !it.isNull("transcode") }?.optString("transcode")?.ifEmpty { null }
     val transcodeHw get() = features?.optBoolean("transcode_hw") ?: false
 
-    /** yes (sprawdzone przez apkę) / maybe / no */
+    /** yes (checked by the app) / maybe / no */
     val wakeConfidence: String get() = when {
         wakeOk -> "yes"
         power == null -> if (info?.optBoolean("wireless") == true) "no" else "maybe"
         else -> power!!.optJSONObject("wake")?.optString("confidence", "maybe") ?: "maybe"
     }
-    /** Powód z serwera (jego tekst, bez tłumaczenia), a bez niego nasz opis. */
+    /** Reason from the server (its text, untranslated), and without it our description. */
     fun wakeReason(ctx: Context): String = power?.optJSONObject("wake")?.optString("reason").orEmpty().ifEmpty {
         ctx.getString(if (info?.optBoolean("wireless") == true) R.string.srv_reason_wifi else R.string.srv_reason_unknown)
     }
 
-    /** „pliki + ekran” w języku telefonu. */
+    /** "files + screen" in the phone's language. */
     fun rolesText(ctx: Context): String = listOfNotNull(
         if (hasFiles) ctx.getString(R.string.srv_role_files) else null,
         if (hasPlayer) ctx.getString(R.string.srv_role_screen) else null,
@@ -84,12 +84,12 @@ data class Server(
             o.optBoolean("wake_ok"), o.optJSONObject("info"),
         )
 
-        /** Gdy nie ma żadnego serwera: Api rzuca „Dodaj serwer”. */
+        /** When there is no server: Api throws "Add a server". */
         val NONE = Server("", null, "", "", 8765, "")
     }
 }
 
-/** Lista serwerów w SharedPreferences (JSON). Wybór źródła filmów i ekranu (Pilot) osobno. */
+/** List of servers in SharedPreferences (JSON). The choice of video source and of screen (Remote) is separate. */
 object Servers {
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences("magneticplayer", Context.MODE_PRIVATE)
 
@@ -98,7 +98,7 @@ object Servers {
         val p = prefs(ctx)
         val raw = p.getString("servers", null)
         if (raw == null) {
-            // migracja z jednego komputera: dotychczasowy host/token staje się serwerem LEGACY (klucze bez prefiksu)
+            // migration from a single computer: the existing host/token becomes the LEGACY server (keys without a prefix)
             val host = p.getString("host", "").orEmpty()
             val token = p.getString("token", "").orEmpty()
             val list = if (host.isNotBlank() && token.isNotBlank())
@@ -145,10 +145,10 @@ object Servers {
     fun active(ctx: Context): Server = get(ctx, activeKey(ctx))
         ?: all(ctx).let { l -> l.firstOrNull { it.hasFiles } ?: l.firstOrNull() } ?: Server.NONE
 
-    /** Serwery, na których da się odtwarzać (mpv). */
+    /** Servers where playback is possible (mpv). */
     fun screens(ctx: Context) = all(ctx).filter { it.hasPlayer }
 
-    /** Ekran Pilota: ostatnio wybrany, a bez wyboru wybrany serwer plików (jeśli ma ekran) albo pierwszy ekran. */
+    /** Remote screen: the last chosen one, and without a choice the selected file server (if it has a screen) or the first screen. */
     fun screenKey(ctx: Context): String? {
         val screens = screens(ctx)
         prefs(ctx).getString("screen_server", null)?.takeIf { k -> screens.any { it.key == k } }?.let { return it }
@@ -157,11 +157,11 @@ object Servers {
 
     fun setScreen(ctx: Context, key: String) = prefs(ctx).edit().putString("screen_server", key).apply()
 
-    /** Domyślny serwer dla magnet linków („zapamiętaj” w oknie wyboru). */
+    /** Default server for magnet links ("remember" in the picker window). */
     fun magnetKey(ctx: Context): String? = prefs(ctx).getString("magnet_server", null)
     fun setMagnetKey(ctx: Context, key: String?) = prefs(ctx).edit().putString("magnet_server", key).apply()
 
-    /** Ostatnio otwarty na ekranie film (pozycję zapisuje Pilot, bo przy URL z biletem mpv jej nie zapamięta). */
+    /** Video last opened on a screen (Remote saves the position, because with a ticket URL mpv will not remember it). */
     fun setScreenRef(ctx: Context, screen: String, ref: MediaRef?) =
         prefs(ctx).edit().putString("screen_ref:$screen", ref?.encode()).apply()
     fun screenRef(ctx: Context, screen: String): MediaRef? =
@@ -169,18 +169,18 @@ object Servers {
 
     fun prefixOf(key: String) = if (key == LEGACY || key.isEmpty()) "" else "$key:"
 
-    /** Nazwa tego telefonu na liście urządzeń serwera. */
+    /** Name of this phone in the server's device list. */
     fun deviceName(): String = listOfNotNull(Build.MANUFACTURER?.replaceFirstChar { it.uppercase() }, Build.MODEL)
         .distinct().joinToString(" ").ifBlank { "Android" }
 }
 
-/** Zaproszenie do serwera: adres + kod parowania (albo stary token). */
+/** Invitation to a server: address + pairing code (or an old token). */
 data class PairTarget(val host: String, val port: Int, val code: String?, val token: String?, val mac: String?)
 
 object Pairing {
     /**
-     * magneticplayer://pair?host=…&port=…&code=… (jeden serwer), …?s=host:port:code&s=… (kilka naraz)
-     * albo stary format z `token=`.
+     * magneticplayer://pair?host=…&port=…&code=… (one server), …?s=host:port:code&s=… (several at once)
+     * or the old format with `token=`.
      */
     fun parse(uri: Uri): List<PairTarget> {
         if (uri.scheme != "magneticplayer" || uri.host != "pair") return emptyList()
@@ -208,8 +208,8 @@ object Pairing {
     fun looksLikeCode(v: String) = Regex("^[A-Za-z0-9]{3}-?[A-Za-z0-9]{3}$").matches(v.trim())
 
     /**
-     * Paruje z serwerem (kod → token, albo stary token), pobiera /api/info i zapisuje serwer. Ten sam serwer
-     * (po id) jest aktualizowany, nie dublowany, więc zachowuje klucze filmów. Zwraca zapisany serwer.
+     * Pairs with a server (code → token, or an old token), fetches /api/info and saves the server. The same server
+     * (by id) is updated, not duplicated, so it keeps the video keys. Returns the saved server.
      */
     fun pair(ctx: Context, t: PairTarget): Server {
         val token = t.token ?: run {
@@ -220,8 +220,8 @@ object Pairing {
         val probe = Server("", null, t.host, t.host, t.port, token, t.mac.orEmpty())
         val info = Api(Settings(ctx), probe).infoRaw()
         val uid = info.optString("id").takeIf { it.isNotEmpty() }
-        // ten sam serwer po id; inaczej wpis z tym samym adresem i portem (stary token, albo agent zainstalowany od nowa
-        // z nowym id: pod jednym host:port słucha tylko jeden agent, więc stary wpis jest martwy i nie dublujemy go)
+        // the same server by id; otherwise an entry with the same address and port (old token, or an agent installed from scratch
+        // with a new id: only one agent listens on a given host:port, so the old entry is dead and we do not duplicate it)
         val existing = Servers.all(ctx).firstOrNull { uid != null && it.uid == uid }
             ?: Servers.all(ctx).firstOrNull { it.host == t.host && it.port == t.port }
         val key = existing?.key ?: uid ?: ("s" + System.currentTimeMillis().toString(36))
@@ -229,7 +229,7 @@ object Pairing {
         val s = Server(key, uid, existing?.name?.takeIf { it != existing.host } ?: info.optString("name").ifEmpty { t.host },
             t.host, t.port, token, mac ?: existing?.mac ?: t.mac.orEmpty(), existing?.wakeOk ?: false, info)
         Servers.put(ctx, s)
-        // inne wpisy pod tym samym adresem to martwe kopie (np. po reinstalacji sprzed tej poprawki)
+        // other entries under the same address are dead copies (e.g. after a reinstall from before this fix)
         Servers.all(ctx).filter { it.key != key && it.host == t.host && it.port == t.port }.forEach { Servers.remove(ctx, it.key) }
         if (Servers.all(ctx).size == 1 || Servers.activeKey(ctx) == null) Servers.setActive(ctx, s.key)
         return s

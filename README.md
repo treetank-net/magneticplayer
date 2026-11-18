@@ -71,19 +71,17 @@ development key) and `adb install -r phone/out/MagneticPlayer.apk`.
 
 Designed for a trusted home network: plain HTTP on the LAN, a per-device bearer token after pairing, guests limited
 to an allow-list of endpoints, access requests only from private addresses. Don't expose the agent's port to the
-internet. Details (in Polish): [docs/siec-i-bezpieczenstwo.md](docs/siec-i-bezpieczenstwo.md).
+internet. Details: [docs/network-and-security.md](docs/network-and-security.md).
 
 ## Documentation
 
-The documentation is in Polish for now:
-
-- [docs/instalacja-i-utrzymanie.md](docs/instalacja-i-utrzymanie.md): installation (also via SSH, from another server,
+- [docs/install-and-maintenance.md](docs/install-and-maintenance.md): installation (also via SSH, from another server,
   from the phone, Windows), updates, releases, signing keys, logs, troubleshooting.
-- [docs/architektura.md](docs/architektura.md): components, flows (magnet, playback, subtitles, sleep), files and
+- [docs/architecture.md](docs/architecture.md): components, flows (magnet, playback, subtitles, sleep), files and
   configuration.
 - [docs/api.md](docs/api.md): the agent's HTTP API.
-- [docs/siec-i-bezpieczenstwo.md](docs/siec-i-bezpieczenstwo.md): the LAN-only assumption, tokens, roles.
-- [docs/urzadzenia.md](docs/urzadzenia.md): Chromecast, DLNA and Samsung TVs: discovery and codec profiles.
+- [docs/network-and-security.md](docs/network-and-security.md): the LAN-only assumption, tokens, roles.
+- [docs/devices.md](docs/devices.md): Chromecast, DLNA and Samsung TVs: discovery and codec profiles.
 
 ## Releases
 

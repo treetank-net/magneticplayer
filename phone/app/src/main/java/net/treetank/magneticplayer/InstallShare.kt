@@ -12,16 +12,16 @@ import java.security.SecureRandom
 import kotlin.concurrent.thread
 
 /**
- * Telefon jako źródło instalatora (bez innego serwera; zależności nowy komputer pobiera z internetu): na czas okna „Zainstaluj na innym komputerze”
- * mały serwer HTTP w Wi-Fi z tymi samymi trasami co agent (mp_install.py):
- * `GET /i/<kod>` (join.sh), `/i/<kod>/ps` (join.ps1), `/i/<kod>/bundle.tar.gz` (agent zaszyty w APK przez
- * build-apk.sh albo nowszy z wydania, AgentBundle) i `POST /api/install/join` (nowy agent zgłasza się z kodem parowania, telefon paruje się sam).
- * Kod jednorazowy; po zgłoszeniu albo zamknięciu okna serwer znika.
+ * The phone as an installer source (no other server needed; the new computer downloads dependencies from the internet): for the duration of the "Install on another computer" window
+ * a small HTTP server on Wi-Fi with the same routes as the agent (mp_install.py):
+ * `GET /i/<code>` (join.sh), `/i/<code>/ps` (join.ps1), `/i/<code>/bundle.tar.gz` (agent embedded in the APK by
+ * build-apk.sh or a newer one from a release, AgentBundle) and `POST /api/install/join` (the new agent reports in with a pairing code, the phone pairs itself).
+ * One-time code; after the report or closing the window the server goes away.
  */
 object InstallShare {
     data class Joined(val host: String, val port: Int, val id: String, val name: String, val pairCode: String)
 
-    private const val ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  // jak CODE_ALPHABET w mp_devices.py
+    private const val ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  // as CODE_ALPHABET in mp_devices.py
     @Volatile private var server: ServerSocket? = null
     @Volatile var code = ""; private set
     @Volatile var state = "waiting"; private set  // waiting | downloading | joined
@@ -30,7 +30,7 @@ object InstallShare {
 
     fun available(ctx: Context) = AgentBundle.available(ctx)
 
-    /** Uruchamia serwer i zwraca adres `http://<telefon>:<port>/i/<kod>`; null, gdy telefon nie jest w Wi-Fi. */
+    /** Starts the server and returns the address `http://<phone>:<port>/i/<code>`; null if the phone is not on Wi-Fi. */
     @Synchronized
     fun start(ctx: Context): String? {
         stop()
@@ -59,7 +59,7 @@ object InstallShare {
 
     private fun normalize(c: String?) = (c ?: "").uppercase().filter { it in ALPHABET }
 
-    /** Zły kod: limit 10 prób na minutę (jak w agencie). */
+    /** Wrong code: limit of 10 attempts per minute (as in the agent). */
     private fun codeOk(c: String?): Boolean {
         val now = System.currentTimeMillis()
         synchronized(fails) {
@@ -80,7 +80,7 @@ object InstallShare {
         val path = target.substringBefore('?')
         val query = target.substringAfter('?', "")
         val out = s.getOutputStream()
-        // Jak agent (mp_i18n): polski dla Accept-Language „pl…”, inaczej angielski.
+        // Like the agent (mp_i18n): Polish for Accept-Language "pl…", otherwise English.
         val pl = headers["accept-language"]?.trim()?.lowercase()?.startsWith("pl") == true
         fun tr(en: String, pl_: String) = if (pl) pl_ else en
         val badCode = tr("wrong, used or expired install code", "zły, zużyty albo przeterminowany kod instalacji")
@@ -91,7 +91,7 @@ object InstallShare {
                 val url = "http://${s.localAddress.hostAddress}:${s.localPort}/i/$code"
                 when (m.groupValues[2]) {
                     "/bundle.tar.gz" -> send(out, 200, "application/gzip",
-                        AgentBundle.open(ctx, "agent.tgz").use { it.readBytes() })  // ~80 KB; z APK albo nowsza z wydania
+                        AgentBundle.open(ctx, "agent.tgz").use { it.readBytes() })  // ~80 KB; from the APK or a newer one from a release
                     "/ps" -> send(out, 200, "text/plain; charset=utf-8",
                         template(ctx, "join.ps1").replace("@URL@", url).toByteArray())
                     else -> {
@@ -120,7 +120,7 @@ object InstallShare {
         }
     }
 
-    /** Szablon z APK bez BOM (join.ps1 ma BOM dla PowerShella uruchamianego z pliku). */
+    /** Template from the APK without a BOM (join.ps1 has a BOM for PowerShell run from a file). */
     private fun template(ctx: Context, name: String) =
         AgentBundle.open(ctx, name).use { String(it.readBytes(), Charsets.UTF_8) }.removePrefix("﻿")
 

@@ -63,7 +63,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Opcje Google Cast (wskazane w manifeście): odbiornik domyślny Google'a, sterowanie w powiadomieniu. */
+/** Google Cast options (referenced in the manifest): Google's default receiver, control in the notification. */
 class MpCastOptions : OptionsProvider {
     override fun getCastOptions(context: Context): CastOptions {
         val notif = NotificationOptions.Builder().setTargetActivityClassName(CastControlsActivity::class.java.name).build()
@@ -81,26 +81,26 @@ class MpCastOptions : OptionsProvider {
     override fun getAdditionalSessionProviders(context: Context): List<SessionProvider>? = null
 }
 
-/** Pełny ekran sterowania Chromecastem z Cast SDK (suwak, napisy, pauza). */
+/** Full-screen Chromecast controls from the Cast SDK (slider, subtitles, pause). */
 class CastControlsActivity : ExpandedControllerActivity()
 
-/** Chromecast widoczny w sieci (trasa MediaRoutera). */
+/** A Chromecast visible on the network (MediaRouter route). */
 data class CastTarget(val id: String, val name: String, val desc: String)
 
-/** Napisy dla ekranu: oryginał (mpv) i WebVTT (Chromecast czyta tylko VTT). */
+/** Subtitles for the screen: the original (mpv) and WebVTT (Chromecast reads only VTT). */
 data class SubSrc(val name: String, val lang: String, val url: String, val vtt: String?)
 
-/** Skąd ekran bierze film: z serwera (bilet) albo z telefonu ([PhoneShare]). */
+/** Where the screen gets the video: from the server (ticket) or from the phone ([PhoneShare]). */
 data class MediaSrc(val url: String, val title: String, val subs: List<SubSrc>, val viaPhone: Boolean,
-                    /** typ wymuszony przez serwer (wersja „dla Chromecasta” = video/mp4) */
+                    /** type forced by the server ("for Chromecast" version = video/mp4) */
                     val contentType: String? = null)
 
-/** Chromecasty: wykrywanie (MediaRouter), odtwarzanie przez odbiornik domyślny, stan dla Pilota. Wszystko w wątku UI. */
+/** Chromecasts: discovery (MediaRouter), playback through the default receiver, state for Remote. All on the UI thread. */
 object Cast {
     private var cc: CastContext? = null
     private var tried = false
     private var app: Context? = null
-    /** co ostatnio wysłaliśmy: do zapisu pozycji i sprzątania udostępniania z telefonu */
+    /** what we sent last: for saving the position and cleaning up phone sharing */
     private var current: MediaRef? = null
     private var currentUrl: String? = null
     private var viaPhone = false
@@ -112,7 +112,7 @@ object Cast {
             .build()
     }
 
-    /** CastContext albo null (brak usług Google Play). */
+    /** CastContext or null (no Google Play services). */
     fun context(ctx: Context): CastContext? {
         if (cc == null && !tried) {
             tried = true
@@ -134,7 +134,7 @@ object Cast {
             .map { CastTarget(it.id, it.name, it.description ?: "") }
     }
 
-    /** Szuka Chromecastów, dopóki nie wywołasz zwróconej funkcji. */
+    /** Looks for Chromecasts until you call the returned function. */
     fun discover(ctx: Context, onChange: (List<CastTarget>) -> Unit): () -> Unit {
         if (context(ctx) == null) return {}
         val router = MediaRouter.getInstance(ctx)
@@ -148,18 +148,18 @@ object Cast {
         return { router.removeCallback(cb) }
     }
 
-    /** Typ dla odbiornika: MKV podajemy jako MP4 (odtwarzacz i tak rozpoznaje kontener po zawartości). */
+    /** Type for the receiver: MKV is passed as MP4 (the player detects the container from the content anyway). */
     private fun contentType(name: String) = when (name.substringAfterLast('.', "").lowercase()) {
         "webm" -> "video/webm"
         else -> "video/mp4"
     }
 
-    /** Łączy z Chromecastem `target` (jeśli trzeba) i odtwarza `src` od `startMs`. */
+    /** Connects to the Chromecast `target` (if needed) and plays `src` from `startMs`. */
     suspend fun play(ctx: Context, target: CastTarget, ref: MediaRef, src: MediaSrc, startMs: Long) = withContext(Dispatchers.Main) {
         val c = context(ctx) ?: throw ApiException(ctx.getString(R.string.main_cast_no_play_services))
         val router = MediaRouter.getInstance(ctx)
-        // Po zamknięciu listy wyboru wyszukiwanie staje i Android od razu zapomina trasy, więc szukamy jeszcze raz
-        // (do 10 s) i trzymamy wyszukiwanie do końca łączenia.
+        // After the picker closes, discovery stops and Android immediately forgets the routes, so we search again
+        // (up to 10 s) and keep discovery running until connecting finishes.
         val keep = object : MediaRouter.Callback() {}
         router.addCallback(selector, keep, MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY or MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN)
         try { playOn(ctx, c, router, target, ref, src, startMs) } finally { router.removeCallback(keep) }
@@ -217,7 +217,7 @@ object Cast {
         if (!r.status.isSuccess) {
             throw ApiException(ctx.getString(R.string.main_cast_cant_play, route.name, r.status.statusCode))
         }
-        // poprzednie udostępnianie z telefonu już niepotrzebne
+        // the previous phone sharing is no longer needed
         if (viaPhone && !src.viaPhone) ShareService.stop(ctx)
         current = ref; currentUrl = src.url; viaPhone = src.viaPhone
         if (listening !== client) {
@@ -254,7 +254,7 @@ object Cast {
         start()
     }
 
-    /** Pozycja wysłanego filmu co 5 s (jak Pilot dla mpv), żeby telefon i ekrany wiedziały, gdzie skończono. */
+    /** Position of the sent video every 5 s (like Remote for mpv), so the phone and screens know where it stopped. */
     private val progress = RemoteMediaClient.ProgressListener { pos, dur ->
         val ref = current ?: return@ProgressListener
         val ctx = app ?: return@ProgressListener
@@ -262,7 +262,7 @@ object Cast {
         Settings(ctx).setPosition(ref.key(), if (pos > dur - 60_000) 0 else pos)
     }
 
-    /** Stan odbiornika do logu; błąd odtwarzania (np. nie dosięga adresu) pokazujemy, zamiast cicho stać. */
+    /** Receiver state for the log; a playback error (e.g. it cannot reach the address) is shown instead of silently stalling. */
     private val statusCb = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() {
             val st = listening?.mediaStatus ?: return
@@ -273,7 +273,7 @@ object Cast {
         }
     }
 
-    /** Koniec sesji: zwalniamy udostępnianie z telefonu, jeśli było dla Chromecasta. */
+    /** End of session: release phone sharing if it was for the Chromecast. */
     private val ended = object : SessionManagerListener<CastSession> {
         override fun onSessionEnded(s: CastSession, e: Int) {
             listening?.removeProgressListener(progress)
@@ -337,7 +337,7 @@ object Cast {
     fun volumeBy(ctx: Context, delta: Double): Boolean {
         val s = session(ctx) ?: return false
         if (fixedVolume(ctx)) {
-            // np. Chromecast z głośnością sterowaną przez telewizor (HDMI-CEC) albo „stała głośność” w Google Home
+            // e.g. a Chromecast with volume controlled by the TV (HDMI-CEC) or "fixed volume" in Google Home
             val now = System.currentTimeMillis()
             if (now - fixedHint > 4_000) {
                 fixedHint = now
@@ -352,7 +352,7 @@ object Cast {
     fun stop(ctx: Context) { context(ctx)?.sessionManager?.endCurrentSession(true) }
 }
 
-/** Chromecasty w sieci, na żywo, dopóki composable jest na ekranie. */
+/** Chromecasts on the network, live, as long as the composable is on screen. */
 @Composable
 fun rememberCastTargets(): List<CastTarget> {
     val ctx = LocalContext.current

@@ -1,14 +1,14 @@
-"""Prośba o dostęp: niesparowane urządzenie w sieci domowej prosi, domownik akceptuje na telefonie.
+"""Access requests: an unpaired device on the home network asks, a household member approves on the phone.
 
-Przebieg:
-1. Nowe urządzenie (strona albo apka bez tokenu): `POST /api/access/request {name}` → `{id, secret, expires_in}`.
-   Tylko z adresu prywatnego (LAN), najwyżej jedna oczekująca prośba na adres i kilka naraz.
-2. Domownik (apka sprawdza przy połączeniu z serwerem): `GET /api/access/requests` → lista oczekujących,
+Flow:
+1. New device (web page or app without a token): `POST /api/access/request {name}` → `{id, secret, expires_in}`.
+   Only from a private (LAN) address, at most one pending request per address and a few at a time.
+2. Household member (the app checks when it connects to the server): `GET /api/access/requests` → pending list,
    `POST /api/access/requests/<id> {action: approve|deny, role, days}`.
-3. Nowe urządzenie pyta `GET /api/access/request/<id>?secret=` i po akceptacji dostaje zwykły kod parowania
-   (z rolą i terminem), który wymienia na token przez `POST /api/pair`. Kod oddajemy raz.
+3. The new device polls `GET /api/access/request/<id>?secret=` and, once approved, receives an ordinary pairing code
+   (with role and expiry) that it exchanges for a token via `POST /api/pair`. The code is handed out once.
 
-Prośby żyją w pamięci (restart agenta je kasuje). Bez akceptacji domownika nic nie daje dostępu.
+Requests live in memory (an agent restart clears them). Nothing grants access without a household member's approval.
 """
 import ipaddress
 import secrets
@@ -43,13 +43,13 @@ class AccessRequests:
         self.log = log
         self.lock = threading.Lock()
         self.reqs = {}  # id → {secret, name, ip, at, exp, state, code, role, by}
-        self.recent = []  # czasy próśb (limit na minutę)
+        self.recent = []  # request times (per-minute limit)
 
     def _gc(self):
         now = time.time()
         self.reqs = {k: v for k, v in self.reqs.items() if v["exp"] > now}
 
-    # ---- nowe urządzenie (bez tokenu)
+    # ---- new device (no token)
 
     def request(self, name, ip):
         if not is_lan(ip):
@@ -64,7 +64,7 @@ class AccessRequests:
             self.recent = [t for t in self.recent if now - t < 60]
             if len(self.recent) >= 10:
                 raise AccessError(T("too many requests, wait a minute", "za dużo próśb, odczekaj minutę"), 429)
-            for k, v in list(self.reqs.items()):  # ponowna prośba z tego samego adresu zastępuje poprzednią
+            for k, v in list(self.reqs.items()):  # a repeated request from the same address replaces the previous one
                 if v["ip"] == ip and v["state"] == "pending":
                     del self.reqs[k]
             if sum(v["state"] == "pending" for v in self.reqs.values()) >= MAX_PENDING:
@@ -74,7 +74,7 @@ class AccessRequests:
             rid, secret = secrets.token_hex(8), secrets.token_urlsafe(16)
             self.reqs[rid] = {"secret": secret, "name": name, "ip": ip, "at": now, "exp": now + TTL,
                               "state": "pending", "code": None, "role": None}
-        self.log(f"prośba o dostęp: {name} ({ip})")
+        self.log(f"access request: {name} ({ip})")
         return {"id": rid, "secret": secret, "expires_in": TTL}
 
     def poll(self, rid, secret):
@@ -86,11 +86,11 @@ class AccessRequests:
             out = {"state": r["state"], "expires_in": int(r["exp"] - time.time())}
             if r["state"] == "approved" and r["code"]:
                 out.update(code=r["code"], role=r["role"])
-                r["code"] = None  # kod oddajemy raz
+                r["code"] = None  # the code is handed out once
                 r["state"] = "delivered"
             return out
 
-    # ---- domownik (z tokenem)
+    # ---- household member (with token)
 
     def pending(self):
         with self.lock:
@@ -120,6 +120,6 @@ class AccessRequests:
                 except (TypeError, ValueError) as e:
                     raise AccessError(str(e))
                 r.update(state="approved", code=code, role=role, by=by)
-                r["exp"] = time.time() + 120  # urządzenie pyta co kilka sekund, więc odbierze szybko
-        self.log(f"prośba o dostęp: {r['name']} → {action}" + (f" ({r['role']})" if action == "approve" else ""))
+                r["exp"] = time.time() + 120  # the device polls every few seconds, so it will pick it up quickly
+        self.log(f"access request: {r['name']} → {action}" + (f" ({r['role']})" if action == "approve" else ""))
         return {"ok": True}

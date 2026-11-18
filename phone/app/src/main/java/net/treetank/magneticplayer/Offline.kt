@@ -9,7 +9,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
-/** Kiedy kasować pobrany film: po obejrzeniu, po N dniach od pobrania albo tylko ręcznie. */
+/** When to delete a downloaded video: after watching, N days after the download, or only manually. */
 val RETENTION = listOf(
     "watched" to R.string.media_ret_watched,
     "days:2" to R.string.media_ret_2d,
@@ -20,14 +20,14 @@ val RETENTION = listOf(
 
 fun retentionLabel(ctx: Context, policy: String) = RETENTION.firstOrNull { it.first == policy }?.let { ctx.getString(it.second) } ?: policy
 
-/** Napisy zapisane na telefonie razem z pobranym filmem. */
+/** Subtitles saved on the phone together with a downloaded video. */
 data class LocalSub(val name: String, val lang: String, val ext: String, val file: String) {
     fun toSubFile() = SubFile(name, lang, ext)
 }
 
 /**
- * Film, który ma coś na dysku telefonu (MediaCache). `pinned` = pobrany przyciskiem „Pobierz na telefon”: nie znika
- * przez LRU, a kasuje się wg `policy`. Bez `pinned` to zwykły bufor z oglądania (kasowany po obejrzeniu albo 48 h).
+ * A video that has something on the phone's disk (MediaCache). `pinned` = downloaded with the "Download to phone" button: it does not disappear
+ * through LRU and is deleted per `policy`. Without `pinned` it is an ordinary watching buffer (deleted after watching or after 48 h).
  */
 data class OfflineItem(
     val key: String,
@@ -37,10 +37,10 @@ data class OfflineItem(
     val durationMs: Long = 0,
     val pinned: Boolean = false,
     val policy: String = "watched",
-    /** pobieranie ma trwać (DownloadService), false = wstrzymane albo przerwane */
+    /** download should continue (DownloadService), false = paused or interrupted */
     val want: Boolean = false,
     val complete: Boolean = false,
-    /** powód przerwania pobierania, do pokazania na liście */
+    /** reason the download was interrupted, to show in the list */
     val error: String? = null,
     val created: Long = System.currentTimeMillis(),
     val subs: List<LocalSub> = emptyList(),
@@ -68,7 +68,7 @@ data class OfflineItem(
     }
 }
 
-/** Lista filmów na telefonie (SharedPreferences "offline", jeden JSON na film). */
+/** List of videos on the phone (SharedPreferences "offline", one JSON per video). */
 object OfflineStore {
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences("offline", Context.MODE_PRIVATE)
 
@@ -90,7 +90,7 @@ object OfflineStore {
         get(ctx, key)?.let { put(ctx, f(it)) }
     }
 
-    /** Wpis dla filmu otwartego w odtwarzaczu (bufor z oglądania), jeśli jeszcze go nie ma. */
+    /** Entry for a video opened in the player (watching buffer), if there is none yet. */
     @Synchronized
     fun ensure(ctx: Context, ref: MediaRef) {
         if (get(ctx, ref.key()) == null) put(ctx, OfflineItem(ref.key(), ref, ref.title))
@@ -104,14 +104,14 @@ object OfflineStore {
 
     fun isPinned(ctx: Context, key: String) = get(ctx, key)?.pinned == true
 
-    /** Napisy pobranego filmu: filesDir/offline/<sha1 klucza>/ (cache systemu ich nie sprzątnie). */
+    /** Subtitles of a downloaded video: filesDir/offline/<sha1 of key>/ (the system cache will not clean them up). */
     fun subsDir(ctx: Context, key: String): File {
         val h = MessageDigest.getInstance("SHA-1").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
         return File(ctx.applicationContext.filesDir, "offline/$h")
     }
 }
 
-/** HEAD z Range od `from` na strumień z agenta: (rozmiar pliku, X-Ready-End, czyli do kiedy komputer ma pobrane). */
+/** HEAD with Range from `from` on the agent's stream: (file size, X-Ready-End, i.e. how far the computer has downloaded). */
 fun headProbe(url: String, from: Long): Pair<Long, Long> {
     val c = URL(url).openConnection() as HttpURLConnection
     try {
@@ -121,7 +121,7 @@ fun headProbe(url: String, from: Long): Pair<Long, Long> {
         c.acceptPhoneLanguage()
         if (c.responseCode !in 200..299) throw IOException("HTTP ${c.responseCode}")
         val size = c.getHeaderField("Content-Range")?.substringAfter('/')?.toLongOrNull()
-            ?: c.getHeaderField("Content-Length")?.toLongOrNull() ?: throw IOException("brak rozmiaru")
+            ?: c.getHeaderField("Content-Length")?.toLongOrNull() ?: throw IOException("missing size")
         val ready = c.getHeaderField("X-Ready-End")?.toLongOrNull() ?: size
         return size to ready
     } finally {
@@ -129,7 +129,7 @@ fun headProbe(url: String, from: Long): Pair<Long, Long> {
     }
 }
 
-/** Pobiera plik z URL do `f` (napisy). */
+/** Downloads a file from a URL to `f` (subtitles). */
 fun download(url: String, f: File) {
     val c = URL(url).openConnection() as HttpURLConnection
     try {

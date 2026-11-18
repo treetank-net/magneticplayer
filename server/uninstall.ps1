@@ -1,13 +1,13 @@
-﻿# Odinstalowanie agenta MagneticPlayer na Windows (jako zwykły użytkownik):
-#   powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\MagneticPlayer\uninstall.ps1"         # ustawienia zostają
-#   powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\MagneticPlayer\uninstall.ps1" -Purge  # także token i sparowane telefony
-# Filmów (także „Z telefonu”) ani Pythona nie rusza.
+﻿# Uninstall the MagneticPlayer agent on Windows (as a regular user):
+#   powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\MagneticPlayer\uninstall.ps1"         # settings are kept
+#   powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\MagneticPlayer\uninstall.ps1" -Purge  # also the token and paired phones
+# Does not touch videos (including "From phone") or Python.
 param([switch]$Purge)
 $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 $Dest = Join-Path $env:LOCALAPPDATA 'MagneticPlayer'
 $ConfDir = Join-Path $HOME '.config\magneticplayer'
-# komunikaty: po polsku, gdy Windows ma polski język interfejsu, inaczej po angielsku
+# messages: Polish when Windows has a Polish UI language, English otherwise
 $MpPl = (Get-UICulture).Name -like 'pl*'
 function Tr([string]$en, [string]$pl) { if ($MpPl) { $pl } else { $en } }
 function Say([string]$en, [string]$pl) { Write-Host (Tr $en $pl) }
@@ -24,7 +24,7 @@ if (Get-NetFirewallRule -DisplayName 'MagneticPlayer*' -ErrorAction SilentlyCont
   else { Say 'WARNING: remove the “MagneticPlayer” firewall rules as administrator' 'UWAGA: reguły zapory „MagneticPlayer” usuń jako administrator' }
 }
 
-# skrypt leży w $Dest: kasujemy z katalogu tymczasowego, gdy działa stamtąd
+# the script lives in $Dest: we delete from the temp directory when it runs from there
 Set-Location $env:TEMP
 Remove-Item -Recurse -Force $Dest -ErrorAction SilentlyContinue
 if (Test-Path $Dest) { Say "WARNING: not everything was removed from $Dest (file in use?)" "UWAGA: nie wszystko się usunęło z $Dest (plik w użyciu?)" }

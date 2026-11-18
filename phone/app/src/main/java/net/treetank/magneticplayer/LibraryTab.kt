@@ -66,7 +66,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Biblioteka: wybrane katalogi komputera, tylko filmy/muzyka. */
+/** Library: selected directories of the computer, only video/music. */
 @Composable
 fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
     var root by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -92,8 +92,8 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
     var removing by remember { mutableStateOf<LibRoot?>(null) }
     var editing by remember { mutableStateOf<LibRoot?>(null) }
     var reload by remember { mutableIntStateOf(0) }
-    // domownik na serwerze z tagami (agent 1.4+) widzi też katalogi ukryte przed tym telefonem, żeby je ustawić
-    // świeży wpis serwera: `api.srv` bywa sprzed odświeżenia /api/info (np. po aktualizacji agenta)
+    // a household member on a server with tags (agent 1.4+) also sees directories hidden from this phone, in order to set them up
+    // fresh server entry: `api.srv` may predate the /api/info refresh (e.g. after an agent update)
     val srv = remember(reload) { Servers.get(ctx, api.srv.key) ?: api.srv }
     val manage = srv.libraryTags && !srv.isGuest
 
@@ -165,7 +165,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
     }
 }
 
-/** Jedna linijka pod ścieżką: tagi, kto widzi, ile wykluczonych. Null, gdy katalog jest „jak dawniej”. */
+/** One line under the path: tags, who sees it, how many excluded. Null when the directory is "as before". */
 @Composable
 private fun rootSummary(r: LibRoot): String? {
     val parts = mutableListOf<String>()
@@ -180,7 +180,7 @@ private fun rootSummary(r: LibRoot): String? {
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
-/** Ustawienia katalogu: nazwa, tagi, kto go widzi, wykluczone podkatalogi. */
+/** Directory settings: name, tags, who sees it, excluded subdirectories. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RootEditDialog(api: Api, r: LibRoot, onDismiss: () -> Unit, onSaved: (List<LibRoot>) -> Unit) {
@@ -290,7 +290,7 @@ private fun RootEditDialog(api: Api, r: LibRoot, onDismiss: () -> Unit, onSaved:
 
 private val LIB_TAGS = listOf("filmy", "seriale", "bajki", "kopia")
 
-/** Wbudowane tagi pokazujemy w języku telefonu, ale zapisujemy zawsze po polsku (tak je zna agent). */
+/** Built-in tags are shown in the phone's language, but always stored in Polish (that is how the agent knows them). */
 @Composable
 internal fun tagLabel(t: String) = when (t) {
     "filmy" -> stringResource(R.string.media_lib_tag_movies)
@@ -306,7 +306,7 @@ private fun Section(title: String) {
     Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
 }
 
-/** Wybór katalogu na komputerze (nawigacja po folderach). */
+/** Directory picker on the computer (folder navigation). */
 @Composable
 private fun DirPicker(api: Api, onDismiss: () -> Unit, onPick: (String) -> Unit) {
     var path by remember { mutableStateOf("") }

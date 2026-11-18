@@ -1,9 +1,10 @@
-﻿# MagneticPlayer: instalacja z innego serwera albo z telefonu (`irm <url>/ps | iex`). Szablon: adres podstawia
-# serwer (mp_install.py) albo telefon (InstallShare.kt). Pobiera paczkę (tar.exe jest w Windows 10+) i uruchamia install.ps1.
+﻿# MagneticPlayer: install from another server or from a phone (`irm <url>/ps | iex`). Template: the address is
+# filled in by the server (mp_install.py) or the phone (InstallShare.kt). Downloads the bundle (tar.exe ships with
+# Windows 10+) and runs install.ps1.
 & {
   $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'
   $u = '@URL@'
-  $pl = (Get-UICulture).Name -like 'pl*'  # komunikaty po polsku, gdy Windows ma polski interfejs
+  $pl = (Get-UICulture).Name -like 'pl*'  # messages in Polish when Windows has a Polish UI
   $t = Join-Path $env:TEMP ('magneticplayer-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
   New-Item -ItemType Directory $t | Out-Null
   Write-Host $(if ($pl) { "== pobieram agenta z $u" } else { "== downloading the agent from $u" })

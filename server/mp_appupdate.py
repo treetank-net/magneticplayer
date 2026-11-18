@@ -1,11 +1,12 @@
-"""Apka dla telefonów z wydań na GitHubie: agent sam pobiera nowszą apkę i wystawia ją pod /app/MagneticPlayer.apk.
+"""The phone app from GitHub releases: the agent downloads a newer app itself and serves it at /app/MagneticPlayer.apk.
 
-Tryb w config.json `app_updates`: "auto" (domyślnie) albo "manual" (tylko phone/tools/publish.sh). Zmienia go telefon
-(`POST /api/config/app_updates`). Sprawdzanie minutę po starcie i potem co 6 godzin, oraz od razu po włączeniu „auto”.
-Nigdy nie cofa wersji: wystawia tylko apkę z wyższym version_code niż obecna (też ta z publish.sh).
+Mode in config.json `app_updates`: "auto" (default) or "manual" (only phone/tools/publish.sh). A phone changes it
+(`POST /api/config/app_updates`). The check runs a minute after start, then every 6 hours, and right away when "auto"
+is switched on. It never downgrades: it only serves an app with a higher version_code than the current one (including
+the one from publish.sh).
 
-APK musi mieć certyfikat treetank (odcisk SHA-256 z bloku podpisu APK v2/v3). Podpisu nie sprawdzamy tu
-kryptograficznie: Android robi to przy instalacji i aktualizację przyjmie tylko z tym samym kluczem.
+The APK must carry the treetank certificate (SHA-256 fingerprint from the APK v2/v3 signing block). We do not verify
+the signature cryptographically here: Android does that on install and only accepts an update signed with the same key.
 """
 import hashlib
 import json
@@ -16,13 +17,13 @@ import time
 import urllib.request
 
 BASE = "https://github.com/treetank-net/magneticplayer/releases/latest/download"
-CERT_SHA256 = "05f72b11239022e9256185257b8926693e39e445c89c96b926613cd7de6e39ce"  # treetank (jak release-ci.sh)
+CERT_SHA256 = "05f72b11239022e9256185257b8926693e39e445c89c96b926613cd7de6e39ce"  # treetank (same as release-ci.sh)
 FIRST_DELAY, INTERVAL = 60, 6 * 3600
 MODES = ("auto", "manual")
 
 
 def apk_cert_sha256(path):
-    """Odcisk SHA-256 certyfikatu pierwszego podpisującego z bloku podpisu APK (schemat v2 albo v3); None gdy brak."""
+    """SHA-256 fingerprint of the first signer's certificate from the APK signing block (scheme v2 or v3); None if absent."""
     with open(path, "rb") as f:
         f.seek(0, 2)
         size = f.tell()
@@ -52,7 +53,7 @@ def apk_cert_sha256(path):
         found[pid] = pairs[i + 12:i + 8 + n]
         i += 8 + n
 
-    def lp(buf, o):  # wartość poprzedzona długością uint32
+    def lp(buf, o):  # value prefixed with a uint32 length
         n = struct.unpack_from("<I", buf, o)[0]
         return buf[o + 4:o + 4 + n], o + 4 + n
 
@@ -104,9 +105,9 @@ class AppUpdates:
                 try:
                     self.check()
                     self.last_error = None
-                except Exception as e:  # sieć, GitHub, zły plik: spróbujemy przy następnym razie
+                except Exception as e:  # network, GitHub, bad file: we will retry next time
                     self.last_error = str(e)
-                    self.log(f"aktualizacja apki z GitHuba: {e}")
+                    self.log(f"app update from GitHub: {e}")
                 self.last_check = time.time()
             self._wake.wait(INTERVAL)
 
@@ -116,7 +117,7 @@ class AppUpdates:
         return urllib.request.urlopen(req, timeout=timeout)
 
     def check(self):
-        """Pobiera nowszą apkę z najnowszego wydania. Zwraca jej version_name albo None (nic nowego)."""
+        """Downloads a newer app from the latest release. Returns its version_name or None (nothing new)."""
         with self._lock:
             with self._get(f"{BASE}/version.json", 30) as r:
                 v = json.loads(r.read())
@@ -132,15 +133,15 @@ class AppUpdates:
                         f.write(chunk)
                 cert = apk_cert_sha256(part)
                 if cert != CERT_SHA256:
-                    raise ValueError(f"APK z obcym certyfikatem ({cert})")
+                    raise ValueError(f"APK with a foreign certificate ({cert})")
                 vj = os.path.join(self.apk_dir, "version.json")
                 with open(vj + ".new", "w") as f:
                     json.dump({"version_code": code, "version_name": v.get("version_name", "")}, f)
-                # apka najpierw, wersja na końcu (jak publish.sh): telefon nie zobaczy wersji przed pełnym plikiem
+                # app first, version last (like publish.sh): a phone never sees the version before the complete file
                 os.replace(part, apk)
                 os.replace(vj + ".new", vj)
             finally:
                 if os.path.exists(part):
                     os.remove(part)
-            self.log(f"apka {v.get('version_name')} z GitHuba wystawiona telefonom")
+            self.log(f"app {v.get('version_name')} from GitHub is now served to phones")
             return v.get("version_name")

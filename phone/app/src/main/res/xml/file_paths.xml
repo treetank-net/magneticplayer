@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- kopia własnej apki do „Udostępnij apkę” -->
+    <!-- copy of the app's own APK for "Share the app" -->
     <cache-path name="share" path="share/" />
 </paths>

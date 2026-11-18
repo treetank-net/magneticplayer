@@ -1,9 +1,9 @@
-"""Język komunikatów dla użytkownika: angielski albo polski, wybierany per żądanie z nagłówka Accept-Language.
+"""Language of user-facing messages: English or Polish, chosen per request from the Accept-Language header.
 
-Użycie w miejscu komunikatu: `T("File not found", "Nie ma takiego pliku")`. Handler agenta woła `set_from_header()`
-na początku każdego żądania (wątek serwera obsługuje jedno żądanie naraz). Wątki tła startowane z żądania
-(szukanie napisów, konwersja) dostają język przez `bind(fn)`. Bez żądania (CLI): `set_from_env()` (LANG itd.).
-Logi agenta zostają po polsku.
+Usage in place of a message: `T("File not found", "Nie ma takiego pliku")`. The agent's handler calls
+`set_from_header()` at the start of every request (a server thread handles one request at a time). Background threads
+started from a request (subtitle search, conversion) get the language via `bind(fn)`. Without a request (CLI):
+`set_from_env()` (LANG etc.). Agent logs are always in English.
 """
 import os
 import threading
@@ -13,7 +13,7 @@ DEFAULT = "en"
 
 
 def norm(code):
-    """pl* → "pl", wszystko inne → "en"."""
+    """pl* → "pl", anything else → "en"."""
     return "pl" if str(code or "").strip().lower().startswith("pl") else "en"
 
 
@@ -27,7 +27,7 @@ def set_lang(code):
 
 
 def parse_accept_language(header):
-    """Najwyżej oceniony język z Accept-Language (np. "pl-PL,pl;q=0.9,en;q=0.8" → "pl"); brak → angielski."""
+    """Highest-ranked language from Accept-Language (e.g. "pl-PL,pl;q=0.9,en;q=0.8" → "pl"); none → English."""
     best, best_q = None, -1.0
     for i, part in enumerate((header or "").split(",")):
         tag, _, params = part.strip().partition(";")
@@ -42,7 +42,7 @@ def parse_accept_language(header):
                     q = float(v)
                 except ValueError:
                     q = 0.0
-        if q > best_q:  # przy równych wagach wygrywa pierwszy
+        if q > best_q:  # with equal weights the first one wins
             best, best_q = tag, q
     return norm(best)
 
@@ -52,7 +52,7 @@ def set_from_header(header):
 
 
 def set_from_env():
-    """Terminal (install.sh → --pair/--join): LC_ALL, LC_MESSAGES, LANG jak w gettext."""
+    """Terminal (install.sh → --pair/--join): LC_ALL, LC_MESSAGES, LANG as in gettext."""
     for k in ("LC_ALL", "LC_MESSAGES", "LANG"):
         if os.environ.get(k):
             return set_lang(os.environ[k])
@@ -60,12 +60,12 @@ def set_from_env():
 
 
 def T(en, pl):
-    """Tekst w bieżącym języku."""
+    """Text in the current language."""
     return pl if lang() == "pl" else en
 
 
 def bind(fn):
-    """`fn` uruchomiona w innym wątku dostanie język bieżącego wątku (żądania, które ją zleciło)."""
+    """`fn` run in another thread gets the language of the current thread (of the request that scheduled it)."""
     captured = lang()
 
     def run(*a, **kw):

@@ -4,7 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- rozgłaszanie „co gra” między pilotami (multicast w LAN) -->
+    <!-- announcing "what is playing" between remotes (multicast on the LAN) -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- aktualizacje apki z komputera (phone/tools/publish.sh) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -13,11 +13,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- udostępnianie filmu z telefonu Chromecastowi albo ekranowi (ShareService) -->
+    <!-- sharing a video from the phone to a Chromecast or a screen (ShareService) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <!-- przesyłanie filmów pobranych przeglądarką na serwer (Uploads.kt): odczyt filmów innych apek -->
+    <!-- uploading videos downloaded by the browser to the server (Uploads.kt): reading other apps' videos -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <!-- przesyłanie: okienko nad przeglądarką i (opcjonalnie) usuwanie pliku przeglądarki bez systemowego pytania -->
+    <!-- uploads: overlay above the browser and (optionally) deleting the browser's file without the system prompt -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
@@ -49,7 +49,7 @@
             </intent-filter>
         </activity>
 
-        <!-- reaguje na kliknięte magnet linki i na „Udostępnij” z tekstem zawierającym magnet -->
+        <!-- handles tapped magnet links and "Share" with text containing a magnet -->
         <activity
             android:name=".MagnetActivity"
             android:exported="true"
@@ -83,7 +83,7 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
-        <!-- Chromecast: odbiornik domyślny, sterowanie z powiadomienia i pełny ekran sterowania -->
+        <!-- Chromecast: default receiver, control from the notification and the full-screen controls -->
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
             android:value="net.treetank.magneticplayer.MpCastOptions" />
@@ -117,7 +117,7 @@
             android:name=".DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-        <!-- przesyłanie na serwer (Uploads.kt): przyciski powiadomień, potwierdzenie usunięcia, WorkManager w tle -->
+        <!-- upload to the server (Uploads.kt): notification buttons, delete confirmation, background WorkManager -->
         <receiver android:name=".UploadReceiver" android:exported="false" />
         <receiver android:name=".AccessReceiver" android:exported="false" />
         <activity

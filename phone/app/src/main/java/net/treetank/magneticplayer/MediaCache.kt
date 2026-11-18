@@ -12,13 +12,13 @@ import java.io.File
 import java.util.TreeSet
 
 /**
- * Filmy na dysku telefonu (noBackupFilesDir/media; dawniej cacheDir/media, które Android czyści przy braku miejsca). Zapisują do niego tylko prefetch w PlayerActivity i DownloadService,
- * i to wyłącznie bajty, które agent zgłosił jako pobrane (X-Ready-End), więc nie trafią tu zera z niepobranego torrenta.
+ * Videos on the phone's disk (noBackupFilesDir/media; formerly cacheDir/media, which Android clears when space runs low). Only prefetch in PlayerActivity and DownloadService write to it,
+ * and only bytes the agent reported as downloaded (X-Ready-End), so zeros from an undownloaded torrent do not end up here.
  *
- * Sprzątanie ([sweep], [onWatched]):
- * - bufor z oglądania: film obejrzany (≥80% albo do końca) wylatuje od razu, nieoglądany od 48 h przy starcie apki;
- * - pobrane przyciskiem (OfflineItem.pinned): wg wybranej zasady (po obejrzeniu / po N dniach / ręcznie).
- * Ponad [maxBytes] wyrzucane są najdawniej używane kawałki, ale nigdy z pobranych filmów.
+ * Cleanup ([sweep], [onWatched]):
+ * - watching buffer: a watched video (≥80% or to the end) is dropped at once, an unwatched one after 48 h at app start;
+ * - downloaded with the button (OfflineItem.pinned): per the chosen policy (after watching / after N days / manual).
+ * Above [maxBytes] the least recently used chunks are evicted, but never from downloaded videos.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 object MediaCache {
@@ -26,8 +26,8 @@ object MediaCache {
     const val WATCHED = 0.8
 
     /**
-     * Limit: 60% wolnego miejsca (licząc to, co bufor już zajmuje), od 1 GB do 64 GB. Pobrane filmy liczą się do niego,
-     * ale [PinnedAwareLruEvictor] ich nie rusza. Evictor liczy go raz, przy pierwszym użyciu w procesie.
+     * Limit: 60% of free space (counting what the buffer already occupies), from 1 GB to 64 GB. Downloaded videos count towards it,
+     * but [PinnedAwareLruEvictor] does not touch them. The evictor computes it once, on first use in the process.
      */
     fun maxBytes(ctx: Context): Long {
         val dir = dir(ctx)
@@ -38,8 +38,8 @@ object MediaCache {
     @Volatile private var cache: SimpleCache? = null
 
     /**
-     * Katalog bufora. Nie cacheDir: tam system kasuje pliki aplikacji przekraczających limit bufora (u nas do 60% dysku),
-     * więc „pobrane” filmy znikały. Stary katalog przenosimy raz (ten sam system plików, więc rename).
+     * Buffer directory. Not cacheDir: the system deletes app files there that exceed the cache limit (here up to 60% of the disk),
+     * so "downloaded" videos disappeared. The old directory is moved once (same filesystem, so a rename).
      */
     private fun dir(ctx: Context): File {
         val app = ctx.applicationContext
@@ -57,7 +57,7 @@ object MediaCache {
         }.also { cache = it }
     }
 
-    /** Zapisuje długość pliku, żeby odtwarzacz bez sieci wiedział, gdzie jest koniec. */
+    /** Stores the file length so the offline player knows where the end is. */
     fun setLength(ctx: Context, key: String, size: Long) {
         val c = get(ctx)
         if (androidx.media3.datasource.cache.ContentMetadata.getContentLength(c.getContentMetadata(key)) == size) return
@@ -66,7 +66,7 @@ object MediaCache {
         runCatching { c.applyContentMetadataMutations(key, m) }
     }
 
-    /** Usuwa film z telefonu razem z wpisem na liście i napisami. Poza wątkiem UI. */
+    /** Removes a video from the phone together with its list entry and subtitles. Off the UI thread. */
     fun remove(ctx: Context, key: String) {
         DownloadService.cancel(key)
         runCatching { get(ctx).removeResource(key) }
@@ -74,13 +74,13 @@ object MediaCache {
         OfflineStore.remove(ctx, key)
     }
 
-    /** Film obejrzany (koniec albo wyjście po ≥80%): kasujemy, chyba że pobrany z inną zasadą niż „po obejrzeniu”. */
+    /** Watched video (end or exit after ≥80%): we delete it unless it was downloaded with a policy other than "after watching". */
     fun onWatched(ctx: Context, key: String) {
         val item = OfflineStore.get(ctx, key)
         if (item == null || !item.pinned || item.policy == "watched") remove(ctx, key)
     }
 
-    /** Sprząta wg zasad z opisu klasy, poza `keep` (właśnie odtwarzany). Poza wątkiem UI. */
+    /** Cleans up per the rules in the class description, except `keep` (currently playing). Off the UI thread. */
     fun sweep(ctx: Context, keep: String? = null) {
         val s = Settings(ctx)
         val now = System.currentTimeMillis()
@@ -95,7 +95,7 @@ object MediaCache {
                     now - item.created > (item.policy.removePrefix("days:").toLongOrNull() ?: 2) * 24 * 3600_000L
                 else -> false
             } else {
-                // bufor z oglądania; wpis bez niczego na dysku też sprzątamy
+                // watching buffer; an entry with nothing on disk is cleaned up too
                 watched || now - s.cacheUsed(key) > BUFFER_MAX_AGE_MS ||
                     runCatching { get(ctx).getCachedBytes(key, 0, androidx.media3.common.C.LENGTH_UNSET.toLong()) }.getOrDefault(0) == 0L
             }
@@ -104,7 +104,7 @@ object MediaCache {
     }
 }
 
-/** Jak LeastRecentlyUsedCacheEvictor z media3, tylko pomija kawałki pobranych filmów (`pinned`). */
+/** Like LeastRecentlyUsedCacheEvictor from media3, but skips chunks of downloaded videos (`pinned`). */
 @androidx.annotation.OptIn(UnstableApi::class)
 class PinnedAwareLruEvictor(private val maxBytes: Long, private val pinned: (String) -> Boolean) : CacheEvictor {
     private val lru = TreeSet<CacheSpan> { a, b ->

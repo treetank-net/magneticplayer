@@ -1,17 +1,17 @@
-"""Instalacja agenta na kolejnym komputerze z już działającego serwera (kod dołączenia).
+"""Installing the agent on another computer from an already running server (join code).
 
-Przebieg:
-1. Sparowany telefon: `POST /api/install/code` → jednorazowy kod i polecenie
-   `curl -fsSL <ten serwer>/i/<kod> | bash` (instalacja lekka; `?full=1` = pełna z hasłem administratora).
-2. Nowy komputer: `GET /i/<kod>` daje skrypt, a ten pobiera `GET /i/<kod>/bundle.tar.gz` (agent z tego serwera:
-   *.py, web/, skrypty instalacyjne; bez venv i APK) i uruchamia `install.sh` z `JOIN=<adres>/i/<kod>`.
-3. Nowy agent po instalacji (`magneticplayer_agent.py --join`) zakłada własny kod parowania i zgłasza się:
-   `POST /api/install/join {code, id, name, port, pair_code}`. Kod dołączenia jest wtedy zużyty.
-4. Telefon pyta `GET /api/install/status?code=` i dostaje adres, id i kod parowania nowego serwera, więc paruje się
-   sam, bez przepisywania kodu.
+Flow:
+1. Paired phone: `POST /api/install/code` → a single-use code and the command
+   `curl -fsSL <this server>/i/<code> | bash` (light install; `?full=1` = full, with the administrator password).
+2. New computer: `GET /i/<code>` returns a script, which fetches `GET /i/<code>/bundle.tar.gz` (the agent from this
+   server: *.py, web/, install scripts; no venv and no APK) and runs `install.sh` with `JOIN=<address>/i/<code>`.
+3. After installation the new agent (`magneticplayer_agent.py --join`) creates its own pairing code and reports in:
+   `POST /api/install/join {code, id, name, port, pair_code}`. The join code is then used up.
+4. The phone polls `GET /api/install/status?code=` and receives the new server's address, id and pairing code, so it
+   pairs by itself, without retyping the code.
 
-Kody żyją w pamięci (restart agenta je kasuje) przez TTL. Bez tokenu działają tylko `/i/<kod>…` i `join`,
-a każdy z nich wymaga ważnego kodu; złe próby są limitowane jak przy parowaniu.
+Codes live in memory (an agent restart clears them) for the TTL. Without a token only `/i/<code>…` and `join` work,
+and each of them requires a valid code; bad attempts are rate-limited as with pairing.
 """
 import io
 import os
@@ -26,11 +26,11 @@ from mp_i18n import T
 TTL = 30 * 60
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUNDLE_FILES = ("install.sh", "install-root.sh", "uninstall.sh", "join.sh")
-BUNDLE_OPTIONAL = ("install.ps1", "uninstall.ps1", "join.ps1")  # Windows (instalacja lekka)
+BUNDLE_OPTIONAL = ("install.ps1", "uninstall.ps1", "join.ps1")  # Windows (light install)
 
 
 def template(name):
-    """Skrypt `curl … | bash` (join.sh) albo `irm … | iex` (join.ps1); te same pliki serwuje telefon (InstallShare.kt)."""
+    """The `curl … | bash` script (join.sh) or `irm … | iex` (join.ps1); the phone serves the same files (InstallShare.kt)."""
     with open(os.path.join(HERE, name), encoding="utf-8-sig") as f:
         return f.read()
 
@@ -45,7 +45,7 @@ class Installs:
     def __init__(self, log):
         self.log = log
         self.lock = threading.Lock()
-        self.codes = {}  # kod → {exp, by, state, server, downloads}
+        self.codes = {}  # code → {exp, by, state, server, downloads}
         self.fails = []
 
     def _gc(self):
@@ -53,7 +53,7 @@ class Installs:
         self.codes = {c: v for c, v in self.codes.items() if v["exp"] > now}
 
     def available(self):
-        """Czy da się stąd instalować: obok agenta muszą leżeć skrypty instalacyjne (install.sh je kopiuje)."""
+        """Whether installing from here is possible: the install scripts must sit next to the agent (install.sh copies them)."""
         return all(os.path.isfile(os.path.join(HERE, f)) for f in BUNDLE_FILES)
 
     def new_code(self, device):
@@ -80,7 +80,7 @@ class Installs:
                 raise InstallError(T("invalid, used or expired install code", "zły, zużyty albo przeterminowany kod instalacji"), 403)
             return c
 
-    # ---- nowy komputer (bez tokenu)
+    # ---- new computer (no token)
 
     def script(self, code, base, full):
         c = self._get(code)
@@ -90,8 +90,8 @@ class Installs:
         return template("join.sh").replace("@URL@", url).replace("@LITE@", lite)
 
     def script_ps(self, code, base):
-        """Windows: `irm <url>/ps | iex` (zawsze instalacja lekka)."""
-        self.script(code, base, False)  # ten sam stan i kontrola kodu
+        """Windows: `irm <url>/ps | iex` (always a light install)."""
+        self.script(code, base, False)  # same state and code check
         if not all(os.path.isfile(os.path.join(HERE, f)) for f in ("install.ps1", "join.ps1")):
             raise InstallError(T("this server has no Windows installer (install.ps1) — update it",
                                      "ten serwer nie ma instalatora dla Windows (install.ps1) — zaktualizuj go"), 409)
@@ -123,11 +123,11 @@ class Installs:
             c["server"] = {"host": host, "port": int(body.get("port") or 8765), "id": str(body["id"])[:40],
                            "name": str(body.get("name") or host)[:60], "pair_code": pair,
                            "version": str(body.get("version") or "")[:20], "at": time.time()}
-            c["exp"] = max(c["exp"], time.time() + 600)  # telefon ma 10 min (ważność kodu parowania) na odebranie
-        self.log(f"nowy serwer dołączył: {c['server']['name']} ({host})")
+            c["exp"] = max(c["exp"], time.time() + 600)  # the phone has 10 min (pairing code validity) to pick it up
+        self.log(f"new server joined: {c['server']['name']} ({host})")
         return {"ok": True}
 
-    # ---- telefon (z tokenem)
+    # ---- phone (with token)
 
     def status(self, code, device):
         with self.lock:

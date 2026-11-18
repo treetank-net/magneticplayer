@@ -65,12 +65,12 @@ dependencies {
     implementation("androidx.media3:media3-datasource:1.8.0")
     implementation("androidx.media3:media3-database:1.8.0")
     implementation("com.google.zxing:core:3.5.3") // QR parowania
-    // Chromecast (Google Cast, odbiornik domyślny Google'a) i wykrywanie urządzeń w sieci
+    // Chromecast (Google Cast, Google's default receiver) and network device discovery
     implementation("com.google.android.gms:play-services-cast-framework:22.1.0")
     implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("androidx.appcompat:appcompat:1.7.1") // ekran sterowania Cast SDK dziedziczy po AppCompatActivity
-    // FFmpeg: dźwięk AC3/E-AC3/DTS/TrueHD, którego telefony nie dekodują same (build Jellyfina)
+    // FFmpeg: AC3/E-AC3/DTS/TrueHD audio that phones cannot decode on their own (Jellyfin build)
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1")
-    // przesyłanie pobranych filmów na serwer w tle (Uploads.kt): wyzwalacz MediaStore, czekanie na Wi-Fi
+    // background upload of downloaded videos to the server (Uploads.kt): MediaStore trigger, waiting for Wi-Fi
     implementation("androidx.work:work-runtime-ktx:2.10.1")
 }

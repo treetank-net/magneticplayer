@@ -15,11 +15,11 @@ import java.util.UUID
 import java.util.concurrent.Executors
 
 /**
- * Rozgłaszanie „co gra” między pilotami (telefony z apką i agenci): UDP multicast 239.255.77.77:47700, TTL 1, JSON
+ * Announcing "what is playing" between remotes (phones with the app and agents): UDP multicast 239.255.77.77:47700, TTL 1, JSON
  * `{"mp":1,"type":"playing"|"stopped"|"who","from":{kind,id,name},"target":{kind,id,name,ctl},"title","state","pos","dur","ts"}`.
- * Nadawca powtarza co ~3 s, słuchacz zapomina po 10 s ciszy; „who” prosi o natychmiastową odpowiedź.
- * Bez sekretów: `ctl` to adresy sterowania DLNA/Chromecasta, które w LAN i tak nie wymagają logowania.
- * Opis: docs/plan-piloty.md, docs/urzadzenia.md.
+ * The sender repeats every ~3 s, the listener forgets after 10 s of silence; "who" asks for an immediate reply.
+ * No secrets: `ctl` holds DLNA/Chromecast control addresses, which need no login on the LAN anyway.
+ * Opis: docs/plan-remotes.md, docs/devices.md.
  */
 object Announce {
     private const val TAG = "MpAnnounce"
@@ -27,7 +27,7 @@ object Announce {
     const val PORT = 47700
     private const val TTL_MS = 10_000L
 
-    /** Co gra u innych (klucz: rodzaj:id celu). */
+    /** What others are playing (key: kind:target id). */
     data class Entry(
         val kind: String, val targetId: String, val targetName: String, val ctl: JSONObject,
         val title: String, val state: String, val pos: Double, val dur: Double,
@@ -42,7 +42,7 @@ object Announce {
     @Volatile private var listeners = 0
     @Volatile private var sock: MulticastSocket? = null
     private var lock: WifiManager.MulticastLock? = null
-    /** odpowiedź na „who”: co gra u nas (ustawia RemotePlayer) */
+    /** reply to "who": what is playing here (set by RemotePlayer) */
     @Volatile var mine: List<JSONObject> = emptyList()
 
     private fun selfId(ctx: Context): String {
@@ -53,7 +53,7 @@ object Announce {
     private fun from(ctx: Context) = JSONObject().put("kind", "phone").put("id", selfId(ctx))
         .put("name", listOfNotNull(Build.MANUFACTURER?.replaceFirstChar { it.uppercase() }, Build.MODEL).joinToString(" "))
 
-    /** Wiadomość „gra” dla celu; `ctl` = jak sterować bez nas. */
+    /** "Playing" message for a target; `ctl` = how to control it without us. */
     fun playing(ctx: Context, kind: String, id: String, name: String, ctl: JSONObject, title: String, state: String,
                 pos: Double, dur: Double): JSONObject =
         JSONObject().also { app = ctx.applicationContext }.put("mp", 1).put("type", "playing").put("from", from(ctx))
@@ -76,12 +76,12 @@ object Announce {
                 val s = sock ?: MulticastSocket().apply { timeToLive = 1; lanIf()?.let { networkInterface = it } }
                 s.send(DatagramPacket(data, data.size, InetAddress.getByName(GROUP), PORT))
                 if (s !== sock) s.close()
-                Log.d(TAG, "send ${msg.optString("type")} przez ${s.networkInterface?.name}")
+                Log.d(TAG, "send ${msg.optString("type")} via ${s.networkInterface?.name}")
             }.onFailure { Log.w(TAG, "send: $it") }
         }
     }
 
-    /** Słucha, dopóki nie wywołasz zwróconej funkcji (Pilot na ekranie, usługa sesji). Liczy wywołujących. */
+    /** Listens until you call the returned function (Remote on screen, session service). Counts callers. */
     @Synchronized
     fun listen(ctx: Context): () -> Unit {
         val app = ctx.applicationContext
@@ -106,7 +106,7 @@ object Announce {
                 val group = InetSocketAddress(InetAddress.getByName(GROUP), PORT)
                 val ifs = NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback && it.supportsMulticast() }
                 for (i in ifs) runCatching { s.joinGroup(group, i) }
-                // bez tego Android wysyła multicast domyślną trasą (np. dane komórkowe), a nie przez Wi-Fi
+                // without this Android sends multicast over the default route (e.g. mobile data) instead of Wi-Fi
                 lanIf()?.let { runCatching { s.networkInterface = it } }
                 sock = s
                 send(JSONObject().put("mp", 1).put("type", "who").put("from", from(ctx)))
@@ -125,7 +125,7 @@ object Announce {
         }, "announce-listen").apply { isDaemon = true }.start()
     }
 
-    /** Interfejs sieci lokalnej (Wi-Fi/Ethernet z prywatnym IPv4). */
+    /** Local network interface (Wi-Fi/Ethernet with a private IPv4). */
     private fun lanIf(): NetworkInterface? = runCatching {
         NetworkInterface.getNetworkInterfaces().toList().filter { i ->
             i.isUp && !i.isLoopback && i.supportsMulticast() &&
@@ -161,6 +161,6 @@ object Announce {
         lock = null
     }
 
-    /** Telewizor DLNA, na który film puścił ktoś inny (rozgłoszony z `ctl`). */
+    /** A DLNA TV that someone else started a video on (announced with `ctl`). */
     fun foreignDlna(): Entry? = others.values.filter { it.kind == "dlna" && it.ctl.has("avt") }.maxByOrNull { it.at }
 }

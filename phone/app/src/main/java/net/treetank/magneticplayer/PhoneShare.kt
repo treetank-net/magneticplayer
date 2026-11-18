@@ -38,9 +38,9 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /**
- * Telefon jako serwer plików dla ekranu (Chromecast, mpv na serwerze bez tego filmu): film pobrany na telefon
- * (MediaCache) i jego napisy po HTTP w LAN-ie. Jeden film naraz, adres z losowym sekretem w ścieżce, Range, CORS.
- * Działa, dopóki trwa [ShareService] (powiadomienie z „Zatrzymaj”, sam kończy po 20 min bez zapytań).
+ * The phone as a file server for a screen (Chromecast, mpv on a server without this video): a video downloaded to the phone
+ * (MediaCache) and its subtitles over HTTP on the LAN. One video at a time, an address with a random secret in the path, Range, CORS.
+ * Works as long as [ShareService] runs (a notification with "Stop", it ends itself after 20 min without requests).
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 object PhoneShare {
@@ -52,14 +52,14 @@ object PhoneShare {
     @Volatile private var lastHit = 0L
     private val active = AtomicInteger()
 
-    /** Cały film leży na telefonie (pobrany albo w całości w buforze). */
+    /** The whole video is on the phone (downloaded or entirely in the buffer). */
     fun hasWhole(ctx: Context, key: String): Boolean {
         val i = OfflineStore.get(ctx, key) ?: return false
-        // nie ufamy samemu „complete”: liczy się to, co faktycznie jest w buforze
+        // we do not trust "complete" alone: what counts is what is actually in the buffer
         return i.size > 0 && runCatching { MediaCache.get(ctx).getCachedBytes(key, 0, i.size) }.getOrDefault(0) >= i.size
     }
 
-    /** Adres telefonu w Wi-Fi (albo Ethernecie), null gdy ich nie ma. */
+    /** The phone's address on Wi-Fi (or Ethernet), null if there is none. */
     fun lanIp(ctx: Context): String? {
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
         val net = cm.activeNetwork ?: return null
@@ -78,7 +78,7 @@ object PhoneShare {
         else -> "application/octet-stream"
     }
 
-    /** Udostępnia film z telefonu i zwraca adresy dla ekranu. Poza wątkiem UI. */
+    /** Shares a video from the phone and returns the addresses for the screen. Off the UI thread. */
     @Synchronized
     fun start(ctx: Context, ref: MediaRef): MediaSrc {
         val app = ctx.applicationContext
@@ -109,7 +109,7 @@ object PhoneShare {
         shared = null
     }
 
-    /** Ile ms nikt nie pobiera (0, gdy trwa jakieś połączenie). */
+    /** How many ms nobody has been downloading (0 while a connection is open). */
     fun idleMs() = if (active.get() > 0) 0 else System.currentTimeMillis() - lastHit
 
     private fun acceptLoop(app: Context, s: ServerSocket) {
@@ -125,7 +125,7 @@ object PhoneShare {
             val c = inp.read()
             if (c < 0) return if (b.isEmpty()) null else b.toString()
             if (c == '\n'.code) return b.toString().trimEnd('\r')
-            if (b.length > 8192) throw IOException("za długi nagłówek")
+            if (b.length > 8192) throw IOException("header too long")
             b.append(c.toChar())
         }
     }
@@ -166,7 +166,7 @@ object PhoneShare {
             route(app, method, path, headers, out)
             out.flush()
         } catch (e: IOException) {
-            // widz przewinął albo zamknął: odbiornik zrywa połączenie, to normalne
+            // the viewer seeked or closed: the receiver drops the connection, which is normal
             android.util.Log.i("PhoneShare", "przerwane: $e")
         } finally {
             lastHit = System.currentTimeMillis()
@@ -185,7 +185,7 @@ object PhoneShare {
         if (sh == null || seg.size < 2 || seg[0] != secret) return head(out, 404, listOf("Content-Length" to "0"))
         when (seg[1]) {
             "v" -> {
-                // Samsung (DLNA) pyta o napisy nagłówkiem; dostaje pierwsze SRT
+                // Samsung (DLNA) asks for subtitles with a header; it gets the first SRT
                 val srt = sh.subs.indexOfFirst { it.ext == "srt" }
                 val cap = if (h["getcaptioninfo.sec"] != null && srt >= 0 && h["host"] != null)
                     "http://${h["host"]}/$secret/s/$srt/${Uri.encode(sh.subs[srt].name)}" else null
@@ -235,7 +235,7 @@ object PhoneShare {
         })
         if (method == "HEAD") return
         val cache = MediaCache.get(app)
-        // tylko z dysku telefonu: bez źródła sieciowego brak kawałka kończy się błędem, a nie zerami
+        // only from the phone's disk: without a network source a missing chunk ends in an error, not zeros
         val ds = CacheDataSource(MediaCache.get(app), null, FileDataSource(), null, 0, null)
         try {
             ds.open(DataSpec.Builder().setUri(Uri.parse("phone://share")).setKey(sh.key).setPosition(start).setLength(len).build())
@@ -253,7 +253,7 @@ object PhoneShare {
         }
     }
 
-    /** SRT (UTF-8 albo Windows-1250) → WebVTT dla Chromecasta. */
+    /** SRT (UTF-8 or Windows-1250) → WebVTT for Chromecast. */
     fun toVtt(raw: ByteArray): String {
         val text = runCatching {
             Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(raw)).toString()
@@ -263,7 +263,7 @@ object PhoneShare {
     }
 }
 
-/** Trzyma udostępnianie z telefonu przy życiu (Wi-Fi i procesor nie zasypiają przy zgaszonym ekranie). */
+/** Keeps phone sharing alive (Wi-Fi and CPU do not sleep with the screen off). */
 class ShareService : Service() {
     companion object {
         private const val CHANNEL = "share"

@@ -67,7 +67,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #toast.show { opacity: 1; }
 .kbd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--chip); border-radius: 4px; padding: 0 5px; }
 @media (max-width: 600px) { nav { margin-left: 0; width: 100%; } nav button { flex: 1; } main { padding: 12px; } }
-/* serwer bez ekranu (config player: false): bez „Na komputerze” i pilota mpv */
+/* server without a screen (config player: false): no "On the computer" and no mpv remote */
 .noplayer .needs-player { display: none !important; }
 .only-noplayer { display: none; }
 .noplayer .only-noplayer { display: block; }
@@ -105,10 +105,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 <script>
 "use strict";
-// ---------------------------------------------------------------- język (navigator.language: pl* → polski, inaczej angielski)
+// ---------------------------------------------------------------- language (navigator.language: pl* → Polish, otherwise English)
 const LANG = /^pl/i.test(navigator.language || "") ? "pl" : "en";
 document.documentElement.lang = LANG;
-// wartości: tekst albo funkcja (argumenty z tr(key, …args)); brak klucza w pl → en
+// values: text or a function (arguments from tr(key, …args)); a key missing in pl → en
 const T = {
   en: {
     sleep: "Sleep", sleepTitle: "Put the computer to sleep", screen: "Screen", screenTitle: "Turn on and unlock the computer screen",
@@ -255,18 +255,18 @@ const T = {
     subsCount: n => `napisy: ${n} (menu odtwarzacza)`, noSubs: "bez napisów obok pliku",
   },
 };
-/** Tekst interfejsu w bieżącym języku. */
+/** UI text in the current language. */
 function tr(key, ...args) {
   const v = T[LANG][key] ?? T.en[key];
   return typeof v === "function" ? v(...args) : v ?? key;
 }
-// statyczne teksty w HTML: data-i18n (tekst), data-i18n-html (z <span>), data-i18n-title, data-i18n-placeholder
+// static texts in HTML: data-i18n (text), data-i18n-html (with <span>), data-i18n-title, data-i18n-placeholder
 document.querySelectorAll("[data-i18n]").forEach(e => e.textContent = tr(e.dataset.i18n));
 document.querySelectorAll("[data-i18n-html]").forEach(e => e.innerHTML = tr(e.dataset.i18nHtml));
 document.querySelectorAll("[data-i18n-title]").forEach(e => e.title = tr(e.dataset.i18nTitle));
 document.querySelectorAll("[data-i18n-placeholder]").forEach(e => e.placeholder = tr(e.dataset.i18nPlaceholder));
 
-// ---------------------------------------------------------------- stan i API
+// ---------------------------------------------------------------- state and API
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
@@ -279,13 +279,13 @@ let token = "", pairCode = null;
   else token = store.get("mp_token") || "";
   if (p) pairCode = decodeURIComponent(p[1]);
   if (m || p) {
-    // token i kod znikają z paska adresu (i z historii), reszta (#tab=…) zostaje
+    // the token and code disappear from the address bar (and history), the rest (#tab=…) stays
     const rest = location.hash.slice(1).split("&").filter(x => x && !/^(t(oken)?|p)=/.test(x)).join("&");
     history.replaceState(null, "", location.pathname + (rest ? "#" + rest : ""));
   }
 })();
 const isCode = v => /^[A-Za-z0-9]{3}-?[A-Za-z0-9]{3}$/.test(v.trim());
-/** Jednorazowy kod parowania → własny token tej przeglądarki. */
+/** One-time pairing code → this browser's own token. */
 async function pairWith(code, name) {
   const ua = navigator.userAgent, os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
   const r = await fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json", "Accept-Language": LANG },
@@ -326,7 +326,7 @@ const mediaUrl = ref => (ref.torrent_id
   : `/lib/${ref.root}/${ref.path.split("/").map(encodeURIComponent).join("/")}`) + "?token=" + encodeURIComponent(token);
 const subUrl = (ref, name, vtt) => `/sub?${refQuery(ref)}&name=${encodeURIComponent(name)}${vtt ? "&vtt=1" : ""}&token=${encodeURIComponent(token)}`;
 
-// ---------------------------------------------------------------- drobiazgi
+// ---------------------------------------------------------------- small helpers
 const $ = s => document.querySelector(s);
 function h(tag, attrs = {}, ...kids) {
   const e = document.createElement(tag);
@@ -340,7 +340,7 @@ function h(tag, attrs = {}, ...kids) {
   for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(String(c)));
   return e;
 }
-// replaceChildren nie spłaszcza list i wypisuje null jako tekst — put() to robi jak h()
+// replaceChildren doesn't flatten lists and prints null as text; put() does it the way h() does
 function put(el, ...kids) { el.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false)); return el; }
 let toastT;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 3500); }
@@ -362,7 +362,7 @@ function openDialog(title, body, onClose) {
 $("#dlgClose").onclick = () => $("#dlg").close();
 $("#dlg").addEventListener("close", () => { const d = $("#dlg"); if (d._onClose) d._onClose(); d._onClose = null; put($("#dlgBody")); });
 
-// ---------------------------------------------------------------- nagłówek, zakładki
+// ---------------------------------------------------------------- header, tabs
 let online = false, tab = (location.hash.match(/tab=(torrents|library|remote)/) || [])[1] || store.get("mp_tab") || "torrents";
 function showLogin() { $("#login").hidden = false; for (const s of ["torrents", "library", "remote"]) $("#" + s).hidden = true; }
 $("#tokenSave").onclick = async () => {
@@ -373,7 +373,7 @@ $("#tokenSave").onclick = async () => {
   $("#login").hidden = true; setTab(tab);
 };
 $("#tokenInput").addEventListener("keydown", e => { if (e.key === "Enter") $("#tokenSave").click(); });
-// prośba o dostęp (mp_access.py): domownik akceptuje w apce, a my dostajemy zwykły kod parowania
+// access request (mp_access.py): a household member approves in the app, and we get a regular pairing code
 let reqTimer = null;
 $("#reqName").value = store.get("mp_reqname") || "";
 $("#reqName").addEventListener("keydown", e => { if (e.key === "Enter") $("#reqSend").click(); });
@@ -419,18 +419,18 @@ function setTab(t) {
 $("#btnSuspend").onclick = () => { if (confirm(tr("sleepConfirm"))) act(() => api("/api/system/suspend", {}), tr("sleeping")); };
 $("#btnScreen").onclick = () => act(() => api("/api/system/screen_on", {}), tr("screenOn"));
 let hostname = "", info = null;
-/** Co serwer umie (features, power): chowa Uśpij, Ekran, Torrenty i „Na komputerze”, gdy ich tu nie ma. */
+/** What the server can do (features, power): hides Sleep, Screen, Torrents and "On the computer" when they aren't available. */
 function applyInfo() {
   const f = info.features || {};
   $("#btnSuspend").hidden = !info.power?.suspend;
   $("#btnScreen").hidden = !(f.player && f.unlock);
   document.body.classList.toggle("noplayer", !f.player);
-  document.body.classList.toggle("guest", info.role === "guest");  // gość: bez dodawania torrentów (agent i tak odmówi)
+  document.body.classList.toggle("guest", info.role === "guest");  // guest: no adding torrents (the agent would refuse anyway)
   const tb = document.querySelector('nav button[data-tab="torrents"]');
   tb.hidden = !f.torrent;
   if (!f.torrent && tab === "torrents") setTab("library");
 }
-/** Nowy token (parowanie, prośba o dostęp): rola i możliwości od razu, nie przy następnym pingu. */
+/** A new token (pairing, access request): role and capabilities right away, not at the next ping. */
 async function refreshInfo() { info = null; await ping(); }
 async function ping() {
   try {
@@ -444,7 +444,7 @@ async function ping() {
 }
 setInterval(ping, 5000);
 
-// ---------------------------------------------------------------- akcje dla pliku
+// ---------------------------------------------------------------- actions for a file
 function mediaActions(ref, isVideo = true) {
   return h("div", { class: "row", style: "margin-top:6px" },
     h("button", { class: "btn primary needs-player", onclick: () => act(async () => { await api("/api/player/open", ref); setTab("remote"); }, tr("playingOnComputer")) }, tr("onComputer")),
@@ -456,7 +456,7 @@ function mediaActions(ref, isVideo = true) {
   );
 }
 
-// ---------------------------------------------------------------- Chromecast (sterowany przez agenta)
+// ---------------------------------------------------------------- Chromecast (controlled by the agent)
 const CastUi = (() => {
   const VERDICT = { ok: tr("verdictOk"), maybe: tr("verdictMaybe"), no: tr("verdictNo") };
   function open(ref) {
@@ -468,7 +468,7 @@ const CastUi = (() => {
       try { d = await api("/api/media/probe?" + refQuery(ref)); } catch (e) { put(fmt, h("p", { class: "err" }, e.message)); return; }
       if (!d.ffmpeg) { put(fmt, h("p", { class: "muted" }, tr("noFfmpeg"))); return; }
       const c = d.cast, j = d.job, rows = [], per = d.cast_devices || [];
-      // agent zna model naszych Chromecastów: ocena dla każdego i „Przygotuj” tylko, gdy któryś ma kłopot
+      // the agent knows our Chromecasts' models: a rating for each, and "Prepare" only when one has trouble
       const need = per.length ? per.some(x => x.verdict !== "ok") : c.verdict !== "ok";
       const PER = { ok: tr("perOk"), maybe: tr("perMaybe"), no: tr("perNo") };
       if (d.variant) rows.push(h("p", {}, tr("hasVariant", bytes(d.variant.size))),
@@ -503,7 +503,7 @@ const CastUi = (() => {
   return { open };
 })();
 
-// ---------------------------------------------------------------- Torrenty
+// ---------------------------------------------------------------- Torrents
 const Torrents = (() => {
   let timer, openId = null;
   const root = $("#torrents");
@@ -583,13 +583,13 @@ const Torrents = (() => {
   return {
     show() {
       clearInterval(timer); refresh();
-      // odświeżanie tylko gdy nikt nie pisze w polu magnetu i lista plików nie jest otwarta
+      // refresh only when nobody is typing in the magnet field and the file list isn't open
       timer = setInterval(() => { if (tab === "torrents" && !openId && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "SELECT") refresh(); }, 5000);
     },
   };
 })();
 
-// ---------------------------------------------------------------- Biblioteka
+// ---------------------------------------------------------------- Library
 const Library = (() => {
   const root = $("#library");
   let cur = null; // {root, path}
@@ -620,7 +620,7 @@ const Library = (() => {
   return { show() { (cur ? open(cur.root, cur.path) : roots()).catch(e => put(root, h("p", { class: "err" }, e.message))); } };
 })();
 
-// ---------------------------------------------------------------- Pilot
+// ---------------------------------------------------------------- Remote
 const Remote = (() => {
   const root = $("#remote");
   let timer, st = null, dragging = false, built = false, els = {};
@@ -704,7 +704,7 @@ const Remote = (() => {
     let ann = [];
     try { ann = await api("/api/announce"); } catch (e) { }
     if (!built) build();
-    // co grają inne piloty (rozgłoszenia z telefonów i innych serwerów), bez tego, co już widać wyżej
+    // what other remotes are playing (announcements from phones and other servers), without what's already shown above
     ann = ann.filter(x => !(x.target.kind === "cast" && cst?.active && x.target.name === cst.device));
     els.others.hidden = !ann.length;
     put(els.others, h("p", { class: "muted" }, tr("alsoPlaying")), ann.map(x => h("p", {},
@@ -742,7 +742,7 @@ const Remote = (() => {
   return { show() { clearInterval(timer); poll(); timer = setInterval(() => tab === "remote" && poll(), 1000); } };
 })();
 
-// ---------------------------------------------------------------- Napisy
+// ---------------------------------------------------------------- Subtitles
 const Subs = (() => {
   let ctl = null;
   function open(ref) {
@@ -825,7 +825,7 @@ const Subs = (() => {
   return { open };
 })();
 
-// ---------------------------------------------------------------- Odtwarzacz w przeglądarce
+// ---------------------------------------------------------------- Player in the browser
 const Player = (() => {
   async function open(ref) {
     const v = h("video", { controls: true, autoplay: true, preload: "auto", crossorigin: "anonymous" });

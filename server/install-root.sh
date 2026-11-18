@@ -1,18 +1,18 @@
 #!/bin/bash
-# Część instalacji wymagająca roota. Uruchamiana przez install.sh: pkexec bash install-root.sh <user>
-# Idempotentna — można puszczać wielokrotnie.
+# The part of the installation that needs root. Run by install.sh: pkexec bash install-root.sh <user>
+# Idempotent: safe to run repeatedly.
 set -euo pipefail
 U=${1:?user name required / podaj użytkownika}
 PORT=${2:-8765}
 BACKEND=${3:-deluge}
-# język komunikatów: 4. argument z install.sh (pkexec gubi LANG), inaczej z locale
+# message language: 4th argument from install.sh (pkexec drops LANG), otherwise from the locale
 MP_LANG=${4:-${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}}
 case "$MP_LANG" in pl*) MP_LANG=pl ;; *) MP_LANG=en ;; esac
 say() { if [ "$MP_LANG" = pl ]; then echo "$2"; else echo "$1"; fi; }
 
 say "== packages" "== pakiety"
 need=()
-pkgs=(mpv ethtool qrencode python3-venv ffmpeg)  # ffmpeg: wersje „dla Chromecasta”
+pkgs=(mpv ethtool qrencode python3-venv ffmpeg)  # ffmpeg: the "for Chromecast" versions
 [ "$BACKEND" = deluge ] && pkgs+=(deluged deluge-web)
 for p in "${pkgs[@]}"; do
   dpkg -s "$p" >/dev/null 2>&1 || need+=("$p")
@@ -32,7 +32,7 @@ say "== polkit: $U may block sleep and put the computer to sleep from a backgrou
     "== polkit: $U może blokować usypianie i usypiać komputer z usługi w tle"
 mkdir -p /etc/polkit-1/rules.d
 cat > /etc/polkit-1/rules.d/49-magneticplayer.rules <<EOF
-// MagneticPlayer: agent działa jako usługa systemd --user (poza sesją graficzną)
+// MagneticPlayer: the agent runs as a systemd --user service (outside the graphical session)
 polkit.addRule(function(action, subject) {
   if (subject.user == "$U" && (
       action.id == "org.freedesktop.login1.inhibit-block-sleep" ||
@@ -57,7 +57,7 @@ else
     nmcli connection modify "$CON" 802-3-ethernet.wake-on-lan magic
     say "NetworkManager: connection '$CON' has wake-on-lan=magic" "NetworkManager: połączenie '$CON' ma wake-on-lan=magic"
   fi
-  # karta musi mieć też włączone budzenie po stronie PCI (sysfs); trwale przez regułę udev
+  # the card must also have wakeup enabled on the PCI side (sysfs); made permanent by a udev rule
   cat > /etc/udev/rules.d/81-magneticplayer-wol.rules <<UDEV
 ACTION=="add", SUBSYSTEM=="net", NAME=="$DEV", RUN+="/usr/sbin/ethtool -s $DEV wol g", RUN+="/bin/sh -c 'echo enabled > /sys/class/net/$DEV/device/power/wakeup'"
 UDEV
@@ -71,7 +71,7 @@ echo "== firewall"
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow from 192.168.0.0/16 to any port "$PORT" proto tcp comment "MagneticPlayer"
   ufw allow from 10.0.0.0/8 to any port "$PORT" proto tcp comment "MagneticPlayer"
-  # rozgłaszanie „co gra” między pilotami (multicast w LAN)
+  # "now playing" announcements between remotes (multicast on the LAN)
   ufw allow from 192.168.0.0/16 to any port 47700 proto udp comment "MagneticPlayer"
   ufw allow from 10.0.0.0/8 to any port 47700 proto udp comment "MagneticPlayer"
 fi
