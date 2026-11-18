@@ -19,7 +19,13 @@ docs/     documentation (in Polish for now)
 - **How much is watchable:** for each video, the part downloaded contiguously from the start, in percent and minutes.
 - **After download:** nothing, stop the torrent, or put the computer to sleep. History of requests sent from the phone,
   with “Download again”.
-- **Library:** chosen folders on the computer, videos and music only.
+- **Library:** chosen folders on the computer, videos and music only, with tags (movies, series, kids, backup),
+  visibility per device, search and covers. A magnet is recognised and downloaded straight into the right folder.
+- **Disks and tidying up:** free up a full disk by moving to another one (torrents through the client, so they keep
+  seeding), tidy up by recognition, find duplicates, copy a folder to a backup disk. Storage profiles shrink chosen
+  folders on request (lossless audio clean-up, or HEVC 1080p/720p/480p), always after a preview, with a trash.
+- **AI assistant (MCP):** e.g. Claude Code on a computer at home connects to `http://<computer>:8765/mcp`; you
+  approve it on the phone, and it can browse and organise the library through the same previews.
 - **Playback:**
   - on the phone (ExoPlayer, external and embedded subtitles), in VLC, or in mpv on the computer;
   - hand a video over from the phone to the computer at the same position;
@@ -45,7 +51,8 @@ docs/     documentation (in Polish for now)
     (or only what you publish by hand) and the apps offer the update.
 - **Install on another computer** from the app: the phone shows a one-line command (`curl … | bash` on Linux,
   `irm … | iex` in PowerShell on Windows). The agent comes from an existing server or from the phone itself, and the
-  new computer pairs with the phone automatically.
+  new computer pairs with the phone automatically. Agents update themselves from signed releases, at a moment when
+  nobody is watching, and roll back if the new version doesn't start.
 
 ## Quick start
 

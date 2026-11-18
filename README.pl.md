@@ -19,7 +19,13 @@ docs/     dokumentacja
 - **Ile da się już obejrzeć:** dla każdego filmu część pobrana ciągiem od początku, w procentach i minutach.
 - **Akcja po pobraniu** (przy zleceniu albo później): nic, zatrzymaj torrent albo uśpij komputer.
   Do tego historia zleceń wysłanych z telefonu z opcją „Pobierz znowu”.
-- **Biblioteka:** wybrane katalogi komputera, tylko filmy i muzyka.
+- **Biblioteka:** wybrane katalogi komputera, tylko filmy i muzyka, z tagami (filmy, seriale, bajki, kopia),
+  widocznością dla urządzeń, wyszukiwarką i okładkami. Magnet jest rozpoznawany i pobierany od razu do właściwego folderu.
+- **Dyski i porządki:** zwolnienie pełnego dysku przez przeniesienie na inny (torrenty przez klienta, więc dalej się
+  seedują), porządki według rozpoznania, duplikaty, kopia folderu na dysk zapasowy. Profile przechowywania zmniejszają
+  wybrane foldery na życzenie (bezstratne porządki w audio albo HEVC 1080p/720p/480p), zawsze po podglądzie i z koszem.
+- **Asystent AI (MCP):** np. Claude Code na domowym komputerze łączy się z `http://<komputer>:8765/mcp`; zatwierdzasz go
+  na telefonie i może przeglądać oraz porządkować bibliotekę przez te same podglądy.
 - **Odtwarzanie:**
   - na telefonie (ExoPlayer, napisy obok filmu i wbudowane), w VLC na telefonie albo w mpv na komputerze;
   - przekazanie filmu z telefonu na komputer od tego samego miejsca;
@@ -45,7 +51,8 @@ docs/     dokumentacja
     to, co opublikujesz ręcznie), a apki proponują aktualizację.
 - **Instalacja na innym komputerze** z apki: telefon pokazuje jednolinijkowe polecenie (`curl … | bash` na Linuksie,
   `irm … | iex` w PowerShellu na Windowsie). Agent pochodzi z istniejącego serwera albo z samego telefonu, a nowy
-  komputer sam paruje się z telefonem.
+  komputer sam paruje się z telefonem. Agenty same aktualizują się z podpisanych wydań, gdy nikt nie
+  ogląda, i wracają do poprzedniej wersji, jeśli nowa się nie uruchomi.
 
 ## Szybki start
 
