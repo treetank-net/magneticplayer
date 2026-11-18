@@ -64,7 +64,7 @@ PREV=$(git describe --tags --abbrev=0 "$CI_COMMIT_SHA^" 2>/dev/null || true)
   echo "Instalacja: README. Paczkę agenta (agent.tgz) apka pobiera sama i sprawdza podpis manifestu (agent.json.sig)."
   echo
   echo "Zmiany:"
-  git log --no-merges --format='- %s' ${PREV:+"$PREV..$CI_COMMIT_SHA"} | head -40
+  git log -n 40 --no-merges --format='- %s' ${PREV:+"$PREV..$CI_COMMIT_SHA"}  # bez | head: SIGPIPE przy pipefail
 } > "$REL/notes.md"
 GITHUB_TOKEN=$GITHUB_TREETANK_TOKEN python3 -I tools/github-release.py "$REPO" "$TAG" "MagneticPlayer $VN" "$REL/notes.md" \
   "$REL/MagneticPlayer.apk" "$REL/version.json" "$REL/agent.tgz" "$REL/agent.json" "$REL/agent.json.sig"
