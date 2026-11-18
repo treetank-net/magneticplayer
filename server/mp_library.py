@@ -8,6 +8,7 @@ import threading
 from mp_i18n import T
 
 SEARCH_TTL = 300
+REPLICA = {}  # library folder id → {"pending", "copied", "last", "error"} (mp_tasks replication; shown in /api/library)
 _search_cache = {}  # real path of a library folder -> (time, [(relative path, is_dir, size)])
 _search_lock = threading.Lock()
 
@@ -148,7 +149,9 @@ class Library:
                 r.setdefault("id", secrets.token_hex(3))
             self.save_cfg()
         return [dict(r, index=i, exists=os.path.isdir(r["path"]), tags=r.get("tags") or [], visible=r.get("visible") or "all",
-                     exclude=r.get("exclude") or []) for i, r in enumerate(lib)]
+                     exclude=r.get("exclude") or [], replicate_to=r.get("replicate_to"),
+                     **({"replica": REPLICA[r["id"]]} if r.get("replicate_to") and r["id"] in REPLICA else {}))
+                for i, r in enumerate(lib)]
 
     def visible_roots(self, manage=False):
         """Directories visible to the asking device (indexes stay global)."""
@@ -235,6 +238,11 @@ class Library:
                 raise LibError(T("visible must be all, owners or a list of devices",
                                  "widoczność: all, owners albo lista urządzeń"))
             r["visible"] = v
+        if "replicate_to" in b:  # "also copy to" another library folder (by id), None = off
+            to = b["replicate_to"] or None
+            if to is not None and (to == r.get("id") or not any(x.get("id") == to for x in self.cfg["library"])):
+                raise LibError(T("replicate_to must be another library folder", "kopia musi iść do innego folderu biblioteki"))
+            r["replicate_to"] = to
         if "exclude" in b:
             r["exclude"] = [x for x in (str(e).strip().strip("/") for e in b["exclude"] or []) if x and ".." not in x.split("/")][:100]
         self.save_cfg()

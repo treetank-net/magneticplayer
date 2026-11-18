@@ -3,9 +3,11 @@
 Status (2026-11-18): stage 1 (tags, visibility, exclusions) is in agent 1.4.0 and in the app, without a screen during
 server setup (for now a pencil next to the folder in the Library). Stage 2 (magnet → folder) is in agent 1.5.0 and in
 the app: recognition, downloading straight into the folder with the tag, "Change" with moving and remembering the
-choice. Missing: re-recognizing a magnet without a name (`dn=`) once the metadata has been downloaded. The API still
-points to a folder by index; `id` is in the configuration for replication. The stages go in order, because each one
-builds on the previous one.
+choice. Missing: re-recognizing a magnet without a name (`dn=`) once the metadata has been downloaded. Stages 3–7 are
+in agent 1.6.0 (with its self-update): background tasks with moving and replication, disks, tidy-up, duplicates,
+covers, storage profiles with a trash, the MCP server; the app screens for them come with the next release. Not done
+yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. The API still points to a folder by index;
+`id` is in the configuration for replication.
 
 ## Today
 
@@ -81,7 +83,8 @@ builds on the previous one.
     0.1 GB, audio ~10% of the size, few DTS/extra tracks), so the real lever is re-encoding — but only where the user
     asks for it. Measured on jmpc (18.11): 222 GB of video in 250 files, mostly H.264 1080p at 4–5 Mb/s; the
     TOSHIBA disk is 96% full while My Passport has 1.1 TB free, so moving (stage 3) comes first.
-    - A profile is set per folder (tag), per subfolder (a series) or per item, e.g.:
+    - A profile is set per folder (tag), per subfolder (a series) or per item (done: `profile` and `profiles` in the
+      folder's config), e.g.:
       `original` (never touch, the default; always for `kopia`), `tidy` (lossless: drop samples, audio tracks in
       languages nobody here speaks, DTS/TrueHD → E-AC3/Opus), `good` (HEVC ~1080p, quality-targeted CRF),
       `compact` (HEVC 720p, e.g. for `bajki` or watched series), `tiny` (480p, for "keep it just in case").
@@ -141,3 +144,10 @@ builds on the previous one.
    and a trash (decision 16). Builds on stage 3 (background tasks) and the existing converter (`mp_media`).
 7. **MCP server** (decision 17): read tools and tags can come early (they need only stage 1), moving and
    re-encoding after stages 3 and 6.
+
+What went into agent 1.6.0 (`mp_tasks.py`, `mp_mcp.py`, `mp_media.cover`, `mp_selfupdate.py`): stages 3, 4 and 6
+share one task engine and one preview flow, so a "free up the TOSHIBA disk" plan, a tidy-up by recognition, deleting
+duplicates and shrinking are the same kind of task in the app and over MCP. Measured on jmpc (18.11): the library is
+only ~59 GB of the 891 GB used on TOSHIBA (the rest isn't in the library), so moving frees at most that; a "free"
+plan for 30 GB picked 3 items (28 GB) to My Passport. The tidy-up checked 74 items and proposed 1 move; duplicates:
+one pair (2.8 GB).

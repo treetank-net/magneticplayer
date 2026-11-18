@@ -34,6 +34,9 @@ pipe instead of a unix socket.
 | `mp_access.py` | access requests from the home network: a request without a token, the list and a household member's decision, handing a pairing code to the requester |
 | `mp_install.py` | installing the agent on another computer: join code, the `/i/<code>` script (templates `join.sh`, `join.ps1`, shared with the phone), the bundle, registering the new server with a pairing code for the phone |
 | `mp_upload.py` | receiving videos from the phone (`/api/upload/<id>`): resumable chunks in `.mp-upload/`, free space, name collisions, the `upload_dir` folder or `Z telefonu` ("From phone") in the library |
+| `mp_selfupdate.py` | the agent updates itself from signed GitHub releases (ECDSA P-256 verified in pure Python), at a quiet moment, through `self-update.sh` with a rollback |
+| `mp_tasks.py` | background file tasks with a preview: planners (free up a disk, tidy up by recognition, duplicates, shrinking by storage profiles, deleting to the trash) and one worker; moving through the torrent client when the torrent is still in it; `.mp-trash/` per library folder |
+| `mp_mcp.py` | MCP server for an AI assistant in the LAN (Streamable HTTP, tools over the library and tasks) and the OAuth 2.1 endpoints whose approval is an access request on the phone |
 | `mp_i18n.py` | language of user-facing messages: `T("English", "Polski")` based on the current request's `Accept-Language` (a per-thread value set at the start of `dispatch`); `bind(fn)` carries the language into background threads; the CLI (`--pair`, `--join`) uses `LC_ALL`/`LC_MESSAGES`/`LANG`. Install scripts have their own `say`/`Say` (Polish with a Polish locale / Windows UI language) |
 | `mp_platform.py` | everything OS-specific: graphical session, unlocking, suspend, network interface, wake assessment, sending WoL, the mpv path (on Windows `mpv\mpv.exe` next to the agent). Another OS is added here; whatever it can't do, the agent doesn't report in `features`/`power` |
 
@@ -219,6 +222,44 @@ them right away with `sub-add`.
 
 OpenSubtitles without a login: subliminal requires logging in (`@requires_auth`) before downloading, while the API
 allows downloading with just a key. That's why `_oscom_anonymous` calls `download_subtitle.__wrapped__`.
+
+### Background file tasks (agent 1.6+)
+`mp_tasks.py`, the API in [api.md](api.md#disks-background-tasks-storage-profiles-agent-16-featureslibrary_tasks).
+1. A planner proposes items in a background thread and changes nothing; the phone (or an MCP assistant) shows the
+   preview with checkboxes.
+2. The chosen items become one task in `tasks.json`; one worker runs tasks one after another, an interrupted task
+   continues after a restart (a half-done item is redone).
+3. Moving: a torrent still in the client → `move_storage`/`torrent-set-location` and waiting until the client
+   reports the new folder (it keeps seeding); a folder containing torrents is skipped; the same filesystem →
+   rename; another disk → copy to `*.mp-part`, compare sizes and file counts, rename, delete the source. Subtitles,
+   `.nfo` and pictures next to a single video go with it; `.mp-cast` versions are dropped (made again on demand).
+4. Shrinking (storage profiles, decision 16 in plan-library.md): `original` (default, always for `kopia`),
+   `tidy` (lossless: the picture is copied, audio tracks other than Polish/English/undefined/default dropped,
+   DTS/TrueHD/PCM → E-AC3 640k or AAC; at least 3% saved), `good` (HEVC ≤1080p, x265 CRF 24), `compact` (≤720p, CRF 25, stereo), `tiny` (≤480p, CRF 26, small stereo AAC);
+   smaller profiles keep Polish, English, undefined and default audio tracks; subtitles and chapters are copied.
+   Only files outside the torrent client; HEVC/AV1 already small enough and estimates saving under 15% are
+   skipped. x265 `-preset fast` at `nice 19` and `ionice -c3` (`shrink_encoder: "gpu"` = NVENC), SIGSTOP while a
+   stream is active. The result must have the same duration (±0.5%), decode without errors and be at least 7.5%
+   smaller; then the original goes to `<library folder>/.mp-trash/<date>/` and the `.mkv` result takes its place.
+   The trash is purged after `trash_days` (default 14).
+5. The phone shows one notification per finished task.
+6. Replication (decision 5): a folder with `replicate_to` (another folder's id, set in the folder's settings) gets
+   its new or changed top-level items copied there every 30 minutes and after each task, quietly: no notification,
+   the state (`pending`, `copied`, `last`, `error`) is in `GET /api/library` as `replica`. Never deletions (a copy,
+   not a mirror), never an unfinished torrent, and a round stops when somebody starts streaming or a task is queued.
+
+### Covers
+`mp_media.cover()`: a picture next to the video or in the folder first (Jellyfin/Kodi names), otherwise one frame
+from ~10% into the video (the biggest video of a folder, samples skipped) via ffmpeg, cached by path, size and mtime.
+No network or accounts; TMDB posters remain an option for later.
+
+### MCP for an AI assistant
+`mp_mcp.py`: the assistant (e.g. Claude Code on a computer in the LAN) is added with
+`claude mcp add --transport http magneticplayer http://<server>:8765/mcp`. The first call gets `401`, the client
+registers itself, opens `/oauth/authorize` in the browser, and that page files an access request: the phone shows
+"<client> (AI assistant) is requesting access". "Member" = all tools, "Guest (1 day)" = read tools for a day. The
+page then pairs, the client exchanges the code (PKCE) for an ordinary device token, which the phone can revoke.
+Changing tools only make plans; `start_task` runs one after the user has seen it.
 
 ### Uploading downloaded videos from the phone
 A setting, off by default (details and decisions: [plan-upload.md](plan-upload.md)).

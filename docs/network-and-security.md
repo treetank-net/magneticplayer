@@ -62,6 +62,19 @@ handed out once. The name is just a label from the requester: the household memb
 the device. Nothing grants access without approval, and a guest doesn't see requests (`403`). The app doesn't check
 requests in the background, so with the app closed a request waits until someone opens it.
 
+### AI assistant (MCP, agent 1.6+)
+
+`/mcp` accepts only a device token. Getting one goes through OAuth 2.1 (dynamic registration, PKCE S256, one-time
+codes valid for 2 minutes, redirects only to loopback `http` or `https`), but the actual consent is the usual
+access request approved on a household member's phone, with the same limits (LAN only, 5 pending, 10 per minute).
+The token is an ordinary device: it is listed and revoked like a phone, and a guest token sees read tools only.
+Tools that change the library only prepare plans; moving, shrinking and deleting run after `start_task`, deleting
+goes to the trash. The assistant sees file names and folder paths of the folders visible to its device; that's what
+goes to its model provider.
+
+Plain HTTP in the LAN: OAuth 2.1 expects HTTPS outside localhost. The flow works with clients that accept an
+`http://` issuer on a private address; the fallback is to pair a token by hand and pass it as a header.
+
 ## Remote access: options for the future
 
 Don't expose port 8765 on the router. Without TLS and with a single token, that's asking for trouble. Sensible

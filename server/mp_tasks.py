@@ -13,12 +13,17 @@ its subtitles):
 - another disk: copy to `<name>.mp-part`, compare sizes, rename, delete the source.
 
 Shrinking (`op: shrink`), storage profiles set per library folder or per subfolder/file (`profile`, `profiles`):
-- `original` (default, always for `kopia`), `good` (HEVC ≤1080p), `compact` (HEVC ≤720p), `tiny` (HEVC ≤480p);
+- `original` (default, always for `kopia`), `tidy` (lossless: the picture is copied, audio tracks in other languages
+  dropped, DTS/TrueHD → E-AC3), `good` (HEVC ≤1080p), `compact` (HEVC ≤720p), `tiny` (HEVC ≤480p);
 - only files outside the torrent client; HEVC/AV1 already at or below the target height and files whose estimate
   saves less than 15% are skipped;
 - x265 on the CPU at nice 19 / idle I/O (or NVENC when `shrink_encoder` is "gpu"), paused while somebody streams;
 - the result is checked (duration, a full decode, really smaller) and only then replaces the original; the original
   goes to `<library folder>/.mp-trash/` for `trash_days` days (default 14, 0 = delete right away).
+
+Replication (decision 5): a library folder with `replicate_to` = another folder's id gets its top-level items copied
+there quietly (every 30 minutes and after each task): new or changed items only, never deletions (a copy, not a
+mirror), not while a torrent is unfinished, and the round stops when somebody starts streaming.
 """
 import json
 import os
@@ -34,9 +39,12 @@ import time
 
 import mp_media
 from mp_i18n import T
+import mp_library
 from mp_library import HIDDEN_TAGS, SUB_EXT, VIDEO_EXT
 
 PROFILES = {  # target height, x265 CRF, NVENC CQ, estimated video kb/s at that height, audio
+    # lossless for the picture: only audio (other languages out, DTS/TrueHD/PCM → E-AC3/AAC), subtitles and chapters kept
+    "tidy": {"copy": True, "audio": "lean", "min_saving": 0.03},
     "good": {"height": 1080, "crf": 24, "cq": 27, "kbps": 1800, "audio": "keep"},
     "compact": {"height": 720, "crf": 25, "cq": 28, "kbps": 900, "audio": "stereo"},
     "tiny": {"height": 480, "crf": 26, "cq": 29, "kbps": 450, "audio": "small"},
@@ -44,6 +52,7 @@ PROFILES = {  # target height, x265 CRF, NVENC CQ, estimated video kb/s at that 
 PROFILE_NAMES = ("original", *PROFILES)
 LOSSLESS_AUDIO = {"truehd", "dts", "flac", "mlp"} | {f"pcm_{x}" for x in ("s16le", "s24le", "s32le", "s16be", "s24be")}
 MIN_SAVING = 0.15
+MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
 KEEP = 50  # finished tasks kept in tasks.json
 
@@ -114,6 +123,7 @@ class Tasks:
         self.lock = threading.Lock()
         self.plans = {}  # id → {state, progress, result | error}; in memory, an hour
         self.proc = None
+        self.replicating = False
         self.cancel_ev = threading.Event()
         self.wake = threading.Event()
         try:
@@ -151,7 +161,7 @@ class Tasks:
 
     def busy(self):
         with self.lock:
-            return any(t["state"] in ("queued", "running") for t in self.items)
+            return self.replicating or any(t["state"] in ("queued", "running") for t in self.items)
 
     def cancel(self, tid):
         with self.lock:
@@ -593,7 +603,7 @@ class Tasks:
                 if self._inside(full, torrents):
                     skipped.append(dict(item, reason=T("still seeding in the torrent client", "jeszcze seeduje w kliencie torrentów")))
                     continue
-                if size < 50 << 20:
+                if size < MIN_SIZE:
                     continue  # samples, extras
                 try:
                     info = mp_media.probe(full)
@@ -605,14 +615,21 @@ class Tasks:
                     skipped.append(dict(item, reason=T("no video stream or length", "brak obrazu albo długości")))
                     continue
                 pr = PROFILES[prof]
-                h = min(v.get("height") or pr["height"], pr["height"])
-                if v.get("codec") in ("hevc", "av1") and (v.get("height") or 0) <= pr["height"]:
-                    skipped.append(dict(item, reason=T("already HEVC/AV1 at this size", "już HEVC/AV1 w tym rozmiarze")))
-                    continue
-                vkbps = pr["kbps"] * (h / pr["height"]) ** 1.5
-                akbps = sum(_audio_kbps(a, pr["audio"]) for a in _audio_keep(info, pr["audio"]))
-                est = int(dur * (vkbps + akbps) * 1000 / 8 * 1.02)
-                if est > size * (1 - MIN_SAVING):
+                if pr.get("copy"):  # tidy: the size minus what the audio changes save
+                    h = v.get("height")
+                    before = sum(_audio_src_kbps(a) for a in info.get("audio") or [])
+                    after = sum(_audio_kbps(a, pr["audio"]) for a in _audio_keep(info, pr["audio"]))
+                    # bitrates are guesses (Matroska keeps none per stream): never promise more than half the file
+                    est = int(max(size - max(before - after, 0) * dur * 1000 / 8, size * 0.5))
+                else:
+                    h = min(v.get("height") or pr["height"], pr["height"])
+                    if v.get("codec") in ("hevc", "av1") and (v.get("height") or 0) <= pr["height"]:
+                        skipped.append(dict(item, reason=T("already HEVC/AV1 at this size", "już HEVC/AV1 w tym rozmiarze")))
+                        continue
+                    vkbps = pr["kbps"] * (h / pr["height"]) ** 1.5
+                    akbps = sum(_audio_kbps(a, pr["audio"]) for a in _audio_keep(info, pr["audio"]))
+                    est = int(dur * (vkbps + akbps) * 1000 / 8 * 1.02)
+                if est > size * (1 - pr.get("min_saving", MIN_SAVING)):
                     skipped.append(dict(item, reason=T("already small, little to gain", "już mały, niewiele do zyskania"),
                                         est=est))
                     continue
@@ -641,10 +658,16 @@ class Tasks:
     # ---- worker
 
     def _loop(self):
-        last_purge = 0
+        last_purge = last_repl = 0
         while True:
             self.wake.wait(60)
             self.wake.clear()
+            if time.time() - last_repl > 1800:
+                last_repl = time.time()
+                try:
+                    self.replicate()
+                except Exception as e:  # noqa: BLE001
+                    self.log("replication:", e)
             if time.time() - last_purge > 6 * 3600:
                 last_purge = time.time()
                 try:
@@ -708,11 +731,75 @@ class Tasks:
             t["finished"] = time.time()
             self._save()
         self.library.invalidate()
+        try:
+            self.replicate()
+        except Exception as e:  # noqa: BLE001
+            self.log("replication:", e)
         self.log(f"task {t['id']} {t['state']}: {sum(i['state'] == 'done' for i in t['items'])} done, {t['errors']} errors")
 
     def _check_cancel(self, t=None):
         if self.cancel_ev.is_set():
             raise _Cancelled()
+
+    # ---- replication
+
+    def replicate(self):
+        roots = {r["id"]: r for r in self.library.roots()}
+        try:
+            unfinished = {os.path.realpath(os.path.join(t["save_path"], t["name"]))
+                          for t in self.backend().list() if t.get("progress", 100) < 100}
+        except Exception:  # noqa: BLE001 — no client: nothing is downloading as far as we can tell
+            unfinished = set()
+        for r in roots.values():
+            to = roots.get(r.get("replicate_to") or "")
+            if not to:
+                mp_library.REPLICA.pop(r["id"], None)
+                continue
+            st = mp_library.REPLICA.setdefault(r["id"], {"pending": 0, "copied": 0, "last": None, "error": None})
+            if not r["exists"] or not to["exists"]:
+                st["error"] = T("a disk is disconnected", "dysk jest odłączony")
+                continue
+            todo = []
+            for name in sorted(os.listdir(r["path"])):
+                if name.startswith(".") or name.endswith(".mp-part"):
+                    continue
+                src, dst = os.path.join(r["path"], name), os.path.join(to["path"], name)
+                if os.path.realpath(src) in unfinished:
+                    continue
+                if os.path.exists(dst) and tree_size(src) == tree_size(dst):
+                    continue
+                todo.append((src, dst))
+            st.update(pending=len(todo), error=None)
+            for src, dst in todo:
+                if self.streaming() or any(t["state"] == "queued" for t in self.items):
+                    return  # somebody watches, or the owner started a task: next round
+                need = tree_size(src)[0]
+                if shutil.disk_usage(to["path"]).free < need + (1 << 30):
+                    st["error"] = T("not enough room for the copy", "za mało miejsca na kopię")
+                    break
+                part = dst + ".mp-part"
+                with self.lock:
+                    self.replicating = True
+                try:
+                    if os.path.exists(part):
+                        (shutil.rmtree if os.path.isdir(part) else os.remove)(part)
+                    _copy(src, part, lambda n: None)
+                    if tree_size(src) != tree_size(part):
+                        raise OSError(T("the copy differs from the source", "kopia różni się od źródła"))
+                    if os.path.exists(dst):
+                        (shutil.rmtree if os.path.isdir(dst) else os.remove)(dst)
+                    os.rename(part, dst)
+                    st["copied"] += 1
+                    st["pending"] -= 1
+                    st["last"] = time.time()
+                except OSError as e:
+                    st["error"] = str(e)[:200]
+                    self.log("replication:", os.path.basename(src), e)
+                    if os.path.exists(part):
+                        (shutil.rmtree if os.path.isdir(part) else os.remove)(part)
+                finally:
+                    with self.lock:
+                        self.replicating = False
 
     # ---- moving
 
@@ -874,7 +961,7 @@ class Tasks:
         if abs((ninfo.get("duration") or 0) - dur) > max(2.0, dur * 0.005):
             _rm(part)
             raise TaskError(T("the result has a different length, the original was kept", "wynik ma inną długość, oryginał został"))
-        if new > st.st_size * (1 - MIN_SAVING / 2):
+        if new > st.st_size * (1 - pr.get("min_saving", MIN_SAVING) / 2):
             _rm(part)
             i["state"] = "skipped"
             i["error"] = T("the result wasn't much smaller, the original was kept", "wynik nie był wyraźnie mniejszy, oryginał został")
@@ -898,20 +985,23 @@ class Tasks:
 
     def _shrink_cmd(self, full, out, info, pr):
         v = info["video"]
-        h = min(v.get("height") or pr["height"], pr["height"])
+        h = min(v.get("height") or pr.get("height", 0), pr.get("height", 1 << 16))
         vf = f"scale=-2:{h}" if (v.get("height") or 0) > h else "null"
         cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", full, "-map", "0:v:0"]
         keep = _audio_keep(info, pr["audio"])
         for a in keep:
             cmd += ["-map", f"0:a:{a['index']}"]
         cmd += ["-map", "0:s?", "-map_chapters", "0"]
-        if self._encoder() == "gpu":
+        if pr.get("copy"):
+            cmd += ["-c:v", "copy"]
+        elif self._encoder() == "gpu":
             cmd += ["-vf", f"{vf},format=yuv420p", "-c:v", "hevc_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", str(pr["cq"]),
                     "-b:v", "0"]
         else:
             cmd += ["-vf", f"{vf},format=yuv420p", "-c:v", "libx265", "-preset", self.cfg.get("shrink_preset", "fast"),
                     "-crf", str(pr["crf"]), "-x265-params", "log-level=error"]
-        cmd += ["-tag:v", "hvc1"]
+        if not pr.get("copy"):
+            cmd += ["-tag:v", "hvc1"]
         for n, a in enumerate(keep):
             how = _audio_codec(a, pr["audio"])
             cmd += [f"-c:a:{n}", *how]
@@ -1004,7 +1094,7 @@ def _copy(src, dst, tick):
 def _audio_keep(info, mode):
     """Audio tracks to keep: all for `keep`; for smaller profiles Polish, English, undefined and the default one."""
     audio = info.get("audio") or []
-    if mode == "keep" or len(audio) <= 1:
+    if mode == "keep" or len(audio) <= 1:  # "lean" (tidy) filters languages like the smaller profiles
         return audio
     keep = [a for a in audio if (a.get("lang") or "und") in ("pol", "pl", "eng", "en", "und") or a.get("default")]
     return keep or audio[:1]
@@ -1012,7 +1102,7 @@ def _audio_keep(info, mode):
 
 def _audio_codec(a, mode):
     c, ch = a.get("codec") or "", a.get("channels") or 2
-    if mode == "keep":
+    if mode in ("keep", "lean"):
         if c in LOSSLESS_AUDIO or c.startswith("pcm_"):
             return ["eac3", "-b:a", "640k"] if ch > 2 else ["aac", "-b:a", "192k"]
         return ["copy"]
@@ -1021,9 +1111,18 @@ def _audio_codec(a, mode):
     return ["aac", "-b:a", "96k", "-ac", "2"]
 
 
+def _audio_src_kbps(a):
+    """A guess of a source track's bitrate (Matroska rarely stores it per stream)."""
+    c, ch = a.get("codec") or "", a.get("channels") or 2
+    if c.startswith("pcm_"):
+        return 768 * ch
+    return {"truehd": 3500, "mlp": 3500, "dts": 1509 if ch > 2 else 768, "flac": 700 * max(ch // 2, 1),
+            "ac3": 448 if ch > 2 else 192, "eac3": 640 if ch > 2 else 192}.get(c, 160 if ch <= 2 else 384)
+
+
 def _audio_kbps(a, mode):
     c, ch = a.get("codec") or "", a.get("channels") or 2
     how = _audio_codec(a, mode)
     if how[0] != "copy":
         return int(how[2].rstrip("k"))
-    return {"ac3": 448 if ch > 2 else 192, "eac3": 640 if ch > 2 else 192, "dts": 1500}.get(c, 160 if ch <= 2 else 384)
+    return _audio_src_kbps(a)

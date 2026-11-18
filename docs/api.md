@@ -122,13 +122,40 @@ From the console: `magneticplayer_agent.py --pair` (code + QR in the terminal), 
 
 | method and path | description |
 |---|---|
-| `GET /api/library` | folders visible to the device: `index`, `id`, `name`, `path`, `exists`, `tags`, `visible`, `exclude`, `open`; `?manage=1` (household member): also those hidden from them and those tagged `kopia` (backup) (`open: false` when they can't open them) |
-| `POST /api/library` | `{"path", "name"?}` adds a folder, `{"op": "remove", "index"}` removes it, `{"op": "update", "index", "name"?, "tags"?, "visible"?, "exclude"?}` changes it (agent 1.4+, `features.library_tags`); returns the list as with `?manage=1` |
+| `GET /api/library` | folders visible to the device: `index`, `id`, `name`, `path`, `exists`, `tags`, `visible`, `exclude`, `open`, `profile`/`profiles` (storage profiles), `replicate_to` and `replica` (`pending`, `copied`, `last`, `error`); `?manage=1` (household member): also those hidden from them and those tagged `kopia` (backup) (`open: false` when they can't open them) |
+| `POST /api/library` | `{"path", "name"?}` adds a folder, `{"op": "remove", "index"}` removes it, `{"op": "update", "index", "name"?, "tags"?, "visible"?, "exclude"?, "replicate_to"?}` changes it (agent 1.4+, `features.library_tags`; `replicate_to`: another folder's `id` or null, agent 1.6+); returns the list as with `?manage=1` |
 | `POST /api/library/guess` | `{"magnet"\|"name"\|"torrent"}` (agent 1.5+, `features.library_guess`) → `name`, `guess` (`tag`: filmy/seriale/bajki/muzyka/inne/null, i.e. movies/series/kids/music/other, `kind`, `title`, `year`, `imdb`, `season`, `genres`, `confidence`: high/medium/low, `why`), `targets` (writable folders without `kopia`: `root`, `id`, `name`, `path`, `tags`, `free`, `sub`, `existing`) and `pick` (an index into `targets` or null). Series: an existing subfolder with its title, otherwise a new `<title>`; movie: the folder with the tag that has the most free space |
 | `GET /api/library/search?q=` | (agent 1.5+, `features.library_search`) folders and media files whose name contains every word of `q` (case and diacritics ignored), only in folders the device sees, without excluded subfolders and `kopia`: list of `root`, `root_name`, `path`, `dir`, `size`, `media`, max 100. Names are cached for 5 minutes |
 | `GET /api/library/browse?root=&path=` | `root`, `path`, `dirs`, `files` (`name`, `size`, `mtime`, `media`, `subs`) |
+| `GET /api/library/cover?root=&path=` | (agent 1.6+, `features.library_covers`, guests too) a cover for a folder or a video: `poster`/`folder`/`cover`/`movie`/`show` `.jpg\|.png\|.webp` in a folder, `<name>.jpg`/`<name>-poster.jpg` next to a video, otherwise a frame from ~10% into the (biggest) video, 360 px wide, cached in `~/.cache/magneticplayer/covers`; 404 = nothing |
 | `GET /api/fs?path=` | subfolders for choosing a new folder (`parent`, `dirs`) |
 | `GET /lib/<root>/<path>` | stream of a library file (Range) |
+
+## Disks, background tasks, storage profiles (agent 1.6+, `features.library_tasks`)
+
+Household members only. Nothing changes without a preview: a **plan** proposes items, a **task** carries out the
+chosen ones in the background (one at a time, persisted in `tasks.json`, continued after an agent restart).
+
+| method and path | description |
+|---|---|
+| `GET /api/library/disks` | `disks` (fullest first): `id`, `name`, `mount`, `total`, `free`, `used`, `roots` (`root`, `id`, `name`, `tags`, `size`, `files`, `profile`, `profiles`); `trash` (`root`, `root_name`, `day`, `size`, `files`); `trash_days` |
+| `POST /api/library/plan` | starts a planner, returns `{"id", "state": "running", "progress"}`. Kinds: `{"kind": "free", "root", "need"?}` move items off the disk of `root` to folders with the same tag on other disks (default: up to 15% free); `{"kind": "shrink", "root", "path", "profile"?}` re-encode by storage profiles (`profile` is saved for that folder/subfolder/file first); `{"kind": "tidy"}` items whose recognition doesn't match the folder's tag; `{"kind": "dupes"}` identical videos; `{"kind": "trash", "items": [{"root", "path"}]}` deleting to the trash; `{"kind": "move", "items": [{"root", "path", "to_root", "to_sub"?}]}` explicit moves |
+| `GET /api/library/plan/<id>` | `state` (`running`/`done`/`error`), `progress`, `result`: `kind` (`move`/`shrink`/`trash`/`dupes`), `title`, `items`, `bytes`, `skipped` (with `reason`); free: `need`, `free_before`, `free_after`, `total`; shrink: `est`, `saved`, `hours`, `encoder`, `warnings`, `trash_days`; tidy: `checked`; dupes: `groups` (`size`, `files`), `wasted`. Items: `name`, `path`, `root`, `root_name`, `size`; move: `to_root`, `to_name`, `to_sub`, `torrent` (moved by the client), `extra` (subtitles etc. next to a single video), `tag`, `unsure`, `guess`; shrink: `profile`, `est`, `codec`, `height`, `to_height`, `duration`, `bitrate`. Plans live in memory for an hour |
+| `POST /api/tasks` | `{"plan", "pick"?: [item indexes]}` → the task |
+| `GET /api/tasks` | newest first: `id`, `kind`, `title`, `state` (`queued`/`running`/`done`/`cancelled`), `created`, `started`, `finished`, `total`, `done_bytes`, `pct`, `current`, `saved`, `errors`, `paused` (an encode waits while somebody streams), `items` (with `state`: `pending`/`running`/`done`/`error`/`skipped`, `error`, `saved`) |
+| `GET /api/tasks/<id>`, `POST /api/tasks/<id>/cancel` | one task; stop it (the current item stays as it was) |
+| `POST /api/library/profile` | `{"root", "path", "profile": "original"\|"tidy"\|"good"\|"compact"\|"tiny"}` (`path` empty = the whole folder) |
+| `POST /api/library/trash/empty` | delete everything in the trash now → `{"freed"}` |
+
+## MCP for an AI assistant (agent 1.6+, `features.mcp`)
+
+| method and path | description |
+|---|---|
+| `POST /mcp` | MCP over Streamable HTTP (JSON responses only), `Authorization: Bearer <device token>`; without it `401` with `WWW-Authenticate: Bearer resource_metadata=…`. Tools in `server/mp_mcp.py`; a guest device gets only the read tools |
+| `GET /.well-known/oauth-protected-resource`, `GET /.well-known/oauth-authorization-server` | OAuth metadata (RFC 9728, RFC 8414) |
+| `POST /oauth/register` | dynamic client registration; redirect URIs: loopback `http` or `https` |
+| `GET /oauth/authorize` | page in the browser: files an access request and waits for the phone; then redirects with a one-time code (2 min) |
+| `POST /oauth/token` | `grant_type=authorization_code`, `code`, `code_verifier` (PKCE S256) → `{"access_token", "token_type": "Bearer"}`: an ordinary device token |
 
 ## Uploading from the phone
 
