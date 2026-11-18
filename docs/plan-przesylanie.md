@@ -19,6 +19,13 @@ apka w tle), „Prześlij i usuń” z „Dostępem do wszystkich plików” prz
 klawiaturą (`FLAG_ALT_FOCUSABLE_IM` kładzie okno pod warstwą klawiatury, `fitInsetsTypes` z `ime()` podnosi je nad nią;
 bez tego karta zasłaniała klawisze). Chrome nie otworzył strony z adresem w LAN (nie wyjaśnione, Firefox tak).
 
+18.11.2026, Pixel 8a, apka w tle (bez otwartego okna; proces trzyma przy życiu `RemoteRouteProvider`, więc „zamkniętej
+do końca” apki nie da się łatwo uzyskać): film 37 MB pobrany w Chrome („Pobierz” w menu odtwarzacza) i w Firefoksie
+(„Zapisz plik na urządzeniu”) dał powiadomienie zaraz po końcu pobierania. `setForeground` z tła przechodzi (usługa
+pierwszoplanowa `dataSync`, pasek „Przesyłam na jmpc”, 37 MB w kilka sekund). Systemowe okno usuwania pliku z Chrome:
+„Zezwolić aplikacji MagneticPlayer na usunięcie tego filmu?” z miniaturą, „Zezwól” usuwa. Plik o nazwie, która już jest
+na serwerze, trafia tam jako „nazwa (2).mp4”.
+
 ## Jak to działa
 
 1. **Wykrywanie** (`Uploads.kt`): zlecenie WorkManagera z wyzwalaczem `addContentUriTrigger(MediaStore.Video…, true)`.
@@ -80,6 +87,5 @@ bez tego karta zasłaniała klawisze). Chrome nie otworzył strony z adresem w L
 
 ## Do sprawdzenia na telefonie
 
-- Czy wyzwalacz MediaStore odpala się przy zamkniętej apce po pobraniu w Chrome i Firefoksie (i po restarcie telefonu).
-- Czy `setForeground` przechodzi z tła na Pixelu (Android 16) i jak wygląda przerwanie po ~10 min, gdy nie.
-- Okno usuwania (`createDeleteRequest`) dla pliku z Chrome.
+- Wyzwalacz MediaStore po restarcie telefonu (WorkManager odnawia go sam przy starcie, ale nie sprawdzone).
+- Przesyłanie „po powrocie do domu” (pobranie poza Wi-Fi serwera).
