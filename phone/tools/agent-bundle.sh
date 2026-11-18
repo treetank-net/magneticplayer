@@ -11,4 +11,5 @@ rm -rf "$OUT" && mkdir -p "$OUT"
     | xargs -0 tar --owner=0 --group=0 --numeric-owner -czf "$OUT/agent.tgz" )
 cp "$REPO/server/join.sh" "$REPO/server/join.ps1" "$OUT/"
 # czas ostatniego commita z server/ rośnie razem z kodem agenta: po nim apka wybiera nowszą z paczek (wbudowana / wydanie)
-echo "$(git -C "$REPO" log -1 --format=%ct -- server) $(git -C "$REPO" rev-parse --short HEAD)" > "$OUT/version.txt"
+# AGENT_CT: tylko do testów pobierania nowszej paczki z wydania (sztucznie stara wbudowana)
+echo "${AGENT_CT:-$(git -C "$REPO" log -1 --format=%ct -- server)} $(git -C "$REPO" rev-parse --short HEAD)" > "$OUT/version.txt"

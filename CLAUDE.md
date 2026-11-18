@@ -61,6 +61,8 @@ TP_EMU_AVD=$HOME/.cache/mp-emu-avd TP_EMU_NAME=mp TP_EMU_PORT=5556 TP_EMU_MEM=20
 ```
 
 Na laptopie tylko z tymi limitami i gaszony po testach (jeden emulator naraz, nie równolegle z buildem APK).
+Emulator i VirtualBox nie działają naraz: przy uruchomionej VM emulator pada z „KVM: entry failed, hardware error 0x0”.
+Przed startem `VBoxManage controlvm <vm> savestate` (win11 tylko przez LOCK), po testach można je wznowić.
 Wyjście z emulatora do LAN przez NAT działa (192.168.100.100:8765); wejście z LAN: `adb forward` + `socat`.
 Win11 w VirtualBox: protokół `~/.cache/winvm/LOCK` (wspólny z timeprotect), po teście snapshot `przed-magneticplayer`.
 
