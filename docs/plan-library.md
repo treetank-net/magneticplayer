@@ -77,7 +77,30 @@ builds on the previous one.
     age ratings: animation up to age 6 or live-action family from age 0 = kids): 90/92, the miss being an animated
     film rated FSK 12 that the user keeps under kids. Low confidence = the magnet dialog doesn't close by itself, and
     changing the folder ("Change") remembers the choice for that title.
-16. Photos and documents (rules like `year/month/name.pdf`) — outside the app (Immich, PhotoPrism, Paperless-ngx).
+16. **Storage profiles (lossy shrinking on request):** losslessly there's little to gain in video (on jmpc: samples
+    0.1 GB, audio ~10% of the size, few DTS/extra tracks), so the real lever is re-encoding — but only where the user
+    asks for it. Measured on jmpc (18.11): 222 GB of video in 250 files, mostly H.264 1080p at 4–5 Mb/s; the
+    TOSHIBA disk is 96% full while My Passport has 1.1 TB free, so moving (stage 3) comes first.
+    - A profile is set per folder (tag), per subfolder (a series) or per item, e.g.:
+      `original` (never touch, the default; always for `kopia`), `tidy` (lossless: drop samples, audio tracks in
+      languages nobody here speaks, DTS/TrueHD → E-AC3/Opus), `good` (HEVC ~1080p, quality-targeted CRF),
+      `compact` (HEVC 720p, e.g. for `bajki` or watched series), `tiny` (480p, for "keep it just in case").
+    - Only files no longer in the torrent client (re-encoding would break seeding). A torrent still seeding shows
+      "after seeding" instead.
+    - Before starting: a preview with the estimated size after (from bitrate and profile) and the total saved, per
+      folder; the user confirms. The estimate is checked against reality after the first few files.
+    - Encoder: x265 on the CPU at `nice 19` (better quality per byte), at night or when the PC is idle and nobody
+      is watching; NVENC as an option where it is good enough (on jmpc a GTX 970: HEVC 8-bit only, weaker quality).
+      AV1 (SVT-AV1) where the household's players handle it.
+    - Compatibility: the agent knows the household's players (Chromecast profiles, the DLNA TV, phones). If one of
+      them can't play the target codec (e.g. Chromecast gen 1–3 and HEVC), the preview says so and offers H.264 at
+      a lower resolution instead, or relies on "Prepare" when watching.
+    - Safety: the new file is verified (duration, decodes from start to end, size really smaller) before it
+      replaces the original; the original goes to a per-disk trash for N days (configurable, 0 = delete right
+      away). Subtitles next to the file stay; embedded subtitles and chapters are kept.
+    - One background task per request, with progress in the app and one notification at the end ("Shrunk 14
+      files, saved 38 GB, 1 error").
+17. Photos and documents (rules like `year/month/name.pdf`) — outside the app (Immich, PhotoPrism, Paperless-ngx).
 
 ## Folder model (config.json)
 
@@ -101,3 +124,5 @@ builds on the previous one.
    at the end.
 4. **Disks and tidying up:** usage, duplicates, tidy-up preview.
 5. **Shared library and covers** in the app.
+6. **Storage profiles:** `tidy` first (lossless, quick), then lossy profiles with a savings preview, verification
+   and a trash (decision 16). Builds on stage 3 (background tasks) and the existing converter (`mp_media`).
