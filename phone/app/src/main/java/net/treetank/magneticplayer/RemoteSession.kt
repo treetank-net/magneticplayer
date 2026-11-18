@@ -51,6 +51,9 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
         val now = System.currentTimeMillis()
         if (st?.app != null && Settings(ctx).confirmForeignStop && now > armedUntil) {
             armedUntil = now + 5000
+            // podpowiedź też jako toast: napis w karcie powiadomienia bywa ucięty
+            val msg = ctx.getString(R.string.main_notif_confirm_stop, st?.app ?: "")
+            Handler(Looper.getMainLooper()).post { android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show() }
             invalidateState()
             scope.launch { delay(5100); invalidateState() }  // podpowiedź znika sama
             return
