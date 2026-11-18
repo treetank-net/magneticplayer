@@ -33,7 +33,7 @@ object Updater {
         val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
         val send = Intent(Intent.ACTION_SEND).setType("application/vnd.android.package-archive")
             .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        ctx.startActivity(Intent.createChooser(send, "Wyślij apkę MagneticPlayer"))
+        ctx.startActivity(Intent.createChooser(send, ctx.getString(R.string.srv_share_apk_chooser)))
     }
 
     /** Nowsza wersja na komputerze albo null. */
@@ -52,7 +52,7 @@ object Updater {
         val installer = ctx.packageManager.packageInstaller
         var sessionId = -1
         try {
-            if (c.responseCode != 200) throw ApiException("Serwer nie oddał apki (HTTP ${c.responseCode})")
+            if (c.responseCode != 200) throw ApiException(ctx.getString(R.string.srv_apk_http, c.responseCode))
             val total = c.contentLengthLong
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
             params.setAppPackageName(ctx.packageName)
@@ -83,7 +83,7 @@ object Updater {
             }
         } catch (e: IOException) {
             if (sessionId >= 0) runCatching { installer.abandonSession(sessionId) }
-            throw ApiException("Nie udało się pobrać aktualizacji (${e.javaClass.simpleName})")
+            throw ApiException(ctx.getString(R.string.srv_update_download_failed, e.javaClass.simpleName))
         } finally {
             c.disconnect()
         }
@@ -100,8 +100,8 @@ class UpdateReceiver : BroadcastReceiver() {
                 ctx.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
             PackageInstaller.STATUS_SUCCESS -> Unit // apka się przeładuje
-            else -> Toast.makeText(ctx, "Aktualizacja nieudana: " +
-                (intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "?"), Toast.LENGTH_LONG).show()
+            else -> Toast.makeText(ctx, ctx.getString(R.string.srv_update_failed,
+                intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "?"), Toast.LENGTH_LONG).show()
         }
     }
 }

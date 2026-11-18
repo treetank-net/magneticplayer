@@ -91,7 +91,7 @@ class RemoteRouteProvider : MediaRoute2ProviderService() {
             MediaRoute2Info.Builder(routeId(kind), name)
                 .addFeature(RemoteRoutes.FEATURE)
                 .setConnectionState(MediaRoute2Info.CONNECTION_STATE_CONNECTED)
-                .setDescription(when (kind) { "screen" -> "ekran komputera"; "dlna" -> "telewizor"; else -> "Chromecast" })
+                .setDescription(when (kind) { "screen" -> getString(R.string.main_route_screen); "dlna" -> getString(R.string.main_route_tv); else -> "Chromecast" })
                 .setExtras(Bundle().apply { putString("kind", kind) })
                 .build()
         })

@@ -50,8 +50,8 @@ fun openInVlc(ctx: Context, url: String, title: String, subUrl: String? = null) 
     try {
         ctx.startActivity(vlc)
     } catch (_: Exception) {
-        runCatching { ctx.startActivity(Intent.createChooser(i, "Otwórz w…")) }
-            .onFailure { Toast.makeText(ctx, "Brak aplikacji do wideo — zainstaluj VLC", Toast.LENGTH_LONG).show() }
+        runCatching { ctx.startActivity(Intent.createChooser(i, ctx.getString(R.string.media_open_with))) }
+            .onFailure { Toast.makeText(ctx, ctx.getString(R.string.media_no_video_app), Toast.LENGTH_LONG).show() }
     }
 }
 
@@ -121,7 +121,7 @@ class PlayerActivity : ComponentActivity() {
         texts.addView(info)
         top.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
         val buttons = top.apply {
-            addView(smallButton("Na ekran") { handOffToPc() })
+            addView(smallButton(getString(R.string.media_to_screen)) { handOffToPc() })
             addView(smallButton("VLC") {
                 player?.pause()
                 openInVlc(this@PlayerActivity, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
@@ -178,7 +178,7 @@ class PlayerActivity : ComponentActivity() {
 
             override fun onPlayerError(error: PlaybackException) {
                 Toast.makeText(this@PlayerActivity,
-                    "Nie da się odtworzyć: ${error.errorCodeName}. Spróbuj VLC albo poczekaj, aż się więcej pobierze.",
+                    getString(R.string.media_player_error, error.errorCodeName),
                     Toast.LENGTH_LONG).show()
             }
         })
@@ -263,13 +263,13 @@ class PlayerActivity : ComponentActivity() {
         val tvs = Dlna.found.values.toList()
         if (screens.size == 1 && cs.isEmpty() && tvs.isEmpty()) return handOffTo(screens[0], null)
         if (screens.isEmpty() && cs.isEmpty() && tvs.isEmpty()) {
-            Toast.makeText(this, "Nie widzę żadnego ekranu ani Chromecasta w tej sieci", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.media_no_screens), Toast.LENGTH_LONG).show()
             return
         }
         val last = Servers.screenKey(this)
-        val labels = screens.map { it.name + if (it.key == last) " · ostatnio" else "" } +
+        val labels = screens.map { if (it.key == last) getString(R.string.media_screen_last, it.name) else it.name } +
             cs.map { "${it.name} (Chromecast)" } + tvs.map { "${it.name} (DLNA)" }
-        android.app.AlertDialog.Builder(this).setTitle("Na którym ekranie?")
+        android.app.AlertDialog.Builder(this).setTitle(getString(R.string.media_which_screen))
             .setItems(labels.toTypedArray()) { _, i ->
                 when {
                     i < screens.size -> handOffTo(screens[i], null)
@@ -285,13 +285,13 @@ class PlayerActivity : ComponentActivity() {
         val pos = p.currentPosition
         val name = screen?.name ?: cast?.name ?: tv?.name ?: return
         p.pause()
-        Toast.makeText(this, "Otwieram na $name…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.media_opening_on, name), Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             try {
                 if (cast != null) Screens.cast(this@PlayerActivity, ref, cast, pos / 1000.0) { }
                 else if (tv != null) Screens.dlna(this@PlayerActivity, ref, tv, pos / 1000.0) { }
                 else Screens.play(this@PlayerActivity, ref, screen!!.key, pos / 1000.0) { }
-                Toast.makeText(this@PlayerActivity, "Gra na $name", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@PlayerActivity, getString(R.string.media_playing_on, name), Toast.LENGTH_SHORT).show()
                 startActivity(Intent(this@PlayerActivity, MainActivity::class.java).putExtra("tab", TAB_REMOTE)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                 finish()
@@ -368,9 +368,9 @@ class PlayerActivity : ComponentActivity() {
                 aheadEndMs = end
                 val whole = withContext(Dispatchers.IO) { runCatching { cache.getCachedBytes(key, 0, size) }.getOrDefault(0) } >= size
                 info?.text = when {
-                    whole -> "Cały film na telefonie · działa bez sieci"
-                    end >= dur - 1_000 -> "Na telefonie do końca filmu"
-                    end - pos > 60_000 -> "Na telefonie do ${clock(end / 1000.0)} (+${humanTime((end - pos) / 1000)})"
+                    whole -> getString(R.string.media_player_whole)
+                    end >= dur - 1_000 -> getString(R.string.media_player_to_end)
+                    end - pos > 60_000 -> getString(R.string.media_player_until, clock(end / 1000.0), humanTime((end - pos) / 1000))
                     else -> ""
                 }
             }

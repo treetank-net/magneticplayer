@@ -83,7 +83,7 @@ class CastRemote(private val ctx: Context) : Remote {
     override suspend fun status() = main {
         Cast.state(ctx)?.let { s ->
             RemoteState(s.title ?: "", s.pos / 1000.0, s.dur / 1000.0, s.playing, s.buffering,
-                volume = s.volume, muted = s.muted, note = if (s.viaPhone) "film z telefonu" else null)
+                volume = s.volume, muted = s.muted, note = if (s.viaPhone) ctx.getString(R.string.main_note_from_phone) else null)
         }
     }
     override suspend fun setPlaying(play: Boolean) = main { Cast.setPlaying(ctx, play) }
@@ -116,7 +116,7 @@ class AgentCastRemote(private val ctx: Context, val api: Api, private val device
         RemoteState(o.optString("title"), d("pos"), d("duration"), o.optString("state") == "PLAYING",
             o.optString("state") == "BUFFERING",
             volume = if (o.optBoolean("volume_fixed")) null else o.optInt("volume"), muted = o.optBoolean("muted"),
-            note = app ?: if (!o.optBoolean("mine")) "puszczone z innego urządzenia" else null).also { last = it }
+            note = app ?: if (!o.optBoolean("mine")) ctx.getString(R.string.main_note_other_device) else null).also { last = it }
     }
 
     private suspend fun cmd(c: String, v: Any? = null) = withContext(Dispatchers.IO) { api.castCmd(c, v, device) }
@@ -160,7 +160,7 @@ class DirectCastRemote(private val id: String) : Remote {
 /** Telewizor DLNA, do którego wysłaliśmy film ([Dlna.current]). */
 class DlnaRemote(private val ctx: Context) : Remote {
     override val kind = "dlna"
-    override val name: String get() = Dlna.current?.name ?: "Telewizor"
+    override val name: String get() = Dlna.current?.name ?: ctx.getString(R.string.main_tv)
     private suspend fun io(f: () -> Unit) = withContext(Dispatchers.IO) { f() }
 
     override suspend fun status(): RemoteState? = withContext(Dispatchers.IO) {
@@ -168,8 +168,8 @@ class DlnaRemote(private val ctx: Context) : Remote {
         // Pilot i powiadomienie pytają naraz: świeży odczyt bierzemy z pamięci
         val s = Dlna.last?.takeIf { System.currentTimeMillis() - it.at < 1200 } ?: Dlna.status(ctx) ?: return@withContext null
         val note = when (s.state) {
-            null -> "telewizor nie odpowiada"; "TRANSITIONING" -> "wczytuje…"; "STOPPED" -> "zatrzymany"
-            "NO_MEDIA_PRESENT" -> "nic nie gra"; else -> null
+            null -> ctx.getString(R.string.main_note_tv_not_responding); "TRANSITIONING" -> ctx.getString(R.string.main_loading)
+            "STOPPED" -> ctx.getString(R.string.main_note_stopped); "NO_MEDIA_PRESENT" -> ctx.getString(R.string.main_note_nothing_playing); else -> null
         }
         RemoteState(s.title ?: "", s.pos, s.dur, s.playing, s.state == "TRANSITIONING", s.volume, s.muted, note, at = s.at)
     }

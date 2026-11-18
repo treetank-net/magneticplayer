@@ -2,6 +2,8 @@
 import os
 import re
 
+from mp_i18n import T
+
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}
 AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 SUB_EXT = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
@@ -65,7 +67,7 @@ def safe_join(base, rel):
     base = os.path.realpath(base)
     full = os.path.realpath(os.path.join(base, rel.lstrip("/")))
     if full != base and not full.startswith(base + os.sep):
-        raise LibError("ścieżka poza biblioteką", 403)
+        raise LibError(T("path outside the library", "ścieżka poza biblioteką"), 403)
     return full
 
 
@@ -91,9 +93,10 @@ class Library:
     def root(self, i):
         roots = self.roots()
         if not 0 <= i < len(roots):
-            raise LibError("nie ma takiego katalogu biblioteki", 404)
+            raise LibError(T("no such library folder", "nie ma takiego katalogu biblioteki"), 404)
         if not roots[i]["exists"]:
-            raise LibError(f"katalog {roots[i]['path']} niedostępny (dysk odłączony?)", 404)
+            raise LibError(T(f"folder {roots[i]['path']} is unavailable (disk disconnected?)",
+                             f"katalog {roots[i]['path']} niedostępny (dysk odłączony?)"), 404)
         return roots[i]["path"]
 
     def resolve(self, i, rel):
@@ -102,7 +105,7 @@ class Library:
     def browse(self, i, rel, show_all=False):
         full = self.resolve(i, rel)
         if not os.path.isdir(full):
-            raise LibError("to nie katalog", 400)
+            raise LibError(T("not a folder", "to nie katalog"), 400)
         dirs, files = [], []
         for e in os.scandir(full):
             if e.name.startswith("."):
@@ -125,17 +128,17 @@ class Library:
     def add_root(self, path, name=None):
         path = os.path.realpath(os.path.expanduser(path))
         if not os.path.isdir(path):
-            raise LibError("nie ma takiego katalogu", 404)
+            raise LibError(T("no such folder", "nie ma takiego katalogu"), 404)
         self.roots()
         if any(os.path.realpath(r["path"]) == path for r in self.cfg["library"]):
-            raise LibError("ten katalog już jest w bibliotece", 409)
+            raise LibError(T("this folder is already in the library", "ten katalog już jest w bibliotece"), 409)
         self.cfg["library"].append({"name": name or os.path.basename(path) or path, "path": path})
         self.save_cfg()
 
     def remove_root(self, i):
         self.roots()
         if not 0 <= i < len(self.cfg["library"]):
-            raise LibError("nie ma takiego katalogu", 404)
+            raise LibError(T("no such folder", "nie ma takiego katalogu"), 404)
         del self.cfg["library"][i]
         self.save_cfg()
 
@@ -152,5 +155,5 @@ class Library:
             dirs = sorted((os.path.join(path, e.name) for e in os.scandir(path)
                            if e.is_dir() and not e.name.startswith(".")), key=str.lower)
         except OSError as e:
-            raise LibError(f"nie da się otworzyć: {e.strerror}", 403)
+            raise LibError(T(f"can't open: {e.strerror}", f"nie da się otworzyć: {e.strerror}"), 403)
         return {"path": path, "parent": os.path.dirname(path) if path != "/" else "", "dirs": dirs}

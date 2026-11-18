@@ -33,6 +33,7 @@ usługi jest autostart `HKCU\…\Run` przy logowaniu, a mpv słucha na nazwanym 
 | `mp_access.py` | prośby o dostęp z sieci domowej: prośba bez tokenu, lista i decyzja domownika, wydanie kodu parowania proszącemu |
 | `mp_install.py` | instalacja agenta na kolejnym komputerze: kod dołączenia, skrypt `/i/<kod>` (szablony `join.sh`, `join.ps1`, wspólne z telefonem), paczka, zgłoszenie nowego serwera z kodem parowania dla telefonu |
 | `mp_upload.py` | przyjmowanie filmów z telefonu (`/api/upload/<id>`): wznawialne kawałki w `.mp-upload/`, wolne miejsce, kolizje nazw, katalog `upload_dir` albo „Z telefonu” w bibliotece |
+| `mp_i18n.py` | język komunikatów dla użytkownika: `T("English", "Polski")` według `Accept-Language` bieżącego żądania (wartość na wątek, ustawiana na początku `dispatch`); `bind(fn)` przenosi język do wątków tła; CLI (`--pair`, `--join`) bierze `LC_ALL`/`LC_MESSAGES`/`LANG`. Skrypty instalacyjne mają własne `say`/`Say` (pl przy polskim locale / języku interfejsu Windows) |
 | `mp_platform.py` | wszystko zależne od systemu: sesja graficzna, odblokowanie, usypianie, karta sieciowa, ocena budzenia, wysyłanie WoL, ścieżka do mpv (na Windows `mpv\mpv.exe` obok agenta). Inny system dopisuje się tutaj; czego nie umie, tego agent nie zgłasza w `features`/`power` |
 
 ### Wiele serwerów
@@ -210,6 +211,9 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
 - Strona czyta raz `/api/info` i chowa to, czego serwer nie ma: „Uśpij” bez `power.suspend`, „Ekran” bez
   `features.player`/`unlock`, Torrenty bez `features.torrent`, a bez `features.player` także „▶ Na komputerze”
   i pilota mpv (Pilot pokazuje wtedy tylko Chromecasta). Status w nagłówku podaje `name` serwera.
+- Język: `navigator.language` (`pl*` → polski, inaczej angielski), słownik `T = {en, pl}` i `tr(klucz, …)`; statyczne
+  teksty w HTML przez `data-i18n`, `data-i18n-html`, `data-i18n-title`, `data-i18n-placeholder`. `<html lang>` i
+  nagłówek `Accept-Language` w zapytaniach do API ustawiane na ten sam język.
 - Okno napisów działa jak w apce (asynchroniczne zlecenie, postęp, „Wystarczy”).
 - Odtwarzacz to `<video>` z napisami WebVTT (`/sub?…&vtt=1`).
 - DOM buduje helper `put(el, ...dzieci)`, który spłaszcza tablice i pomija `null`. Gołe `replaceChildren` z tablicą

@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -82,8 +83,7 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                     added = withContext(Dispatchers.IO) { Pairing.pair(ctx, PairTarget(j.host, j.port, j.pairCode, null, null)) }
                     onDone()
                 } catch (e: Exception) {
-                    error = "Nowy komputer się zgłosił, ale parowanie nie wyszło: ${e.message}. Kod ręczny: na nim " +
-                        "magneticplayer_agent.py --pair."
+                    error = ctx.getString(R.string.srv_pairing_failed, e.message)
                     return@LaunchedEffect
                 }
             }
@@ -102,8 +102,7 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                 }
                 onDone()
             } catch (e: Exception) {
-                error = "Nowy komputer się zgłosił, ale parowanie nie wyszło: ${e.message}. Kod ręczny: na nim " +
-                    "magneticplayer_agent.py --pair."
+                error = ctx.getString(R.string.srv_pairing_failed, e.message)
                 return@LaunchedEffect
             }
         }
@@ -113,7 +112,7 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
         error = null
         if (fromPhone) {
             val url = withContext(Dispatchers.IO) { runCatching { InstallShare.start(ctx) }.getOrNull() }
-            if (url == null) { error = "Telefon musi być w tym samym Wi-Fi co nowy komputer."; return@launch }
+            if (url == null) { error = ctx.getString(R.string.srv_same_wifi); return@launch }
             code = JSONObject().put("phone", true).put("code", InstallShare.code).put("url", url)
                 .put("command", "curl -fsSL $url | bash").put("command_full", "curl -fsSL '$url?full=1' | bash")
                 .put("command_windows", "irm $url/ps | iex")
@@ -128,19 +127,20 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
     }
 
     val c = code
+    val noWindows = stringResource(R.string.srv_no_windows_installer)
     val command = c?.optString(if (windows) "command_windows" else if (lite) "command" else "command_full").orEmpty()
-        .ifEmpty { if (c != null && windows) "Ten serwer nie ma jeszcze instalatora dla Windows — zaktualizuj na nim agenta." else "" }
+        .ifEmpty { if (c != null && windows) noWindows else "" }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (added != null) "Dodano serwer" else "Zainstaluj na innym komputerze") },
+        title = { Text(if (added != null) stringResource(R.string.srv_server_added) else stringResource(R.string.srv_install_other)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 added?.let { ServerSummary(it); return@Column }
                 if (c == null) {
-                    Text("Komputer w tej samej sieci (Linux albo Windows 10/11) pobierze agenta z serwera i sam się sparuje z tym telefonem.",
+                    Text(stringResource(R.string.srv_install_intro),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (sources.size + (if (phoneOk) 1 else 0) > 1) {
-                        Text("Skąd pobrać agenta", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.srv_agent_source), style = MaterialTheme.typography.labelLarge)
                         sources.forEach { s ->
                             Row(Modifier.fillMaxWidth().clickable { source = s; fromPhone = false }, verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(!fromPhone && source?.key == s.key, { source = s; fromPhone = false }); Text(s.name)
@@ -149,29 +149,29 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                         if (phoneOk) Row(Modifier.fillMaxWidth().clickable { fromPhone = true }, verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(fromPhone, { fromPhone = true })
                             Column {
-                                Text("Ten telefon")
-                                Text("$bundleLabel; bez innego serwera; okno musi zostać otwarte do końca instalacji. Dodatki (napisy, mpv, na Windows Python) komputer pobierze z internetu",
+                                Text(stringResource(R.string.srv_this_phone))
+                                Text(stringResource(R.string.srv_phone_source_desc, bundleLabel),
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                    } else if (fromPhone) Text("Agent pochodzi z tego telefonu ($bundleLabel), bez innego serwera. Zostaw to okno otwarte do końca instalacji. Dodatki (napisy, mpv, na Windows Python) komputer pobierze z internetu; bez niego na Linuksie zadziała biblioteka i oglądanie na telefonie.",
+                    } else if (fromPhone) Text(stringResource(R.string.srv_phone_source_only, bundleLabel),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    Text(if (windows) "Na nowym komputerze otwórz PowerShell (prawy klik na Start → Terminal) i wklej:"
-                        else "Na nowym komputerze otwórz terminal i wklej:", style = MaterialTheme.typography.bodyMedium)
+                    Text(if (windows) stringResource(R.string.srv_paste_powershell)
+                        else stringResource(R.string.srv_paste_terminal), style = MaterialTheme.typography.bodyMedium)
                     Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         modifier = Modifier.fillMaxWidth().clickable {
-                            copyText(ctx, "MagneticPlayer — instalacja", command)
-                            android.widget.Toast.makeText(ctx, "Skopiowano", android.widget.Toast.LENGTH_SHORT).show()
+                            copyText(ctx, ctx.getString(R.string.srv_clip_install), command)
+                            android.widget.Toast.makeText(ctx, ctx.getString(R.string.srv_copied), android.widget.Toast.LENGTH_SHORT).show()
                         }) {
                         Text(command, Modifier.padding(10.dp), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Polecenie działa raz, przez 30 min. Dotknij, żeby skopiować, albo wyślij je sobie przyciskiem niżej.",
+                    Text(stringResource(R.string.srv_command_once),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (error == null) Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(10.dp))
-                        Text(if (state == "downloading") "Komputer pobrał agenta, instaluje się…" else "Czekam na nowy komputer…",
+                        Text(if (state == "downloading") stringResource(R.string.srv_computer_installing) else stringResource(R.string.srv_waiting_computer),
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -179,14 +179,13 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                     FilterChip(!windows, { windows = false }, { Text("Linux") })
                     FilterChip(windows, { windows = true }, { Text("Windows") })
                 }
-                if (windows) Text("Lekka instalacja: Biblioteka, przesyłanie z telefonu, napisy i ekran (mpv dociąga sam). " +
-                    "Wklej polecenie do okna PowerShell, nie do „Uruchom” (Win+R): Defender blokuje takie polecenie podane wprost.",
+                if (windows) Text(stringResource(R.string.srv_lite_windows),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Bez hasła administratora", style = MaterialTheme.typography.bodyMedium)
-                        Text(if (lite) "Lekka: Biblioteka, przesyłanie z telefonu, napisy i ekran (gdy jest mpv). Bez torrentów, usypiania i budzenia z sieci."
-                            else "Pełna: doinstaluje mpv i Deluge, usypianie i budzenie z sieci. Zapyta o hasło administratora.",
+                        Text(stringResource(R.string.srv_no_admin), style = MaterialTheme.typography.bodyMedium)
+                        Text(if (lite) stringResource(R.string.srv_lite_linux)
+                            else stringResource(R.string.srv_full_linux),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(lite, { lite = it })
@@ -196,14 +195,14 @@ fun InstallDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
         },
         confirmButton = {
             when {
-                added != null -> TextButton(onDismiss) { Text("Gotowe") }
-                c == null -> TextButton({ start() }, enabled = source != null || fromPhone) { Text("Pokaż polecenie") }
+                added != null -> TextButton(onDismiss) { Text(stringResource(R.string.srv_done)) }
+                c == null -> TextButton({ start() }, enabled = source != null || fromPhone) { Text(stringResource(R.string.srv_show_command)) }
                 else -> TextButton({
                     ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
-                        .putExtra(Intent.EXTRA_TEXT, command), "Polecenie instalacji MagneticPlayer"))
-                }) { Text("Wyślij") }
+                        .putExtra(Intent.EXTRA_TEXT, command), ctx.getString(R.string.srv_install_chooser)))
+                }) { Text(stringResource(R.string.srv_send)) }
             }
         },
-        dismissButton = { if (added == null) TextButton(onDismiss) { Text("Zamknij") } },
+        dismissButton = { if (added == null) TextButton(onDismiss) { Text(stringResource(R.string.srv_close)) } },
     )
 }

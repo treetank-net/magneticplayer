@@ -80,10 +80,14 @@ object InstallShare {
         val path = target.substringBefore('?')
         val query = target.substringAfter('?', "")
         val out = s.getOutputStream()
+        // Jak agent (mp_i18n): polski dla Accept-Language „pl…”, inaczej angielski.
+        val pl = headers["accept-language"]?.trim()?.lowercase()?.startsWith("pl") == true
+        fun tr(en: String, pl_: String) = if (pl) pl_ else en
+        val badCode = tr("wrong, used or expired install code", "zły, zużyty albo przeterminowany kod instalacji")
         val m = Regex("/i/([A-Za-z0-9-]{4,12})(/bundle\\.tar\\.gz|/ps)?").matchEntire(path)
         when {
             m != null && method == "GET" -> {
-                if (!codeOk(m.groupValues[1])) return send(out, 403, "text/plain; charset=utf-8", "zły, zużyty albo przeterminowany kod instalacji\n".toByteArray())
+                if (!codeOk(m.groupValues[1])) return send(out, 403, "text/plain; charset=utf-8", "$badCode\n".toByteArray())
                 val url = "http://${s.localAddress.hostAddress}:${s.localPort}/i/$code"
                 when (m.groupValues[2]) {
                     "/bundle.tar.gz" -> send(out, 200, "application/gzip",
@@ -105,14 +109,14 @@ object InstallShare {
                 while (got < len) { val n = inp.read(buf, got, len - got); if (n < 0) break; got += n }
                 val body = runCatching { JSONObject(String(buf, 0, got)) }.getOrNull()
                 val pair = normalize(body?.optString("pair_code"))
-                if (body == null || !codeOk(body.optString("code"))) return sendJson(out, 403, JSONObject().put("error", "zły, zużyty albo przeterminowany kod instalacji"))
-                if (pair.length != 6 || body.optString("id").isEmpty()) return sendJson(out, 400, JSONObject().put("error", "brak kodu parowania albo id nowego serwera"))
+                if (body == null || !codeOk(body.optString("code"))) return sendJson(out, 403, JSONObject().put("error", badCode))
+                if (pair.length != 6 || body.optString("id").isEmpty()) return sendJson(out, 400, JSONObject().put("error", tr("missing pairing code or new server id", "brak kodu parowania albo id nowego serwera")))
                 joined = Joined(s.inetAddress.hostAddress ?: "", body.optInt("port", 8765), body.optString("id").take(40),
-                    body.optString("name").ifEmpty { s.inetAddress.hostAddress ?: "serwer" }.take(60), pair)
+                    body.optString("name").ifEmpty { s.inetAddress.hostAddress ?: ctx.getString(R.string.srv_server_fallback) }.take(60), pair)
                 state = "joined"
                 sendJson(out, 200, JSONObject().put("ok", true))
             }
-            else -> sendJson(out, 404, JSONObject().put("error", "nie ma takiego endpointu"))
+            else -> sendJson(out, 404, JSONObject().put("error", tr("no such endpoint", "nie ma takiego endpointu")))
         }
     }
 

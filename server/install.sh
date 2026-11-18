@@ -10,16 +10,20 @@
 #   JOIN=http://<serwer>:8765/i/<kod> …  # ustawia skrypt z /i/<kod>: po instalacji zgłasza się tam, telefon paruje sam
 # Odinstalowanie: bash ~/.local/share/magneticplayer/uninstall.sh [--purge]
 set -euo pipefail
+# komunikaty: po polsku, gdy system ma polski (LC_ALL / LC_MESSAGES / LANG), inaczej po angielsku
+case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in pl*) MP_LANG=pl ;; *) MP_LANG=en ;; esac
+say() { if [ "$MP_LANG" = pl ]; then echo "$2"; else echo "$1"; fi; }
 if [ -n "${LITE:-}" ] && [ "$LITE" != 0 ]; then
   SKIP_ROOT=1
   BACKEND=${BACKEND:-none}
   POWER=${POWER:-0}
-  echo "== tryb lekki: bez roota, backend=$BACKEND, bez usypiania z sieci"
-  command -v python3 >/dev/null || { echo "Brak python3: zainstaluj go albo użyj pełnej instalacji."; exit 1; }
-  systemctl --user show-environment >/dev/null 2>&1 || { echo "Brak systemd --user (sesji użytkownika): tryb lekki tego wymaga."; exit 1; }
+  say "== lite install: no root, backend=$BACKEND, no sleep over the network" "== tryb lekki: bez roota, backend=$BACKEND, bez usypiania z sieci"
+  command -v python3 >/dev/null || { say "python3 is missing: install it or use the full install." "Brak python3: zainstaluj go albo użyj pełnej instalacji."; exit 1; }
+  systemctl --user show-environment >/dev/null 2>&1 || { say "No systemd --user (user session): the lite install needs it." "Brak systemd --user (sesji użytkownika): tryb lekki tego wymaga."; exit 1; }
 fi
 if command -v python3 >/dev/null && ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))'; then
-  echo "Za stary Python ($(python3 -V 2>&1)): agent potrzebuje 3.8 albo nowszego (Ubuntu 20.04+, Debian 11+)."; exit 1
+  say "Python too old ($(python3 -V 2>&1)): the agent needs 3.8 or newer (Ubuntu 20.04+, Debian 11+)." \
+      "Za stary Python ($(python3 -V 2>&1)): agent potrzebuje 3.8 albo nowszego (Ubuntu 20.04+, Debian 11+)."; exit 1
 fi
 SRC=$(cd "$(dirname "$0")" && pwd)
 DEST=~/.local/share/magneticplayer
@@ -32,9 +36,9 @@ BACKEND=${BACKEND:-deluge}
 if [ -z "${SKIP_ROOT:-}" ]; then
   # pkexec tylko w lokalnej sesji graficznej; przez SSH polkit nie ma sesji ("No session for cookie")
   if [ -z "${SSH_CONNECTION:-}" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && ! sudo -n true 2>/dev/null; then
-    pkexec bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND"
+    pkexec bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND" "$MP_LANG"  # pkexec gubi LANG
   else
-    sudo bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND"
+    sudo bash "$SRC/install-root.sh" "$USER" "$PORT" "$BACKEND" "$MP_LANG"
   fi
 fi
 
@@ -47,23 +51,26 @@ install -d "$DEST/web" && install -m 644 "$SRC"/web/* "$DEST/web/"
 install -m 755 "$SRC/uninstall.sh" "$SRC/install.sh" "$SRC/install-root.sh" "$SRC/join.sh" "$DEST/"
 [ -f "$SRC/join.ps1" ] && install -m 644 "$SRC/join.ps1" "$SRC/install.ps1" "$SRC/uninstall.ps1" "$DEST/"
 
-echo "== napisy: subliminal w venv ($DEST/venv)"
+say "== subtitles: subliminal in a venv ($DEST/venv)" "== napisy: subliminal w venv ($DEST/venv)"
 # --clear: po nieudanej próbie (brak python3-venv); bez venv agent działa, tylko bez napisów i Chromecasta ze strony
 # Bez python3-venv (świeże Ubuntu/Debian): venv bez pip i pip z bootstrap.pypa.io, więc bez roota.
 [ -x "$DEST/venv/bin/pip" ] || python3 -m venv --clear "$DEST/venv" >/dev/null 2>&1 || {
   rm -rf "$DEST/venv"
   if python3 -m venv --without-pip "$DEST/venv" >/dev/null 2>&1 && command -v curl >/dev/null &&
      curl -fsSL https://bootstrap.pypa.io/get-pip.py | "$DEST/venv/bin/python" - -q >/dev/null 2>&1; then
-    echo "venv bez python3-venv: pip z bootstrap.pypa.io"
+    say "venv without python3-venv: pip from bootstrap.pypa.io" "venv bez python3-venv: pip z bootstrap.pypa.io"
   else
     rm -rf "$DEST/venv"
-    echo "UWAGA: nie da się założyć venv (brak pakietu python3-venv). Agent działa bez napisów i Chromecasta ze strony."
+    say "WARNING: can't create a venv (python3-venv package missing). The agent works without subtitles and Chromecast from the web page." \
+        "UWAGA: nie da się założyć venv (brak pakietu python3-venv). Agent działa bez napisów i Chromecasta ze strony."
   fi
 }
 if [ -x "$DEST/venv/bin/pip" ]; then
-  "$DEST/venv/bin/pip" install --isolated -q --upgrade subliminal || echo "UWAGA: subliminal się nie zainstalował — napisy nie zadziałają"
+  "$DEST/venv/bin/pip" install --isolated -q --upgrade subliminal ||
+    say "WARNING: subliminal didn't install — subtitles won't work" "UWAGA: subliminal się nie zainstalował — napisy nie zadziałają"
   # Chromecast sterowany z klienta webowego (apka na telefonie ma własny Cast SDK)
-  "$DEST/venv/bin/pip" install --isolated -q --upgrade pychromecast || echo "UWAGA: pychromecast się nie zainstalował — Chromecast z przeglądarki nie zadziała"
+  "$DEST/venv/bin/pip" install --isolated -q --upgrade pychromecast ||
+    say "WARNING: pychromecast didn't install — Chromecast from the browser won't work" "UWAGA: pychromecast się nie zainstalował — Chromecast z przeglądarki nie zadziała"
   # QR parowania w terminalu, gdy nie ma qrencode (tryb lekki nie instaluje pakietów)
   "$DEST/venv/bin/pip" install --isolated -q --upgrade qrcode || true
 fi
@@ -99,13 +106,14 @@ if [ "$BACKEND" = none ]; then
   VID=$(xdg-user-dir VIDEOS 2>/dev/null || true)
   [ -z "$VID" ] || [ "$VID" = "$HOME" ] && VID=$HOME/Videos
   if [ ! -d ~/Wideo ] && [ ! -d ~/Videos ] && [ ! -d ~/Filmy ] && [ ! -d "$VID" ]; then
-    mkdir -p "$VID" && echo "== biblioteka: założono $VID"
+    mkdir -p "$VID" && say "== library: created $VID" "== biblioteka: założono $VID"
   fi
 fi
 
 if [ "$BACKEND" = deluge ]; then
-echo "== Deluge: tryb klient-serwer (GTK łączy się z deluged zamiast trzymać torrenty w sobie)"
-pkill -x deluge-gtk 2>/dev/null && { echo "zamknięto okno Deluge"; sleep 2; } || true
+say "== Deluge: client-server mode (the GTK app connects to deluged instead of keeping torrents itself)" \
+    "== Deluge: tryb klient-serwer (GTK łączy się z deluged zamiast trzymać torrenty w sobie)"
+pkill -x deluge-gtk 2>/dev/null && { say "closed the Deluge window" "zamknięto okno Deluge"; sleep 2; } || true
 pkill -f "bin/deluge$" 2>/dev/null || true
 python3 - <<'EOF'
 import json, os, re
@@ -173,8 +181,9 @@ systemctl --user enable magneticplayer
 if [ -n "${LITE:-}" ] && [ "$LITE" != 0 ]; then
   if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" != yes ]; then
     # znacznik: uninstall.sh wyłącza linger tylko wtedy, gdy włączyliśmy go my
-    loginctl enable-linger </dev/null 2>/dev/null && touch "$DEST/.linger" && echo "linger: agent działa także bez zalogowania" ||
-      echo "UWAGA: bez linger agent działa tylko, gdy $USER jest zalogowany"
+    loginctl enable-linger </dev/null 2>/dev/null && touch "$DEST/.linger" &&
+      say "linger: the agent runs even when nobody is logged in" "linger: agent działa także bez zalogowania" ||
+      say "WARNING: without linger the agent only runs while $USER is logged in" "UWAGA: bez linger agent działa tylko, gdy $USER jest zalogowany"
   fi
 fi
 systemctl --user restart magneticplayer
@@ -186,11 +195,15 @@ echo
 echo "================ MagneticPlayer ================"
 PY=python3; [ -x "$DEST/venv/bin/python" ] && PY="$DEST/venv/bin/python"
 if [ -n "${JOIN:-}" ] && python3 "$DEST/magneticplayer_agent.py" --join "$JOIN"; then
-  echo " Gdyby telefon się nie sparował, kod ręczny: python3 $DEST/magneticplayer_agent.py --pair"
+  say " If the phone doesn't pair, get a code manually: python3 $DEST/magneticplayer_agent.py --pair" \
+      " Gdyby telefon się nie sparował, kod ręczny: python3 $DEST/magneticplayer_agent.py --pair"
 else
   "$PY" "$DEST/magneticplayer_agent.py" --pair
 fi
-echo " kolejny kod:     python3 $DEST/magneticplayer_agent.py --pair"
-echo " urządzenia:      python3 $DEST/magneticplayer_agent.py --devices / --revoke <id>"
-echo " odinstalowanie:  bash $DEST/uninstall.sh   (z --purge usuwa też ustawienia i sparowane telefony)"
+say " another code:    python3 $DEST/magneticplayer_agent.py --pair" \
+    " kolejny kod:     python3 $DEST/magneticplayer_agent.py --pair"
+say " devices:         python3 $DEST/magneticplayer_agent.py --devices / --revoke <id>" \
+    " urządzenia:      python3 $DEST/magneticplayer_agent.py --devices / --revoke <id>"
+say " uninstall:       bash $DEST/uninstall.sh   (--purge also removes settings and paired phones)" \
+    " odinstalowanie:  bash $DEST/uninstall.sh   (z --purge usuwa też ustawienia i sparowane telefony)"
 echo "==============================================="

@@ -71,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -94,14 +95,14 @@ object Screens {
      */
     suspend fun play(ctx: Context, ref: MediaRef, screenKey: String, startSec: Double?, onStatus: (String) -> Unit) =
         withContext(Dispatchers.IO) {
-            val screen = Api.of(ctx, screenKey) ?: throw ApiException("Nie ma już tego ekranu")
+            val screen = Api.of(ctx, screenKey) ?: throw ApiException(ctx.getString(R.string.srv_screen_gone))
             screen.ensureAwake(onStatus)
             if (screenKey == ref.srv) {
                 // pozycja z telefonu: film mógł być ostatnio oglądany gdzie indziej (Chromecast, telewizor, telefon)
                 screen.playerOpen(ref, startSec ?: savedStart(ctx, ref))
             } else {
                 val src = source(ctx, ref, onStatus)
-                onStatus("Otwieram na ${screen.srv.name}…")
+                onStatus(ctx.getString(R.string.srv_opening_on, screen.srv.name))
                 screen.playerOpenUrl(Ticket(src.url, src.subs.map { it.url }, ref.title), startSec ?: savedStart(ctx, ref))
             }
             Servers.setScreen(ctx, screenKey)
@@ -112,7 +113,7 @@ object Screens {
     /** Odtwarza `ref` na Chromecaście (odbiornik domyślny Google'a, napisy jako WebVTT). */
     suspend fun cast(ctx: Context, ref: MediaRef, target: CastTarget, startSec: Double?, onStatus: (String) -> Unit) {
         val src = withContext(Dispatchers.IO) { source(ctx, ref, onStatus, variant = "cast") }
-        onStatus("Łączę z ${target.name}…")
+        onStatus(ctx.getString(R.string.srv_connecting_to, target.name))
         val start = startSec ?: savedStart(ctx, ref)
         Cast.play(ctx, target, ref, src, ((start ?: 0.0) * 1000).toLong())
         Pilot.started(ctx, "cast")
@@ -123,7 +124,7 @@ object Screens {
     suspend fun dlna(ctx: Context, ref: MediaRef, target: DlnaTarget, startSec: Double?, onStatus: (String) -> Unit) =
         withContext(Dispatchers.IO) {
             val src = source(ctx, ref, onStatus)
-            onStatus("Wysyłam do ${target.name}…")
+            onStatus(ctx.getString(R.string.srv_sending_to, target.name))
             Dlna.play(ctx, target, ref, src, startSec ?: savedStart(ctx, ref) ?: 0.0)
             Settings(ctx).lastTv = target.name
         }
@@ -143,8 +144,8 @@ object Screens {
             val t = file.ticket(ref, variant)
             return MediaSrc(t.url, ref.title, t.subInfo, false, t.contentType)
         }
-        if (!onPhone) throw ApiException("Nie ma już serwera z tym filmem")
-        onStatus("Udostępniam film z telefonu…")
+        if (!onPhone) throw ApiException(ctx.getString(R.string.srv_file_server_gone))
+        onStatus(ctx.getString(R.string.srv_sharing_from_phone))
         return PhoneShare.start(ctx, ref)
     }
 }
@@ -184,22 +185,22 @@ fun ScreenChooser(ref: MediaRef, onPhone: (() -> Unit)?, onPick: (String) -> Uni
     }
     ModalBottomSheet(onDismiss) {
         Column(Modifier.padding(bottom = 24.dp)) {
-            Text("Gdzie odtworzyć?", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.titleMedium)
-            Text("${ref.title} · plik z: $fileName", Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            Text(stringResource(R.string.srv_where_to_play), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.srv_title_file_from, ref.title, fileName), Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (onPhone != null) SheetRow(Icons.Filled.Smartphone, "Ten telefon", null, null, false) { onPhone() }
+            if (onPhone != null) SheetRow(Icons.Filled.Smartphone, stringResource(R.string.srv_this_phone), null, null, false) { onPhone() }
             screens.forEach { s ->
                 val st = states[s.key]
                 val sub = buildList {
-                    add(if (s.key == ref.srv) "plik jest na nim" else "przez sieć z $fileName")
+                    add(if (s.key == ref.srv) stringResource(R.string.srv_file_is_here) else stringResource(R.string.srv_over_network_from, fileName))
                     when {
-                        st == null -> add("sprawdzam…")
-                        st.online == false -> add("śpi albo wyłączony · obudzę i odtworzę")
-                        st.playing != null -> add("teraz gra: ${st.playing}")
+                        st == null -> add(stringResource(R.string.srv_checking))
+                        st.online == false -> add(stringResource(R.string.srv_asleep_will_wake))
+                        st.playing != null -> add(stringResource(R.string.srv_now_playing, st.playing))
                     }
                 }.joinToString(" · ")
-                SheetRow(Icons.Filled.Tv, s.name + if (s.key == last && screens.size > 1) " · ostatnio" else "", sub,
+                SheetRow(Icons.Filled.Tv, if (s.key == last && screens.size > 1) stringResource(R.string.srv_name_last, s.name) else s.name, sub,
                     when (st?.online) { true -> OK_GREEN; false -> MaterialTheme.colorScheme.outline; null -> null },
                     s.key == last) { onPick(s.key) }
             }
@@ -207,19 +208,19 @@ fun ScreenChooser(ref: MediaRef, onPhone: (() -> Unit)?, onPick: (String) -> Uni
                 casts.forEach { c ->
                     val sub = listOfNotNull(
                         c.desc.takeIf { it.isNotBlank() },
-                        if (onPhoneWhole) "film z $fileName albo z telefonu" else "film z $fileName",
+                        if (onPhoneWhole) stringResource(R.string.srv_video_from_or_phone, fileName) else stringResource(R.string.srv_video_from, fileName),
                     ).joinToString(" · ")
-                    SheetRow(Icons.Filled.Cast, c.name + when (c.name) { castNow -> " · połączony"; lastTv -> " · ostatnio"; else -> "" },
+                    SheetRow(Icons.Filled.Cast, when (c.name) { castNow -> stringResource(R.string.srv_name_connected, c.name); lastTv -> stringResource(R.string.srv_name_last, c.name); else -> c.name },
                         sub, null, c.name == castNow) { onCast(c) }
                 }
                 if (casts.isEmpty()) SheetRow(Icons.Filled.Cast, "Chromecast",
-                    if (searching) "szukam w sieci…" else "nie widzę żadnego w tej sieci Wi-Fi", null, false, enabled = false) {}
+                    if (searching) stringResource(R.string.srv_searching_network) else stringResource(R.string.srv_no_chromecast), null, false, enabled = false) {}
                 CastFormat(ref)
             }
             dlnas.forEach { d ->
                 val sub = listOfNotNull("DLNA", d.model.ifBlank { null },
-                    if (onPhoneWhole) "film z $fileName albo z telefonu" else "film z $fileName").joinToString(" · ")
-                SheetRow(Icons.Filled.ConnectedTv, d.name + if (d.name == lastTv) " · ostatnio" else "", sub, null,
+                    if (onPhoneWhole) stringResource(R.string.srv_video_from_or_phone, fileName) else stringResource(R.string.srv_video_from, fileName)).joinToString(" · ")
+                SheetRow(Icons.Filled.ConnectedTv, if (d.name == lastTv) stringResource(R.string.srv_name_last, d.name) else d.name, sub, null,
                     Dlna.current?.id == d.id) { onDlna(d) }
             }
         }
@@ -258,50 +259,51 @@ private fun CastFormat(ref: MediaRef) {
     Column(Modifier.padding(start = 60.dp, end = 20.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         when {
             v != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("✓ Chromecast dostanie wersję przygotowaną dla niego (${humanBytes(v.optLong("size"))})", Modifier.weight(1f),
+                Text(stringResource(R.string.srv_cast_prepared, humanBytes(v.optLong("size"))), Modifier.weight(1f),
                     style = small, color = OK_GREEN)
-                TextButton({ op("remove") }) { Text("Usuń") }
+                TextButton({ op("remove") }) { Text(stringResource(R.string.srv_remove)) }
             }
             state == "queued" || state == "running" -> {
                 val pct = j!!.optDouble("pct", 0.0)
-                val speed = j.optDouble("speed").takeIf { !it.isNaN() }?.let { " · %.1f× szybciej niż film".format(it) } ?: ""
+                val speed = j.optDouble("speed").takeIf { !it.isNaN() }?.let { " · " + stringResource(R.string.srv_speed, it) } ?: ""
                 if (j.optBoolean("finishing")) {
                     // ffmpeg +faststart przepisuje plik na końcu: bez tego pasek stoi na 99% nawet minutę
-                    Text("Kończę zapis (przenoszę indeks na początek pliku), to może potrwać minutę…", style = small)
+                    Text(stringResource(R.string.srv_finishing), style = small)
                     androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
                 } else {
-                    Text("Przygotowuję dla Chromecasta (${j.optString("encoder").ifEmpty { "w kolejce" }}): ${pct.toInt()}%$speed",
+                    Text(stringResource(R.string.srv_preparing, j.optString("encoder").ifEmpty { stringResource(R.string.srv_queued) }, pct.toInt(), speed),
                         style = small)
                     androidx.compose.material3.LinearProgressIndicator({ (pct / 100).toFloat() }, Modifier.fillMaxWidth())
                 }
-                TextButton({ op("cancel") }) { Text("Przerwij") }
+                TextButton({ op("cancel") }) { Text(stringResource(R.string.srv_stop)) }
             }
             // agent zna model naszych Chromecastów: ocena dla każdego, „Przygotuj” tylko gdy któryś ma kłopot
             devs.isNotEmpty() && devs.all { it.optString("verdict") == "ok" } -> devs.forEach { d ->
-                Text("${d.optString("name")} (${d.optString("label")}): zagra bez przygotowania", style = small, color = muted)
+                Text(stringResource(R.string.srv_dev_plays_without, d.optString("name"), d.optString("label")), style = small, color = muted)
             }
-            devs.isEmpty() && c?.optString("verdict") == "ok" -> Text("Format: Chromecast powinien to zagrać", style = small, color = muted)
+            devs.isEmpty() && c?.optString("verdict") == "ok" -> Text(stringResource(R.string.srv_format_ok), style = small, color = muted)
             c != null -> {
                 if (devs.isNotEmpty()) devs.forEach { d ->
                     val v = d.optString("verdict")
-                    Text("${d.optString("name")} (${d.optString("label")}): " + when (v) {
-                        "ok" -> "zagra"; "no" -> "raczej nie zagra"; else -> "może mieć kłopot" },
+                    Text(stringResource(R.string.srv_dev_verdict, d.optString("name"), d.optString("label"), when (v) {
+                        "ok" -> stringResource(R.string.srv_verdict_ok); "no" -> stringResource(R.string.srv_verdict_no)
+                        else -> stringResource(R.string.srv_verdict_maybe) }),
                         style = small, color = if (v == "ok") muted else MaterialTheme.colorScheme.error)
                     val pr = d.optJSONArray("problems")
                     for (i in 0 until (pr?.length() ?: 0)) Text("· " + pr!!.getString(i), style = small, color = muted)
                 } else {
                     val probs = c.optJSONArray("problems")
-                    Text(if (c.optString("verdict") == "no") "Chromecast raczej tego nie zagra:" else "Chromecast może mieć kłopot:",
+                    Text(if (c.optString("verdict") == "no") stringResource(R.string.srv_cast_no) else stringResource(R.string.srv_cast_maybe),
                         style = small, color = MaterialTheme.colorScheme.error)
                     for (i in 0 until (probs?.length() ?: 0)) Text("· " + probs!!.getString(i), style = small, color = muted)
                 }
-                if (state == "error") Text("Ostatnia próba: " + j!!.optString("error").takeLast(160), style = small,
+                if (state == "error") Text(stringResource(R.string.srv_last_attempt, j!!.optString("error").takeLast(160)), style = small,
                     color = MaterialTheme.colorScheme.error)
                 val enc = p.optJSONObject("encoder")?.optString("label") ?: "?"
-                val how = (if (c.optBoolean("video_copy")) "obraz bez zmian" else "obraz: $enc") +
-                    (if (c.optBoolean("audio_copy")) ", dźwięk bez zmian" else ", dźwięk → AAC")
+                val how = (if (c.optBoolean("video_copy")) stringResource(R.string.srv_video_copy) else stringResource(R.string.srv_video_enc, enc)) +
+                    ", " + (if (c.optBoolean("audio_copy")) stringResource(R.string.srv_audio_copy) else stringResource(R.string.srv_audio_aac))
                 TextButton({ op(null) }, enabled = p.optBoolean("complete")) {
-                    Text(if (p.optBoolean("complete")) "Przygotuj wersję dla Chromecasta ($how)" else "Przygotuję, gdy film pobierze się w całości")
+                    Text(if (p.optBoolean("complete")) stringResource(R.string.srv_prepare_for_cast, how) else stringResource(R.string.srv_prepare_when_complete))
                 }
             }
         }
@@ -351,20 +353,20 @@ fun ServerSheet(current: String?, onPick: (String) -> Unit, onWake: (String) -> 
     }
     ModalBottomSheet(onDismiss) {
         Column(Modifier.padding(bottom = 24.dp)) {
-            Text("Filmy z serwera", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.srv_videos_from_server), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.titleMedium)
             servers.forEach { s ->
                 val on = online[s.key]
-                val status = when (on) { true -> "działa"; false -> "śpi albo wyłączony"; null -> "…" }
+                val status = when (on) { true -> stringResource(R.string.srv_status_online); false -> stringResource(R.string.srv_status_asleep); null -> "…" }
                 SheetRow(if (s.hasPlayer) Icons.Filled.Computer else Icons.Filled.Dns, s.name,
-                    if (s.hasFiles) "${s.roles} · $status" else "tylko ekran · $status",
+                    if (s.hasFiles) "${s.rolesText(ctx)} · $status" else stringResource(R.string.srv_screen_only_status, status),
                     when (on) { true -> OK_GREEN; false -> MaterialTheme.colorScheme.outline; null -> null },
                     s.key == current, enabled = s.hasFiles,
-                    trailing = if (on == false && s.mac.isNotBlank()) ({ TextButton({ onWake(s.key) }) { Text("Obudź") } }) else null,
+                    trailing = if (on == false && s.mac.isNotBlank()) ({ TextButton({ onWake(s.key) }) { Text(stringResource(R.string.srv_wake)) } }) else null,
                 ) { onPick(s.key) }
             }
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
-            SheetRow(Icons.Filled.Add, "Dodaj serwer", null, null, false) { onAdd() }
-            SheetRow(Icons.Filled.Settings, "Zarządzaj serwerami", null, null, false) { onManage() }
+            SheetRow(Icons.Filled.Add, stringResource(R.string.srv_add_server), null, null, false) { onAdd() }
+            SheetRow(Icons.Filled.Settings, stringResource(R.string.srv_manage_servers), null, null, false) { onManage() }
         }
     }
 }
@@ -372,18 +374,19 @@ fun ServerSheet(current: String?, onPick: (String) -> Unit, onWake: (String) -> 
 /** Wybrany serwer nie odpowiada: zamiast błędu „śpi” z przyciskiem budzenia. */
 @Composable
 fun AsleepPane(server: Server, waking: String?, wrongServer: Boolean, onWake: () -> Unit) {
+    val ctx = LocalContext.current
     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(if (waking != null) Icons.Filled.PowerSettingsNew else Icons.Filled.Bedtime, null, Modifier.size(48.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         if (wrongServer) {
-            Text("Pod adresem ${server.host} jest teraz inny serwer", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.srv_other_server_at, server.host), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
-            Text("Router mógł przydzielić ${server.name} nowy adres. Sparuj go jeszcze raz (Ustawienia → Dodaj serwer).",
+            Text(stringResource(R.string.srv_router_new_address, server.name),
                 textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
             return@Column
         }
-        Text(if (waking != null) "Budzę ${server.name}" else "${server.name} śpi albo jest wyłączony",
+        Text(if (waking != null) stringResource(R.string.srv_waking, server.name) else stringResource(R.string.srv_is_asleep, server.name),
             style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         if (waking != null) {
@@ -393,15 +396,15 @@ fun AsleepPane(server: Server, waking: String?, wrongServer: Boolean, onWake: ()
             return@Column
         }
         val (txt, col) = when (server.wakeConfidence) {
-            "yes" -> "Budzenie przez sieć już działało." to OK_GREEN
-            "no" -> "Raczej nie obudzisz go z telefonu: ${server.wakeReason}." to MaterialTheme.colorScheme.error
-            else -> "Budzenia jeszcze nie sprawdzono (${server.wakeReason})." to MaterialTheme.colorScheme.onSurfaceVariant
+            "yes" -> stringResource(R.string.srv_wake_worked) to OK_GREEN
+            "no" -> stringResource(R.string.srv_wake_unlikely, server.wakeReason(ctx)) to MaterialTheme.colorScheme.error
+            else -> stringResource(R.string.srv_wake_unchecked, server.wakeReason(ctx)) to MaterialTheme.colorScheme.onSurfaceVariant
         }
         Text(txt, style = MaterialTheme.typography.bodySmall, color = col, textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
-        if (server.mac.isNotBlank()) Button(onWake) { Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(6.dp)); Text("Obudź") }
+        if (server.mac.isNotBlank()) Button(onWake) { Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.srv_wake)) }
         Spacer(Modifier.height(20.dp))
-        Text("Filmy pobrane na telefon są w zakładce „Na telefonie”.", style = MaterialTheme.typography.bodySmall,
+        Text(stringResource(R.string.srv_offline_hint), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
     }
 }
@@ -409,31 +412,33 @@ fun AsleepPane(server: Server, waking: String?, wrongServer: Boolean, onWake: ()
 /** „Uśpić?” z ostrzeżeniem zależnym od tego, czy da się go potem obudzić. */
 @Composable
 fun SuspendDialog(server: Server, poweroff: Boolean = false, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    val what = if (poweroff) "Wyłączyć" else "Uśpić"
+    val ctx = LocalContext.current
+    val what = if (poweroff) stringResource(R.string.srv_poweroff) else stringResource(R.string.srv_suspend)
+    val whatAnyway = if (poweroff) stringResource(R.string.srv_poweroff_anyway) else stringResource(R.string.srv_suspend_anyway)
     val conf = server.wakeConfidence
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = if (conf == "no") ({ Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error) }) else null,
-        title = { Text("$what ${server.name}?") },
+        title = { Text(if (poweroff) stringResource(R.string.srv_poweroff_q, server.name) else stringResource(R.string.srv_suspend_q, server.name)) },
         text = {
             Column {
-                Text("Pobieranie się zatrzyma." + if (conf == "yes") " Obudzisz go z apki albo klikając magnet link." else "")
+                Text(stringResource(R.string.srv_downloads_stop) + if (conf == "yes") " " + stringResource(R.string.srv_wake_from_app) else "")
                 if (conf == "maybe") Surface(color = WARN.copy(alpha = 0.15f), shape = MaterialTheme.shapes.small,
                     modifier = Modifier.padding(top = 12.dp)) {
-                    Text("Jeszcze nie sprawdzono, czy da się go obudzić z telefonu (${server.wakeReason}).",
+                    Text(stringResource(R.string.srv_wake_not_checked_phone, server.wakeReason(ctx)),
                         Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall)
                 }
-                if (conf == "no") Text("Nie obudzisz go z telefonu (${server.wakeReason}). Trzeba będzie do niego podejść.",
+                if (conf == "no") Text(stringResource(R.string.srv_cant_wake, server.wakeReason(ctx)),
                     Modifier.padding(top = 12.dp), fontWeight = FontWeight.SemiBold)
             }
         },
         confirmButton = {
             TextButton(onConfirm) {
-                Text(if (conf == "no") "$what mimo to" else what,
+                Text(if (conf == "no") whatAnyway else what,
                     color = if (conf == "no") MaterialTheme.colorScheme.error else Color.Unspecified)
             }
         },
-        dismissButton = { TextButton(onDismiss) { Text("Anuluj") } },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.srv_cancel)) } },
     )
 }
 
@@ -451,26 +456,24 @@ fun ServersSection(ver: Int, snack: SnackbarHostState, openAdd: Boolean, onChang
     LaunchedEffect(ver) {
         servers.forEach { s -> launch(Dispatchers.IO) { online[s.key] = Api(Settings(ctx), s).ping(1500) } }
     }
-    Text("Serwery", style = MaterialTheme.typography.titleMedium)
-    if (servers.isEmpty()) Text("Nie ma jeszcze serwera. „Zainstaluj na innym komputerze” poda polecenie do wklejenia na " +
-        "komputerze w tym samym Wi-Fi, a ten telefon sam się z nim sparuje. Komputer z już zainstalowanym agentem pokazuje " +
-        "kod parowania (QR): zeskanuj go aparatem albo wpisz w „Dodaj serwer”.", style = MaterialTheme.typography.bodySmall,
+    Text(stringResource(R.string.srv_servers), style = MaterialTheme.typography.titleMedium)
+    if (servers.isEmpty()) Text(stringResource(R.string.srv_no_servers_hint), style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     Card(Modifier.fillMaxWidth()) {
         servers.forEach { s ->
-            SheetRow(if (s.hasPlayer) Icons.Filled.Computer else Icons.Filled.Dns, s.name, "${s.host} · ${s.roles}",
+            SheetRow(if (s.hasPlayer) Icons.Filled.Computer else Icons.Filled.Dns, s.name, "${s.host} · ${s.rolesText(ctx)}",
                 when (online[s.key]) { true -> OK_GREEN; false -> MaterialTheme.colorScheme.outline; null -> null }, false) {
                 details = s.key
             }
         }
-        SheetRow(Icons.Filled.Add, "Dodaj serwer", null, null, false) { add = true }
+        SheetRow(Icons.Filled.Add, stringResource(R.string.srv_add_server), null, null, false) { add = true }
     }
     if (servers.any { !it.isGuest }) OutlinedButton({ invite = true }) {
-        Icon(Icons.Filled.QrCode2, null); Spacer(Modifier.width(6.dp)); Text("Sparuj kolejne urządzenie")
+        Icon(Icons.Filled.QrCode2, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.srv_pair_another))
     }
     var install by remember { mutableStateOf(false) }
     if (servers.any { it.canInstall } || InstallShare.available(ctx)) OutlinedButton({ install = true }) {
-        Icon(Icons.Filled.InstallDesktop, null); Spacer(Modifier.width(6.dp)); Text("Zainstaluj na innym komputerze")
+        Icon(Icons.Filled.InstallDesktop, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.srv_install_other))
     }
     if (install) InstallDialog(onDone = onChanged) { install = false }
     details?.let { k -> ServerDetailsDialog(k, snack, onChanged = onChanged) { details = null } }
@@ -511,47 +514,47 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
         title = { Text(s.name) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${s.host}:${s.port}" + (s.info?.optString("version")?.takeIf { it.isNotEmpty() }?.let { " · agent $it" } ?: ""),
+                Text("${s.host}:${s.port}" + (s.info?.optString("version")?.takeIf { it.isNotEmpty() }?.let { " · " + stringResource(R.string.srv_agent_version, it) } ?: ""),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (s.hasTorrent) AssistChip({}, { Text("torrenty: " + (s.info?.optJSONObject("features")?.optString("torrent") ?: "tak")) })
-                    if (s.hasLibrary) AssistChip({}, { Text("biblioteka") })
-                    if (s.hasPlayer) AssistChip({}, { Text("ekran (mpv)") })
-                    if (s.canUnlock && s.hasPlayer) AssistChip({}, { Text("odblokowanie") })
-                    s.transcode?.let { AssistChip({}, { Text("wersje dla Chromecasta: $it") }) }
+                    if (s.hasTorrent) AssistChip({}, { Text(stringResource(R.string.srv_chip_torrents_client, s.info?.optJSONObject("features")?.optString("torrent") ?: stringResource(R.string.srv_yes))) })
+                    if (s.hasLibrary) AssistChip({}, { Text(stringResource(R.string.srv_chip_library)) })
+                    if (s.hasPlayer) AssistChip({}, { Text(stringResource(R.string.srv_chip_screen_mpv)) })
+                    if (s.canUnlock && s.hasPlayer) AssistChip({}, { Text(stringResource(R.string.srv_chip_unlock)) })
+                    s.transcode?.let { AssistChip({}, { Text(stringResource(R.string.srv_chip_cast_versions, it)) }) }
                 }
-                if (!s.knowsFeatures) Text("Stara wersja agenta: zaktualizuj ją (install.sh), żeby apka wiedziała, co ten serwer umie.",
+                if (!s.knowsFeatures) Text(stringResource(R.string.srv_old_agent),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val wake = when (s.wakeConfidence) {
-                    "yes" -> "budzenie przez sieć działa"
-                    "no" -> "nie da się obudzić przez sieć: ${s.wakeReason}"
-                    else -> "budzenie niesprawdzone: ${s.wakeReason}"
+                    "yes" -> stringResource(R.string.srv_wake_works)
+                    "no" -> stringResource(R.string.srv_wake_no, s.wakeReason(ctx))
+                    else -> stringResource(R.string.srv_wake_untested, s.wakeReason(ctx))
                 }
-                Text("Usypianie: ${if (s.canSuspend) "tak" else "nie"} · $wake", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nazwa w apce") }, singleLine = true)
+                Text(stringResource(R.string.srv_suspend_line, if (s.canSuspend) stringResource(R.string.srv_yes) else stringResource(R.string.srv_no), wake), style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_name_in_app)) }, singleLine = true)
                 HorizontalDivider()
-                Text("Sparowane urządzenia", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.srv_paired_devices), style = MaterialTheme.typography.titleSmall)
                 when (val list = devices) {
                     null -> if (error == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else -> list.forEach { d ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(d.optString("name") + (if (d.optString("role") == "guest") " · gość" +
-                                    (if (d.optDouble("expires", 0.0) > 0) " do " + java.text.SimpleDateFormat("d.MM", java.util.Locale("pl"))
-                                        .format(java.util.Date((d.optDouble("expires") * 1000).toLong())) else "") else "") +
-                                    if (d.optBoolean("current")) " · ten telefon" else "")
-                                Text(lastSeen(d), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(d.optString("name") + (if (d.optString("role") == "guest") " · " + stringResource(R.string.srv_dev_guest) +
+                                    (if (d.optDouble("expires", 0.0) > 0) " " + stringResource(R.string.srv_dev_until, java.text.SimpleDateFormat("d.MM", java.util.Locale("pl"))
+                                        .format(java.util.Date((d.optDouble("expires") * 1000).toLong()))) else "") else "") +
+                                    if (d.optBoolean("current")) " · " + stringResource(R.string.srv_dev_this_phone) else "")
+                                Text(lastSeen(ctx, d), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             if (!d.optBoolean("current")) TextButton({ revoke = d }) {
-                                Text(if (d.optBoolean("legacy")) "Wyłącz" else "Odbierz", color = MaterialTheme.colorScheme.error)
+                                Text(if (d.optBoolean("legacy")) stringResource(R.string.srv_disable) else stringResource(R.string.srv_revoke), color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ invite = true }) { Text("Sparuj kolejne") }
-                    TextButton({ confirmRemove = true }) { Text("Usuń", color = MaterialTheme.colorScheme.error) }
+                    OutlinedButton({ invite = true }) { Text(stringResource(R.string.srv_pair_more)) }
+                    TextButton({ confirmRemove = true }) { Text(stringResource(R.string.srv_remove), color = MaterialTheme.colorScheme.error) }
                 }
             }
         },
@@ -562,18 +565,18 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                     onChanged()
                 }
                 onDismiss()
-            }) { Text("Zamknij") }
+            }) { Text(stringResource(R.string.srv_close)) }
         },
-        dismissButton = { TextButton({ reload++ }) { Text("Testuj") } },
+        dismissButton = { TextButton({ reload++ }) { Text(stringResource(R.string.srv_test)) } },
     )
     if (invite) InviteDialog(key) { invite = false }
     revoke?.let { d ->
         AlertDialog(
             onDismissRequest = { revoke = null },
-            title = { Text(if (d.optBoolean("legacy")) "Wyłączyć stary wspólny token?" else "Odebrać dostęp?") },
+            title = { Text(if (d.optBoolean("legacy")) stringResource(R.string.srv_disable_legacy_q) else stringResource(R.string.srv_revoke_q)) },
             text = {
-                Text(if (d.optBoolean("legacy")) "Urządzenia, które nie zostały sparowane na nowo (np. starsza wersja apki), stracą dostęp do ${s.name}."
-                else "„${d.optString("name")}” straci dostęp do ${s.name}. Żeby wrócić, trzeba będzie sparować je jeszcze raz.")
+                Text(if (d.optBoolean("legacy")) stringResource(R.string.srv_disable_legacy_text, s.name)
+                else stringResource(R.string.srv_revoke_text, d.optString("name"), s.name))
             },
             confirmButton = {
                 TextButton({
@@ -583,36 +586,36 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                             withContext(Dispatchers.IO) { Api(Settings(ctx), s).revoke(d.getString("id")) }
                             reload++
                         } catch (e: ApiException) {
-                            snack.showSnackbar(e.message ?: "Błąd")
+                            snack.showSnackbar(e.message ?: ctx.getString(R.string.srv_error))
                         }
                     }
-                }) { Text(if (d.optBoolean("legacy")) "Wyłącz" else "Odbierz", color = MaterialTheme.colorScheme.error) }
+                }) { Text(if (d.optBoolean("legacy")) stringResource(R.string.srv_disable) else stringResource(R.string.srv_revoke), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton({ revoke = null }) { Text("Anuluj") } },
+            dismissButton = { TextButton({ revoke = null }) { Text(stringResource(R.string.srv_cancel)) } },
         )
     }
     if (confirmRemove) AlertDialog(
         onDismissRequest = { confirmRemove = false },
-        title = { Text("Usunąć ${s.name} z apki?") },
-        text = { Text("Serwer zniknie tylko z tego telefonu. Filmy pobrane z niego na telefon zostają w „Na telefonie”.") },
+        title = { Text(stringResource(R.string.srv_remove_q, s.name)) },
+        text = { Text(stringResource(R.string.srv_remove_text)) },
         confirmButton = {
             TextButton({ confirmRemove = false; Servers.remove(ctx, key); onChanged(); onDismiss() }) {
-                Text("Usuń", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.srv_remove), color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = { TextButton({ confirmRemove = false }) { Text("Anuluj") } },
+        dismissButton = { TextButton({ confirmRemove = false }) { Text(stringResource(R.string.srv_cancel)) } },
     )
 }
 
-private fun lastSeen(d: JSONObject): String {
-    val t = d.optDouble("last_seen").takeIf { !it.isNaN() && it > 0 } ?: return "jeszcze nie łączył się"
+private fun lastSeen(ctx: Context, d: JSONObject): String {
+    val t = d.optDouble("last_seen").takeIf { !it.isNaN() && it > 0 } ?: return ctx.getString(R.string.srv_never_connected)
     val ago = (System.currentTimeMillis() / 1000.0 - t).toLong()
-    return "ostatnio: " + when {
-        ago < 120 -> "teraz"
-        ago < 3600 -> "${ago / 60} min temu"
-        ago < 86400 -> "${ago / 3600} h temu"
-        else -> "${ago / 86400} dni temu"
-    }
+    return ctx.getString(R.string.srv_last_seen, when {
+        ago < 120 -> ctx.getString(R.string.srv_now)
+        ago < 3600 -> ctx.getString(R.string.srv_min_ago, (ago / 60).toInt())
+        ago < 86400 -> ctx.getString(R.string.srv_h_ago, (ago / 3600).toInt())
+        else -> (ago / 86400).toInt().let { ctx.resources.getQuantityString(R.plurals.srv_days_ago, it, it) }
+    })
 }
 
 /** „Dodaj serwer”: adres + kod (albo link parowania ze schowka); po połączeniu podsumowanie możliwości. */
@@ -636,7 +639,7 @@ fun AddServerDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Exception) {
-                error = "Nie udało się: ${e.message}"
+                error = ctx.getString(R.string.srv_failed, e.message)
             } finally {
                 busy = false
             }
@@ -645,7 +648,7 @@ fun AddServerDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (added != null) "Połączono" else "Dodaj serwer") },
+        title = { Text(if (added != null) stringResource(R.string.srv_connected) else stringResource(R.string.srv_add_server)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val done = added
@@ -653,14 +656,13 @@ fun AddServerDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                     done.forEach { s -> ServerSummary(s) }
                     return@Column
                 }
-                Text("Kod parowania pokazuje komputer po instalacji (albo: magneticplayer_agent.py --pair), a sparowany " +
-                    "telefon w Ustawieniach → „Sparuj kolejne urządzenie”. QR zeskanuj zwykłym aparatem — otworzy tę apkę.",
+                Text(stringResource(R.string.srv_pair_code_hint),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(host, { host = it.trim() }, Modifier.fillMaxWidth(), label = { Text("Adres IP") }, singleLine = true,
+                OutlinedTextField(host, { host = it.trim() }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_ip_address)) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                OutlinedTextField(port, { port = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Port") }, singleLine = true,
+                OutlinedTextField(port, { port = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_port)) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                OutlinedTextField(code, { code = it.trim() }, Modifier.fillMaxWidth(), label = { Text("Kod parowania (albo stary token)") },
+                OutlinedTextField(code, { code = it.trim() }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_pair_code_or_token)) },
                     singleLine = true)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -669,18 +671,18 @@ fun AddServerDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
                     val text = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
                     val link = Regex("""magneticplayer://pair\S+""").find(text)?.value
                     val targets = link?.let { Pairing.parse(android.net.Uri.parse(it)) }.orEmpty()
-                    if (targets.isEmpty()) error = "W schowku nie ma linku parowania" else run(targets)
-                }, enabled = !busy) { Text("Wklej link parowania") }
+                    if (targets.isEmpty()) error = ctx.getString(R.string.srv_no_pair_link) else run(targets)
+                }, enabled = !busy) { Text(stringResource(R.string.srv_paste_pair_link)) }
             }
         },
         confirmButton = {
-            if (added != null) TextButton(onDismiss) { Text("Gotowe") }
+            if (added != null) TextButton(onDismiss) { Text(stringResource(R.string.srv_done)) }
             else TextButton({
                 val p = port.toIntOrNull() ?: 8765
                 run(listOf(if (Pairing.looksLikeCode(code)) PairTarget(host, p, code, null, null) else PairTarget(host, p, null, code, null)))
-            }, enabled = !busy && host.isNotBlank() && code.isNotBlank()) { Text("Połącz") }
+            }, enabled = !busy && host.isNotBlank() && code.isNotBlank()) { Text(stringResource(R.string.srv_connect)) }
         },
-        dismissButton = { if (added == null) TextButton(onDismiss) { Text("Anuluj") } },
+        dismissButton = { if (added == null) TextButton(onDismiss) { Text(stringResource(R.string.srv_cancel)) } },
     )
 }
 
@@ -688,18 +690,19 @@ fun AddServerDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ServerSummary(s: Server) {
+    val ctx = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("✓ ${s.name}", style = MaterialTheme.typography.titleSmall, color = OK_GREEN)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (s.hasTorrent) AssistChip({}, { Text("torrenty") })
-            if (s.hasLibrary) AssistChip({}, { Text("biblioteka") })
-            if (s.hasPlayer) AssistChip({}, { Text("ekran") })
+            if (s.hasTorrent) AssistChip({}, { Text(stringResource(R.string.srv_chip_torrents)) })
+            if (s.hasLibrary) AssistChip({}, { Text(stringResource(R.string.srv_chip_library)) })
+            if (s.hasPlayer) AssistChip({}, { Text(stringResource(R.string.srv_chip_screen)) })
         }
-        if (!s.hasPlayer) Text("Brak ekranu (nie ma mpv albo sesji graficznej): filmy z niego obejrzysz na telefonie albo na innym ekranie.",
+        if (!s.hasPlayer) Text(stringResource(R.string.srv_no_screen),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         when (s.wakeConfidence) {
-            "maybe" -> Text("Budzenie: ${s.wakeReason}. Uśpij i obudź go raz, żeby się upewnić.", style = MaterialTheme.typography.bodySmall, color = WARN)
-            "no" -> if (s.canSuspend) Text("Budzenie: ${s.wakeReason}, więc po uśpieniu trzeba będzie do niego podejść.",
+            "maybe" -> Text(stringResource(R.string.srv_wake_maybe_summary, s.wakeReason(ctx)), style = MaterialTheme.typography.bodySmall, color = WARN)
+            "no" -> if (s.canSuspend) Text(stringResource(R.string.srv_wake_no_summary, s.wakeReason(ctx)),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
     }
@@ -742,30 +745,27 @@ fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {
     val link = codes?.let { c -> Pairing.link(c.map { (s, o) -> Triple(s.host, s.port, o.getString("code")) }) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sparuj kolejne urządzenie") },
+        title = { Text(stringResource(R.string.srv_pair_another)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (link == null) {
-                    Text("Z którymi serwerami?", Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.srv_which_servers), Modifier.fillMaxWidth())
                     servers.forEach { s ->
                         Row(Modifier.fillMaxWidth().clickable { checked[s.key] = checked[s.key] != true }, verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked[s.key] == true, { checked[s.key] = it }, enabled = online[s.key] != false)
-                            Text(s.name + if (online[s.key] == false) " (nie odpowiada)" else "")
+                            Text(if (online[s.key] == false) stringResource(R.string.srv_not_responding_suffix, s.name) else s.name)
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text("Dla kogo?", Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.srv_for_whom), Modifier.fillMaxWidth())
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(!guest, { guest = false }, { Text("Domownik") })
-                        FilterChip(guest, { guest = true }, { Text("Gość") })
+                        FilterChip(!guest, { guest = false }, { Text(stringResource(R.string.srv_role_member)) })
+                        FilterChip(guest, { guest = true }, { Text(stringResource(R.string.srv_role_guest)) })
                     }
-                    Text(if (guest) "Gość ogląda Bibliotekę i torrenty, włącza filmy na ekranie i Chromecaście, szuka napisów. " +
-                        "Nie doda ani nie usunie torrentu, nie uśpi komputera, nie zmieni ustawień i nie zaprosi innych. " +
-                        "Kod działa raz, przez dobę, więc możesz go wysłać komunikatorem."
-                        else "Domownik może wszystko, jak ten telefon. Kod działa raz, przez 10 min.",
+                    Text(if (guest) stringResource(R.string.srv_guest_desc) else stringResource(R.string.srv_member_desc),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (guest) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(1 to "dzień", 7 to "tydzień", 0 to "bez limitu").forEach { (d, label) ->
+                        listOf(1 to stringResource(R.string.srv_limit_day), 7 to stringResource(R.string.srv_limit_week), 0 to stringResource(R.string.srv_limit_none)).forEach { (d, label) ->
                             FilterChip(guestDays == d, { guestDays = d }, { Text(label) })
                         }
                     }
@@ -773,47 +773,48 @@ fun InviteDialog(preselect: String?, onDismiss: () -> Unit) {
                     return@Column
                 }
                 val qr = remember(link) { qrBitmap(link, 720) }
-                androidx.compose.foundation.Image(qr.asImageBitmap(), "kod QR parowania",
+                androidx.compose.foundation.Image(qr.asImageBitmap(), stringResource(R.string.srv_qr_desc),
                     Modifier.fillMaxWidth().aspectRatio(1f).background(Color.White))
                 Spacer(Modifier.height(8.dp))
-                Text(if (left <= 0) "Kod wygasł — zamknij i wygeneruj nowy."
-                    else if (left >= 3600) "Ważny jeszcze ${left / 3600} h ${(left % 3600) / 60} min, działa raz."
-                    else "Ważny jeszcze ${left / 60}:${"%02d".format(left % 60)}, działa raz.",
+                Text(if (left <= 0) stringResource(R.string.srv_code_expired)
+                    else if (left >= 3600) stringResource(R.string.srv_valid_h, left / 3600, (left % 3600) / 60)
+                    else stringResource(R.string.srv_valid_ms, left / 60, left % 60),
                     style = MaterialTheme.typography.labelMedium, color = if (left > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(8.dp))
-                Text("Na nowym telefonie: zainstaluj MagneticPlayer i zeskanuj kod aparatem. Albo w apce: Ustawienia → Dodaj serwer i wpisz:",
+                Text(stringResource(R.string.srv_new_phone_hint),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 codes!!.forEach { (s, o) ->
                     val c = o.getString("code")
-                    Text("${s.name}: ${s.host}, kod ${c.take(3)}-${c.drop(3)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.srv_code_line, s.name, s.host, c.take(3), c.drop(3)), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(8.dp))
                 val (ws, wo) = codes!!.first()
                 val web = "http://${ws.host}:${ws.port}/#p=${wo.getString("code")}"
-                Text("Laptop albo tablet: otwórz w przeglądarce (${ws.name})", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.srv_laptop_browser, ws.name), style = MaterialTheme.typography.labelMedium)
                 Text(web, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable {
-                        copyText(ctx, "MagneticPlayer — wersja webowa", web)
-                        android.widget.Toast.makeText(ctx, "Skopiowano (kod działa raz)", android.widget.Toast.LENGTH_SHORT).show()
+                        copyText(ctx, ctx.getString(R.string.srv_clip_web), web)
+                        android.widget.Toast.makeText(ctx, ctx.getString(R.string.srv_copied_once), android.widget.Toast.LENGTH_SHORT).show()
                     })
             }
         },
         confirmButton = {
-            if (link == null) TextButton({ generate() }, enabled = checked.values.any { it }) { Text("Pokaż kod") }
-            else TextButton(onDismiss) { Text("Zamknij") }
+            if (link == null) TextButton({ generate() }, enabled = checked.values.any { it }) { Text(stringResource(R.string.srv_show_code)) }
+            else TextButton(onDismiss) { Text(stringResource(R.string.srv_close)) }
         },
         dismissButton = {
             if (link != null) TextButton({
                 val text = if (!guest) link else {
                     val (ws, wo) = codes!!.first()
-                    "Zaproszenie do filmów na ${codes!!.joinToString { it.first.name }} (MagneticPlayer). W domowym Wi-Fi " +
-                        "otwórz w przeglądarce http://${ws.host}:${ws.port}/#p=${wo.getString("code")}, a z apką MagneticPlayer " +
-                        "ten link: $link\nKod działa raz, przez dobę" + (if (guestDays > 0) "; dostęp na ${if (guestDays == 1) "dzień" else "$guestDays dni"}." else ".")
+                    ctx.getString(R.string.srv_invite_text, codes!!.joinToString { it.first.name },
+                        "http://${ws.host}:${ws.port}/#p=${wo.getString("code")}", link,
+                        if (guestDays > 0) ctx.getString(R.string.srv_invite_access,
+                            ctx.resources.getQuantityString(R.plurals.srv_invite_days, guestDays, guestDays)) else ".")
                 }
                 ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
-                    .putExtra(Intent.EXTRA_TEXT, text), if (guest) "Zaproszenie dla gościa" else "Link parowania MagneticPlayer"))
-            }) { Text(if (guest) "Wyślij zaproszenie" else "Udostępnij link") }
-            else TextButton(onDismiss) { Text("Anuluj") }
+                    .putExtra(Intent.EXTRA_TEXT, text), ctx.getString(if (guest) R.string.srv_invite_chooser_guest else R.string.srv_invite_chooser_link)))
+            }) { Text(if (guest) stringResource(R.string.srv_send_invite) else stringResource(R.string.srv_share_link)) }
+            else TextButton(onDismiss) { Text(stringResource(R.string.srv_cancel)) }
         },
     )
 }

@@ -56,12 +56,16 @@ data class Server(
         power == null -> if (info?.optBoolean("wireless") == true) "no" else "maybe"
         else -> power!!.optJSONObject("wake")?.optString("confidence", "maybe") ?: "maybe"
     }
-    val wakeReason: String get() = power?.optJSONObject("wake")?.optString("reason").orEmpty().ifEmpty {
-        if (info?.optBoolean("wireless") == true) "komputer jest na Wi-Fi" else "nie wiadomo, czy da się go obudzić"
+    /** Powód z serwera (jego tekst, bez tłumaczenia), a bez niego nasz opis. */
+    fun wakeReason(ctx: Context): String = power?.optJSONObject("wake")?.optString("reason").orEmpty().ifEmpty {
+        ctx.getString(if (info?.optBoolean("wireless") == true) R.string.srv_reason_wifi else R.string.srv_reason_unknown)
     }
 
-    val roles: String get() = listOfNotNull(if (hasFiles) "pliki" else null, if (hasPlayer) "ekran" else null)
-        .joinToString(" + ").ifEmpty { "nic" }
+    /** „pliki + ekran” w języku telefonu. */
+    fun rolesText(ctx: Context): String = listOfNotNull(
+        if (hasFiles) ctx.getString(R.string.srv_role_files) else null,
+        if (hasPlayer) ctx.getString(R.string.srv_role_screen) else null,
+    ).joinToString(" + ").ifEmpty { ctx.getString(R.string.srv_role_nothing) }
 
     fun json(): JSONObject = JSONObject().put("key", key).put("uid", uid ?: JSONObject.NULL).put("name", name)
         .put("host", host).put("port", port).put("token", token).put("mac", mac).put("wake_ok", wakeOk)
@@ -203,7 +207,7 @@ object Pairing {
      */
     fun pair(ctx: Context, t: PairTarget): Server {
         val token = t.token ?: run {
-            val res = post("http://${t.host}:${t.port}/api/pair",
+            val res = post(ctx, "http://${t.host}:${t.port}/api/pair",
                 JSONObject().put("code", t.code).put("name", Servers.deviceName()))
             res.getString("token")
         }
@@ -225,20 +229,20 @@ object Pairing {
         return s
     }
 
-    private fun post(url: String, body: JSONObject): JSONObject {
+    private fun post(ctx: Context, url: String, body: JSONObject): JSONObject {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
             c.requestMethod = "POST"
             c.connectTimeout = 6000; c.readTimeout = 10000
             c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/json")
+            c.setRequestProperty("Content-Type", "application/json"); c.acceptPhoneLanguage()
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = c.responseCode
             val text = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
             if (code >= 400) throw ApiException(runCatching { JSONObject(text).getString("error") }.getOrDefault("HTTP $code"), code)
             return JSONObject(text)
         } catch (e: java.io.IOException) {
-            throw ApiException("Serwer ${URL(url).host} nie odpowiada (${e.javaClass.simpleName})")
+            throw ApiException(ctx.getString(R.string.srv_host_not_responding, URL(url).host, e.javaClass.simpleName))
         } finally {
             c.disconnect()
         }

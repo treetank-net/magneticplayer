@@ -14,6 +14,11 @@ $Src = $PSScriptRoot
 $Dest = Join-Path $env:LOCALAPPDATA 'MagneticPlayer'
 $ConfDir = Join-Path $HOME '.config\magneticplayer'
 $Conf = Join-Path $ConfDir 'config.json'
+# komunikaty: po polsku, gdy Windows ma polski język interfejsu, inaczej po angielsku
+$MpPl = (Get-UICulture).Name -like 'pl*'
+function Tr([string]$en, [string]$pl) { if ($MpPl) { $pl } else { $en } }
+function Say([string]$en, [string]$pl) { Write-Host (Tr $en $pl) }
+if ($MpPl -and -not $env:LANG) { $env:LANG = 'pl_PL.UTF-8' }  # komunikaty agenta (--pair, --join) w tym samym języku
 
 function Find-Python {
   # python.exe z WindowsApps to tylko skrót do Microsoft Store, nie Python
@@ -32,10 +37,11 @@ function Find-Python {
   return $null
 }
 
-Write-Host '== MagneticPlayer: instalacja lekka (Windows)'
+Say '== MagneticPlayer: lite install (Windows)' '== MagneticPlayer: instalacja lekka (Windows)'
 $py = Find-Python
 if (-not $py -and (Get-Command winget -ErrorAction SilentlyContinue)) {
-  Write-Host '== brak Pythona: instaluję Python 3.12 dla tego użytkownika (winget, bez administratora)'
+  Say '== Python is missing: installing Python 3.12 for this user (winget, no administrator)' `
+      '== brak Pythona: instaluję Python 3.12 dla tego użytkownika (winget, bez administratora)'
   winget install -e --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements --disable-interactivity | Out-Host
   $py = Find-Python
 }
@@ -44,13 +50,14 @@ if (-not $py) {
   $pyVer = '3.12.10'
   $pyArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
   $pyExe = Join-Path $env:TEMP "python-$pyVer-$pyArch.exe"
-  Write-Host "== brak Pythona: pobieram Python $pyVer z python.org (instalacja dla tego użytkownika, bez administratora)"
+  Say "== Python is missing: downloading Python $pyVer from python.org (install for this user, no administrator)" `
+      "== brak Pythona: pobieram Python $pyVer z python.org (instalacja dla tego użytkownika, bez administratora)"
   Invoke-WebRequest "https://www.python.org/ftp/python/$pyVer/python-$pyVer-$pyArch.exe" -OutFile $pyExe -UseBasicParsing
   $p = Start-Process $pyExe -ArgumentList '/quiet', 'InstallAllUsers=0', 'PrependPath=0', 'Include_test=0', 'Include_launcher=0', 'Shortcuts=0' -Wait -PassThru
   Remove-Item $pyExe -Force -ErrorAction SilentlyContinue
-  if ($p.ExitCode -ne 0) { Write-Host "instalator Pythona zakończył się kodem $($p.ExitCode)" }
+  if ($p.ExitCode -ne 0) { Say "the Python installer exited with code $($p.ExitCode)" "instalator Pythona zakończył się kodem $($p.ExitCode)" }
   $py = Find-Python
-  if (-not $py) { throw 'Python się nie zainstalował. Zainstaluj go z python.org i uruchom ponownie.' }
+  if (-not $py) { throw (Tr "Python didn't install. Install it from python.org and run this again." 'Python się nie zainstalował. Zainstaluj go z python.org i uruchom ponownie.') }
 }
 Write-Host "python: $py"
 
@@ -67,14 +74,14 @@ foreach ($f in 'install.ps1', 'uninstall.ps1', 'join.ps1', 'install.sh', 'instal
   if (Test-Path (Join-Path $Src $f)) { Copy-Item (Join-Path $Src $f) $Dest -Force }
 }
 
-Write-Host '== napisy, Chromecast, QR: venv'
+Say '== subtitles, Chromecast, QR: venv' '== napisy, Chromecast, QR: venv'
 $venvPy = Join-Path $Dest 'venv\Scripts\python.exe'
 if (-not (Test-Path $venvPy)) { & $py -m venv (Join-Path $Dest 'venv') }
 if (Test-Path $venvPy) {
   & $venvPy -m pip install -q --disable-pip-version-check --upgrade subliminal pychromecast qrcode 2>&1 | Out-Host
-  if ($LASTEXITCODE -ne 0) { Write-Host 'UWAGA: część pakietów się nie zainstalowała (napisy albo Chromecast mogą nie działać)' }
+  if ($LASTEXITCODE -ne 0) { Say "WARNING: some packages didn't install (subtitles or Chromecast may not work)" 'UWAGA: część pakietów się nie zainstalowała (napisy albo Chromecast mogą nie działać)' }
 } else {
-  Write-Host 'UWAGA: venv się nie udał; agent działa bez napisów i Chromecasta ze strony'
+  Say 'WARNING: venv failed; the agent works without subtitles and Chromecast from the web page' 'UWAGA: venv się nie udał; agent działa bez napisów i Chromecasta ze strony'
   $venvPy = $py
 }
 $pyw = Join-Path (Split-Path $venvPy) 'pythonw.exe'
@@ -87,13 +94,13 @@ if (Test-Path $mpvExe) {  # mpv, który się nie uruchamia (np. brak DLL), pobie
   if ($LASTEXITCODE -ne 0) { Remove-Item -Recurse -Force (Join-Path $Dest 'mpv') }
 }
 if (-not $env:MP_NO_MPV -and -not (Get-Command mpv -ErrorAction SilentlyContinue) -and -not (Test-Path $mpvExe)) {
-  Write-Host '== mpv (ekran): pobieram z github.com/mpv-player/mpv'
+  Say '== mpv (screen): downloading from github.com/mpv-player/mpv' '== mpv (ekran): pobieram z github.com/mpv-player/mpv'
   try {
     $rel = Invoke-RestMethod 'https://api.github.com/repos/mpv-player/mpv/releases/latest' -UseBasicParsing
     # wersja MinGW: kompilacja MSVC potrzebuje środowiska Visual C++, którego świeży Windows nie ma (0xC0000135)
     $arch = 'x86_64'; if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { $arch = 'aarch64' }
     $asset = $rel.assets | Where-Object { $_.name -like "mpv-*-$arch-w64-mingw32-full.zip" } | Select-Object -First 1
-    if (-not $asset) { throw 'brak paczki dla Windows w ostatnim wydaniu' }
+    if (-not $asset) { throw (Tr 'no Windows package in the latest release' 'brak paczki dla Windows w ostatnim wydaniu') }
     $zip = Join-Path $env:TEMP $asset.name
     Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
     Remove-Item -Recurse -Force (Join-Path $Dest 'mpv') -ErrorAction SilentlyContinue
@@ -101,7 +108,8 @@ if (-not $env:MP_NO_MPV -and -not (Get-Command mpv -ErrorAction SilentlyContinue
     Remove-Item $zip -Force
     Write-Host "mpv $($rel.tag_name)"
   } catch {
-    Write-Host "UWAGA: mpv się nie pobrał ($($_.Exception.Message)); ten komputer nie będzie ekranem"
+    Say "WARNING: mpv didn't download ($($_.Exception.Message)); this computer won't be a screen" `
+        "UWAGA: mpv się nie pobrał ($($_.Exception.Message)); ten komputer nie będzie ekranem"
   }
 }
 
@@ -120,8 +128,8 @@ else {
   $cands = @(); if ($cfg.port) { $cands += [int]$cfg.port }; $cands += 8765..8785
   foreach ($p in $cands) { if (Test-Port $p) { $port = $p; break } }
 }
-if (-not $port) { throw 'Nie znalazłem wolnego portu 8765-8785 (podaj $env:MP_PORT)' }
-if ($port -ne 8765) { Write-Host "port 8765 zajęty: agent na $port" }
+if (-not $port) { throw (Tr 'No free port in 8765-8785 (set $env:MP_PORT)' 'Nie znalazłem wolnego portu 8765-8785 (podaj $env:MP_PORT)') }
+if ($port -ne 8765) { Say "port 8765 is taken: agent on $port" "port 8765 zajęty: agent na $port" }
 
 Write-Host "== config: backend=none power=false wake=false port=$port"
 @'
@@ -145,20 +153,24 @@ if ($admin) {
   foreach ($exe in 'pythonw.exe', 'python.exe') {
     $prog = Join-Path $base $exe
     Get-NetFirewallApplicationFilter -Program $prog -ErrorAction SilentlyContinue | Get-NetFirewallRule |
-      Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' } | ForEach-Object { Remove-NetFirewallRule -Name $_.Name; Write-Host "zapora: usunięto blokadę $($_.DisplayName) ($exe)" }
+      Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' } | ForEach-Object { Remove-NetFirewallRule -Name $_.Name; Say "firewall: removed block $($_.DisplayName) ($exe)" "zapora: usunięto blokadę $($_.DisplayName) ($exe)" }
     New-NetFirewallRule -DisplayName "MagneticPlayer ($exe)" -Direction Inbound -Program $prog -Profile Private, Domain -Action Allow | Out-Null
   }
-  Write-Host 'zapora: otwarte TCP' $port 'i UDP 47700 dla sieci prywatnych'
+  Say "firewall: opened TCP $port and UDP 47700 for private networks" "zapora: otwarte TCP $port i UDP 47700 dla sieci prywatnych"
 } else {
-  Write-Host 'zapora: przy pierwszym starcie Windows zapyta o dostęp Pythona do sieci: zaznacz „Sieci prywatne” i „Zezwalaj”.'
-  Write-Host '        „Anuluj” blokuje telefon na stałe (naprawa: ten instalator uruchomiony jako administrator).'
+  Say 'firewall: on first start Windows will ask about network access for Python: tick “Private networks” and “Allow”.' `
+      'zapora: przy pierwszym starcie Windows zapyta o dostęp Pythona do sieci: zaznacz „Sieci prywatne” i „Zezwalaj”.'
+  Say '          “Cancel” blocks the phone for good (fix: run this installer as administrator).' `
+      '        „Anuluj” blokuje telefon na stałe (naprawa: ten instalator uruchomiony jako administrator).'
 }
 $profiles = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue)
 $pub = @($profiles | Where-Object { $_.NetworkCategory -eq 'Public' })
 if ($pub.Count -and $pub.Count -eq $profiles.Count) {
-  Write-Host "UWAGA: sieć $($pub.Name -join ', ') jest „publiczna”, a wtedy zapora blokuje telefon. Ustawienia → Sieć → Właściwości → Sieć prywatna."
+  Say "WARNING: network $($pub.Name -join ', ') is `“Public`”, so the firewall blocks the phone. Settings → Network → Properties → Private network." `
+      "UWAGA: sieć $($pub.Name -join ', ') jest `„publiczna`”, a wtedy zapora blokuje telefon. Ustawienia → Sieć → Właściwości → Sieć prywatna."
 } elseif ($pub.Count) {
-  Write-Host "Uwaga: sieć $($pub.Name -join ', ') jest „publiczna”. Jeśli to w niej jest telefon, zmień ją na prywatną (Ustawienia → Sieć → Właściwości)."
+  Say "Note: network $($pub.Name -join ', ') is `“Public`”. If the phone is on it, change it to private (Settings → Network → Properties)." `
+      "Uwaga: sieć $($pub.Name -join ', ') jest `„publiczna`”. Jeśli to w niej jest telefon, zmień ją na prywatną (Ustawienia → Sieć → Właściwości)."
 }
 
 # autostart przy logowaniu (HKCU, bez administratora) i start teraz
@@ -173,7 +185,7 @@ foreach ($i in 1..30) {
   Start-Sleep -Milliseconds 500
   try { Invoke-RestMethod "http://127.0.0.1:$port/api/ping" -TimeoutSec 2 | Out-Null; $ok = $true; break } catch {}
 }
-if (-not $ok) { Write-Host "UWAGA: agent nie odpowiada; log: $Dest\agent.log" }
+if (-not $ok) { Say "WARNING: the agent isn't responding; log: $Dest\agent.log" "UWAGA: agent nie odpowiada; log: $Dest\agent.log" }
 
 Write-Host ''
 Write-Host '================ MagneticPlayer ================'
@@ -182,7 +194,9 @@ if ($env:MP_JOIN) {
   & $venvPy (Join-Path $Dest 'magneticplayer_agent.py') --join $env:MP_JOIN
   $joined = ($LASTEXITCODE -eq 0)
 }
-if ($joined) { Write-Host " Gdyby telefon się nie sparował, kod ręczny: `"$venvPy`" `"$Dest\magneticplayer_agent.py`" --pair" }
+if ($joined) { Say " If the phone doesn't pair, get a code manually: `"$venvPy`" `"$Dest\magneticplayer_agent.py`" --pair" `
+                  " Gdyby telefon się nie sparował, kod ręczny: `"$venvPy`" `"$Dest\magneticplayer_agent.py`" --pair" }
 else { & $venvPy (Join-Path $Dest 'magneticplayer_agent.py') --pair }
-Write-Host " odinstalowanie: powershell -ExecutionPolicy Bypass -File `"$Dest\uninstall.ps1`" [-Purge]"
+Say " uninstall: powershell -ExecutionPolicy Bypass -File `"$Dest\uninstall.ps1`" [-Purge]" `
+    " odinstalowanie: powershell -ExecutionPolicy Bypass -File `"$Dest\uninstall.ps1`" [-Purge]"
 Write-Host '==============================================='

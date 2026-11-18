@@ -46,6 +46,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,7 +60,7 @@ import kotlinx.coroutines.withContext
 fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
     var root by rememberSaveable { mutableStateOf<Int?>(null) }
     var path by rememberSaveable { mutableStateOf("") }
-    if (!online) return Hint("Komputer nie odpowiada. Pobrane filmy są w zakładce „Na telefonie”.")
+    if (!online) return Hint(stringResource(R.string.media_lib_offline))
     val r = root
     if (r == null) {
         RootsScreen(api, snack) { root = it; path = "" }
@@ -72,6 +74,7 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
 
 @Composable
 private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Unit) {
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var roots by remember { mutableStateOf<List<LibRoot>?>(null) }
     var picker by remember { mutableStateOf(false) }
@@ -80,13 +83,13 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
 
     LaunchedEffect(reload) {
         roots = try { withContext(Dispatchers.IO) { api.libraryRoots() } } catch (e: ApiException) {
-            snack.showSnackbar(e.message ?: "Błąd"); emptyList()
+            snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); emptyList()
         }
     }
     Box(Modifier.fillMaxSize()) {
         val list = roots
-        if (list == null) Hint("Wczytuję…")
-        else if (list.isEmpty()) Hint("Brak katalogów. Dodaj katalog z filmami przyciskiem niżej.")
+        if (list == null) Hint(stringResource(R.string.media_loading))
+        else if (list.isEmpty()) Hint(stringResource(R.string.media_lib_no_roots))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(list, key = { it.index }) { r ->
                 Card(Modifier.fillMaxWidth().clickable(enabled = r.exists) { onOpen(r.index) }) {
@@ -95,17 +98,17 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text(r.name, style = MaterialTheme.typography.titleSmall)
-                            Text(if (r.exists) r.path else "${r.path} — niedostępny", style = MaterialTheme.typography.bodySmall,
+                            Text(if (r.exists) r.path else stringResource(R.string.media_lib_unavailable, r.path), style = MaterialTheme.typography.bodySmall,
                                 color = if (r.exists) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        IconButton({ removing = r }) { Icon(Icons.Filled.Delete, "usuń z biblioteki") }
+                        IconButton({ removing = r }) { Icon(Icons.Filled.Delete, stringResource(R.string.media_cd_remove_from_library)) }
                     }
                 }
             }
         }
         ExtendedFloatingActionButton(
-            onClick = { picker = true }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Dodaj katalog") },
+            onClick = { picker = true }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text(stringResource(R.string.media_lib_add_folder)) },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )
     }
@@ -115,25 +118,25 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
             try {
                 roots = withContext(Dispatchers.IO) { api.libraryAdd(chosen) }
             } catch (e: ApiException) {
-                snack.showSnackbar(e.message ?: "Błąd")
+                snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error))
             }
         }
     }
     removing?.let { r ->
         AlertDialog(
             onDismissRequest = { removing = null },
-            title = { Text("Usunąć z biblioteki?") },
-            text = { Text("„${r.path}” zniknie z listy. Pliki na dysku zostają.") },
+            title = { Text(stringResource(R.string.media_lib_remove_title)) },
+            text = { Text(stringResource(R.string.media_lib_remove_text, r.path)) },
             confirmButton = {
                 TextButton({
                     removing = null
                     scope.launch {
                         try { roots = withContext(Dispatchers.IO) { api.libraryRemove(r.index) } }
-                        catch (e: ApiException) { snack.showSnackbar(e.message ?: "Błąd") }
+                        catch (e: ApiException) { snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)) }
                     }
-                }) { Text("Usuń") }
+                }) { Text(stringResource(R.string.media_remove)) }
             },
-            dismissButton = { TextButton({ removing = null }) { Text("Anuluj") } },
+            dismissButton = { TextButton({ removing = null }) { Text(stringResource(R.string.media_cancel)) } },
         )
     }
 }
@@ -156,7 +159,7 @@ private fun DirPicker(api: Api, onDismiss: () -> Unit, onPick: (String) -> Unit)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (path.isEmpty()) "Wybierz katalog" else path.substringAfterLast('/'), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        title = { Text(if (path.isEmpty()) stringResource(R.string.media_lib_pick_folder) else path.substringAfterLast('/'), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         text = {
             Column {
                 if (path.isNotEmpty()) Text(path, style = MaterialTheme.typography.labelSmall, maxLines = 2)
@@ -178,8 +181,8 @@ private fun DirPicker(api: Api, onDismiss: () -> Unit, onPick: (String) -> Unit)
                 }
             }
         },
-        confirmButton = { TextButton({ onPick(path) }, enabled = path.isNotEmpty()) { Text("Dodaj ten katalog") } },
-        dismissButton = { TextButton(onDismiss) { Text("Anuluj") } },
+        confirmButton = { TextButton({ onPick(path) }, enabled = path.isNotEmpty()) { Text(stringResource(R.string.media_lib_add_this)) } },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.media_cancel)) } },
     )
 }
 
@@ -188,21 +191,22 @@ private fun DirScreen(
     api: Api, root: Int, path: String, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
     onOpen: (String) -> Unit, onUp: () -> Unit,
 ) {
+    val ctx = LocalContext.current
     var dir by remember(root, path) { mutableStateOf<LibDir?>(null) }
     LaunchedEffect(root, path) {
         dir = try { withContext(Dispatchers.IO) { api.browse(root, path) } } catch (e: ApiException) {
-            snack.showSnackbar(e.message ?: "Błąd"); LibDir(root, path, emptyList(), emptyList())
+            snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); LibDir(root, path, emptyList(), emptyList())
         }
     }
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
-            IconButton(onUp) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "wyżej") }
+            IconButton(onUp) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up)) }
             Text(if (path.isEmpty()) "/" else path, style = MaterialTheme.typography.titleSmall, maxLines = 2,
                 overflow = TextOverflow.StartEllipsis, modifier = Modifier.weight(1f))
         }
         HorizontalDivider()
-        val d = dir ?: return Hint("Wczytuję…")
-        if (d.dirs.isEmpty() && d.files.isEmpty()) return Hint("Brak filmów w tym katalogu.")
+        val d = dir ?: return Hint(stringResource(R.string.media_loading))
+        if (d.dirs.isEmpty() && d.files.isEmpty()) return Hint(stringResource(R.string.media_lib_no_videos))
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
             items(d.dirs, key = { "d/$it" }) { name ->
                 Row(Modifier.fillMaxWidth().clickable { onOpen(name) }.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -223,7 +227,7 @@ private fun DirScreen(
                     }
                     val info = buildList {
                         add(humanBytes(f.size))
-                        if (f.subs.isNotEmpty()) add("napisy: " + f.subs.joinToString())
+                        if (f.subs.isNotEmpty()) add(ctx.getString(R.string.media_lib_subs, f.subs.joinToString()))
                     }
                     Text(info.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 30.dp))

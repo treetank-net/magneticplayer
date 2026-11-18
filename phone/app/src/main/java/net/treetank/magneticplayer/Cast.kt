@@ -156,7 +156,7 @@ object Cast {
 
     /** Łączy z Chromecastem `target` (jeśli trzeba) i odtwarza `src` od `startMs`. */
     suspend fun play(ctx: Context, target: CastTarget, ref: MediaRef, src: MediaSrc, startMs: Long) = withContext(Dispatchers.Main) {
-        val c = context(ctx) ?: throw ApiException("Brak usług Google Play, więc Chromecast nie zadziała")
+        val c = context(ctx) ?: throw ApiException(ctx.getString(R.string.main_cast_no_play_services))
         val router = MediaRouter.getInstance(ctx)
         // Po zamknięciu listy wyboru wyszukiwanie staje i Android od razu zapomina trasy, więc szukamy jeszcze raz
         // (do 10 s) i trzymamy wyszukiwanie do końca łączenia.
@@ -175,13 +175,13 @@ object Cast {
                 if (r == null) delay(250)
             }
             r
-        } ?: throw ApiException("Nie widzę już tego Chromecasta")
+        } ?: throw ApiException(ctx.getString(R.string.main_cast_gone))
         var s = session(ctx)
         if (s == null || !route.isSelected) {
-            s = withTimeoutOrNull(30_000) { awaitSession(c) { router.selectRoute(route) } }
-                ?: throw ApiException("${route.name} nie odpowiada")
+            s = withTimeoutOrNull(30_000) { awaitSession(ctx, c) { router.selectRoute(route) } }
+                ?: throw ApiException(ctx.getString(R.string.main_not_responding, route.name))
         }
-        val client = s.remoteMediaClient ?: throw ApiException("${route.name} nie przyjmuje filmów")
+        val client = s.remoteMediaClient ?: throw ApiException(ctx.getString(R.string.main_cast_no_media, route.name))
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, src.title) }
         val tracks = src.subs.filter { it.vtt != null }.mapIndexed { i, sub ->
             MediaTrack.Builder(i + 1L, MediaTrack.TYPE_TEXT)
@@ -215,7 +215,7 @@ object Cast {
             .build()
         val r = suspendCancellableCoroutine { cont -> client.load(req).setResultCallback { cont.resume(it) } }
         if (!r.status.isSuccess) {
-            throw ApiException("${route.name} nie odtworzy tego pliku (kod ${r.status.statusCode}). Format może być nieobsługiwany.")
+            throw ApiException(ctx.getString(R.string.main_cast_cant_play, route.name, r.status.statusCode))
         }
         // poprzednie udostępnianie z telefonu już niepotrzebne
         if (viaPhone && !src.viaPhone) ShareService.stop(ctx)
@@ -229,13 +229,13 @@ object Cast {
         }
     }
 
-    private suspend fun awaitSession(c: CastContext, start: () -> Unit): CastSession = suspendCancellableCoroutine { cont ->
+    private suspend fun awaitSession(ctx: Context, c: CastContext, start: () -> Unit): CastSession = suspendCancellableCoroutine { cont ->
         val sm = c.sessionManager
         val l = object : SessionManagerListener<CastSession> {
             fun done(s: CastSession?, err: Int) {
                 sm.removeSessionManagerListener(this, CastSession::class.java)
                 if (!cont.isActive) return
-                if (s != null) cont.resume(s) else cont.resumeWithException(ApiException("Nie udało się połączyć z Chromecastem (kod $err)"))
+                if (s != null) cont.resume(s) else cont.resumeWithException(ApiException(ctx.getString(R.string.main_cast_connect_failed, err)))
             }
             override fun onSessionStarted(s: CastSession, id: String) = done(s, 0)
             override fun onSessionResumed(s: CastSession, wasSuspended: Boolean) = done(s, 0)
@@ -268,7 +268,7 @@ object Cast {
             val st = listening?.mediaStatus ?: return
             android.util.Log.i("MpCast", "stan ${st.playerState} idle=${st.idleReason} pos=${st.streamPosition}")
             if (st.playerState == MediaStatus.PLAYER_STATE_IDLE && st.idleReason == MediaStatus.IDLE_REASON_ERROR) {
-                app?.let { android.widget.Toast.makeText(it, "Chromecast nie mógł odtworzyć filmu", android.widget.Toast.LENGTH_LONG).show() }
+                app?.let { android.widget.Toast.makeText(it, it.getString(R.string.main_cast_play_error), android.widget.Toast.LENGTH_LONG).show() }
             }
         }
     }
@@ -341,7 +341,7 @@ object Cast {
             val now = System.currentTimeMillis()
             if (now - fixedHint > 4_000) {
                 fixedHint = now
-                android.widget.Toast.makeText(ctx, "Ten Chromecast ma stałą głośność. Użyj pilota telewizora.", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(ctx, ctx.getString(R.string.main_cast_fixed_volume), android.widget.Toast.LENGTH_SHORT).show()
             }
             return true
         }

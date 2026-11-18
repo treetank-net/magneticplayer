@@ -20,6 +20,8 @@ import secrets
 import threading
 import time
 
+from mp_i18n import T
+
 PAIR_TTL = 600
 GUEST_CODE_TTL = 24 * 3600  # kod dla gościa idzie komunikatorem, więc żyje dłużej (dalej działa raz)
 ROLES = ("owner", "guest")
@@ -124,7 +126,7 @@ class Devices:
     def new_code(self, role="owner", days=None):
         """Jednorazowy kod. Gość: kod ważny dobę, a `days` (>0) ogranicza ważność samego dostępu."""
         if role not in ROLES:
-            raise ValueError("nieznana rola")
+            raise ValueError(T("unknown role", "nieznana rola"))
         ttl = GUEST_CODE_TTL if role == "guest" else PAIR_TTL
         with self.lock:
             self._load()
@@ -144,7 +146,7 @@ class Devices:
         with self.lock:
             self.fails = [t for t in self.fails if now - t < 60]
             if len(self.fails) >= 10:
-                return None, "za dużo prób, odczekaj minutę"
+                return None, T("too many attempts, wait a minute", "za dużo prób, odczekaj minutę")
             self._load()
             code = normalize_code(code)
             entry = self.data["codes"].pop(code, None)
@@ -152,10 +154,10 @@ class Devices:
             if not exp or exp < now:
                 self.fails.append(now)
                 self._save()
-                return None, "zły albo przeterminowany kod parowania"
+                return None, T("invalid or expired pairing code", "zły albo przeterminowany kod parowania")
             token = secrets.token_urlsafe(24)
             role = entry.get("role", "owner") if isinstance(entry, dict) else "owner"
-            dev = {"id": secrets.token_hex(6), "name": (name or "urządzenie").strip()[:60],
+            dev = {"id": secrets.token_hex(6), "name": (name or T("device", "urządzenie")).strip()[:60],
                    "token_sha256": _hash(token), "created": now, "last_seen": now, "role": role}
             if isinstance(entry, dict) and entry.get("days"):
                 dev["expires"] = now + entry["days"] * 86400
@@ -170,7 +172,7 @@ class Devices:
                     "current": d["id"] == current, "role": d.get("role", "owner"), "expires": d.get("expires")}
                    for d in self.data["devices"]]
             if self.data["legacy_token"]:
-                out.append({"id": "legacy", "name": "Stary wspólny token", "legacy": True, "role": "owner",
+                out.append({"id": "legacy", "name": T("Old shared token", "Stary wspólny token"), "legacy": True, "role": "owner",
                             "last_seen": self.data.get("legacy_seen"), "current": current == "legacy"})
             return out
 

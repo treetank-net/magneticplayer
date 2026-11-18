@@ -13,6 +13,8 @@ import threading
 import time
 import urllib.request
 
+from mp_i18n import T
+
 BASE_AUDIO = {"aac", "mp3", "opus", "vorbis", "flac"}
 DOLBY = {"ac3", "eac3"}
 
@@ -44,7 +46,7 @@ CAST_PROFILES = {
         "source": "Google Cast docs (H.264 4.2 1080p60, HEVC Main10 5.1, VP9 P0/P2 4K60; AC3/E-AC3 tylko passthrough)",
     },
     "classic": {
-        "label": "Chromecast (1.–3. generacja)",
+        "label": "Chromecast (1st–3rd gen)", "label_pl": "Chromecast (1.–3. generacja)",
         "video": {"h264": (1080, 8), "vp8": (1080, 8)},
         "audio": BASE_AUDIO, "passthrough": DOLBY, "mkv": False,
         "source": "Google Cast docs (H.264 High 4.1/4.2, VP8; AC3/E-AC3 tylko passthrough przez HDMI)",
@@ -141,6 +143,11 @@ class Renderers:
             return dict(v, id=uid) if v else None
 
 
+def label(prof):
+    """Nazwa profilu dla użytkownika (w bieżącym języku)."""
+    return T(prof["label"], prof.get("label_pl") or prof["label"])
+
+
 def profile_info(key):
     p = CAST_PROFILES.get(key or "")
-    return {"profile": key, "label": p["label"] if p else None}
+    return {"profile": key, "label": label(p) if p else None}

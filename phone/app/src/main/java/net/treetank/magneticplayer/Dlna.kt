@@ -118,7 +118,7 @@ object Dlna {
         val maker = tag(xml, "manufacturer").orEmpty()
         return DlnaTarget(
             id = tag(xml, "UDN") ?: location,
-            name = unescape(tag(xml, "friendlyName") ?: "Telewizor"),
+            name = unescape(tag(xml, "friendlyName") ?: res?.getString(R.string.main_tv) ?: "TV"),
             model = listOf(maker, tag(xml, "modelName").orEmpty()).filter { it.isNotBlank() }.joinToString(" "),
             avTransport = avt, rendering = control(RC), samsung = maker.contains("samsung", ignoreCase = true),
         )
@@ -154,11 +154,12 @@ object Dlna {
             if (c.responseCode != 200) {
                 val err = runCatching { c.errorStream?.bufferedReader()?.readText() }.getOrNull()
                 val why = err?.let { tag(it, "errorDescription") ?: tag(it, "errorCode") }
-                throw ApiException("Telewizor odrzucił $action" + (why?.let { ": $it" } ?: " (HTTP ${c.responseCode})"))
+                throw ApiException(why?.let { tr(R.string.main_tv_rejected, "The TV rejected %1\$s: %2\$s", action, it) }
+                    ?: tr(R.string.main_tv_rejected_http, "The TV rejected %1\$s (HTTP %2\$d)", action, c.responseCode))
             }
             return c.inputStream.bufferedReader().readText()
         } catch (e: IOException) {
-            throw ApiException("Telewizor nie odpowiada (${e.message})")
+            throw ApiException(tr(R.string.main_tv_no_answer, "The TV isn't responding (%1\$s)", "${e.message}"))
         } finally {
             c.disconnect()
         }
@@ -185,6 +186,7 @@ object Dlna {
 
     /** Wysyła film i włącza go od `startSec`. Poza wątkiem UI. */
     fun play(ctx: Context, t: DlnaTarget, ref: MediaRef, src: MediaSrc, startSec: Double) {
+        res = ctx.applicationContext
         val srt = src.subs.firstOrNull { it.name.endsWith(".srt", ignoreCase = true) }
         // agent poda CaptionInfo.sec, gdy wie, które napisy (telefon wybiera pierwsze sam)
         val url = if (srt != null && t.samsung && !src.viaPhone) "${src.url}&cap=${android.net.Uri.encode(srt.name)}" else src.url
@@ -240,6 +242,7 @@ object Dlna {
 
     /** Stan bieżącego telewizora (zapisuje też pozycję filmu). Poza wątkiem UI. */
     fun status(ctx: Context): Status? {
+        res = ctx.applicationContext
         val t = current ?: return null
         val st = state(t) ?: return Status(t.name, currentTitle, 0.0, 0.0, null).also { last = it }
         val pi = runCatching { soap(t.avTransport, AVT, "GetPositionInfo", "InstanceID" to "0") }.getOrNull()
@@ -353,6 +356,10 @@ object Dlna {
 
     // Co wysłaliśmy, zapisane na dysku: po ubiciu apki (np. aktualizacja) telewizor gra dalej, a Pilot ma go odzyskać.
     @Volatile private var app: Context? = null
+
+    /** do komunikatów w języku telefonu (pierwszy play/status/restore); bez niego angielski zapas */
+    @Volatile private var res: Context? = null
+    private fun tr(id: Int, fallback: String, vararg args: Any): String = res?.getString(id, *args) ?: fallback.format(*args)
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("dlna", Context.MODE_PRIVATE)
 
     private fun remember(ctx: Context, t: DlnaTarget, ref: MediaRef, title: String, url: String) {
@@ -364,6 +371,7 @@ object Dlna {
 
     /** Przy starcie apki: jeśli telewizor dalej gra nasz film, wracamy do sterowania nim. Poza wątkiem UI. */
     fun restore(ctx: Context): Boolean {
+        res = ctx.applicationContext
         if (current != null) return true
         app = ctx.applicationContext
         val o = prefs(ctx).getString("dlna_session", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() } ?: return false

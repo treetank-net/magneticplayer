@@ -46,6 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.height
@@ -75,14 +77,14 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
     var opening by remember { mutableStateOf<String?>(null) }
     val screens = remember { Servers.screens(ctx) }
     fun playOn(key: String?, cast: CastTarget? = null, tv: DlnaTarget? = null) = scope.launch {
-        opening = "Otwieram…"
+        opening = ctx.getString(R.string.media_opening)
         try {
             if (cast != null) Screens.cast(ctx, ref, cast, null) { opening = it }
             else if (tv != null) Screens.dlna(ctx, ref, tv, null) { opening = it }
             else Screens.play(ctx, ref, key!!, null) { opening = it }
             onPlayingOnPc()
         } catch (e: ApiException) {
-            snack.showSnackbar(e.message ?: "Błąd")
+            snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error))
         } finally {
             opening = null
         }
@@ -92,37 +94,37 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         FilledTonalButton({ ctx.startActivity(PlayerActivity.intent(ctx, ref)) }) {
-            Icon(Icons.Filled.Smartphone, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Telefon")
+            Icon(Icons.Filled.Smartphone, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.media_phone_button))
         }
         if (screens.isNotEmpty()) FilledTonalButton({
             // jeden ekran i to ten sam serwer: od razu, jak dawniej; inaczej wybór ekranu
             if (screens.size == 1 && screens[0].key == ref.srv) playOn(screens[0].key) else chooser = true
         }) {
             Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-            Text(if (screens.size == 1) screens[0].name.take(14) else "Na ekranie…")
+            Text(if (screens.size == 1) screens[0].name.take(14) else stringResource(R.string.media_on_screen_ellipsis))
         }
         // Chromecasty (i reszta ekranów) w jednym wyborze
-        IconButton({ chooser = true }) { Icon(Icons.Filled.Cast, "Chromecast, telewizor") }
+        IconButton({ chooser = true }) { Icon(Icons.Filled.Cast, stringResource(R.string.media_cd_cast)) }
         Box {
-            IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "więcej") }
+            IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.media_cd_more)) }
             DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem({ Text("Otwórz w VLC") }, {
+                DropdownMenuItem({ Text(stringResource(R.string.media_open_vlc)) }, {
                     menu = false
                     scope.launch {
                         val subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
                         openInVlc(ctx, api.mediaUrl(ref), ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
                     }
                 }, leadingIcon = { Icon(Icons.Filled.OndemandVideo, null) })
-                DropdownMenuItem({ Text("Napisy…") }, { menu = false; subsDialog = true },
+                DropdownMenuItem({ Text(stringResource(R.string.media_subs_menu)) }, { menu = false; subsDialog = true },
                     leadingIcon = { Icon(Icons.Filled.Subtitles, null) })
-                DropdownMenuItem({ Text("Pobierz na telefon") }, {
+                DropdownMenuItem({ Text(stringResource(R.string.media_download_to_phone)) }, {
                     menu = false
                     if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx,
                             android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                         notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                     }
                     DownloadService.start(ctx, ref)
-                    scope.launch { snack.showSnackbar("Pobieram na telefon — postęp w zakładce „Na telefonie”") }
+                    scope.launch { snack.showSnackbar(ctx.getString(R.string.media_downloading_snack)) }
                 }, leadingIcon = { Icon(Icons.Filled.DownloadForOffline, null) })
             }
         }
@@ -189,18 +191,18 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Napisy", maxLines = 1) },
+        title = { Text(stringResource(R.string.media_subs_title), maxLines = 1) },
         text = {
             Column {
                 Text(ref.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(4.dp))
                 have?.takeIf { it.isNotEmpty() }?.let { list ->
-                    Text("Już są: " + list.joinToString { it.name.takeLast(30) }, style = MaterialTheme.typography.bodySmall,
+                    Text(stringResource(R.string.media_subs_have, list.joinToString { it.name.takeLast(30) }), style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF3FA96B))
                     Spacer(Modifier.height(4.dp))
                 }
                 done?.let {
-                    Text("Pobrano: $it — gra na komputerze? Włączyły się same. W telefonie: otwórz film jeszcze raz.",
+                    Text(stringResource(R.string.media_subs_done, it),
                         style = MaterialTheme.typography.bodySmall, color = Color(0xFF3FA96B))
                     Spacer(Modifier.height(4.dp))
                 }
@@ -217,15 +219,14 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
                                 jobId?.let { id -> scope.launch { withContext(Dispatchers.IO) { runCatching { api.subsStop(id) } } } }
                             }, enabled = !stopping) {
                                 Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                                Text(if (stopping) "Kończę…" else "Wystarczy — pokaż, co już jest")
+                                Text(stringResource(if (stopping) R.string.media_subs_stopping else R.string.media_subs_enough))
                             }
                         }
                     }
                     else -> {
-                        if (f.hidden > 0) Text("Ukryto ${f.hidden} wyników do innych filmów (inny tytuł, hash się nie zgadza).",
+                        if (f.hidden > 0) Text(pluralStringResource(R.plurals.media_subs_hidden, f.hidden, f.hidden),
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (f.results.isEmpty()) Text("Nic nie znaleziono dla „${f.query}” (${api.s.subLanguages}). " +
-                            "Jeśli plik ma tytuł w innym języku, wpisz niżej tytuł angielski albo oryginalny.",
+                        if (f.results.isEmpty()) Text(stringResource(R.string.media_subs_nothing, f.query, api.s.subLanguages),
                             style = MaterialTheme.typography.bodyMedium)
                         else LazyColumn(Modifier.heightIn(max = 340.dp)) {
                             items(f.results, key = { it.key }) { r ->
@@ -250,29 +251,29 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
                 if (found != null || error != null) {
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedTextField(title, { title = it }, Modifier.weight(1f), label = { Text("Tytuł") }, singleLine = true)
+                        OutlinedTextField(title, { title = it }, Modifier.weight(1f), label = { Text(stringResource(R.string.media_subs_field_title)) }, singleLine = true)
                         OutlinedTextField(year, { year = it.filter(Char::isDigit).take(4) }, Modifier.width(76.dp),
-                            label = { Text("Rok") }, singleLine = true,
+                            label = { Text(stringResource(R.string.media_subs_field_year)) }, singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     }
                     TextButton({ override = title.ifBlank { null } to year.toIntOrNull(); nonce++ }) {
-                        Icon(Icons.Filled.Search, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Szukaj z tym tytułem")
+                        Icon(Icons.Filled.Search, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.media_subs_search_title))
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onDismiss) { Text("Zamknij") } },
+        confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.media_close)) } },
     )
 }
 
 @Composable
 private fun SearchProgress(p: SubsProgress?) {
     val phase = when {
-        p == null -> "Łączę z komputerem…"
-        p.phase == "file" -> "Liczę hash pliku i rozpoznaję tytuł…"
-        p.phase == "match" -> "Porównuję wyniki z plikiem: ${p.matched}/${p.total}"
-        p.round == 2 -> "Nic pasującego — druga runda z tytułem z nazwy: „${p.query}”"
-        else -> "Szukam: „${p.query ?: "…"}”"
+        p == null -> stringResource(R.string.media_subs_connecting)
+        p.phase == "file" -> stringResource(R.string.media_subs_hashing)
+        p.phase == "match" -> stringResource(R.string.media_subs_matching, p.matched, p.total)
+        p.round == 2 -> stringResource(R.string.media_subs_round2, p.query.toString())
+        else -> stringResource(R.string.media_subs_searching, p.query ?: "…")
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -299,9 +300,10 @@ private fun SearchProgress(p: SubsProgress?) {
             Spacer(Modifier.width(6.dp))
             Text(PROVIDER_NAMES[pr.name] ?: pr.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             val info = when (pr.state) {
-                "running" -> "szukam…"
-                "done" -> "${pr.count ?: 0} wyn." + (pr.secs?.let { " · ${"%.0f".format(it)} s" } ?: "")
-                "pending" -> "czeka"
+                "running" -> stringResource(R.string.media_subs_prov_running)
+                "done" -> pluralStringResource(R.plurals.media_subs_prov_results, pr.count ?: 0, pr.count ?: 0) +
+                    (pr.secs?.let { " · ${"%.0f".format(it)} s" } ?: "")
+                "pending" -> stringResource(R.string.media_subs_prov_pending)
                 else -> pr.error ?: pr.state
             }
             Text(info, style = MaterialTheme.typography.labelSmall,
@@ -317,8 +319,8 @@ private fun SubRow(r: SubResult, busy: String?, onClick: () -> Unit) {
             Text(r.lang.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(8.dp))
             if (r.hashMatch) {
-                Icon(Icons.Filled.CheckCircle, "pasuje do pliku", Modifier.size(16.dp), tint = Color(0xFF3FA96B))
-                Text(" pasuje do pliku", style = MaterialTheme.typography.labelSmall, color = Color(0xFF3FA96B))
+                Icon(Icons.Filled.CheckCircle, stringResource(R.string.media_subs_matches_file), Modifier.size(16.dp), tint = Color(0xFF3FA96B))
+                Text(" " + stringResource(R.string.media_subs_matches_file), style = MaterialTheme.typography.labelSmall, color = Color(0xFF3FA96B))
             }
             Spacer(Modifier.weight(1f))
             if (busy == r.key) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -326,6 +328,6 @@ private fun SubRow(r: SubResult, busy: String?, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(r.release, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (r.hi) Text("dla niesłyszących", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (r.hi) Text(stringResource(R.string.media_subs_hi), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

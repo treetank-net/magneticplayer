@@ -34,6 +34,8 @@ from mp_announce import Announcer
 import mp_upload
 import mp_install
 import mp_access
+import mp_i18n
+from mp_i18n import T
 
 # DLNA: przewijanie po bajtach (OP=01), bez konwersji, strumień + tło (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
@@ -229,7 +231,7 @@ class DelugeBackend:
             with self.opener.open(req, timeout=15) as r:
                 data = json.loads(r.read())
         except (urllib.error.URLError, OSError) as e:
-            raise ApiError(f"deluge-web niedostępny ({self.url}): {e}", 502)
+            raise ApiError(T(f"deluge-web unavailable ({self.url}): {e}", f"deluge-web niedostępny ({self.url}): {e}"), 502)
         if data.get("error"):
             err = data["error"]
             raise ApiError(f"deluge: {err.get('message', err)}", 502 if err.get("code") != 1 else 401)
@@ -238,11 +240,12 @@ class DelugeBackend:
     def _ensure(self):
         if not self._raw("auth.check_session", []):
             if not self._raw("auth.login", [self.password]):
-                raise ApiError("deluge-web: złe hasło (deluge_password w config.json)", 502)
+                raise ApiError(T("deluge-web: wrong password (deluge_password in config.json)",
+                                 "deluge-web: złe hasło (deluge_password w config.json)"), 502)
         if not self._raw("web.connected", []):
             hosts = self._raw("web.get_hosts", [])
             if not hosts:
-                raise ApiError("deluge-web: brak hostów deluged", 502)
+                raise ApiError(T("deluge-web: no deluged hosts", "deluge-web: brak hostów deluged"), 502)
             local = [h for h in hosts if h[1] in ("127.0.0.1", "localhost")] or hosts
             self._raw("web.connect", [local[0][0]])
             for _ in range(20):
@@ -250,7 +253,8 @@ class DelugeBackend:
                     break
                 time.sleep(0.25)
             else:
-                raise ApiError("deluge-web nie połączył się z deluged (czy deluged działa?)", 502)
+                raise ApiError(T("deluge-web didn't connect to deluged (is deluged running?)",
+                                 "deluge-web nie połączył się z deluged (czy deluged działa?)"), 502)
 
     def call(self, method, *params):
         with self.lock:
@@ -294,7 +298,7 @@ class DelugeBackend:
         st = self.call("core.get_torrent_status", tid,
                        ["files", "file_progress", "save_path", "name", "pieces", "piece_length"])
         if not st:
-            raise ApiError("nie ma takiego torrenta", 404)
+            raise ApiError(T("no such torrent", "nie ma takiego torrenta"), 404)
         prog = st.get("file_progress") or []
         pieces = st.get("pieces")  # None, gdy torrent kompletny; inaczej stan kawałka, 3 = pobrany
         have = [p == 3 for p in pieces] if isinstance(pieces, list) else None
@@ -320,7 +324,7 @@ class DelugeBackend:
             on = action == "sequential_on"
             self.call("core.set_torrent_options", [tid], {"sequential_download": on, "prioritize_first_last_pieces": on})
         else:
-            raise ApiError(f"nieznana akcja {action}", 400)
+            raise ApiError(T(f"unknown action {action}", f"nieznana akcja {action}"), 400)
 
 
 class TransmissionBackend:
@@ -350,11 +354,11 @@ class TransmissionBackend:
                     continue
                 raise ApiError(f"transmission: HTTP {e.code}", 502)
             except (urllib.error.URLError, OSError) as e:
-                raise ApiError(f"transmission niedostępny ({self.url}): {e}", 502)
+                raise ApiError(T(f"transmission unavailable ({self.url}): {e}", f"transmission niedostępny ({self.url}): {e}"), 502)
             if data.get("result") != "success":
                 raise ApiError(f"transmission: {data.get('result')}", 502)
             return data.get("arguments", {})
-        raise ApiError("transmission: brak sesji", 502)
+        raise ApiError(T("transmission: no session", "transmission: brak sesji"), 502)
 
     def default_dirs(self):
         return [self.call("session-get", {"fields": ["download-dir"]}).get("download-dir")] + \
@@ -385,7 +389,7 @@ class TransmissionBackend:
     def files(self, tid):
         r = self.call("torrent-get", {"ids": [tid], "fields": ["files", "downloadDir", "pieces", "pieceSize", "pieceCount"]})
         if not r.get("torrents"):
-            raise ApiError("nie ma takiego torrenta", 404)
+            raise ApiError(T("no such torrent", "nie ma takiego torrenta"), 404)
         t = r["torrents"][0]
         import base64
         bits = base64.b64decode(t.get("pieces") or "")
@@ -411,7 +415,7 @@ class TransmissionBackend:
              "sequential_on": ("torrent-set", {"sequential_download": True}),
              "sequential_off": ("torrent-set", {"sequential_download": False})}
         if action not in m:
-            raise ApiError(f"nieznana akcja {action}", 400)
+            raise ApiError(T(f"unknown action {action}", f"nieznana akcja {action}"), 400)
         method, args = m[action]
         self.call(method, dict(args, ids=[tid]))
 
@@ -429,13 +433,13 @@ class NoBackend:
         return []
 
     def add_magnet(self, uri, sequential):
-        raise ApiError("ten serwer nie pobiera torrentów", 409)
+        raise ApiError(T("this server doesn't download torrents", "ten serwer nie pobiera torrentów"), 409)
 
     def files(self, tid):
-        raise ApiError("ten serwer nie pobiera torrentów", 409)
+        raise ApiError(T("this server doesn't download torrents", "ten serwer nie pobiera torrentów"), 409)
 
     def action(self, tid, action):
-        raise ApiError("ten serwer nie pobiera torrentów", 409)
+        raise ApiError(T("this server doesn't download torrents", "ten serwer nie pobiera torrentów"), 409)
 
 
 # ---------------------------------------------------------------- sesja graficzna, mpv
@@ -483,7 +487,7 @@ class Mpv:
 
     def cmd(self, *command, timeout=3):
         if not self.running():
-            raise ApiError("mpv nie działa", 409)
+            raise ApiError(T("mpv isn't running", "mpv nie działa"), 409)
         with self.lock:
             self.req += 1
             rid = self.req
@@ -498,7 +502,7 @@ class Mpv:
             while True:
                 chunk = s.recv(65536)
                 if not chunk:
-                    raise ApiError("mpv zamknął połączenie", 502)
+                    raise ApiError(T("mpv closed the connection", "mpv zamknął połączenie"), 502)
                 buf += chunk
                 while b"\n" in buf:
                     line, buf = buf.split(b"\n", 1)
@@ -548,7 +552,7 @@ class Mpv:
                             return
                         chunk = f.read(65536)
                         if not chunk:
-                            raise OSError("mpv zamknął połączenie")
+                            raise OSError(T("mpv closed the connection", "mpv zamknął połączenie"))
                         buf += chunk
             except ApiError as e:
                 out["err"] = e
@@ -564,7 +568,7 @@ class Mpv:
         if t.is_alive():
             # nie zamykamy z tego wątku (CloseHandle przy trwającym odczycie potrafi wisieć): odpinamy, wątek sam skończy
             self.pipe, self.pipe_buf = None, b""
-            raise ApiError("mpv IPC: brak odpowiedzi", 502)
+            raise ApiError(T("mpv IPC: no response", "mpv IPC: brak odpowiedzi"), 502)
         if "err" in out:
             raise out["err"]
         return out.get("data")
@@ -625,7 +629,7 @@ class Mpv:
     def _start(self, path, title):
         mpv = platform.mpv_path()
         if not mpv:
-            raise ApiError("brak mpv na komputerze (sudo apt install mpv)", 500)
+            raise ApiError(T("mpv isn't installed on the computer (sudo apt install mpv)", "brak mpv na komputerze (sudo apt install mpv)"), 500)
         if WINDOWS:
             with self.pipe_lock:
                 self._drop_pipe()  # stare połączenie należy do poprzedniego mpv
@@ -648,7 +652,7 @@ class Mpv:
             if socket_exists():
                 return
             if not self.running():
-                raise ApiError("mpv nie wystartował (czy jest sesja graficzna?)", 500)
+                raise ApiError(T("mpv didn't start (is there a graphical session?)", "mpv nie wystartował (czy jest sesja graficzna?)"), 500)
             time.sleep(0.1)
 
     def status(self):
@@ -707,7 +711,7 @@ class Mpv:
         elif c == "track":
             prop = {"video": "vid", "audio": "aid", "sub": "sid"}.get((value or {}).get("type"))
             if not prop:
-                raise ApiError("zły typ ścieżki", 400)
+                raise ApiError(T("invalid track type", "zły typ ścieżki"), 400)
             tid = value.get("id")
             self.cmd("set_property", prop, "no" if tid in (None, "no") else int(tid))
         elif c == "sub_delay":
@@ -715,7 +719,7 @@ class Mpv:
         elif c == "stop":
             self.cmd("quit")
         else:
-            raise ApiError(f"nieznane polecenie {c}", 400)
+            raise ApiError(T(f"unknown command {c}", f"nieznane polecenie {c}"), 400)
 
 
 # ---------------------------------------------------------------- blokada usypiania
@@ -769,22 +773,24 @@ class SleepGuard(threading.Thread):
 
 def poweroff(guard):
     if not POWER:
-        raise ApiError("ten serwer ma wyłączone wyłączanie z sieci (config: power)", 403)
+        raise ApiError(T("this server has power-off over the network disabled (config: power)",
+                   "ten serwer ma wyłączone wyłączanie z sieci (config: power)"), 403)
     guard.paused_until = time.time() + 120
     guard.release()
     err = platform.power("poweroff")
     if err:
-        raise ApiError(f"wyłączanie nie wyszło: {err}", 500)
+        raise ApiError(T(f"power-off failed: {err}", f"wyłączanie nie wyszło: {err}"), 500)
 
 
 def suspend(guard):
     if not POWER:
-        raise ApiError("ten serwer ma wyłączone usypianie z sieci (config: power)", 403)
+        raise ApiError(T("this server has sleep over the network disabled (config: power)",
+                   "ten serwer ma wyłączone usypianie z sieci (config: power)"), 403)
     guard.paused_until = time.time() + 120
     guard.release()
     err = platform.power("suspend")
     if err:
-        raise ApiError(f"usypianie nie wyszło: {err}", 500)
+        raise ApiError(T(f"sleep failed: {err}", f"usypianie nie wyszło: {err}"), 500)
 
 
 # ---------------------------------------------------------------- HTTP
@@ -825,12 +831,12 @@ class App:
     def wake_info(self, net):
         """Ocena z mp_platform + „yes”, gdy budzenie przez sieć już raz zadziałało (na tej samej karcie)."""
         if self.cfg.get("wake") is False:  # tryb lekki: cudzy komputer, nikt go z sieci nie budzi
-            return {"method": None, "mac": None, "confidence": "no", "reason": "budzenie wyłączone (instalacja lekka)"}
+            return {"method": None, "mac": None, "confidence": "no", "reason": T("wake disabled (lite install)", "budzenie wyłączone (instalacja lekka)")}
         w = platform.wake_info(net)
         v = self.cfg.get("wake_verified") or {}
         if v.get("at") and w.get("mac") and v.get("mac") in (None, w["mac"]) and not net.get("wireless"):
             day = time.strftime("%d.%m.%Y", time.localtime(v["at"]))
-            w = {**w, "confidence": "yes", "reason": f"budzenie przez sieć zadziałało ({day})", "verified_at": v["at"]}
+            w = {**w, "confidence": "yes", "reason": T(f"wake over the network worked ({day})", f"budzenie przez sieć zadziałało ({day})"), "verified_at": v["at"]}
         return w
 
     def is_screen(self):
@@ -910,15 +916,16 @@ class App:
         if d.get("playing") in (True, "1", "true"):  # plik, który właśnie gra w mpv
             path = self.mpv.prop("path") if self.mpv.running() else None
             if not path:
-                raise ApiError("na komputerze nic nie gra", 409)
+                raise ApiError(T("nothing is playing on the computer", "na komputerze nic nie gra"), 409)
             if not os.path.isfile(path):
-                raise ApiError("film gra z innego serwera, napisy szukaj tam (w Bibliotece albo przy torrencie)", 409)
+                raise ApiError(T("the video is playing from another server, search for subtitles there (in Library or at the torrent)",
+                                 "film gra z innego serwera, napisy szukaj tam (w Bibliotece albo przy torrencie)"), 409)
             return path
         if d.get("torrent_id"):
             return self.resolve_file(d["torrent_id"], int(d["file_index"]))[0]
         if d.get("root") is not None and d.get("root") != "":
             return self.library.resolve(int(d["root"]), d.get("path", ""))
-        raise ApiError("brak wskazania pliku", 400)
+        raise ApiError(T("no file specified", "brak wskazania pliku"), 400)
 
     def ref_complete(self, d):
         """Czy plik jest cały na dysku (torrent pobrany), bo konwersja niepełnego dałaby śmieci."""
@@ -952,7 +959,7 @@ class App:
         full = self.resolve_ref(b)
         scope = self.ref_scope(b)
         if not scope:
-            raise ApiError("bilet tylko na plik z torrenta albo biblioteki", 400)
+            raise ApiError(T("tickets only for a file from a torrent or the library", "bilet tylko na plik z torrenta albo biblioteki"), 400)
         ticket, exp = self.devices.ticket(scope)
         tq = "ticket=" + urllib.parse.quote(ticket)
         if b.get("torrent_id"):
@@ -983,11 +990,11 @@ class App:
         save_path, files = self.backend.files(tid)
         f = next((f for f in files if f["index"] == index), None)
         if not f:
-            raise ApiError("nie ma takiego pliku", 404)
+            raise ApiError(T("no such file", "nie ma takiego pliku"), 404)
         base = os.path.realpath(save_path)
         full = os.path.realpath(os.path.join(base, f["path"]))
         if not full.startswith(base + os.sep):
-            raise ApiError("ścieżka poza katalogiem pobierania", 403)
+            raise ApiError(T("path outside the download folder", "ścieżka poza katalogiem pobierania"), 403)
         return full, f
 
 
@@ -1078,6 +1085,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch(self, method):
         self.extra_headers = []
+        mp_i18n.set_from_header(self.headers.get("Accept-Language"))  # język komunikatów (błędy w JSON)
         u = urllib.parse.urlsplit(self.path)
         q = urllib.parse.parse_qs(u.query)
         p = u.path.rstrip("/")
@@ -1116,10 +1124,10 @@ class Handler(BaseHTTPRequestHandler):
             self.device = self.authorized(q)
             qd0 = {k: v[0] for k, v in q.items()}
             if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
-                raise ApiError("zły token", 401)
+                raise ApiError(T("invalid token", "zły token"), 401)
             self.role = a.devices.role(self.device)
             if self.role == "guest" and not guest_allowed(method, p):
-                raise ApiError("gość nie ma do tego dostępu (poproś domownika)", 403)
+                raise ApiError(T("guests don't have access to this (ask a household member)", "gość nie ma do tego dostępu (poproś domownika)"), 403)
             if p.startswith("/api/upload/") and method in ("GET", "PUT"):
                 return mp_upload.handle(self, method, p[len("/api/upload/"):], qd0)
             if p == "/api/info" and method == "GET":
@@ -1152,7 +1160,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/devices/revoke" and method == "POST":
                 dev = str(self.body().get("id") or "")
                 if not a.devices.revoke(dev):
-                    raise ApiError("nie ma takiego urządzenia", 404)
+                    raise ApiError(T("no such device", "nie ma takiego urządzenia"), 404)
                 log("odebrano dostęp urządzeniu", dev)
                 return self.send_json({"ok": True})
             if p == "/api/wake/verified" and method == "POST":
@@ -1180,14 +1188,14 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     info = mp_media.probe(full)
                 except (ValueError, OSError, subprocess.TimeoutExpired) as e:
-                    raise ApiError(f"nie da się odczytać pliku: {e}", 422)
+                    raise ApiError(T(f"can't read the file: {e}", f"nie da się odczytać pliku: {e}"), 422)
                 v = mp_media.variant(full)
                 # ocena dla każdego znanego Chromecasta (rejestr odbiorników z modelem)
                 per = []
                 for r in a.renderers.casts():
                     prof = mp_renderers.CAST_PROFILES.get(r.get("profile") or "")
                     if prof:
-                        per.append({"id": r["id"], "name": r.get("name"), "label": prof["label"],
+                        per.append({"id": r["id"], "name": r.get("name"), "label": mp_renderers.label(prof),
                                     **mp_media.cast_check_for(info, prof)})
                 return self.send_json({
                     "ffmpeg": True, "file": info, "cast": mp_media.cast_check(info), "cast_devices": per,
@@ -1205,7 +1213,8 @@ class Handler(BaseHTTPRequestHandler):
                     mp_media.remove_variant(full)
                     return self.send_json({"ok": True})
                 if not a.ref_complete(b):
-                    raise ApiError("film jeszcze się pobiera; przygotuję go, gdy będzie cały", 409)
+                    raise ApiError(T("the video is still downloading; it will be prepared once complete",
+                                     "film jeszcze się pobiera; przygotuję go, gdy będzie cały"), 409)
                 try:
                     return self.send_json(a.convert.start(full, os.path.basename(full)))
                 except (RuntimeError, ValueError, OSError) as e:
@@ -1265,7 +1274,7 @@ class Handler(BaseHTTPRequestHandler):
                 b = self.body()
                 uri = (b.get("magnet") or "").strip()
                 if not uri.startswith("magnet:?"):
-                    raise ApiError("to nie jest magnet link", 400)
+                    raise ApiError(T("this isn't a magnet link", "to nie jest magnet link"), 400)
                 tid = a.backend.add_magnet(uri, b.get("sequential", True))
                 if tid:
                     a.jobs.add(tid.lower(), uri, b.get("after", "none"))
@@ -1305,13 +1314,14 @@ class Handler(BaseHTTPRequestHandler):
                                    lambda: a.resolve_file(tid, idx)[1].get("_pieces"))
             if p == "/api/player/open" and method == "POST":
                 if not a.is_screen():
-                    raise ApiError(f"{a.name()} nie jest ekranem (brak mpv/sesji albo config: player)", 409)
+                    raise ApiError(T(f"{a.name()} isn't a screen (no mpv/session or config: player)",
+                                     f"{a.name()} nie jest ekranem (brak mpv/sesji albo config: player)"), 409)
                 b = self.body()
                 if b.get("url"):  # film z innego serwera (URL z biletem z /api/media/ticket)
                     url = str(b["url"])
                     subs = [str(u) for u in b.get("subs") or [] if str(u).startswith(("http://", "https://"))]
                     if not url.startswith(("http://", "https://")):
-                        raise ApiError("url musi być http(s)", 400)
+                        raise ApiError(T("url must be http(s)", "url musi być http(s)"), 400)
                     a.mpv.open(url, b.get("title"), subs, b.get("start"))
                 else:
                     full = a.resolve_ref(b)
@@ -1327,7 +1337,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             if p == "/api/system/suspend" and method == "POST":
                 if not POWER:
-                    raise ApiError(f"{a.name()} ma wyłączone usypianie z sieci", 403)
+                    raise ApiError(T(f"{a.name()} has sleep over the network disabled", f"{a.name()} ma wyłączone usypianie z sieci"), 403)
                 if a.mpv.running():
                     a.mpv.cmd("quit")
                 self.send_json({"ok": True})
@@ -1366,7 +1376,7 @@ class Handler(BaseHTTPRequestHandler):
                 full = a.resolve_ref(qd)
                 names = {s["name"]: s for s in sidecar_subs(full)}
                 if qd.get("name") not in names:
-                    raise ApiError("nie ma takich napisów", 404)
+                    raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
                 if qd.get("vtt") == "1":  # przeglądarki (<track>) rozumieją tylko WebVTT
                     return self.send_vtt(os.path.join(os.path.dirname(full), qd["name"]))
                 return self.stream(os.path.join(os.path.dirname(full), qd["name"]), method == "HEAD")
@@ -1402,7 +1412,7 @@ class Handler(BaseHTTPRequestHandler):
                 b = self.body()
                 a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
                 return self.send_json({"ok": True})
-            raise ApiError("nie ma takiego endpointu", 404)
+            raise ApiError(T("no such endpoint", "nie ma takiego endpointu"), 404)
         except (LibError, SubsError, CastError, mp_install.InstallError, mp_access.AccessError) as e:
             self.send_json({"error": str(e)}, e.status)
         except ApiError as e:
@@ -1429,7 +1439,7 @@ class Handler(BaseHTTPRequestHandler):
             with open(path, "rb") as f:
                 body = f.read()
         except OSError:
-            raise ApiError("brak pliku strony — uruchom ponownie install.sh", 404)
+            raise ApiError(T("the web page file is missing — run install.sh again", "brak pliku strony — uruchom ponownie install.sh"), 404)
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -1472,7 +1482,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _stream(self, full, head_only, pieces=None, refresh=None):
         if not os.path.isfile(full):
-            raise ApiError("pliku jeszcze nie ma na dysku", 404)
+            raise ApiError(T("the file isn't on disk yet", "pliku jeszcze nie ma na dysku"), 404)
         size = os.path.getsize(full)
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         if full.endswith(".apk"):
@@ -1570,8 +1580,10 @@ def cli_pair(cfg, devices):
     name = cfg.get("name") or socket.gethostname()
     link = "magneticplayer://pair?" + urllib.parse.urlencode(
         {"host": host, "port": cfg["port"], "code": code, "id": cfg["id"], "name": name})
-    print(f"Sparuj telefon z „{name}”: w apce MagneticPlayer Ustawienia → „Dodaj serwer”,")
-    print(f"zeskanuj kod aparatem albo wpisz ręcznie. Kod działa raz, przez {ttl // 60} min.\n")
+    print(T(f"Pair a phone with “{name}”: in the MagneticPlayer app, Settings → “Add server”,",
+            f"Sparuj telefon z „{name}”: w apce MagneticPlayer Ustawienia → „Dodaj serwer”,"))
+    print(T(f"scan the code with the camera or type it in. The code works once, for {ttl // 60} min.\n",
+            f"zeskanuj kod aparatem albo wpisz ręcznie. Kod działa raz, przez {ttl // 60} min.\n"))
     if shutil.which("qrencode"):
         subprocess.run(["qrencode", "-t", "ANSIUTF8", link])
     else:
@@ -1581,23 +1593,24 @@ def cli_pair(cfg, devices):
             q.add_data(link)
             q.print_ascii(invert=True)
         except ImportError:
-            print("(QR w terminalu po: sudo apt install qrencode)")
-    print(f"  adres: {host}   port: {cfg['port']}   kod: {code[:3]}-{code[3:]}")
+            print(T("(QR in the terminal after: sudo apt install qrencode)", "(QR w terminalu po: sudo apt install qrencode)"))
+    print(T(f"  address: {host}   port: {cfg['port']}   code: {code[:3]}-{code[3:]}",
+            f"  adres: {host}   port: {cfg['port']}   kod: {code[:3]}-{code[3:]}"))
     print(f"  link:  {link}")
-    print(f"  przeglądarka: http://{host}:{cfg['port']}/#p={code}")
+    print(T(f"  browser: http://{host}:{cfg['port']}/#p={code}", f"  przeglądarka: http://{host}:{cfg['port']}/#p={code}"))
 
 
 def cli_join(cfg, devices, url):
     """Po instalacji z innego serwera (`JOIN=<serwer>/i/<kod>`): zgłoszenie się z kodem parowania dla telefonu."""
     m = re.fullmatch(r"(https?://[^/]+)/i/([A-Za-z0-9-]+)/?", url.strip())
     if not m:
-        print(f"zły adres dołączenia: {url}")
+        print(T(f"invalid join address: {url}", f"zły adres dołączenia: {url}"))
         return 1
     pair_code, _ = devices.new_code()
     body = json.dumps({"code": m.group(2), "id": cfg["id"], "name": cfg.get("name") or socket.gethostname(),
                        "port": cfg["port"], "pair_code": pair_code, "version": VERSION}).encode()
     req = urllib.request.Request(m.group(1) + "/api/install/join", data=body, method="POST",
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", "Accept-Language": mp_i18n.lang()})
     try:
         with urllib.request.urlopen(req, timeout=10):
             pass
@@ -1606,12 +1619,13 @@ def cli_join(cfg, devices, url):
             err = json.loads(e.read()).get("error")
         except ValueError:
             err = e.reason
-        print(f"Nie udało się zgłosić do {m.group(1)}: {err}")
+        print(T(f"Couldn't register with {m.group(1)}: {err}", f"Nie udało się zgłosić do {m.group(1)}: {err}"))
         return 1
     except OSError as e:
-        print(f"Nie udało się zgłosić do {m.group(1)}: {e}")
+        print(T(f"Couldn't register with {m.group(1)}: {e}", f"Nie udało się zgłosić do {m.group(1)}: {e}"))
         return 1
-    print(f"Zgłoszono się do {m.group(1)}: telefon, który zaczął instalację, sparuje się sam (do 10 min).")
+    print(T(f"Registered with {m.group(1)}: the phone that started the install will pair by itself (within 10 min).",
+            f"Zgłoszono się do {m.group(1)}: telefon, który zaczął instalację, sparuje się sam (do 10 min)."))
     return 0
 
 
@@ -1621,6 +1635,7 @@ def main():
         sys.stderr = sys.stderr or f
         sys.stdout = sys.stdout or f
     cfg = load_config()
+    mp_i18n.set_from_env()  # komunikaty w terminalu (--pair, --join, --devices); żądania HTTP mają własny język
     if "--print-token" in sys.argv:
         print(cfg["token"])
         return
@@ -1632,13 +1647,14 @@ def main():
         sys.exit(cli_join(cfg, devices, sys.argv[i + 1] if i + 1 < len(sys.argv) else ""))
     if "--devices" in sys.argv:
         for d in devices.list():
-            seen = time.strftime("%Y-%m-%d %H:%M", time.localtime(d["last_seen"])) if d.get("last_seen") else "nigdy"
-            print(f"{d['id']:14} {d['name']:30} ostatnio: {seen}")
+            seen = time.strftime("%Y-%m-%d %H:%M", time.localtime(d["last_seen"])) if d.get("last_seen") else T("never", "nigdy")
+            print(f"{d['id']:14} {d['name']:30} " + T("last seen: ", "ostatnio: ") + seen)
         return
     if "--revoke" in sys.argv:
         i = sys.argv.index("--revoke")
         dev = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
-        print("odebrano dostęp" if devices.revoke(dev) else f"nie ma urządzenia {dev!r} (lista: --devices)")
+        print(T("access revoked", "odebrano dostęp") if devices.revoke(dev)
+              else T(f"no device {dev!r} (list: --devices)", f"nie ma urządzenia {dev!r} (lista: --devices)"))
         return
     app = App(cfg)
     Handler.app = app

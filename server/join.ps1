@@ -3,9 +3,10 @@
 & {
   $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'
   $u = '@URL@'
+  $pl = (Get-UICulture).Name -like 'pl*'  # komunikaty po polsku, gdy Windows ma polski interfejs
   $t = Join-Path $env:TEMP ('magneticplayer-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
   New-Item -ItemType Directory $t | Out-Null
-  Write-Host "== pobieram agenta z $u"
+  Write-Host $(if ($pl) { "== pobieram agenta z $u" } else { "== downloading the agent from $u" })
   Invoke-WebRequest "$u/bundle.tar.gz" -OutFile "$t\mp.tgz" -UseBasicParsing
   tar -xzf "$t\mp.tgz" -C $t
   $env:MP_JOIN = $u

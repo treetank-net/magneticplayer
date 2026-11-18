@@ -116,6 +116,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -164,7 +165,7 @@ class MainActivity : ComponentActivity() {
         if (data.scheme != "magneticplayer") return
         val targets = Pairing.parse(data)
         if (targets.isEmpty()) return
-        Toast.makeText(this, "Paruję…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.main_pairing_progress), Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             val msg = withContext(Dispatchers.IO) {
                 val ok = mutableListOf<String>()
@@ -176,8 +177,8 @@ class MainActivity : ComponentActivity() {
                         bad += "${t.host}: ${e.message}"
                     }
                 }
-                listOfNotNull(ok.takeIf { it.isNotEmpty() }?.let { "Sparowano: ${it.joinToString()}" },
-                    bad.takeIf { it.isNotEmpty() }?.let { "Nie udało się: ${it.joinToString("; ")}" }).joinToString("\n")
+                listOfNotNull(ok.takeIf { it.isNotEmpty() }?.let { getString(R.string.main_paired, it.joinToString()) },
+                    bad.takeIf { it.isNotEmpty() }?.let { getString(R.string.main_failed, it.joinToString("; ")) }).joinToString("\n")
             }
             settingsVersion.intValue++
             if (Servers.all(this@MainActivity).isNotEmpty()) tab.intValue = TAB_TORRENTS
@@ -206,11 +207,11 @@ class MainActivity : ComponentActivity() {
 }
 
 /** Wywołanie API w tle; błąd trafia do snackbara. */
-private fun CoroutineScope.io(snack: SnackbarHostState, block: suspend () -> Unit) = launch {
+private fun CoroutineScope.io(ctx: Context, snack: SnackbarHostState, block: suspend () -> Unit) = launch {
     try {
         withContext(Dispatchers.IO) { block() }
     } catch (e: ApiException) {
-        snack.showSnackbar(e.message ?: "Błąd")
+        snack.showSnackbar(e.message ?: ctx.getString(R.string.main_error))
     }
 }
 
@@ -276,9 +277,9 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             if (key == api.srv.key) online = true
             withContext(Dispatchers.IO) { runCatching { a.info() } }
             infoVer++
-            snack.showSnackbar("${a.srv.name} działa")
+            snack.showSnackbar(ctx.getString(R.string.main_server_online, a.srv.name))
         } catch (e: ApiException) {
-            snack.showSnackbar(e.message ?: "Błąd")
+            snack.showSnackbar(e.message ?: ctx.getString(R.string.main_error))
         } finally {
             waking = null
         }
@@ -293,11 +294,11 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                         Text(if (servers.isEmpty()) "MagneticPlayer" else srv.name + if (servers.size > 1) " ▾" else "",
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         val (txt, col) = when {
-                            servers.isEmpty() -> "dodaj serwer w Ustawieniach" to MaterialTheme.colorScheme.onSurfaceVariant
+                            servers.isEmpty() -> stringResource(R.string.main_add_server_in_settings) to MaterialTheme.colorScheme.onSurfaceVariant
                             waking != null -> waking!! to MaterialTheme.colorScheme.tertiary
-                            wrong -> "● pod tym adresem jest inny serwer" to MaterialTheme.colorScheme.error
-                            online == true -> "● działa · ${srv.roles}" to OK_GREEN
-                            online == false -> "● śpi albo wyłączony" to MaterialTheme.colorScheme.error
+                            wrong -> stringResource(R.string.main_status_wrong_server) to MaterialTheme.colorScheme.error
+                            online == true -> stringResource(R.string.main_status_online, srv.rolesText(LocalContext.current)) to OK_GREEN
+                            online == false -> stringResource(R.string.main_status_asleep) to MaterialTheme.colorScheme.error
                             else -> "…" to MaterialTheme.colorScheme.onSurfaceVariant
                         }
                         Text(txt, style = MaterialTheme.typography.labelMedium, color = col)
@@ -305,19 +306,19 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 },
                 actions = {
                     if (online == false && !wrong && waking == null && srv.mac.isNotBlank()) {
-                        TextButton({ wake() }) { Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(4.dp)); Text("Obudź") }
+                        TextButton({ wake() }) { Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.main_wake)) }
                     }
                     if (online == true && waking == null && srv.canSuspend) {
-                        TextButton({ confirmSuspend = true }) { Icon(Icons.Filled.Bedtime, null); Spacer(Modifier.width(4.dp)); Text("Uśpij") }
+                        TextButton({ confirmSuspend = true }) { Icon(Icons.Filled.Bedtime, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.main_sleep)) }
                     }
                     if (servers.isNotEmpty()) Box {
                         IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "menu") }
                         DropdownMenu(menu, { menu = false }) {
-                            if (srv.hasPlayer && srv.canUnlock) DropdownMenuItem({ Text("Włącz i odblokuj ekran") }, {
-                                menu = false; scope.io(snack) { api.screenOn() }
+                            if (srv.hasPlayer && srv.canUnlock) DropdownMenuItem({ Text(stringResource(R.string.main_screen_on_unlock)) }, {
+                                menu = false; scope.io(ctx, snack) { api.screenOn() }
                             }, leadingIcon = { Icon(Icons.Filled.LightMode, null) })
-                            if (servers.size > 1) DropdownMenuItem({ Text("Zmień serwer") }, { menu = false; sheet = true })
-                            DropdownMenuItem({ Text("Serwery i parowanie") }, { menu = false; tab.intValue = TAB_SETTINGS })
+                            if (servers.size > 1) DropdownMenuItem({ Text(stringResource(R.string.main_switch_server)) }, { menu = false; sheet = true })
+                            DropdownMenuItem({ Text(stringResource(R.string.main_servers_pairing)) }, { menu = false; tab.intValue = TAB_SETTINGS })
                         }
                     }
                 },
@@ -325,11 +326,11 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         },
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(tab.intValue == TAB_TORRENTS, { tab.intValue = TAB_TORRENTS }, { Icon(Icons.Filled.Download, null) }, label = { Text("Torrenty") })
-                NavigationBarItem(tab.intValue == TAB_LIBRARY, { tab.intValue = TAB_LIBRARY }, { Icon(Icons.Filled.VideoLibrary, null) }, label = { Text("Biblioteka") })
-                NavigationBarItem(tab.intValue == TAB_OFFLINE, { tab.intValue = TAB_OFFLINE }, { Icon(Icons.Filled.DownloadForOffline, null) }, label = { Text("Na telefonie", maxLines = 1) })
-                NavigationBarItem(tab.intValue == TAB_REMOTE, { tab.intValue = TAB_REMOTE }, { Icon(Icons.Filled.SmartDisplay, null) }, label = { Text("Pilot") })
-                NavigationBarItem(tab.intValue == TAB_SETTINGS, { tab.intValue = TAB_SETTINGS }, { Icon(Icons.Filled.Settings, null) }, label = { Text("Ustawienia") })
+                NavigationBarItem(tab.intValue == TAB_TORRENTS, { tab.intValue = TAB_TORRENTS }, { Icon(Icons.Filled.Download, null) }, label = { Text(stringResource(R.string.main_tab_torrents)) })
+                NavigationBarItem(tab.intValue == TAB_LIBRARY, { tab.intValue = TAB_LIBRARY }, { Icon(Icons.Filled.VideoLibrary, null) }, label = { Text(stringResource(R.string.main_tab_library)) })
+                NavigationBarItem(tab.intValue == TAB_OFFLINE, { tab.intValue = TAB_OFFLINE }, { Icon(Icons.Filled.DownloadForOffline, null) }, label = { Text(stringResource(R.string.main_tab_offline), maxLines = 1) })
+                NavigationBarItem(tab.intValue == TAB_REMOTE, { tab.intValue = TAB_REMOTE }, { Icon(Icons.Filled.SmartDisplay, null) }, label = { Text(stringResource(R.string.main_tab_remote)) })
+                NavigationBarItem(tab.intValue == TAB_SETTINGS, { tab.intValue = TAB_SETTINGS }, { Icon(Icons.Filled.Settings, null) }, label = { Text(stringResource(R.string.main_tab_settings)) })
             }
         },
         snackbarHost = { SnackbarHost(snack) },
@@ -338,7 +339,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
           update?.let { u ->
             androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (updating != null) "Pobieram aktualizację… $updating%" else "Jest aktualizacja ${u.name}",
+                    Text(if (updating != null) stringResource(R.string.main_update_downloading, updating ?: 0) else stringResource(R.string.main_update_available, u.name),
                         Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     TextButton({
                         updating = 0
@@ -346,12 +347,12 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                             try {
                                 withContext(Dispatchers.IO) { Updater.downloadAndInstall(ctx, api) { updating = it } }
                             } catch (e: ApiException) {
-                                snack.showSnackbar(e.message ?: "Błąd")
+                                snack.showSnackbar(e.message ?: ctx.getString(R.string.main_error))
                             } finally {
                                 updating = null
                             }
                         }
-                    }, enabled = updating == null) { Text("Zaktualizuj") }
+                    }, enabled = updating == null) { Text(stringResource(R.string.main_update_install)) }
                 }
             }
           }
@@ -359,12 +360,12 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             val t = tab.intValue
             when {
                 (t == TAB_TORRENTS || t == TAB_LIBRARY) && servers.isEmpty() ->
-                    Hint("Nie ma jeszcze serwera. Dodaj go w Ustawieniach (kod parowania z komputera).")
+                    Hint(stringResource(R.string.main_hint_no_server))
                 (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) ->
                     AsleepPane(srv, waking, wrong) { wake() }
                 t == TAB_TORRENTS && !srv.hasTorrent ->
-                    Hint("${srv.name} nie pobiera torrentów (agent bez Deluge/Transmission). Filmy z dysku są w zakładce Biblioteka.")
-                t == TAB_LIBRARY && !srv.hasLibrary -> Hint("${srv.name} nie udostępnia biblioteki.")
+                    Hint(stringResource(R.string.main_hint_no_torrent, srv.name))
+                t == TAB_LIBRARY && !srv.hasLibrary -> Hint(stringResource(R.string.main_hint_no_library, srv.name))
                 else -> key(api.srv.key) {
                     when (t) {
                         TAB_TORRENTS -> TorrentsTab(api, online == true, snack, onPlaying)
@@ -388,7 +389,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
 
     if (confirmSuspend) SuspendDialog(srv, onConfirm = {
         confirmSuspend = false
-        scope.io(snack) { api.suspendPc(); delay(3000) }
+        scope.io(ctx, snack) { api.suspendPc(); delay(3000) }
         online = false
     }) { confirmSuspend = false }
 }
@@ -428,32 +429,32 @@ private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onP
 
     Box(Modifier.fillMaxSize()) {
         when {
-            !online -> Hint("Łączę…")
+            !online -> Hint(stringResource(R.string.main_connecting))
             error != null -> Hint(error!!)
             else -> LazyColumn(contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(!onlyMine, { onlyMine = false }, { Text("Wszystkie (${torrents.size})") })
-                        FilterChip(onlyMine, { onlyMine = true }, { Text("Zlecone z telefonu") },
+                        FilterChip(!onlyMine, { onlyMine = false }, { Text(stringResource(R.string.main_filter_all, torrents.size)) })
+                        FilterChip(onlyMine, { onlyMine = true }, { Text(stringResource(R.string.main_filter_mine)) },
                             leadingIcon = { Icon(Icons.Filled.PhoneAndroid, null, Modifier.size(16.dp)) })
                     }
                 }
                 val shown = if (onlyMine) torrents.filter { it.mine } else torrents
                 if (shown.isEmpty()) item {
-                    Text(if (onlyMine) "Nic z telefonu nie jest teraz w Deluge." else "Brak torrentów. Kliknij magnet link w przeglądarce albo wklej go przyciskiem niżej.",
+                    Text(if (onlyMine) stringResource(R.string.main_empty_mine) else stringResource(R.string.main_empty_torrents),
                         Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 items(shown, key = { it.id }) { t ->
                     TorrentCard(t, onClick = { selected = t.id }, onAfter = { after ->
-                        scope.io(snack) { api.setAfter(t.id, after); refresh++ }
+                        scope.io(ctx, snack) { api.setAfter(t.id, after); refresh++ }
                     }) { action ->
-                        scope.io(snack) { api.action(t.id, action); refresh++ }
+                        scope.io(ctx, snack) { api.action(t.id, action); refresh++ }
                     }
                 }
                 if (onlyMine) {
                     val gone = jobs.filter { !it.inClient }
                     if (gone.isNotEmpty()) item {
-                        Text("Wcześniej zlecone (już nie ma ich w Deluge)", style = MaterialTheme.typography.titleSmall,
+                        Text(stringResource(R.string.main_earlier_requests), style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.padding(top = 12.dp, start = 4.dp))
                     }
                     items(gone, key = { "job/" + it.id }) { j ->
@@ -468,7 +469,7 @@ private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onP
                                 if (j.magnet != null) TextButton({
                                     ctx.startActivity(Intent(ctx, MagnetActivity::class.java).setAction(Intent.ACTION_SEND)
                                         .setType("text/plain").putExtra(Intent.EXTRA_TEXT, j.magnet))
-                                }) { Text("Pobierz znowu") }
+                                }) { Text(stringResource(R.string.main_download_again)) }
                             }
                         }
                     }
@@ -481,14 +482,14 @@ private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onP
                 val text = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
                 val m = Regex("""magnet:\?\S+""").find(text)?.value
                 if (m == null) {
-                    scope.launch { snack.showSnackbar("W schowku nie ma magnet linka") }
+                    scope.launch { snack.showSnackbar(ctx.getString(R.string.main_no_magnet_in_clipboard)) }
                 } else {
                     ctx.startActivity(Intent(ctx, MagnetActivity::class.java).setAction(Intent.ACTION_SEND)
                         .setType("text/plain").putExtra(Intent.EXTRA_TEXT, m))
                 }
             },
             icon = { Icon(Icons.Filled.ContentPaste, null) },
-            text = { Text("Wklej magnet") },
+            text = { Text(stringResource(R.string.main_paste_magnet)) },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )
     }
@@ -501,15 +502,16 @@ fun Hint(text: String) {
     }
 }
 
+@Composable
 private fun stateLabel(s: String) = when (s) {
-    "Downloading" -> "pobiera"
-    "Seeding" -> "gotowe, udostępnia"
-    "Paused" -> "wstrzymany"
-    "Queued" -> "w kolejce"
-    "Checking" -> "sprawdza"
-    "Error" -> "błąd"
-    "Moving" -> "przenosi"
-    "Allocating" -> "rezerwuje miejsce"
+    "Downloading" -> stringResource(R.string.main_state_downloading)
+    "Seeding" -> stringResource(R.string.main_state_seeding)
+    "Paused" -> stringResource(R.string.main_state_paused)
+    "Queued" -> stringResource(R.string.main_state_queued)
+    "Checking" -> stringResource(R.string.main_state_checking)
+    "Error" -> stringResource(R.string.main_state_error)
+    "Moving" -> stringResource(R.string.main_state_moving)
+    "Allocating" -> stringResource(R.string.main_state_allocating)
     else -> s.lowercase()
 }
 
@@ -524,17 +526,17 @@ private fun TorrentCard(t: Torrent, onClick: () -> Unit, onAfter: (String) -> Un
                 Text(t.name, Modifier.weight(1f).padding(top = 4.dp), style = MaterialTheme.typography.titleSmall,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Box {
-                    IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "akcje") }
+                    IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.main_actions)) }
                     DropdownMenu(menu, { menu = false }) {
-                        if (t.state == "Paused") DropdownMenuItem({ Text("Wznów") }, { menu = false; onAction("resume") })
-                        else DropdownMenuItem({ Text("Wstrzymaj") }, { menu = false; onAction("pause") })
-                        DropdownMenuItem({ Text(if (t.sequential) "Wyłącz sekwencyjne" else "Pobieraj sekwencyjnie") }, {
+                        if (t.state == "Paused") DropdownMenuItem({ Text(stringResource(R.string.main_resume)) }, { menu = false; onAction("resume") })
+                        else DropdownMenuItem({ Text(stringResource(R.string.main_pause)) }, { menu = false; onAction("pause") })
+                        DropdownMenuItem({ Text(if (t.sequential) stringResource(R.string.main_sequential_off) else stringResource(R.string.main_sequential_on)) }, {
                             menu = false; onAction(if (t.sequential) "sequential_off" else "sequential_on")
                         })
-                        DropdownMenuItem({ Text("Po pobraniu…") }, { menu = false; afterDialog = true })
+                        DropdownMenuItem({ Text(stringResource(R.string.main_after_download_menu)) }, { menu = false; afterDialog = true })
                         HorizontalDivider()
-                        DropdownMenuItem({ Text("Usuń z listy") }, { menu = false; onAction("remove") })
-                        DropdownMenuItem({ Text("Usuń razem z plikami") }, { menu = false; confirmRemove = true })
+                        DropdownMenuItem({ Text(stringResource(R.string.main_remove_from_list)) }, { menu = false; onAction("remove") })
+                        DropdownMenuItem({ Text(stringResource(R.string.main_remove_with_files)) }, { menu = false; confirmRemove = true })
                     }
                 }
             }
@@ -543,12 +545,12 @@ private fun TorrentCard(t: Torrent, onClick: () -> Unit, onAfter: (String) -> Un
             Spacer(Modifier.height(6.dp))
             val parts = buildList {
                 add(stateLabel(t.state))
-                add("${t.progress}% z ${humanBytes(t.size)}")
+                add(stringResource(R.string.main_progress_of, "${t.progress}", humanBytes(t.size)))
                 if (t.downRate > 0) add("↓ ${humanBytes(t.downRate)}/s")
-                if (t.state == "Downloading" && t.eta > 0) add("zostało ${humanTime(t.eta)}")
-                if (t.sequential) add("sekw.")
+                if (t.state == "Downloading" && t.eta > 0) add(stringResource(R.string.main_time_left, humanTime(t.eta)))
+                if (t.sequential) add(stringResource(R.string.main_seq_short))
                 if (t.mine) add("📱")
-                if (t.after != "none") add("potem: " + (AFTER_LABELS[t.after] ?: t.after))
+                if (t.after != "none") add(stringResource(R.string.main_then, afterLabels(LocalContext.current)[t.after] ?: t.after))
             }
             Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -557,10 +559,10 @@ private fun TorrentCard(t: Torrent, onClick: () -> Unit, onAfter: (String) -> Un
     if (confirmRemove) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
-            title = { Text("Usunąć z plikami?") },
-            text = { Text("„${t.name}” zniknie razem z pobranymi plikami z dysku komputera.") },
-            confirmButton = { TextButton({ confirmRemove = false; onAction("remove_data") }) { Text("Usuń") } },
-            dismissButton = { TextButton({ confirmRemove = false }) { Text("Anuluj") } },
+            title = { Text(stringResource(R.string.main_remove_files_title)) },
+            text = { Text(stringResource(R.string.main_remove_files_text, t.name)) },
+            confirmButton = { TextButton({ confirmRemove = false; onAction("remove_data") }) { Text(stringResource(R.string.main_remove)) } },
+            dismissButton = { TextButton({ confirmRemove = false }) { Text(stringResource(R.string.main_cancel)) } },
         )
     }
 }
@@ -577,7 +579,7 @@ private fun FilesScreen(api: Api, torrentId: String, t: Torrent?, snack: Snackba
             try {
                 files = withContext(Dispatchers.IO) { api.files(torrentId) }
             } catch (e: ApiException) {
-                snack.showSnackbar(e.message ?: "Błąd")
+                snack.showSnackbar(e.message ?: ctx.getString(R.string.main_error))
             }
             delay(4000)
         }
@@ -585,26 +587,26 @@ private fun FilesScreen(api: Api, torrentId: String, t: Torrent?, snack: Snackba
 
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
-            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "wstecz") }
+            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.main_back)) }
             Text(t?.name ?: "", style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         }
         val list = files
         if (list == null) {
-            Hint("Wczytuję pliki…")
+            Hint(stringResource(R.string.main_loading_files))
             return
         }
         if (list.isEmpty()) {
-            Hint("Torrent jeszcze nie pobrał listy plików (metadane z magneta). Chwilę…")
+            Hint(stringResource(R.string.main_no_file_list))
             return
         }
         val media = list.filter { it.media != null }.sortedBy { it.path.lowercase() }
         val shown = if (showAll || media.isEmpty()) list.sortedBy { it.path.lowercase() } else media
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
-            Text("Wszystkie pliki (${list.size})", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.main_all_files, list.size), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Switch(showAll, { showAll = it })
         }
         if (t != null && t.progress < 100 && !t.sequential) {
-            Text("Wskazówka: do oglądania w trakcie pobierania włącz „Pobieraj sekwencyjnie” w menu torrenta.",
+            Text(stringResource(R.string.main_tip_sequential),
                 Modifier.padding(horizontal = 16.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.tertiary)
         }
@@ -617,7 +619,7 @@ private fun FilesScreen(api: Api, torrentId: String, t: Torrent?, snack: Snackba
                             Text(f.path.substringBeforeLast('/'), style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Text("${humanBytes(f.size)} · pobrane ${f.progress}%", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.main_file_downloaded, humanBytes(f.size), "${f.progress}"), style = MaterialTheme.typography.bodySmall)
                         if (f.media != null) WatchableInfo(f)
                         if (f.media != null) {
                             Spacer(Modifier.height(8.dp))
@@ -634,19 +636,19 @@ private fun FilesScreen(api: Api, torrentId: String, t: Torrent?, snack: Snackba
 fun AfterDialog(current: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Gdy się pobierze") },
+        title = { Text(stringResource(R.string.main_after_title)) },
         text = {
             Column {
-                AFTER_LABELS.forEach { (k, label) ->
+                afterLabels(LocalContext.current).forEach { (k, label) ->
                     Row(Modifier.fillMaxWidth().clickable { onPick(k) }, verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(current == k, { onPick(k) }); Text(label)
                     }
                 }
-                Text("Uśpienie czeka, aż skończą się wszystkie pobierania i nic nie gra.",
+                Text(stringResource(R.string.main_after_note),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onDismiss) { Text("Anuluj") } },
+        confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.main_cancel)) } },
     )
 }
 
@@ -661,10 +663,10 @@ private fun WatchableInfo(f: TFile) {
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val text = when {
-        frac >= 0.999 -> "do obejrzenia całość" + (f.duration?.let { " (${clock(it)})" } ?: "")
-        f.ready <= 0 -> "jeszcze nie da się oglądać — początek się nie pobrał"
-        f.readySec != null && f.duration != null -> "do obejrzenia: ok. ${clock(f.readySec)} z ${clock(f.duration)} ($pct%)"
-        else -> "do obejrzenia: $pct% od początku"
+        frac >= 0.999 -> f.duration?.let { stringResource(R.string.main_watch_all_dur, clock(it)) } ?: stringResource(R.string.main_watch_all)
+        f.ready <= 0 -> stringResource(R.string.main_watch_none)
+        f.readySec != null && f.duration != null -> stringResource(R.string.main_watch_part_time, clock(f.readySec), clock(f.duration), pct)
+        else -> stringResource(R.string.main_watch_part_pct, pct)
     }
     Spacer(Modifier.height(6.dp))
     LinearProgressIndicator(progress = { frac.toFloat() }, modifier = Modifier.fillMaxWidth(), color = color)
@@ -716,7 +718,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             if ("cast" in avail) FilterChip(target == "cast", { Pilot.focus.value = "cast" },
                 { Text(Pilot.castName(ctx)) }, leadingIcon = { Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)) })
             if ("dlna" in avail) FilterChip(target == "dlna", { Pilot.focus.value = "dlna" },
-                { Text(Dlna.current?.name ?: Announce.foreignDlna()?.targetName ?: "Telewizor") }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
+                { Text(Dlna.current?.name ?: Announce.foreignDlna()?.targetName ?: stringResource(R.string.main_tv)) }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
         }
         when (target) {
             "cast", "dlna" -> key(target, target == "cast" && Cast.session(ctx) == null) {
@@ -731,7 +733,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
                 })
             }
             "screen" -> if (screenApi != null) key(screenApi.srv.key) { ScreenRemote(screenApi, snack, onWake) }
-            else -> Hint("Żaden serwer nie ma ekranu (mpv i zalogowanej sesji graficznej).")
+            else -> Hint(stringResource(R.string.main_no_screen))
         }
     }
 }
@@ -755,20 +757,20 @@ private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) ->
     when {
         reachable == false -> Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${api.srv.name} nie odpowiada.", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.main_screen_not_responding, api.srv.name), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(16.dp))
             if (api.srv.mac.isNotBlank()) Button({ onWake(api.srv.key) }) {
-                Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(6.dp)); Text("Obudź")
+                Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_wake))
             }
         }
         running == false -> Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Na ekranie ${api.srv.name} nic nie gra.", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.main_nothing_on_screen, api.srv.name), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            Text("Wybierz film w zakładce Torrenty albo Biblioteka → przycisk ekranu.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.main_pick_video_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
-            if (api.srv.canUnlock) OutlinedButton({ scope.io(snack) { api.screenOn() } }) {
-                Icon(Icons.Filled.LightMode, null); Spacer(Modifier.width(6.dp)); Text("Włącz i odblokuj ekran")
+            if (api.srv.canUnlock) OutlinedButton({ scope.io(ctx, snack) { api.screenOn() } }) {
+                Icon(Icons.Filled.LightMode, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_screen_on_unlock))
             }
         }
         running == true -> {
@@ -782,6 +784,7 @@ private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) ->
 @Composable
 private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> Unit,
                        extras: @Composable ColumnScope.(RemoteState) -> Unit = {}) {
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var st by remember(remote) { mutableStateOf<RemoteState?>(null) }
     var drag by remember { mutableStateOf<Float?>(null) }
@@ -799,7 +802,7 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
             remote.f()
             runCatching { remote.status() }.getOrNull()?.let { st = it }
         } catch (e: Exception) {
-            snack.showSnackbar(e.message ?: "${remote.name} nie odpowiada")
+            snack.showSnackbar(e.message ?: ctx.getString(R.string.main_not_responding, remote.name))
         }
     }
     val s = st ?: return Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -815,7 +818,7 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text(s.title, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        val note = listOfNotNull(s.note, if (s.buffering && s.note == null) "wczytuje…" else null).joinToString(" · ")
+        val note = listOfNotNull(s.note, if (s.buffering && s.note == null) stringResource(R.string.main_loading) else null).joinToString(" · ")
         if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(16.dp))
         Slider(
@@ -835,7 +838,7 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
             RemoteButton(Icons.Filled.FastRewind, "-60 s") { act { seekBy(-60.0) } }
             RemoteButton(Icons.Filled.Replay10, "-10 s") { act { seekBy(-10.0) } }
             FilledIconButton({ act { setPlaying(!s.playing) } }, Modifier.size(80.dp)) {
-                Icon(if (s.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (s.playing) "pauza" else "graj", Modifier.size(44.dp))
+                Icon(if (s.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (s.playing) stringResource(R.string.main_cd_pause) else stringResource(R.string.main_cd_play), Modifier.size(44.dp))
             }
             RemoteButton(Icons.Filled.Forward10, "+10 s") { act { seekBy(10.0) } }
             RemoteButton(Icons.Filled.FastForward, "+60 s") { act { seekBy(60.0) } }
@@ -843,22 +846,22 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
         Spacer(Modifier.height(24.dp))
         if (s.volume != null) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                RemoteButton(Icons.AutoMirrored.Filled.VolumeDown, "ciszej") { act { volumeBy(-1) } }
+                RemoteButton(Icons.AutoMirrored.Filled.VolumeDown, stringResource(R.string.main_cd_volume_down)) { act { volumeBy(-1) } }
                 RemoteButton(if (s.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    if (s.muted) "włącz dźwięk" else "wycisz") { act { setMuted(!s.muted) } }
-                RemoteButton(Icons.AutoMirrored.Filled.VolumeUp, "głośniej") { act { volumeBy(1) } }
+                    if (s.muted) stringResource(R.string.main_cd_unmute) else stringResource(R.string.main_cd_mute)) { act { setMuted(!s.muted) } }
+                RemoteButton(Icons.AutoMirrored.Filled.VolumeUp, stringResource(R.string.main_cd_volume_up)) { act { volumeBy(1) } }
             }
-            Text((if (s.muted) "Wyciszony (${s.volume})" else "Głośność ${s.volume}") + " · działają też przyciski głośności telefonu",
+            Text(if (s.muted) stringResource(R.string.main_volume_muted, s.volume) else stringResource(R.string.main_volume_level, s.volume),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            Text("Głośność ustawia pilot telewizora (${remote.name} ma stałą głośność)",
+            Text(stringResource(R.string.main_volume_fixed, remote.name),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(20.dp))
         extras(s)
         Spacer(Modifier.height(10.dp))
         FilledTonalButton({ act { stop() }; if (remote.kind != "screen") onGone() }) {
-            Icon(Icons.Filled.Stop, null); Spacer(Modifier.width(6.dp)); Text("Zakończ")
+            Icon(Icons.Filled.Stop, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_stop))
         }
     }
 }
@@ -866,23 +869,24 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
 /** Tylko mpv: pełny ekran, ścieżki, opóźnienie i wyszukiwanie napisów. */
 @Composable
 private fun ColumnScope.MpvExtras(api: Api, remote: MpvRemote, st: RemoteState, snack: SnackbarHostState) {
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var subsDialog by remember { mutableStateOf(false) }
     var trackDialog by remember { mutableStateOf<String?>(null) }
     val s = st.mpv ?: return
-    fun cmd(c: String, v: Any? = null) = scope.io(snack) { remote.raw(c, v) }
+    fun cmd(c: String, v: Any? = null) = scope.io(ctx, snack) { remote.raw(c, v) }
     val fs = s.optBoolean("fullscreen")
     FilledTonalButton({ cmd("fullscreen") }) {
         Icon(if (fs) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null)
-        Spacer(Modifier.width(6.dp)); Text(if (fs) "Wyjdź z pełnego" else "Pełny ekran")
+        Spacer(Modifier.width(6.dp)); Text(if (fs) stringResource(R.string.main_exit_fullscreen) else stringResource(R.string.main_fullscreen))
     }
     Spacer(Modifier.height(10.dp))
     val tracks = s.optJSONArray("tracks")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedButton({ trackDialog = "sub" }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text("Napisy") }
-        OutlinedButton({ trackDialog = "audio" }) { Icon(Icons.Filled.Audiotrack, null); Spacer(Modifier.width(6.dp)); Text("Audio") }
+        OutlinedButton({ trackDialog = "sub" }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_subtitles)) }
+        OutlinedButton({ trackDialog = "audio" }) { Icon(Icons.Filled.Audiotrack, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_audio)) }
         if (tracks.count { it.optString("type") == "video" } > 1)
-            OutlinedButton({ trackDialog = "video" }) { Text("Wideo") }
+            OutlinedButton({ trackDialog = "video" }) { Text(stringResource(R.string.main_video)) }
     }
     trackDialog?.let { type ->
         TrackDialog(type, tracks.filter { it.optString("type") == type }, onDismiss = { trackDialog = null }) { id ->
@@ -890,53 +894,57 @@ private fun ColumnScope.MpvExtras(api: Api, remote: MpvRemote, st: RemoteState, 
             cmd("track", JSONObject().put("type", type).put("id", id ?: "no"))
         }
     }
-    val sub = s.optString("sub").takeIf { it.isNotEmpty() && it != "null" } ?: "brak"
-    val audio = s.optString("audio").takeIf { it.isNotEmpty() && it != "null" } ?: "domyślna"
-    Text("napisy: $sub · audio: $audio", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val sub = s.optString("sub").takeIf { it.isNotEmpty() && it != "null" } ?: stringResource(R.string.main_none)
+    val audio = s.optString("audio").takeIf { it.isNotEmpty() && it != "null" } ?: stringResource(R.string.main_default_track)
+    Text(stringResource(R.string.main_subs_audio_line, sub, audio), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(10.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        TextButton({ cmd("sub_delay", -0.1) }) { Text("napisy −0,1 s") }
-        TextButton({ cmd("sub_delay", 0.1) }) { Text("napisy +0,1 s") }
+        TextButton({ cmd("sub_delay", -0.1) }) { Text(stringResource(R.string.main_sub_delay_minus)) }
+        TextButton({ cmd("sub_delay", 0.1) }) { Text(stringResource(R.string.main_sub_delay_plus)) }
     }
-    OutlinedButton({ subsDialog = true }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text("Szukaj napisów") }
+    OutlinedButton({ subsDialog = true }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_search_subtitles)) }
     if (subsDialog) SubsDialog(api, MediaRef.Playing(st.title, api.srv.key)) { subsDialog = false }
 }
 
 /** Wybór ścieżki w mpv: lista z językiem, tytułem, kodekiem; dla napisów też „wyłączone”. */
 @Composable
 private fun TrackDialog(type: String, tracks: List<JSONObject>, onDismiss: () -> Unit, onPick: (Int?) -> Unit) {
-    val title = when (type) { "sub" -> "Napisy"; "audio" -> "Ścieżka dźwiękowa"; else -> "Ścieżka wideo" }
+    val title = when (type) { "sub" -> stringResource(R.string.main_subtitles); "audio" -> stringResource(R.string.main_audio_track); else -> stringResource(R.string.main_video_track) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             LazyColumn(Modifier.heightIn(max = 420.dp)) {
                 if (type == "sub") item {
-                    TrackRow("Wyłączone", null, tracks.none { it.optBoolean("selected") }) { onPick(null) }
+                    TrackRow(stringResource(R.string.main_track_off), null, tracks.none { it.optBoolean("selected") }) { onPick(null) }
                 }
                 items(tracks, key = { it.optInt("id") }) { t ->
                     fun str(k: String) = t.optString(k).takeIf { it.isNotEmpty() && it != "null" }
                     val ttl = str("title")?.let { if (t.optBoolean("external")) it.substringAfterLast('/').takeLast(28) else it }
-                    val name = listOfNotNull(str("lang")?.uppercase(), ttl).joinToString(" — ").ifEmpty { "ścieżka ${t.optInt("id")}" }
+                    val name = listOfNotNull(str("lang")?.uppercase(), ttl).joinToString(" — ").ifEmpty { stringResource(R.string.main_track_n, t.optInt("id")) }
                     val info = listOfNotNull(
-                        str("codec")?.let { CODECS[it] ?: it },
+                        str("codec")?.let { c -> CODECS_RES[c]?.let { stringResource(it) } ?: CODECS[c] ?: c },
                         t.optInt("demux-channel-count").takeIf { it > 0 }?.let { "${it}ch" },
                         t.optInt("demux-h").takeIf { it > 0 }?.let { "${t.optInt("demux-w")}×$it" },
-                        if (t.optBoolean("external")) "z pliku obok" else null,
-                        if (t.optBoolean("forced")) "wymuszone" else null,
-                        if (t.optBoolean("default")) "domyślna" else null,
+                        if (t.optBoolean("external")) stringResource(R.string.main_track_external) else null,
+                        if (t.optBoolean("forced")) stringResource(R.string.main_track_forced) else null,
+                        if (t.optBoolean("default")) stringResource(R.string.main_default_track) else null,
                     ).joinToString(" · ")
                     TrackRow(name, info, t.optBoolean("selected")) { onPick(t.optInt("id")) }
                 }
             }
         },
-        confirmButton = { TextButton(onDismiss) { Text("Zamknij") } },
+        confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.main_close)) } },
     )
 }
 
+/** kodeki z opisem zależnym od języka */
+private val CODECS_RES = mapOf(
+    "hdmv_pgs_subtitle" to R.string.main_codec_pgs, "dvd_subtitle" to R.string.main_codec_vobsub, "mov_text" to R.string.main_codec_text,
+)
+
 private val CODECS = mapOf(
-    "hdmv_pgs_subtitle" to "PGS (obrazkowe)", "dvd_subtitle" to "VobSub (obrazkowe)", "subrip" to "SRT", "ass" to "ASS",
-    "mov_text" to "tekst", "webvtt" to "WebVTT", "eac3" to "E-AC3", "ac3" to "AC3", "aac" to "AAC", "dts" to "DTS",
+    "subrip" to "SRT", "ass" to "ASS", "webvtt" to "WebVTT", "eac3" to "E-AC3", "ac3" to "AC3", "aac" to "AAC", "dts" to "DTS",
     "truehd" to "TrueHD", "opus" to "Opus", "flac" to "FLAC", "hevc" to "HEVC", "h264" to "H.264", "av1" to "AV1",
 )
 
@@ -969,34 +977,34 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ServersSection(ver, snack, openAdd, onSaved)
-        Text("Wersja webowa (torrenty, biblioteka, pilot w przeglądarce laptopa/tabletu): „Sparuj kolejne urządzenie” pokazuje też link dla przeglądarki.",
+        Text(stringResource(R.string.main_web_version_hint),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton({
             scope.launch {
                 try { withContext(Dispatchers.IO) { Updater.shareApk(ctx) } }
-                catch (e: Exception) { snack.showSnackbar("Nie udało się: ${e.message}") }
+                catch (e: Exception) { snack.showSnackbar(ctx.getString(R.string.main_failed, "${e.message}")) }
             }
-        }) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text("Wyślij apkę (WhatsApp itp.)") }
+        }) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_share_app)) }
         HorizontalDivider()
-        Text("Torrenty", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.main_tab_torrents), style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Pobieranie sekwencyjne")
-                Text("Nowe torrenty pobierają się po kolei — można oglądać w trakcie", style = MaterialTheme.typography.bodySmall,
+                Text(stringResource(R.string.main_sequential_download))
+                Text(stringResource(R.string.main_sequential_desc), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(seq, { seq = it; s.sequential = it })
         }
         Row(Modifier.fillMaxWidth().clickable { afterDialog = true }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Domyślnie po pobraniu")
-                Text(AFTER_LABELS[after] ?: after, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.main_default_after))
+                Text(afterLabels(LocalContext.current)[after] ?: after, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
         }
         if (Servers.magnetKey(ctx) != null) Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Magnet linki zawsze na: ${Servers.get(ctx, Servers.magnetKey(ctx))?.name ?: "?"}", Modifier.weight(1f),
+            Text(stringResource(R.string.main_magnets_always_on, Servers.get(ctx, Servers.magnetKey(ctx))?.name ?: "?"), Modifier.weight(1f),
                 style = MaterialTheme.typography.bodySmall)
-            TextButton({ Servers.setMagnetKey(ctx, null); onSaved() }) { Text("Pytaj") }
+            TextButton({ Servers.setMagnetKey(ctx, null); onSaved() }) { Text(stringResource(R.string.main_ask)) }
         }
         HorizontalDivider()
         BufferSettings(s)
@@ -1004,8 +1012,8 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
         var keepScreen by remember { mutableStateOf(s.pilotKeepScreen) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Pilot nie wygasza ekranu")
-                Text("Gdy na ekranie, Chromecaście albo telewizorze coś gra, a Pilot jest otwarty", style = MaterialTheme.typography.bodySmall,
+                Text(stringResource(R.string.main_keep_screen))
+                Text(stringResource(R.string.main_keep_screen_desc), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(keepScreen, { keepScreen = it; s.pilotKeepScreen = it })
@@ -1015,8 +1023,7 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
         HorizontalDivider()
         if (api.configured) OpenSubsSettings(api, snack)
         HorizontalDivider()
-        Text("Magnet linki: przy pierwszym kliknięciu magneta Android zapyta, czym otworzyć — wybierz MagneticPlayer → „Zawsze”. " +
-            "Działa też „Udostępnij” z dowolnej apki.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.main_magnet_links_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (afterDialog) AfterDialog(after, { afterDialog = false }) { after = it; s.afterDefault = it; afterDialog = false }
 }
@@ -1032,12 +1039,8 @@ private fun BufferSettings(s: Settings) {
     var text by remember { mutableStateOf(s.bufferMinutes.toString()) }
     val ctx = LocalContext.current
     val maxGb = remember { MediaCache.maxBytes(ctx) shr 30 }
-    Text("Bufor w odtwarzaczu", style = MaterialTheme.typography.titleMedium)
-    Text("Ile filmu telefon pobiera do przodu na swój dysk, żeby oglądać mimo zrywów Wi-Fi. Tylko to, co komputer " +
-        "już pobrał. Na drogę lepiej użyć „Pobierz na telefon” w menu ⋮ filmu (pobiera w tle, lista w zakładce " +
-        "„Na telefonie”). Bufor z oglądania: obejrzane filmy (od 80%) i nieoglądane od 2 dni są kasowane, " +
-        "razem maks. $maxGb GB (60% wolnego miejsca). " +
-        "Działa od następnego otwarcia filmu.",
+    Text(stringResource(R.string.main_buffer_title), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.main_buffer_desc, maxGb),
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // zapis od razu przy każdej poprawnej wartości 1–999; przy błędnej zostaje poprzednia
     val v = text.toIntOrNull()
@@ -1045,8 +1048,8 @@ private fun BufferSettings(s: Settings) {
     OutlinedTextField(text, { t ->
         text = t.filter { it.isDigit() }.take(3)
         text.toIntOrNull()?.takeIf { it in 1..999 }?.let { s.bufferMinutes = it }
-    }, Modifier.fillMaxWidth(), label = { Text("Bufor do przodu, minuty (1–999)") }, singleLine = true, isError = !ok,
-        supportingText = if (ok) null else ({ Text("Wpisz od 1 do 999, zostaje ${s.bufferMinutes} min") }),
+    }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.main_buffer_label)) }, singleLine = true, isError = !ok,
+        supportingText = if (ok) null else ({ Text(stringResource(R.string.main_buffer_error, s.bufferMinutes)) }),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
 }
 
@@ -1065,21 +1068,20 @@ private fun OpenSubsSettings(api: Api, snack: SnackbarHostState) {
             val o = withContext(Dispatchers.IO) { api.openSubsConfig() }
             user = o.optString("username")
             when {
-                !o.optBoolean("api_key") -> "wyłączone (brak klucza)"
-                !o.optBoolean("password") -> "włączone (bez konta, pobrania anonimowe)"
-                else -> "skonfigurowane (${o.optString("username")})"
+                !o.optBoolean("api_key") -> ctx.getString(R.string.main_os_off)
+                !o.optBoolean("password") -> ctx.getString(R.string.main_os_anonymous)
+                else -> ctx.getString(R.string.main_os_configured, o.optString("username"))
             }
         }.getOrNull()
     }
-    Text("Napisy", style = MaterialTheme.typography.titleMedium)
-    Text("Szuka serwer ${api.srv.name} (subliminal): BSPlayer, Podnapisi, Addic7ed, TVsubtitles, NapiProjekt — bez kont. " +
-        "Opcjonalnie OpenSubtitles (największa baza angielskich): konto na opensubtitles.com (nie .org), " +
-        "menu konta → API consumers → New consumer. Login i hasło opcjonalne (większy limit pobrań). " + (state?.let { "OpenSubtitles: $it." } ?: ""),
+    Text(stringResource(R.string.main_subtitles), style = MaterialTheme.typography.titleMedium)
+    Text(listOfNotNull(stringResource(R.string.main_subs_info, api.srv.name),
+        state?.let { stringResource(R.string.main_subs_state, it) }).joinToString(" "),
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    OutlinedTextField(langs, { langs = it }, Modifier.fillMaxWidth(), label = { Text("Języki napisów, w kolejności (np. en,pl)") }, singleLine = true)
-    OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text("OpenSubtitles: klucz API (puste = bez zmian)") }, singleLine = true)
-    OutlinedTextField(user, { user = it }, Modifier.fillMaxWidth(), label = { Text("OpenSubtitles: login (opcjonalnie)") }, singleLine = true)
-    OutlinedTextField(pass, { pass = it }, Modifier.fillMaxWidth(), label = { Text("OpenSubtitles: hasło (opcjonalnie)") }, singleLine = true,
+    OutlinedTextField(langs, { langs = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.main_subs_langs_label)) }, singleLine = true)
+    OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.main_os_key_label)) }, singleLine = true)
+    OutlinedTextField(user, { user = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.main_os_user_label)) }, singleLine = true)
+    OutlinedTextField(pass, { pass = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.main_os_pass_label)) }, singleLine = true,
         visualTransformation = PasswordVisualTransformation())
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button({
@@ -1088,15 +1090,15 @@ private fun OpenSubsSettings(api: Api, snack: SnackbarHostState) {
                 try {
                     withContext(Dispatchers.IO) { api.setOpenSubsConfig(key.ifBlank { null }, user, pass) }
                     key = ""; pass = ""
-                    state = "zapisane"
-                    snack.showSnackbar("Zapisano na ${api.srv.name}")
+                    state = ctx.getString(R.string.main_os_saved)
+                    snack.showSnackbar(ctx.getString(R.string.main_saved_on, api.srv.name))
                 } catch (e: ApiException) {
-                    snack.showSnackbar(e.message ?: "Błąd")
+                    snack.showSnackbar(e.message ?: ctx.getString(R.string.main_error))
                 }
             }
-        }) { Text("Zapisz napisy") }
+        }) { Text(stringResource(R.string.main_save_subs)) }
         OutlinedButton({
             ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.opensubtitles.com/en/consumers")))
-        }) { Text("Strona kluczy") }
+        }) { Text(stringResource(R.string.main_keys_page)) }
     }
 }

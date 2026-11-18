@@ -50,9 +50,12 @@ object CastNet {
     private var listener: NsdManager.DiscoveryListener? = null
     private val resolveQueue = LinkedBlockingQueue<NsdServiceInfo>()
     @Volatile private var resolving = false
+    /** do komunikatów w języku telefonu (ustawiane w [discover]) */
+    @Volatile private var app: Context? = null
 
     /** Szuka Chromecastów, dopóki nie wywołasz zwróconej funkcji (Pilot na ekranie). */
     fun discover(ctx: Context): () -> Unit {
+        app = ctx.applicationContext
         val m = ctx.applicationContext.getSystemService(Context.NSD_SERVICE) as NsdManager
         nsd = m
         val l = object : NsdManager.DiscoveryListener {
@@ -218,7 +221,7 @@ object CastNet {
             waiting[id] = q
             try {
                 send(ns, dest, body.put("requestId", id).toString())
-                return q.poll(timeoutMs, TimeUnit.MILLISECONDS) ?: throw java.io.IOException("Chromecast nie odpowiedział")
+                return q.poll(timeoutMs, TimeUnit.MILLISECONDS) ?: throw java.io.IOException(app?.getString(R.string.main_cast_no_answer) ?: "Chromecast didn't respond")
             } finally {
                 waiting.remove(id)
             }

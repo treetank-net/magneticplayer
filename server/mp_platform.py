@@ -12,6 +12,8 @@ import subprocess
 import sys
 import time
 
+from mp_i18n import T
+
 LINUX = sys.platform.startswith("linux")
 WINDOWS = os.name == "nt"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -137,7 +139,7 @@ def power(action):
         return "ten system nie umie tego z agenta"
     r = subprocess.run(["systemctl", action], capture_output=True, text=True, timeout=15)
     if r.returncode != 0:
-        return f"{r.stderr.strip()} (reguła polkit z install.sh?)"
+        return f"{r.stderr.strip()} " + T("(polkit rule from install.sh?)", "(reguła polkit z install.sh?)")
     return None
 
 
@@ -195,23 +197,25 @@ def wake_info(net):
     gdy raz się udało; BIOS może mieć WoL wyłączony, czego stąd nie widać."""
     mac = net.get("mac")
     if not mac or mac == "00:00:00:00:00:00":
-        return {"method": None, "mac": None, "confidence": "no", "reason": "nie znam karty sieciowej"}
+        return {"method": None, "mac": None, "confidence": "no", "reason": T("network card unknown", "nie znam karty sieciowej")}
     base = {"method": "wol", "mac": mac}
     if net.get("wireless"):
-        return {**base, "confidence": "no", "reason": "komputer jest na Wi-Fi"}
+        return {**base, "confidence": "no", "reason": T("the computer is on Wi-Fi", "komputer jest na Wi-Fi")}
     wol = net.get("wake_on")
     if wol and "g" in wol:
-        return {**base, "confidence": "maybe", "reason": "karta ma Wake-on-LAN, nie wiadomo, czy BIOS go nie blokuje"}
+        return {**base, "confidence": "maybe", "reason": T("the card has Wake-on-LAN, but the BIOS may block it",
+                                                          "karta ma Wake-on-LAN, nie wiadomo, czy BIOS go nie blokuje")}
     if wol:
-        return {**base, "confidence": "no", "reason": f"Wake-on-LAN wyłączony na karcie ({wol}), uruchom install.sh"}
-    return {**base, "confidence": "maybe", "reason": "nie wiadomo, czy karta ma Wake-on-LAN"}
+        return {**base, "confidence": "no", "reason": T(f"Wake-on-LAN is off on the card ({wol}), run install.sh",
+                                                       f"Wake-on-LAN wyłączony na karcie ({wol}), uruchom install.sh")}
+    return {**base, "confidence": "maybe", "reason": T("unknown whether the card has Wake-on-LAN", "nie wiadomo, czy karta ma Wake-on-LAN")}
 
 
 def send_wol(mac, ip=None):
     """Magic packet na broadcast ogólny i /24 adresu `ip`, porty 9 i 7."""
     b = bytes(int(x, 16) for x in re.split(r"[:-]", mac))
     if len(b) != 6:
-        raise ValueError(f"zły MAC: {mac}")
+        raise ValueError(T(f"invalid MAC: {mac}", f"zły MAC: {mac}"))
     data = b"\xff" * 6 + b * 16
     targets = ["255.255.255.255"]
     m = re.fullmatch(r"(\d+\.\d+\.\d+)\.\d+", ip or "")

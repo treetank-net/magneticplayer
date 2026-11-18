@@ -6,6 +6,13 @@ nagłówków). Token urządzenia daje parowanie (niżej); stary wspólny `token`
 urządzenie „legacy”, dopóki ktoś go nie wyłączy. Odpowiedzi są w JSON, a błędy mają postać `{"error": "..."}`
 z kodem 4xx lub 5xx.
 
+**Język komunikatów.** Teksty dla użytkownika w odpowiedziach (`error`, `reason` w `power.wake`, `problems` oceny
+dla Chromecasta, stany źródeł napisów, nazwa profilu Chromecasta) są po angielsku albo po polsku, zależnie od
+nagłówka `Accept-Language`: najwyżej oceniony język `pl*` → polski, inaczej (także bez nagłówka) angielski. Apka
+wysyła język telefonu, strona `navigator.language`, a przeglądarka i tak dodaje ten nagłówek sama. Zlecenia w tle
+(szukanie napisów, konwersja) piszą w języku żądania, które je zaczęło. Klucze JSON i wartości stanów (`state`,
+`verdict` itd.) się nie zmieniają. Logi agenta zostają po polsku.
+
 `/media`, `/lib` i `/sub` przyjmują zamiast tokenu `?ticket=` z `POST /api/media/ticket`: podpis na jeden plik,
 ważny 12 h. Tak inny serwer (ekran) dostaje film, nie będąc sparowany z serwerem plików. Bilet na API nie działa.
 

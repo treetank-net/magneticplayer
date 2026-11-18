@@ -13,6 +13,8 @@ import sys
 import threading
 import time
 
+from mp_i18n import T, bind
+
 CAST_DIR = ".mp-cast"
 
 # koder → (etykieta dla ludzi, argumenty przed -i, filtr obrazu, argumenty kodera)
@@ -90,7 +92,7 @@ def probe(path):
     out = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", path],
                          capture_output=True, text=True, timeout=60)
     if out.returncode != 0:
-        raise ValueError((out.stderr or "ffprobe nie przeczytał pliku").strip()[-300:])
+        raise ValueError((out.stderr or T("ffprobe couldn't read the file", "ffprobe nie przeczytał pliku")).strip()[-300:])
     d = json.loads(out.stdout or "{}")
     video, audio, subs = None, [], []
     for s in d.get("streams", []):
@@ -130,28 +132,30 @@ def cast_check(info):
     problems, verdict = [], "ok"
     v_copy = bool(v and v["codec"] == "h264" and v["bits"] == 8 and (v["height"] or 0) <= 1088)
     if not v:
-        problems.append("brak obrazu")
+        problems.append(T("no video", "brak obrazu"))
         verdict = "no"
     elif v_copy:
         pass
     elif v["codec"] == "hevc" and v["bits"] == 8:
-        problems.append("obraz HEVC: zagra tylko nowszy Chromecast (z Google TV, Ultra)")
+        problems.append(T("HEVC video: only a newer Chromecast will play it (with Google TV, Ultra)",
+                          "obraz HEVC: zagra tylko nowszy Chromecast (z Google TV, Ultra)"))
         verdict = "maybe"
     else:
-        problems.append(f"obraz {v['codec'].upper()}{' 10-bit' if v['bits'] > 8 else ''}"
-                        f"{' ' + str(v['height']) + 'p' if v['height'] else ''}: Chromecast raczej nie zagra")
+        what = f"{v['codec'].upper()}{' 10-bit' if v['bits'] > 8 else ''}{' ' + str(v['height']) + 'p' if v['height'] else ''}"
+        problems.append(T(f"{what} video: Chromecast probably won't play it", f"obraz {what}: Chromecast raczej nie zagra"))
         verdict = "no"
     a_copy = bool(a and a["codec"] in AUDIO_OK)
     if a and not a_copy:
         name = (a["codec"] or "?").upper()
         if a["codec"] in AUDIO_MAYBE:
-            problems.append(f"dźwięk {name}: zależy od Chromecasta i telewizora (może grać bez dźwięku)")
+            problems.append(T(f"{name} audio: depends on the Chromecast and TV (may play without sound)",
+                              f"dźwięk {name}: zależy od Chromecasta i telewizora (może grać bez dźwięku)"))
             verdict = "maybe" if verdict == "ok" else verdict
         else:
-            problems.append(f"dźwięk {name}: Chromecast nie zagra")
+            problems.append(T(f"{name} audio: Chromecast won't play it", f"dźwięk {name}: Chromecast nie zagra"))
             verdict = "no"
     if "matroska" in (info["container"] or "") and verdict == "ok":
-        problems.append("kontener MKV: zwykle działa")
+        problems.append(T("MKV container: usually works", "kontener MKV: zwykle działa"))
     return {"verdict": verdict, "problems": problems, "video_copy": v_copy, "audio_copy": a_copy,
             "audio": a and {"codec": a["codec"], "lang": a["lang"]}}
 
@@ -166,25 +170,28 @@ def cast_check_for(info, prof):
         if x == "no" or (x == "maybe" and verdict == "ok"):
             verdict = x
     if not v:
-        problems.append("brak obrazu"); worse("no")
+        problems.append(T("no video", "brak obrazu")); worse("no")
     else:
         lim = prof["video"].get(v["codec"])
-        what = f"obraz {(v['codec'] or '?').upper()}{' 10-bit' if v['bits'] > 8 else ''}" \
+        what = f"{(v['codec'] or '?').upper()}{' 10-bit' if v['bits'] > 8 else ''}" \
                f"{' ' + str(v['height']) + 'p' if v['height'] else ''}"
         if not lim:
-            problems.append(what + ": ten Chromecast nie ma takiego dekodera"); worse("no")
+            problems.append(T(f"{what} video: this Chromecast has no such decoder",
+                              f"obraz {what}: ten Chromecast nie ma takiego dekodera")); worse("no")
         elif (v["height"] or 0) > lim[0] + 8 or v["bits"] > lim[1]:
-            problems.append(f"{what}: za dużo dla tego Chromecasta (do {lim[0]}p, {lim[1]}-bit)"); worse("no")
+            problems.append(T(f"{what} video: too much for this Chromecast (up to {lim[0]}p, {lim[1]}-bit)",
+                              f"obraz {what}: za dużo dla tego Chromecasta (do {lim[0]}p, {lim[1]}-bit)")); worse("no")
     if a:
         c, name = a["codec"], (a["codec"] or "?").upper()
         if c in prof["audio"]:
             pass
         elif c in prof["passthrough"]:
-            problems.append(f"dźwięk {name}: Chromecast przekaże go telewizorowi; bez obsługi w TV będzie cisza"); worse("maybe")
+            problems.append(T(f"{name} audio: Chromecast passes it to the TV; without TV support there will be no sound",
+                              f"dźwięk {name}: Chromecast przekaże go telewizorowi; bez obsługi w TV będzie cisza")); worse("maybe")
         else:
-            problems.append(f"dźwięk {name}: ten Chromecast go nie odtworzy"); worse("no")
+            problems.append(T(f"{name} audio: this Chromecast won't play it", f"dźwięk {name}: ten Chromecast go nie odtworzy")); worse("no")
     if "matroska" in (info["container"] or "") and not prof.get("mkv") and verdict == "ok":
-        problems.append("kontener MKV: zwykle działa")
+        problems.append(T("MKV container: usually works", "kontener MKV: zwykle działa"))
     return {"verdict": verdict, "problems": problems}
 
 
@@ -233,11 +240,11 @@ class Converter:
 
     def start(self, full, title):
         if not detect_encoder():
-            raise RuntimeError("na tym serwerze nie ma ffmpeg (zainstaluj: install-root.sh)")
+            raise RuntimeError(T("this server has no ffmpeg (install it: install-root.sh)", "na tym serwerze nie ma ffmpeg (zainstaluj: install-root.sh)"))
         info = probe(full)
         free = shutil.disk_usage(os.path.dirname(full)).free
         if free < os.path.getsize(full) * 1.1 + (1 << 30):
-            raise RuntimeError("za mało miejsca na dysku obok filmu")
+            raise RuntimeError(T("not enough disk space next to the video", "za mało miejsca na dysku obok filmu"))
         with self.lock:
             j = self.jobs.get(full)
             if j and j["state"] in ("queued", "running"):
@@ -247,7 +254,7 @@ class Converter:
             self.jobs[full] = j
             self.queue.append(full)
             if not self.worker or not self.worker.is_alive():
-                self.worker = threading.Thread(target=self._loop, daemon=True)
+                self.worker = threading.Thread(target=bind(self._loop), daemon=True)
                 self.worker.start()
             return dict(j)
 
@@ -305,7 +312,7 @@ class Converter:
         out = variant_path(full)
         os.makedirs(os.path.dirname(out), exist_ok=True)
         part = out + ".part"
-        j["encoder"] = "bez kodowania obrazu" if chk["video_copy"] else enc["label"]
+        j["encoder"] = T("no video encoding", "bez kodowania obrazu") if chk["video_copy"] else enc["label"]
         cmd = self._cmd(full, part, info, chk, enc)
         self.log("konwersja:", os.path.basename(full), "→", j["encoder"])
         dur = info["duration"] or 0
@@ -340,7 +347,7 @@ class Converter:
                 os.remove(part)
             except OSError:
                 pass
-            raise RuntimeError((err or f"ffmpeg zakończył się kodem {p.returncode}").strip())
+            raise RuntimeError((err or T(f"ffmpeg exited with code {p.returncode}", f"ffmpeg zakończył się kodem {p.returncode}")).strip())
         os.replace(part, out)
         j.update(state="done", pct=100)
         self.log("konwersja gotowa:", os.path.basename(out), f"{time.time() - j['started']:.0f}s")

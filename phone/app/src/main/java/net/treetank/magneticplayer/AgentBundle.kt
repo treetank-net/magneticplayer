@@ -47,10 +47,10 @@ object AgentBundle {
 
     /** Opis dla okna instalacji, np. „agent 1.3.0 z wydania 18.11.2026” albo „agent z apki”. */
     fun label(ctx: Context): String {
-        if (!useCached(ctx)) return "agent z apki"
+        if (!useCached(ctx)) return ctx.getString(R.string.srv_agent_from_app)
         val p = cachedVersion(ctx)!!.trim().split(" ")
         val day = java.text.SimpleDateFormat("d.MM.yyyy", java.util.Locale.ROOT).format(java.util.Date(p[0].toLong() * 1000))
-        return "agent ${p.getOrNull(2) ?: ""} z wydania $day".replace("  ", " ")
+        return ctx.getString(R.string.srv_agent_from_release, p.getOrNull(2) ?: "", day).replace("  ", " ")
     }
 
     /** Sprawdza wydanie na GitHubie (najwyżej co kilka godzin, chyba że force). Zwraca true, gdy pobrano nowszą paczkę. */

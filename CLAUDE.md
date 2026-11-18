@@ -68,6 +68,9 @@ Win11 w VirtualBox: protokół `~/.cache/winvm/LOCK` (wspólny z timeprotect), p
 
 ## Zasady
 
+- Dwa języki: angielski domyślnie, polski dla `pl*`. Apka: `res/values/strings_*.xml` (EN) i `res/values-pl/` (PL),
+  słowa jak w `docs/` i obecnym UI. Agent: `T("en", "pl")` z `mp_i18n` (język z `Accept-Language`), strona: `tr()`
+  i `data-i18n`, skrypty: `say "EN" "PL"` / `Say`. Nowy tekst dla użytkownika zawsze w obu językach.
 - Sekrety: `phone/magneticplayer.keystore`, `phone/keystore.properties` i token są poza gitem. Hooki blokują dostęp
   do `.keystore` i `~/.ssh`: nie obchodź ich, tylko daj użytkownikowi polecenie (przez schowek, `xclip`).
 - Root na PC: `ssh -t jmpc sudo …` (pkexec przez ssh nie działa). Lokalnie `pkexec`.

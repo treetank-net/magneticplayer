@@ -15,6 +15,7 @@ import shutil
 import threading
 import time
 
+from mp_i18n import T
 from mp_library import LibError, safe_join
 
 DEFAULT_SUBDIR = "Z telefonu"
@@ -38,7 +39,7 @@ def clean_name(name):
     name = (name or "").replace("\\", "/").rsplit("/", 1)[-1]
     name = re.sub(r"[\x00-\x1f\x7f]", "", name).strip().lstrip(".").strip()
     if not name:
-        raise UploadError("brak nazwy pliku", 400)
+        raise UploadError(T("missing file name", "brak nazwy pliku"), 400)
     if len(name.encode()) > 240:  # ext4: 255 bajtów, zostawiamy miejsce na „ (2)”
         stem, ext = os.path.splitext(name)
         while len((stem + ext).encode()) > 240:
@@ -83,12 +84,13 @@ class Uploads:
     def _dirs(self):
         target = self.target_dir()
         if not target:
-            raise UploadError("serwer nie ma katalogu na przesłane pliki (upload_dir ani katalogu biblioteki)", 409)
+            raise UploadError(T("the server has no folder for uploaded files (no upload_dir or library folder)",
+                                "serwer nie ma katalogu na przesłane pliki (upload_dir ani katalogu biblioteki)"), 409)
         state = os.path.join(target, STATE_DIR)
         try:
             os.makedirs(state, exist_ok=True)
         except OSError as e:
-            raise UploadError(f"nie da się założyć katalogu {target}: {e.strerror}", 500)
+            raise UploadError(T(f"can't create folder {target}: {e.strerror}", f"nie da się założyć katalogu {target}: {e.strerror}"), 500)
         return target, state
 
     def _lock(self, uid):
@@ -98,7 +100,7 @@ class Uploads:
     @staticmethod
     def _check_id(uid):
         if not ID_RE.fullmatch(uid or ""):
-            raise UploadError("zły identyfikator przesyłania", 400)
+            raise UploadError(T("invalid upload id", "zły identyfikator przesyłania"), 400)
 
     @staticmethod
     def _read_meta(path):
@@ -139,7 +141,7 @@ class Uploads:
     def _discard(rfile, length, connection):
         """Niepotrzebne ciało: małe czytamy do końca (połączenie zostaje), przy dużym zrywamy połączenie."""
         if length > 16 * CHUNK:
-            raise UploadError("plik już przesłany", 409, {"done": True})
+            raise UploadError(T("file already uploaded", "plik już przesłany"), 409, {"done": True})
         connection.settimeout(READ_TIMEOUT)
         while length > 0:
             b = rfile.read(min(CHUNK, length))
@@ -154,7 +156,7 @@ class Uploads:
         target, state = self._dirs()
         meta = self._read_meta(os.path.join(state, uid + ".json"))
         if not meta:
-            raise UploadError("nie ma takiego przesyłania", 404, {"received": 0})
+            raise UploadError(T("no such upload", "nie ma takiego przesyłania"), 404, {"received": 0})
         if meta.get("done"):
             return {"received": meta["size"], "size": meta["size"], "done": True, "name": meta.get("final")}
         try:
@@ -170,17 +172,17 @@ class Uploads:
             size = int(q.get("size", ""))
             offset = int(q.get("offset", "0"))
         except ValueError:
-            raise UploadError("size i offset muszą być liczbami", 400)
+            raise UploadError(T("size and offset must be numbers", "size i offset muszą być liczbami"), 400)
         if length is None:
-            raise UploadError("brak Content-Length", 411)
+            raise UploadError(T("missing Content-Length", "brak Content-Length"), 411)
         if size < 0 or offset < 0 or length < 0 or offset + length > size:
-            raise UploadError("kawałek wychodzi poza rozmiar pliku", 400)
+            raise UploadError(T("chunk goes past the file size", "kawałek wychodzi poza rozmiar pliku"), 400)
         name = clean_name(q.get("name"))
         target, state = self._dirs()
         lock = self._lock(uid)
         # poprzednie połączenie tego samego pliku może jeszcze wisieć (telefon zgubił Wi-Fi): czekamy, aż wygaśnie
         if not lock.acquire(timeout=READ_TIMEOUT + 10):
-            raise UploadError("ten plik jest właśnie przesyłany", 409)
+            raise UploadError(T("this file is being uploaded right now", "ten plik jest właśnie przesyłany"), 409)
         try:
             meta_p = os.path.join(state, uid + ".json")
             part_p = os.path.join(state, uid + ".part")
@@ -194,11 +196,12 @@ class Uploads:
                 meta = None
             received = os.path.getsize(part_p) if meta and os.path.exists(part_p) else 0
             if offset != received:
-                raise UploadError(f"serwer ma {received} B, nie {offset}", 409, {"received": received})
+                raise UploadError(T(f"the server has {received} B, not {offset}", f"serwer ma {received} B, nie {offset}"), 409, {"received": received})
             need = size - received
             free = shutil.disk_usage(target).free
             if need + RESERVE > free:
-                raise UploadError(f"za mało miejsca na serwerze (wolne {free >> 20} MB, potrzeba {need >> 20} MB)", 507,
+                raise UploadError(T(f"not enough space on the server ({free >> 20} MB free, {need >> 20} MB needed)",
+                                    f"za mało miejsca na serwerze (wolne {free >> 20} MB, potrzeba {need >> 20} MB)"), 507,
                                   {"received": received, "free": free})
             if not meta:
                 meta = {"name": name, "size": size, "started": time.time()}
@@ -231,7 +234,7 @@ class Uploads:
                     pass
             received = os.path.getsize(part_p)
             if left > 0:
-                raise UploadError("połączenie przerwane w trakcie", 400, {"received": received})
+                raise UploadError(T("connection interrupted", "połączenie przerwane w trakcie"), 400, {"received": received})
             if received < size:
                 return {"received": received, "size": size, "done": False, "name": name}
             final = free_name(target, name)
@@ -254,7 +257,7 @@ def handle(handler, method, uid, q):
             n = handler.headers.get("Content-Length")
             res = up.put(uid, q, handler.rfile, int(n) if n and n.isdigit() else None, handler.connection)
             return handler.send_json(res)
-        raise UploadError("nie ma takiego endpointu", 404)
+        raise UploadError(T("no such endpoint", "nie ma takiego endpointu"), 404)
     except UploadError as e:
         if method == "PUT":
             # ciało mogło zostać nieprzeczytane: bez zamknięcia następne zapytanie w tym połączeniu byłoby śmieciem

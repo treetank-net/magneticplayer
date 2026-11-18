@@ -9,6 +9,8 @@ import sys
 import threading
 import time
 
+from mp_i18n import T
+
 from mp_renderers import profile_info
 
 VENV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv")
@@ -33,7 +35,7 @@ def _pychromecast():
             import pychromecast
             import zeroconf
         except ImportError:
-            raise CastError("brak pychromecast — uruchom ponownie server/install.sh", 501)
+            raise CastError(T("pychromecast is missing — run server/install.sh again", "brak pychromecast — uruchom ponownie server/install.sh"), 501)
         _pc = (pychromecast, zeroconf)
     return _pc
 
@@ -102,7 +104,7 @@ class Casts:
         self._watch_all()
         c = self.casts.get(dev_id)
         if not c:
-            raise CastError("nie widzę tego Chromecasta w sieci", 404)
+            raise CastError(T("can't see this Chromecast on the network", "nie widzę tego Chromecasta w sieci"), 404)
         c.wait(timeout=10)
         return c
 
@@ -166,7 +168,7 @@ class Casts:
     def control(self, cmd, value=None, dev_id=None):
         u, c = self._pick(dev_id)
         if not c:
-            raise CastError("na żadnym Chromecaście nic nie gra", 409)
+            raise CastError(T("nothing is playing on any Chromecast", "na żadnym Chromecaście nic nie gra"), 409)
         mc = c.media_controller
         if cmd == "toggle":
             mc.pause() if mc.status.player_state == "PLAYING" else mc.play()
@@ -187,5 +189,5 @@ class Casts:
             if u == self.uuid:
                 self.uuid = None
         else:
-            raise CastError("nieznane polecenie: " + str(cmd), 400)
+            raise CastError(T("unknown command: ", "nieznane polecenie: ") + str(cmd), 400)
         return {"ok": True}

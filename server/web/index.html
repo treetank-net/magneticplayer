@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -78,33 +78,194 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 <header>
   <h1>MagneticPlayer</h1>
   <span id="status">…</span>
-  <button class="btn" id="btnSuspend" title="Uśpij komputer">Uśpij</button>
-  <button class="btn" id="btnScreen" title="Włącz i odblokuj ekran komputera">Ekran</button>
+  <button class="btn" id="btnSuspend" data-i18n-title="sleepTitle" data-i18n="sleep">Sleep</button>
+  <button class="btn" id="btnScreen" data-i18n-title="screenTitle" data-i18n="screen">Screen</button>
   <nav>
-    <button data-tab="torrents" class="active">Torrenty</button>
-    <button data-tab="library">Biblioteka</button>
-    <button data-tab="remote">Pilot</button>
+    <button data-tab="torrents" class="active" data-i18n="tabTorrents">Torrents</button>
+    <button data-tab="library" data-i18n="tabLibrary">Library</button>
+    <button data-tab="remote" data-i18n="tabRemote">Remote</button>
   </nav>
 </header>
 <main>
   <section id="login" hidden class="card">
-    <p class="name">Sparuj tę przeglądarkę</p>
-    <p class="muted">Kod parowania (np. <span class="kbd">7KQ-M4X</span>) da apka na telefonie: Ustawienia → serwer → „Sparuj kolejne”, albo komputer: <span class="kbd">magneticplayer_agent.py --pair</span>. Działa też stary token. Zapamiętam dostęp w tej przeglądarce.</p>
-    <div class="row"><input type="text" id="tokenInput" class="grow" placeholder="kod parowania albo token" autocomplete="off"><button class="btn primary" id="tokenSave">Połącz</button></div>
-    <p class="name" style="margin-top:18px">Albo poproś o dostęp</p>
-    <p class="muted">Domownik dostanie prośbę w apce na telefonie (zobaczy ją, gdy apka połączy się z tym komputerem) i wybierze, czy wpuścić jako gościa, czy domownika.</p>
-    <div class="row"><input type="text" id="reqName" class="grow" placeholder="kim jesteś, np. Laptop Kasi" maxlength="60" autocomplete="off"><button class="btn" id="reqSend">Poproś o dostęp</button></div>
+    <p class="name" data-i18n="loginTitle"></p>
+    <p class="muted" data-i18n-html="loginHelp"></p>
+    <div class="row"><input type="text" id="tokenInput" class="grow" data-i18n-placeholder="tokenPh" autocomplete="off"><button class="btn primary" id="tokenSave" data-i18n="connect"></button></div>
+    <p class="name" style="margin-top:18px" data-i18n="reqTitle"></p>
+    <p class="muted" data-i18n="reqHelp"></p>
+    <div class="row"><input type="text" id="reqName" class="grow" data-i18n-placeholder="reqPh" maxlength="60" autocomplete="off"><button class="btn" id="reqSend" data-i18n="reqSend"></button></div>
     <p class="muted" id="reqState"></p>
   </section>
   <section id="torrents"></section>
   <section id="library" hidden></section>
   <section id="remote" hidden></section>
 </main>
-<dialog id="dlg"><div class="head"><h2 id="dlgTitle"></h2><button class="btn" id="dlgClose">Zamknij</button></div><div class="body" id="dlgBody"></div></dialog>
+<dialog id="dlg"><div class="head"><h2 id="dlgTitle"></h2><button class="btn" id="dlgClose" data-i18n="close"></button></div><div class="body" id="dlgBody"></div></dialog>
 <div id="toast"></div>
 
 <script>
 "use strict";
+// ---------------------------------------------------------------- język (navigator.language: pl* → polski, inaczej angielski)
+const LANG = /^pl/i.test(navigator.language || "") ? "pl" : "en";
+document.documentElement.lang = LANG;
+// wartości: tekst albo funkcja (argumenty z tr(key, …args)); brak klucza w pl → en
+const T = {
+  en: {
+    sleep: "Sleep", sleepTitle: "Put the computer to sleep", screen: "Screen", screenTitle: "Turn on and unlock the computer screen",
+    tabTorrents: "Torrents", tabLibrary: "Library", tabRemote: "Remote",
+    loginTitle: "Pair this browser",
+    loginHelp: 'Get a pairing code (e.g. <span class="kbd">7KQ-M4X</span>) from the phone app: Settings → server → “Pair another device”, or on the computer: <span class="kbd">magneticplayer_agent.py --pair</span>. An old token works too. This browser will remember the access.',
+    tokenPh: "pairing code or token", connect: "Connect",
+    reqTitle: "Or request access",
+    reqHelp: "A household member will get the request in the phone app (they'll see it when the app connects to this computer) and choose whether to let you in as a guest or as a household member.",
+    reqPh: "who you are, e.g. Kate's laptop", reqSend: "Request access", close: "Close",
+    browser: "Browser", file: "file", noResponse: "The computer isn't responding",
+    afterNone: "nothing", afterStop: "stop the torrent", afterSuspend: "put the computer to sleep",
+    reqNameEmpty: "Enter who you are: a household member will see this name",
+    reqSent: "Sent. Waiting for a household member to approve… (ask them to open the MagneticPlayer app)",
+    reqExpired: "The request has expired. You can send it again.",
+    pairing: "Pairing: ", letInGuest: "Access granted as a guest", letIn: "Access granted",
+    reqDenied: "A household member declined the request.",
+    sleepConfirm: "Put the computer to sleep? You can wake it from the phone app.",
+    sleeping: "Putting the computer to sleep", screenOn: "Screen on",
+    online: name => `● ${name} — online`,
+    offline: "● the computer isn't responding (asleep or off?) — wake it from the phone app",
+    playingOnComputer: "Playing on the computer", onComputer: "▶ On computer", inBrowser: "In browser",
+    linkCopied: "Link copied — paste it in VLC: Media → Open Network Stream", vlcPrompt: "VLC link:", vlcLink: "VLC link",
+    subsBtn: "Subtitles…",
+    verdictOk: "Chromecast should play this.", verdictMaybe: "Chromecast may have trouble:", verdictNo: "Chromecast probably won't play this:",
+    findingCasts: "Looking for Chromecasts on the network…", checkingFormat: "Checking the format…",
+    noFfmpeg: "The server has no ffmpeg, so the format can't be checked.",
+    perOk: "plays without preparing", perMaybe: "may have trouble", perNo: "probably won't play",
+    hasVariant: size => `✓ There's a Chromecast version (${size}); it will be used.`,
+    variantRemoved: "Version removed", removeVariant: "Remove this version",
+    finishing: "Finishing (moving the index to the start of the file), this may take a minute…",
+    preparingPct: (enc, pct) => `Preparing (${enc || "queued"})… ${pct}%`,
+    faster: x => ` · ${x}× faster than real time`,
+    cancel: "Cancel", failed: "Failed: ",
+    videoSame: "video unchanged", videoVia: enc => "video: " + enc, audioSame: "audio unchanged", audioAac: "audio → AAC",
+    preparing: "Preparing", prepare: "Prepare a Chromecast version", downloadFirst: "It has to finish downloading first.",
+    toCast: "To Chromecast: ", playingOn: name => "Playing on " + name, play: "▶ Play",
+    noCasts: "No Chromecast found on this network.",
+    notMagnet: "That's not a magnet link", added: "Added to downloads", download: "Download",
+    sequential: " sequential download (watch while downloading)", afterLabel: "after download: ", afterTitle: "After download",
+    saved: "Saved", resume: "Resume", pause: "Pause", peers: n => ` · ${n} peers`, left: x => ` · ${x} left`,
+    loadingFiles: "Loading files…",
+    readyAll: "ready to watch in full", readyNone: "can't watch yet — the beginning hasn't downloaded",
+    readySec: (a, b, pct) => `ready to watch: about ${a} of ${b} (${pct}%)`, readyPct: pct => `ready to watch: ${pct}% from the start`,
+    noTorrents: "No torrents.", earlier: n => `Earlier requests from the phone (${n})`,
+    downloadingAgain: "Downloading again", downloadAgain: "Download again",
+    libHelp: "Folders are added and removed in the phone app.", unavailable: " — unavailable", folders: "Folders",
+    subsList: " · subtitles: ", noVideos: "No videos in this folder.",
+    fullscreen: "Fullscreen", exitFullscreen: "Exit fullscreen",
+    idle: "Nothing is playing on the computer.", idleHelp: "Pick a video in Torrents or Library → “On computer”.",
+    noPlayer: "This server doesn't play on its own screen.", noPlayerHelp: "It shares files: in Library use “In browser” or “Chromecast…”.",
+    video: "video ", quieter: "🔉 quieter", louder: "🔊 louder", stop: "⏹ Stop", audio: "audio ", subs: "subtitles ",
+    subDelay: d => `subtitles ${d} s`, findSubs: "Find subtitles…",
+    keys: "Keys: ", space: "space", kPause: " pause · ", kVolume: " volume · ", kFullscreen: " fullscreen · ", kMute: " mute",
+    alsoPlaying: "Also playing", stPlaying: "playing", stPaused: "paused", startedBy: name => " · started by " + name,
+    volTv: "volume: TV remote", vol: v => `volume ${v}%`, muted: " (muted)",
+    off: "off", fromFile: "from file", track: id => "track " + id,
+    titlePh: "title (e.g. in English)", yearPh: "year", langsTitle: "languages, comma-separated",
+    searchTitle: "Search with this title", subsFor: name => "Subtitles — " + name, whatsPlaying: "what's playing",
+    already: list => "Already here: " + list,
+    phaseFile: "Hashing the file and recognizing the title…",
+    phaseMatch: (a, b) => `Matching results to the file: ${a}/${b}`,
+    phaseRound2: q => `Nothing matching — second round with the title from the name: “${q}”`,
+    phaseSearch: q => `Searching: “${q}”`,
+    stopping: "Finishing…", enough: "⏹ That's enough — show what's found",
+    hidden: n => `Hid ${n} results for other videos (different title, hash doesn't match).`,
+    nothing: (q, langs) => `Nothing found for “${q}” (${langs}). If the file has a title in another language, enter the English or original title below.`,
+    downloaded: name => "Downloaded: " + name, matches: "✔ matches the file", hi: "hearing impaired",
+    searching: "searching…", results: (n, s) => `${n} results · ${s} s`, waiting: "waiting",
+    cantPlay: "The browser can't play this file (usually HEVC/x265, AV1 or E-AC3/DTS audio). Use “On computer” or “VLC link”.",
+    playingFrom: t => "Playing on the computer from " + t, toComputerHere: "▶ On computer from here",
+    subsCount: n => `subtitles: ${n} (player menu)`, noSubs: "no subtitles next to the file",
+  },
+  pl: {
+    sleep: "Uśpij", sleepTitle: "Uśpij komputer", screen: "Ekran", screenTitle: "Włącz i odblokuj ekran komputera",
+    tabTorrents: "Torrenty", tabLibrary: "Biblioteka", tabRemote: "Pilot",
+    loginTitle: "Sparuj tę przeglądarkę",
+    loginHelp: 'Kod parowania (np. <span class="kbd">7KQ-M4X</span>) da apka na telefonie: Ustawienia → serwer → „Sparuj kolejne”, albo komputer: <span class="kbd">magneticplayer_agent.py --pair</span>. Działa też stary token. Zapamiętam dostęp w tej przeglądarce.',
+    tokenPh: "kod parowania albo token", connect: "Połącz",
+    reqTitle: "Albo poproś o dostęp",
+    reqHelp: "Domownik dostanie prośbę w apce na telefonie (zobaczy ją, gdy apka połączy się z tym komputerem) i wybierze, czy wpuścić jako gościa, czy domownika.",
+    reqPh: "kim jesteś, np. Laptop Kasi", reqSend: "Poproś o dostęp", close: "Zamknij",
+    browser: "Przeglądarka", file: "plik", noResponse: "Komputer nie odpowiada",
+    afterNone: "nic", afterStop: "zatrzymaj torrent", afterSuspend: "uśpij komputer",
+    reqNameEmpty: "Wpisz, kim jesteś: domownik zobaczy tę nazwę",
+    reqSent: "Wysłano. Czekam na zgodę domownika… (niech otworzy apkę MagneticPlayer)",
+    reqExpired: "Prośba wygasła. Możesz wysłać ją jeszcze raz.",
+    pairing: "Parowanie: ", letInGuest: "Wpuszczono jako gościa", letIn: "Wpuszczono",
+    reqDenied: "Domownik odrzucił prośbę.",
+    sleepConfirm: "Uśpić komputer? Obudzisz go z apki na telefonie.",
+    sleeping: "Usypiam komputer", screenOn: "Ekran włączony",
+    online: name => `● ${name} — działa`,
+    offline: "● komputer nie odpowiada (śpi?) — obudź go z apki na telefonie",
+    playingOnComputer: "Gra na komputerze", onComputer: "▶ Na komputerze", inBrowser: "W przeglądarce",
+    linkCopied: "Link skopiowany — wklej w VLC: Media → Otwórz strumień sieciowy", vlcPrompt: "Link do VLC:", vlcLink: "Link do VLC",
+    subsBtn: "Napisy…",
+    verdictOk: "Chromecast powinien to zagrać.", verdictMaybe: "Chromecast może mieć kłopot:", verdictNo: "Chromecast raczej tego nie zagra:",
+    findingCasts: "Szukam Chromecastów w sieci…", checkingFormat: "Sprawdzam format…",
+    noFfmpeg: "Na serwerze nie ma ffmpeg, więc nie sprawdzę formatu.",
+    perOk: "zagra bez przygotowania", perMaybe: "może mieć kłopot", perNo: "raczej nie zagra",
+    hasVariant: size => `✓ Jest wersja dla Chromecasta (${size}), pójdzie ona.`,
+    variantRemoved: "Usunięto wersję", removeVariant: "Usuń tę wersję",
+    finishing: "Kończę zapis (przenoszę indeks na początek pliku), to może potrwać minutę…",
+    preparingPct: (enc, pct) => `Przygotowuję (${enc || "w kolejce"})… ${pct}%`,
+    faster: x => ` · ${x}× szybciej niż film`,
+    cancel: "Przerwij", failed: "Nie wyszło: ",
+    videoSame: "obraz bez zmian", videoVia: enc => "obraz: " + enc, audioSame: "dźwięk bez zmian", audioAac: "dźwięk → AAC",
+    preparing: "Przygotowuję", prepare: "Przygotuj wersję dla Chromecasta", downloadFirst: "Najpierw musi się pobrać w całości.",
+    toCast: "Na Chromecasta: ", playingOn: name => "Gra na " + name, play: "▶ Odtwórz",
+    noCasts: "Nie widzę żadnego Chromecasta w tej sieci.",
+    notMagnet: "To nie jest magnet link", added: "Dodano do pobierania", download: "Pobierz",
+    sequential: " pobieranie po kolei (można oglądać w trakcie)", afterLabel: "po pobraniu: ", afterTitle: "Po pobraniu",
+    saved: "Zapisano", resume: "Wznów", pause: "Wstrzymaj", peers: n => ` · ${n} peerów`, left: x => ` · zostało ${x}`,
+    loadingFiles: "Wczytuję pliki…",
+    readyAll: "do obejrzenia całość", readyNone: "jeszcze nie da się oglądać — początek się nie pobrał",
+    readySec: (a, b, pct) => `do obejrzenia: ok. ${a} z ${b} (${pct}%)`, readyPct: pct => `do obejrzenia: ${pct}% od początku`,
+    noTorrents: "Brak torrentów.", earlier: n => `Wcześniejsze zlecenia z telefonu (${n})`,
+    downloadingAgain: "Pobieram znowu", downloadAgain: "Pobierz znowu",
+    libHelp: "Katalogi dodajesz i usuwasz w apce na telefonie.", unavailable: " — niedostępny", folders: "Katalogi",
+    subsList: " · napisy: ", noVideos: "Brak filmów w tym katalogu.",
+    fullscreen: "Pełny ekran", exitFullscreen: "Wyjdź z pełnego ekranu",
+    idle: "Na komputerze nic nie gra.", idleHelp: "Wybierz film w Torrentach albo Bibliotece → „Na komputerze”.",
+    noPlayer: "Ten serwer nie odtwarza na swoim ekranie.", noPlayerHelp: "Udostępnia pliki: w Bibliotece „W przeglądarce” albo „Chromecast…”.",
+    video: "wideo ", quieter: "🔉 ciszej", louder: "🔊 głośniej", stop: "⏹ Zakończ", audio: "audio ", subs: "napisy ",
+    subDelay: d => `napisy ${d.replace(".", ",")} s`, findSubs: "Szukaj napisów…",
+    keys: "Klawisze: ", space: "spacja", kPause: " pauza · ", kVolume: " głośność · ", kFullscreen: " pełny ekran · ", kMute: " wycisz",
+    alsoPlaying: "Gra też", stPlaying: "gra", stPaused: "pauza", startedBy: name => " · puścił " + name,
+    volTv: "głośność: pilot telewizora", vol: v => `głośność ${v}%`, muted: " (wyciszone)",
+    off: "wyłączone", fromFile: "z pliku", track: id => "ścieżka " + id,
+    titlePh: "tytuł (np. angielski)", yearPh: "rok", langsTitle: "języki, po przecinku",
+    searchTitle: "Szukaj z tym tytułem", subsFor: name => "Napisy — " + name, whatsPlaying: "to, co gra",
+    already: list => "Już są: " + list,
+    phaseFile: "Liczę hash pliku i rozpoznaję tytuł…",
+    phaseMatch: (a, b) => `Porównuję wyniki z plikiem: ${a}/${b}`,
+    phaseRound2: q => `Nic pasującego — druga runda z tytułem z nazwy: „${q}”`,
+    phaseSearch: q => `Szukam: „${q}”`,
+    stopping: "Kończę…", enough: "⏹ Wystarczy — pokaż, co już jest",
+    hidden: n => `Ukryto ${n} wyników do innych filmów (inny tytuł, hash się nie zgadza).`,
+    nothing: (q, langs) => `Nic nie znaleziono dla „${q}” (${langs}). Jeśli plik ma tytuł w innym języku, wpisz niżej tytuł angielski albo oryginalny.`,
+    downloaded: name => "Pobrano: " + name, matches: "✔ pasuje do pliku", hi: "dla niesłyszących",
+    searching: "szukam…", results: (n, s) => `${n} wyn. · ${s} s`, waiting: "czeka",
+    cantPlay: "Przeglądarka nie umie odtworzyć tego pliku (zwykle HEVC/x265, AV1 albo dźwięk E-AC3/DTS). Użyj „Na komputerze” albo „Link do VLC”.",
+    playingFrom: t => "Gra na komputerze od " + t, toComputerHere: "▶ Na komputer od tego miejsca",
+    subsCount: n => `napisy: ${n} (menu odtwarzacza)`, noSubs: "bez napisów obok pliku",
+  },
+};
+/** Tekst interfejsu w bieżącym języku. */
+function tr(key, ...args) {
+  const v = T[LANG][key] ?? T.en[key];
+  return typeof v === "function" ? v(...args) : v ?? key;
+}
+// statyczne teksty w HTML: data-i18n (tekst), data-i18n-html (z <span>), data-i18n-title, data-i18n-placeholder
+document.querySelectorAll("[data-i18n]").forEach(e => e.textContent = tr(e.dataset.i18n));
+document.querySelectorAll("[data-i18n-html]").forEach(e => e.innerHTML = tr(e.dataset.i18nHtml));
+document.querySelectorAll("[data-i18n-title]").forEach(e => e.title = tr(e.dataset.i18nTitle));
+document.querySelectorAll("[data-i18n-placeholder]").forEach(e => e.placeholder = tr(e.dataset.i18nPlaceholder));
+
 // ---------------------------------------------------------------- stan i API
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -127,14 +288,14 @@ const isCode = v => /^[A-Za-z0-9]{3}-?[A-Za-z0-9]{3}$/.test(v.trim());
 /** Jednorazowy kod parowania → własny token tej przeglądarki. */
 async function pairWith(code, name) {
   const ua = navigator.userAgent, os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
-  const r = await fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, name: name || "Przeglądarka" + (os ? " · " + os : "") }) });
+  const r = await fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json", "Accept-Language": LANG },
+    body: JSON.stringify({ code, name: name || tr("browser") + (os ? " · " + os : "") }) });
   let j = null; try { j = await r.json(); } catch {}
   if (!r.ok) throw new Error((j && j.error) || "HTTP " + r.status);
   token = j.token; store.set("mp_token", token);
   await refreshInfo();
 }
-const AFTER = { none: "nic", stop: "zatrzymaj torrent", suspend: "uśpij komputer" };
+const AFTER = { none: tr("afterNone"), stop: tr("afterStop"), suspend: tr("afterSuspend") };
 const PROVIDERS = { opensubtitlescom: "OpenSubtitles", podnapisi: "Podnapisi", bsplayer: "BSPlayer",
   gestdown: "Gestdown (Addic7ed)", napiprojekt: "NapiProjekt", tvsubtitles: "TVsubtitles" };
 const subLangs = () => store.get("mp_sublangs") || "en,pl";
@@ -145,11 +306,11 @@ async function api(path, body, opts = {}) {
   try {
     r = await fetch(path, {
       method: body !== undefined ? "POST" : "GET",
-      headers: { "Authorization": "Bearer " + token, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+      headers: { "Authorization": "Bearer " + token, "Accept-Language": LANG, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: opts.signal,
     });
-  } catch (e) { throw new ApiError("Komputer nie odpowiada", 0); }
+  } catch (e) { throw new ApiError(tr("noResponse"), 0); }
   const txt = await r.text();
   let j = null; try { j = JSON.parse(txt); } catch {}
   if (!r.ok) {
@@ -161,7 +322,7 @@ async function api(path, body, opts = {}) {
 const q = o => Object.entries(o).map(([k, v]) => k + "=" + encodeURIComponent(v)).join("&");
 const refQuery = ref => q(ref.playing ? { playing: 1 } : ref.torrent_id ? { torrent_id: ref.torrent_id, file_index: ref.file_index } : { root: ref.root, path: ref.path });
 const mediaUrl = ref => (ref.torrent_id
-  ? `/media/${ref.torrent_id}/${ref.file_index}/${encodeURIComponent(ref.title || "plik")}`
+  ? `/media/${ref.torrent_id}/${ref.file_index}/${encodeURIComponent(ref.title || tr("file"))}`
   : `/lib/${ref.root}/${ref.path.split("/").map(encodeURIComponent).join("/")}`) + "?token=" + encodeURIComponent(token);
 const subUrl = (ref, name, vtt) => `/sub?${refQuery(ref)}&name=${encodeURIComponent(name)}${vtt ? "&vtt=1" : ""}&token=${encodeURIComponent(token)}`;
 
@@ -218,31 +379,31 @@ $("#reqName").value = store.get("mp_reqname") || "";
 $("#reqName").addEventListener("keydown", e => { if (e.key === "Enter") $("#reqSend").click(); });
 $("#reqSend").onclick = async () => {
   const name = $("#reqName").value.trim(), st = $("#reqState");
-  if (!name) return toast("Wpisz, kim jesteś: domownik zobaczy tę nazwę");
+  if (!name) return toast(tr("reqNameEmpty"));
   store.set("mp_reqname", name);
   clearTimeout(reqTimer);
   let req;
   try {
-    const r = await fetch("/api/access/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    const r = await fetch("/api/access/request", { method: "POST", headers: { "Content-Type": "application/json", "Accept-Language": LANG }, body: JSON.stringify({ name }) });
     req = await r.json();
     if (!r.ok) throw new Error(req.error || "HTTP " + r.status);
   } catch (e) { st.textContent = e.message; return; }
   $("#reqSend").disabled = true;
-  st.textContent = "Wysłano. Czekam na zgodę domownika… (niech otworzy apkę MagneticPlayer)";
+  st.textContent = tr("reqSent");
   const poll = async () => {
     let j;
     try {
-      const r = await fetch(`/api/access/request/${req.id}?secret=${encodeURIComponent(req.secret)}`);
+      const r = await fetch(`/api/access/request/${req.id}?secret=${encodeURIComponent(req.secret)}`, { headers: { "Accept-Language": LANG } });
       j = await r.json();
       if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
-    } catch (e) { $("#reqSend").disabled = false; st.textContent = "Prośba wygasła. Możesz wysłać ją jeszcze raz."; return; }
+    } catch (e) { $("#reqSend").disabled = false; st.textContent = tr("reqExpired"); return; }
     if (j.state === "approved" && j.code) {
-      try { await pairWith(j.code, name); } catch (e) { $("#reqSend").disabled = false; st.textContent = "Parowanie: " + e.message; return; }
+      try { await pairWith(j.code, name); } catch (e) { $("#reqSend").disabled = false; st.textContent = tr("pairing") + e.message; return; }
       st.textContent = ""; $("#reqSend").disabled = false;
-      toast(j.role === "guest" ? "Wpuszczono jako gościa" : "Wpuszczono");
+      toast(j.role === "guest" ? tr("letInGuest") : tr("letIn"));
       $("#login").hidden = true; return setTab(tab);
     }
-    if (j.state === "denied") { $("#reqSend").disabled = false; st.textContent = "Domownik odrzucił prośbę."; return; }
+    if (j.state === "denied") { $("#reqSend").disabled = false; st.textContent = tr("reqDenied"); return; }
     reqTimer = setTimeout(poll, 3000);
   };
   reqTimer = setTimeout(poll, 3000);
@@ -255,8 +416,8 @@ function setTab(t) {
   if (!token) return showLogin();
   ({ torrents: Torrents.show, library: Library.show, remote: Remote.show })[t]();
 }
-$("#btnSuspend").onclick = () => { if (confirm("Uśpić komputer? Obudzisz go z apki na telefonie.")) act(() => api("/api/system/suspend", {}), "Usypiam komputer"); };
-$("#btnScreen").onclick = () => act(() => api("/api/system/screen_on", {}), "Ekran włączony");
+$("#btnSuspend").onclick = () => { if (confirm(tr("sleepConfirm"))) act(() => api("/api/system/suspend", {}), tr("sleeping")); };
+$("#btnScreen").onclick = () => act(() => api("/api/system/screen_on", {}), tr("screenOn"));
 let hostname = "", info = null;
 /** Co serwer umie (features, power): chowa Uśpij, Ekran, Torrenty i „Na komputerze”, gdy ich tu nie ma. */
 function applyInfo() {
@@ -278,7 +439,7 @@ async function ping() {
     if (online && !info && token) { try { info = await api("/api/info"); hostname = info.name || info.hostname; applyInfo(); } catch {} }
   } catch { online = false; }
   const s = $("#status");
-  s.textContent = online ? "● " + (hostname || location.hostname) + " — działa" : "● komputer nie odpowiada (śpi?) — obudź go z apki na telefonie";
+  s.textContent = online ? tr("online", hostname || location.hostname) : tr("offline");
   s.className = online ? "on" : "off";
 }
 setInterval(ping, 5000);
@@ -286,58 +447,58 @@ setInterval(ping, 5000);
 // ---------------------------------------------------------------- akcje dla pliku
 function mediaActions(ref, isVideo = true) {
   return h("div", { class: "row", style: "margin-top:6px" },
-    h("button", { class: "btn primary needs-player", onclick: () => act(async () => { await api("/api/player/open", ref); setTab("remote"); }, "Gra na komputerze") }, "▶ Na komputerze"),
-    isVideo && h("button", { class: "btn", onclick: () => Player.open(ref) }, "W przeglądarce"),
+    h("button", { class: "btn primary needs-player", onclick: () => act(async () => { await api("/api/player/open", ref); setTab("remote"); }, tr("playingOnComputer")) }, tr("onComputer")),
+    isVideo && h("button", { class: "btn", onclick: () => Player.open(ref) }, tr("inBrowser")),
     isVideo && h("button", { class: "btn", onclick: () => CastUi.open(ref) }, "Chromecast…"),
     h("button", { class: "btn", onclick: () => { const u = new URL(mediaUrl(ref), location.href).href;
-      navigator.clipboard?.writeText(u).then(() => toast("Link skopiowany — wklej w VLC: Media → Otwórz strumień sieciowy"), () => prompt("Link do VLC:", u)); } }, "Link do VLC"),
-    isVideo && h("button", { class: "btn", onclick: () => Subs.open(ref) }, "Napisy…"),
+      navigator.clipboard?.writeText(u).then(() => toast(tr("linkCopied")), () => prompt(tr("vlcPrompt"), u)); } }, tr("vlcLink")),
+    isVideo && h("button", { class: "btn", onclick: () => Subs.open(ref) }, tr("subsBtn")),
   );
 }
 
 // ---------------------------------------------------------------- Chromecast (sterowany przez agenta)
 const CastUi = (() => {
-  const VERDICT = { ok: "Chromecast powinien to zagrać.", maybe: "Chromecast może mieć kłopot:", no: "Chromecast raczej tego nie zagra:" };
+  const VERDICT = { ok: tr("verdictOk"), maybe: tr("verdictMaybe"), no: tr("verdictNo") };
   function open(ref) {
-    const devs = h("div", {}, h("p", { class: "muted" }, "Szukam Chromecastów w sieci…"));
-    const fmt = h("div", { style: "margin-bottom:10px" }, h("p", { class: "muted" }, "Sprawdzam format…"));
+    const devs = h("div", {}, h("p", { class: "muted" }, tr("findingCasts")));
+    const fmt = h("div", { style: "margin-bottom:10px" }, h("p", { class: "muted" }, tr("checkingFormat")));
     let timer = null;
     async function probe() {
       let d;
       try { d = await api("/api/media/probe?" + refQuery(ref)); } catch (e) { put(fmt, h("p", { class: "err" }, e.message)); return; }
-      if (!d.ffmpeg) { put(fmt, h("p", { class: "muted" }, "Na serwerze nie ma ffmpeg, więc nie sprawdzę formatu.")); return; }
+      if (!d.ffmpeg) { put(fmt, h("p", { class: "muted" }, tr("noFfmpeg"))); return; }
       const c = d.cast, j = d.job, rows = [], per = d.cast_devices || [];
       // agent zna model naszych Chromecastów: ocena dla każdego i „Przygotuj” tylko, gdy któryś ma kłopot
       const need = per.length ? per.some(x => x.verdict !== "ok") : c.verdict !== "ok";
-      const PER = { ok: "zagra bez przygotowania", maybe: "może mieć kłopot", no: "raczej nie zagra" };
-      if (d.variant) rows.push(h("p", {}, "✓ Jest wersja dla Chromecasta (" + bytes(d.variant.size) + "), pójdzie ona."),
-        h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, remove: true }), "Usunięto wersję").then(probe) }, "Usuń tę wersję"));
+      const PER = { ok: tr("perOk"), maybe: tr("perMaybe"), no: tr("perNo") };
+      if (d.variant) rows.push(h("p", {}, tr("hasVariant", bytes(d.variant.size))),
+        h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, remove: true }), tr("variantRemoved")).then(probe) }, tr("removeVariant")));
       else {
         if (per.length) per.forEach(x => rows.push(h("p", { class: x.verdict === "ok" ? "" : "err" }, `${x.name} (${x.label}): ${PER[x.verdict]}`),
           ...x.problems.map(y => h("p", { class: "muted" }, "· " + y))));
         else rows.push(h("p", {}, VERDICT[c.verdict]), ...c.problems.map(x => h("p", { class: "muted" }, "· " + x)));
         if (j && (j.state === "queued" || j.state === "running")) {
-          rows.push(h("p", {}, j.finishing ? "Kończę zapis (przenoszę indeks na początek pliku), to może potrwać minutę…"
-              : `Przygotowuję (${j.encoder || "w kolejce"})… ${Math.round(j.pct)}%` + (j.speed ? ` · ${j.speed.toFixed(1)}× szybciej niż film` : "")),
-            bar(j.pct / 100), h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, cancel: true })).then(probe) }, "Przerwij"));
+          rows.push(h("p", {}, j.finishing ? tr("finishing")
+              : tr("preparingPct", j.encoder, Math.round(j.pct)) + (j.speed ? tr("faster", j.speed.toFixed(1)) : "")),
+            bar(j.pct / 100), h("button", { class: "btn", onclick: () => act(() => api("/api/media/convert", { ...ref, cancel: true })).then(probe) }, tr("cancel")));
         } else if (need) {
-          if (j && j.state === "error") rows.push(h("p", { class: "err" }, "Nie wyszło: " + j.error));
-          const how = (c.video_copy ? "obraz bez zmian" : "obraz: " + (d.encoder?.label || "?")) + ", " + (c.audio_copy ? "dźwięk bez zmian" : "dźwięk → AAC");
+          if (j && j.state === "error") rows.push(h("p", { class: "err" }, tr("failed") + j.error));
+          const how = (c.video_copy ? tr("videoSame") : tr("videoVia", d.encoder?.label || "?")) + ", " + (c.audio_copy ? tr("audioSame") : tr("audioAac"));
           rows.push(h("button", { class: "btn primary", disabled: !d.complete,
-            onclick: () => act(() => api("/api/media/convert", ref), "Przygotowuję").then(probe) }, "Przygotuj wersję dla Chromecasta"),
-            h("p", { class: "muted" }, d.complete ? how : "Najpierw musi się pobrać w całości."));
+            onclick: () => act(() => api("/api/media/convert", ref), tr("preparing")).then(probe) }, tr("prepare")),
+            h("p", { class: "muted" }, d.complete ? how : tr("downloadFirst")));
         }
       }
       put(fmt, rows);
       clearTimeout(timer);
       if (j && (j.state === "queued" || j.state === "running") && $("#dlg").open) timer = setTimeout(probe, 2000);
     }
-    openDialog("Na Chromecasta: " + (ref.title || ""), [fmt, devs], () => clearTimeout(timer));
+    openDialog(tr("toCast") + (ref.title || ""), [fmt, devs], () => clearTimeout(timer));
     probe();
     api("/api/cast/devices").then(list => put(devs, list.length ? list.map(d => h("div", { class: "row" },
       h("span", { class: "grow" }, d.name, h("span", { class: "muted" }, " · " + (d.label || d.model || ""))),
-      h("button", { class: "btn primary", onclick: () => act(async () => { await api("/api/cast/play", { ...ref, device: d.id }); $("#dlg").close(); setTab("remote"); }, "Gra na " + d.name) }, "▶ Odtwórz")))
-      : h("p", { class: "muted" }, "Nie widzę żadnego Chromecasta w tej sieci.")), e => put(devs, h("p", { class: "err" }, e.message)));
+      h("button", { class: "btn primary", onclick: () => act(async () => { await api("/api/cast/play", { ...ref, device: d.id }); $("#dlg").close(); setTab("remote"); }, tr("playingOn", d.name)) }, tr("play"))))
+      : h("p", { class: "muted" }, tr("noCasts"))), e => put(devs, h("p", { class: "err" }, e.message)));
   }
   return { open };
 })();
@@ -353,46 +514,46 @@ const Torrents = (() => {
     after.value = store.get("mp_after") || "none";
     const add = async () => {
       const magnet = inp.value.trim();
-      if (!magnet.startsWith("magnet:?")) return toast("To nie jest magnet link");
+      if (!magnet.startsWith("magnet:?")) return toast(tr("notMagnet"));
       store.set("mp_seq", seq.checked ? "1" : "0"); store.set("mp_after", after.value);
-      await act(() => api("/api/torrents", { magnet, sequential: seq.checked, after: after.value }), "Dodano do pobierania");
+      await act(() => api("/api/torrents", { magnet, sequential: seq.checked, after: after.value }), tr("added"));
       inp.value = ""; refresh();
     };
     inp.addEventListener("keydown", e => { if (e.key === "Enter") add(); });
     return h("div", { class: "card owner-only" },
-      h("div", { class: "row" }, inp, h("button", { class: "btn primary", onclick: add }, "Pobierz")),
+      h("div", { class: "row" }, inp, h("button", { class: "btn primary", onclick: add }, tr("download"))),
       h("div", { class: "row muted", style: "margin-top:8px" },
-        h("label", {}, seq, " pobieranie po kolei (można oglądać w trakcie)"),
-        h("span", { style: "margin-left:auto" }, "po pobraniu: "), after));
+        h("label", {}, seq, tr("sequential")),
+        h("span", { style: "margin-left:auto" }, tr("afterLabel")), after));
   }
   function card(t) {
     const done = t.progress >= 100;
-    const after = h("select", { class: "owner-only", title: "Po pobraniu", onchange: e => act(() => api(`/api/torrents/${t.id}/after`, { after: e.target.value }), "Zapisano") },
-      Object.entries(AFTER).map(([k, v]) => h("option", { value: k, selected: t.after === k }, "po pobraniu: " + v)));
+    const after = h("select", { class: "owner-only", title: tr("afterTitle"), onchange: e => act(() => api(`/api/torrents/${t.id}/after`, { after: e.target.value }), tr("saved")) },
+      Object.entries(AFTER).map(([k, v]) => h("option", { value: k, selected: t.after === k }, tr("afterLabel") + v)));
     const paused = /pause/i.test(t.state);
     return h("div", { class: "card" },
       h("div", { class: "row" },
         h("div", { class: "grow name", style: "cursor:pointer", onclick: () => { openId = openId === t.id ? null : t.id; refresh(); } },
           (t.mine ? "📱 " : "") + t.name),
-        h("button", { class: "btn owner-only", onclick: () => act(() => api(`/api/torrents/${t.id}/action`, { action: paused ? "resume" : "pause" })).then(refresh) }, paused ? "Wznów" : "Wstrzymaj")),
+        h("button", { class: "btn owner-only", onclick: () => act(() => api(`/api/torrents/${t.id}/action`, { action: paused ? "resume" : "pause" })).then(refresh) }, paused ? tr("resume") : tr("pause"))),
       bar(t.progress / 100, done),
       h("div", { class: "row muted" },
         h("span", { class: "grow" }, `${t.progress.toFixed(1)}% · ${bytes(t.size)} · ${t.state}`,
-          t.down_rate ? ` · ↓ ${bytes(t.down_rate)}/s` : "", t.peers ? ` · ${t.peers} peerów` : "", eta(t.eta) ? ` · zostało ${eta(t.eta)}` : ""),
+          t.down_rate ? ` · ↓ ${bytes(t.down_rate)}/s` : "", t.peers ? tr("peers", t.peers) : "", eta(t.eta) ? tr("left", eta(t.eta)) : ""),
         after),
       openId === t.id ? files(t) : null);
   }
   function files(t) {
-    const box = h("div", { style: "margin-top:8px;border-top:1px solid var(--line);padding-top:4px" }, h("p", { class: "muted" }, "Wczytuję pliki…"));
+    const box = h("div", { style: "margin-top:8px;border-top:1px solid var(--line);padding-top:4px" }, h("p", { class: "muted" }, tr("loadingFiles")));
     api(`/api/torrents/${t.id}/files`).then(list => {
       const media = list.filter(f => f.media);
       put(box, ...(media.length ? media : list).map(f => {
         const frac = f.size ? f.ready / f.size : 0;
         const ref = { torrent_id: t.id, file_index: f.index, title: f.path.split("/").pop() };
-        const info = frac >= 0.999 ? "do obejrzenia całość" + (f.duration ? ` (${clock(f.duration)})` : "")
-          : f.ready <= 0 ? "jeszcze nie da się oglądać — początek się nie pobrał"
-          : f.ready_sec != null ? `do obejrzenia: ok. ${clock(f.ready_sec)} z ${clock(f.duration)} (${Math.round(frac * 100)}%)`
-          : `do obejrzenia: ${Math.round(frac * 100)}% od początku`;
+        const info = frac >= 0.999 ? tr("readyAll") + (f.duration ? ` (${clock(f.duration)})` : "")
+          : f.ready <= 0 ? tr("readyNone")
+          : f.ready_sec != null ? tr("readySec", clock(f.ready_sec), clock(f.duration), Math.round(frac * 100))
+          : tr("readyPct", Math.round(frac * 100));
         return h("div", { class: "list-item" },
           h("div", { class: "name" }, f.path), h("div", { class: "muted" }, bytes(f.size)),
           f.media === "video" ? [bar(frac, frac >= 0.999), h("div", { class: "muted" }, info)] : null,
@@ -405,7 +566,7 @@ const Torrents = (() => {
     try {
       const list = await api("/api/torrents");
       const keepScroll = scrollY;
-      put(root, form(), ...(list.length ? list.map(card) : [h("p", { class: "muted" }, "Brak torrentów.")]), await history(list));
+      put(root, form(), ...(list.length ? list.map(card) : [h("p", { class: "muted" }, tr("noTorrents"))]), await history(list));
       scrollTo(0, keepScroll);
     } catch (e) { put(root, form(), h("p", { class: "err" }, e.message)); }
   }
@@ -414,10 +575,10 @@ const Torrents = (() => {
     try { jobs = await api("/api/jobs"); } catch { return null; }
     const gone = jobs.filter(j => !j.in_client && j.magnet);
     if (!gone.length) return null;
-    return h("details", { class: "card owner-only" }, h("summary", {}, `Wcześniejsze zlecenia z telefonu (${gone.length})`),
+    return h("details", { class: "card owner-only" }, h("summary", {}, tr("earlier", gone.length)),
       gone.slice(0, 40).map(j => h("div", { class: "list-item row" },
-        h("span", { class: "grow" }, j.name, h("span", { class: "muted" }, " · " + new Date(j.added * 1000).toLocaleDateString("pl"))),
-        h("button", { class: "btn", onclick: () => act(() => api("/api/torrents", { magnet: j.magnet, sequential: true, after: j.after }), "Pobieram znowu").then(refresh) }, "Pobierz znowu"))));
+        h("span", { class: "grow" }, j.name, h("span", { class: "muted" }, " · " + new Date(j.added * 1000).toLocaleDateString(LANG))),
+        h("button", { class: "btn", onclick: () => act(() => api("/api/torrents", { magnet: j.magnet, sequential: true, after: j.after }), tr("downloadingAgain")).then(refresh) }, tr("downloadAgain")))));
   }
   return {
     show() {
@@ -435,15 +596,15 @@ const Library = (() => {
   async function roots() {
     const list = await api("/api/library");
     put(root, h("div", { class: "card" },
-      h("p", { class: "muted" }, "Katalogi dodajesz i usuwasz w apce na telefonie."),
+      h("p", { class: "muted" }, tr("libHelp")),
       list.map(r => h("div", { class: "dir", onclick: () => r.exists && open(r.index, "") },
-        "📁 ", h("b", {}, r.name), h("span", { class: "muted" }, " " + r.path + (r.exists ? "" : " — niedostępny"))))));
+        "📁 ", h("b", {}, r.name), h("span", { class: "muted" }, " " + r.path + (r.exists ? "" : tr("unavailable")))))));
   }
   async function open(r, path) {
     cur = { root: r, path };
     const d = await api(`/api/library/browse?${q({ root: r, path })}`);
     const parts = path ? path.split("/") : [];
-    const crumbs = h("div", { class: "crumbs" }, h("a", { onclick: () => { cur = null; roots(); } }, "Katalogi"),
+    const crumbs = h("div", { class: "crumbs" }, h("a", { onclick: () => { cur = null; roots(); } }, tr("folders")),
       parts.map((p, i) => [" / ", h("a", { onclick: () => open(r, parts.slice(0, i + 1).join("/")) }, p)]));
     put(root, h("div", { class: "card" }, crumbs,
       d.dirs.map(n => h("div", { class: "dir", onclick: () => open(r, path ? path + "/" + n : n) }, "📁 " + n)),
@@ -451,10 +612,10 @@ const Library = (() => {
         const ref = { root: r, path: path ? path + "/" + f.name : f.name };
         return h("div", { class: "list-item" },
           h("div", { class: "name" }, (f.media === "audio" ? "🎵 " : "🎬 ") + f.name),
-          h("div", { class: "muted" }, bytes(f.size), f.subs.length ? " · napisy: " + f.subs.join(", ") : ""),
+          h("div", { class: "muted" }, bytes(f.size), f.subs.length ? tr("subsList") + f.subs.join(", ") : ""),
           mediaActions(ref, f.media === "video"));
       }),
-      !d.dirs.length && !d.files.length ? h("p", { class: "muted" }, "Brak filmów w tym katalogu.") : null));
+      !d.dirs.length && !d.files.length ? h("p", { class: "muted" }, tr("noVideos")) : null));
   }
   return { show() { (cur ? open(cur.root, cur.path) : roots()).catch(e => put(root, h("p", { class: "err" }, e.message))); } };
 })();
@@ -474,14 +635,14 @@ const Remote = (() => {
     };
     els = { title: h("div", { class: "name", style: "font-size:17px" }), seek, pos: h("span"), dur: h("span"),
       play: h("button", { class: "btn big primary", onclick: () => cmd("toggle_pause") }, "⏯"),
-      vol: h("span", { class: "muted" }), fs: h("button", { class: "btn", onclick: () => cmd("fullscreen") }, "Pełny ekran"),
+      vol: h("span", { class: "muted" }), fs: h("button", { class: "btn", onclick: () => cmd("fullscreen") }, tr("fullscreen")),
       audio: trackSel("audio"), sub: trackSel("sub"), video: trackSel("video"), videoBox: h("label", { class: "muted" }),
-      idle: h("div", { class: "card needs-player", hidden: true }, h("p", { class: "name" }, "Na komputerze nic nie gra."),
-        h("p", { class: "muted" }, "Wybierz film w Torrentach albo Bibliotece → „Na komputerze”.")),
-      idleNo: h("div", { class: "card only-noplayer" }, h("p", { class: "name" }, "Ten serwer nie odtwarza na swoim ekranie."),
-        h("p", { class: "muted" }, "Udostępnia pliki: w Bibliotece „W przeglądarce” albo „Chromecast…”.")),
+      idle: h("div", { class: "card needs-player", hidden: true }, h("p", { class: "name" }, tr("idle")),
+        h("p", { class: "muted" }, tr("idleHelp"))),
+      idleNo: h("div", { class: "card only-noplayer" }, h("p", { class: "name" }, tr("noPlayer")),
+        h("p", { class: "muted" }, tr("noPlayerHelp"))),
     };
-    els.videoBox.append("wideo ", els.video);
+    els.videoBox.append(tr("video"), els.video);
     els.panel = h("div", { class: "card" },
       els.title, h("div", { style: "margin-top:12px" }, seek),
       h("div", { class: "row muted" }, els.pos, h("span", { class: "grow" }), els.dur),
@@ -492,19 +653,19 @@ const Remote = (() => {
         h("button", { class: "btn big", onclick: () => cmd("seek", 10), title: "+10 s" }, "10↻"),
         h("button", { class: "btn big", onclick: () => cmd("seek", 60), title: "+60 s" }, "⏩")),
       h("div", { class: "row controls" },
-        h("button", { class: "btn", onclick: () => cmd("volume_rel", -5) }, "🔉 ciszej"),
+        h("button", { class: "btn", onclick: () => cmd("volume_rel", -5) }, tr("quieter")),
         h("button", { class: "btn", onclick: () => cmd("mute") }, "🔇"),
-        h("button", { class: "btn", onclick: () => cmd("volume_rel", 5) }, "🔊 głośniej"), els.vol),
-      h("div", { class: "row controls" }, els.fs, h("button", { class: "btn", onclick: () => cmd("stop") }, "⏹ Zakończ")),
+        h("button", { class: "btn", onclick: () => cmd("volume_rel", 5) }, tr("louder")), els.vol),
+      h("div", { class: "row controls" }, els.fs, h("button", { class: "btn", onclick: () => cmd("stop") }, tr("stop"))),
       h("div", { class: "row", style: "justify-content:center;margin-top:6px" },
-        h("label", { class: "muted" }, "audio ", els.audio), h("label", { class: "muted" }, "napisy ", els.sub), els.videoBox),
+        h("label", { class: "muted" }, tr("audio"), els.audio), h("label", { class: "muted" }, tr("subs"), els.sub), els.videoBox),
       h("div", { class: "row", style: "justify-content:center;margin-top:10px" },
-        h("button", { class: "btn", onclick: () => cmd("sub_delay", -0.1) }, "napisy −0,1 s"),
-        h("button", { class: "btn", onclick: () => cmd("sub_delay", 0.1) }, "napisy +0,1 s"),
-        h("button", { class: "btn", onclick: () => Subs.open({ playing: true, title: st?.title || "" }) }, "Szukaj napisów…")),
+        h("button", { class: "btn", onclick: () => cmd("sub_delay", -0.1) }, tr("subDelay", "−0.1")),
+        h("button", { class: "btn", onclick: () => cmd("sub_delay", 0.1) }, tr("subDelay", "+0.1")),
+        h("button", { class: "btn", onclick: () => Subs.open({ playing: true, title: st?.title || "" }) }, tr("findSubs"))),
       h("p", { class: "muted", style: "text-align:center;margin:12px 0 0" },
-        "Klawisze: ", h("span", { class: "kbd" }, "spacja"), " pauza · ", h("span", { class: "kbd" }, "← →"), " 10 s · ",
-        h("span", { class: "kbd" }, "↑ ↓"), " głośność · ", h("span", { class: "kbd" }, "f"), " pełny ekran · ", h("span", { class: "kbd" }, "m"), " wycisz"));
+        tr("keys"), h("span", { class: "kbd" }, tr("space")), tr("kPause"), h("span", { class: "kbd" }, "← →"), " 10 s · ",
+        h("span", { class: "kbd" }, "↑ ↓"), tr("kVolume"), h("span", { class: "kbd" }, "f"), tr("kFullscreen"), h("span", { class: "kbd" }, "m"), tr("kMute")));
     const ccmd = (c, value) => act(() => api("/api/cast/cmd", value === undefined ? { cmd: c } : { cmd: c, value })).then(poll);
     els.cast = h("div", { class: "card", hidden: true });
     els.castTitle = h("div", { class: "name" }); els.castPos = h("p", { class: "muted" });
@@ -517,7 +678,7 @@ const Remote = (() => {
         h("button", { class: "btn big", onclick: () => ccmd("seek_rel", -10) }, "↺10"), els.castPlay,
         h("button", { class: "btn big", onclick: () => ccmd("seek_rel", 30) }, "30↻"),
         ...els.castVol,
-        h("button", { class: "btn", onclick: () => ccmd("stop") }, "⏹ Zakończ")));
+        h("button", { class: "btn", onclick: () => ccmd("stop") }, tr("stop"))));
     els.panel.classList.add("needs-player");
     els.others = h("div", { class: "card", hidden: true });
     put(root, els.cast, els.idle, els.idleNo, els.panel, els.others);
@@ -526,10 +687,10 @@ const Remote = (() => {
   const CODECS = { hdmv_pgs_subtitle: "PGS", dvd_subtitle: "VobSub", subrip: "SRT", ass: "ASS", eac3: "E-AC3", ac3: "AC3", aac: "AAC", dts: "DTS", truehd: "TrueHD", hevc: "HEVC", h264: "H.264", av1: "AV1" };
   function fillTracks(sel, type, tracks) {
     const list = tracks.filter(t => t.type === type);
-    const opts = (type === "sub" ? [h("option", { value: "no" }, "wyłączone")] : []).concat(list.map(t => {
+    const opts = (type === "sub" ? [h("option", { value: "no" }, tr("off"))] : []).concat(list.map(t => {
       const name = [t.lang && t.lang.toUpperCase(), t.external ? (t.title || "").split("/").pop().slice(-24) : t.title,
-        CODECS[t.codec] || t.codec, t["demux-channel-count"] ? t["demux-channel-count"] + "ch" : null, t.external ? "z pliku" : null].filter(Boolean).join(" · ");
-      return h("option", { value: t.id }, name || "ścieżka " + t.id);
+        CODECS[t.codec] || t.codec, t["demux-channel-count"] ? t["demux-channel-count"] + "ch" : null, t.external ? tr("fromFile") : null].filter(Boolean).join(" · ");
+      return h("option", { value: t.id }, name || tr("track", t.id));
     }));
     const sig = JSON.stringify(list.map(t => [t.id, t.title, t.lang]));
     if (sel._sig !== sig) { put(sel, ...opts); sel._sig = sig; }
@@ -546,15 +707,15 @@ const Remote = (() => {
     // co grają inne piloty (rozgłoszenia z telefonów i innych serwerów), bez tego, co już widać wyżej
     ann = ann.filter(x => !(x.target.kind === "cast" && cst?.active && x.target.name === cst.device));
     els.others.hidden = !ann.length;
-    put(els.others, h("p", { class: "muted" }, "Gra też"), ann.map(x => h("p", {},
+    put(els.others, h("p", { class: "muted" }, tr("alsoPlaying")), ann.map(x => h("p", {},
       `${x.title || "?"} · ${x.target.name}`, h("span", { class: "muted" },
-        ` · ${x.state === "PLAYING" ? "gra" : "pauza"} ${clock(x.pos || 0)}${x.dur ? " / " + clock(x.dur) : ""} · puścił ${x.from.name}`))));
+        ` · ${x.state === "PLAYING" ? tr("stPlaying") : tr("stPaused")} ${clock(x.pos || 0)}${x.dur ? " / " + clock(x.dur) : ""}` + tr("startedBy", x.from.name)))));
     els.cast.hidden = !cst?.active;
     if (cst?.active) {
       els.castTitle.textContent = (cst.title || "") + " · " + cst.device;
       put(els.castBar, cst.duration ? bar(cst.pos / cst.duration) : null);
       els.castPos.textContent = `${clock(cst.pos)} / ${clock(cst.duration || 0)} · ${cst.state} · ` +
-        (cst.volume_fixed ? "głośność: pilot telewizora" : `głośność ${cst.volume}%`);
+        (cst.volume_fixed ? tr("volTv") : tr("vol", cst.volume));
       els.castVol.forEach(b => b.hidden = !!cst.volume_fixed);
       els.castPlay.textContent = cst.state === "PLAYING" ? "⏸" : "▶";
     }
@@ -567,8 +728,8 @@ const Remote = (() => {
     if (!dragging) { els.seek.value = Math.round(st.pos || 0); els.pos.textContent = clock(st.pos); }
     els.dur.textContent = clock(dur);
     els.play.textContent = st.paused ? "▶" : "⏸";
-    els.vol.textContent = `${Math.round(st.volume || 0)}%${st.muted ? " (wyciszone)" : ""}`;
-    els.fs.textContent = st.fullscreen ? "Wyjdź z pełnego ekranu" : "Pełny ekran";
+    els.vol.textContent = `${Math.round(st.volume || 0)}%${st.muted ? tr("muted") : ""}`;
+    els.fs.textContent = st.fullscreen ? tr("exitFullscreen") : tr("fullscreen");
     const tracks = st.tracks || [];
     fillTracks(els.audio, "audio", tracks); fillTracks(els.sub, "sub", tracks);
     els.videoBox.hidden = fillTracks(els.video, "video", tracks) < 2;
@@ -590,14 +751,14 @@ const Subs = (() => {
     const have = h("div", { class: "ok", style: "font-size:13px" });
     const status = h("div");
     const results = h("div");
-    const title = h("input", { type: "text", placeholder: "tytuł (np. angielski)" });
-    const year = h("input", { type: "number", placeholder: "rok", style: "width:90px", min: 1900, max: 2100 });
-    const langs = h("input", { type: "text", value: subLangs(), style: "width:90px", title: "języki, po przecinku" });
-    const again = h("button", { class: "btn", onclick: () => run(title.value.trim() || null, +year.value || null) }, "Szukaj z tym tytułem");
+    const title = h("input", { type: "text", placeholder: tr("titlePh") });
+    const year = h("input", { type: "number", placeholder: tr("yearPh"), style: "width:90px", min: 1900, max: 2100 });
+    const langs = h("input", { type: "text", value: subLangs(), style: "width:90px", title: tr("langsTitle") });
+    const again = h("button", { class: "btn", onclick: () => run(title.value.trim() || null, +year.value || null) }, tr("searchTitle"));
     const fix = h("div", { class: "row", style: "margin-top:12px", hidden: true }, h("span", { class: "grow" }, title), year, langs, again);
-    openDialog("Napisy — " + (ref.title || ref.path?.split("/").pop() || "to, co gra"),
+    openDialog(tr("subsFor", ref.title || ref.path?.split("/").pop() || tr("whatsPlaying")),
       h("div", {}, have, status, results, fix), () => ctl?.abort());
-    const listHave = () => api("/api/subs/list?" + refQuery(ref)).then(l => have.textContent = l.length ? "Już są: " + l.map(s => s.name.slice(-34)).join(", ") : "").catch(() => {});
+    const listHave = () => api("/api/subs/list?" + refQuery(ref)).then(l => have.textContent = l.length ? tr("already", l.map(s => s.name.slice(-34)).join(", ")) : "").catch(() => {});
     listHave();
     let override = [null, null];
     async function run(t, y) {
@@ -613,17 +774,17 @@ const Subs = (() => {
         let p;
         try { p = await api("/api/subs/job?id=" + job, undefined, { signal }); } catch (e) { if (!signal.aborted) put(status, h("p", { class: "err" }, e.message)); return; }
         if (p.done) return finish(p);
-        const phase = p.phase === "file" ? "Liczę hash pliku i rozpoznaję tytuł…"
-          : p.phase === "match" ? `Porównuję wyniki z plikiem: ${p.matched}/${p.total}`
-          : p.round === 2 ? `Nic pasującego — druga runda z tytułem z nazwy: „${p.query}”` : `Szukam: „${p.query || "…"}”`;
+        const phase = p.phase === "file" ? tr("phaseFile")
+          : p.phase === "match" ? tr("phaseMatch", p.matched, p.total)
+          : p.round === 2 ? tr("phaseRound2", p.query) : tr("phaseSearch", p.query || "…");
         const running = Object.values(p.providers || {}).some(v => v.state === "running" || v.state === "pending");
         put(status, 
           h("div", { class: "row" }, h("span", { class: "grow" }, "⏳ " + phase), h("span", { class: "muted" }, Math.round(p.elapsed) + " s")),
           p.phase === "match" && p.total ? bar(p.matched / p.total) : null,
           provRows(p.providers),
           p.phase === "search" && running ? h("button", { class: "btn", style: "margin-top:8px", disabled: stopping,
-            onclick: e => { stopping = true; e.target.disabled = true; e.target.textContent = "Kończę…"; api("/api/subs/job/stop", { id: job }).catch(() => {}); } },
-            "⏹ Wystarczy — pokaż, co już jest") : null);
+            onclick: e => { stopping = true; e.target.disabled = true; e.target.textContent = tr("stopping"); api("/api/subs/job/stop", { id: job }).catch(() => {}); } },
+            tr("enough")) : null);
         await new Promise(r => setTimeout(r, 700));
       }
     }
@@ -634,19 +795,19 @@ const Subs = (() => {
       if (p.error) return put(results, h("p", { class: "err" }, p.error));
       if (!title.value) title.value = f.title || ""; if (!year.value && f.year) year.value = f.year;
       put(results, 
-        f.hidden ? h("p", { class: "muted" }, `Ukryto ${f.hidden} wyników do innych filmów (inny tytuł, hash się nie zgadza).`) : null,
-        f.results.length ? null : h("p", {}, `Nic nie znaleziono dla „${f.query}” (${subLangs()}). Jeśli plik ma tytuł w innym języku, wpisz niżej tytuł angielski albo oryginalny.`),
+        f.hidden ? h("p", { class: "muted" }, tr("hidden", f.hidden)) : null,
+        f.results.length ? null : h("p", {}, tr("nothing", f.query, subLangs())),
         f.results.map(r => {
           const row = h("div", { class: "sub", onclick: async () => {
             if (row._busy) return; row._busy = true; row.style.opacity = .6;
             const b = { ...refBody(ref), id: r.id, provider: r.provider, languages: subLangs() };
             if (override[0]) b.title = override[0]; if (override[1]) b.year = override[1];
-            try { const res = await api("/api/subs/download", b); toast("Pobrano: " + res.name); listHave(); }
+            try { const res = await api("/api/subs/download", b); toast(tr("downloaded", res.name)); listHave(); }
             catch (e) { toast(e.message); } finally { row._busy = false; row.style.opacity = 1; }
           } },
-            h("div", { class: "row" }, h("b", {}, r.lang.toUpperCase()), r.hash_match ? h("span", { class: "ok" }, "✔ pasuje do pliku") : null,
+            h("div", { class: "row" }, h("b", {}, r.lang.toUpperCase()), r.hash_match ? h("span", { class: "ok" }, tr("matches")) : null,
               h("span", { class: "grow" }), h("span", { class: "muted" }, PROVIDERS[r.provider] || r.provider)),
-            h("div", { style: "font-size:13px;overflow-wrap:anywhere" }, r.release), r.hi ? h("div", { class: "muted" }, "dla niesłyszących") : null);
+            h("div", { style: "font-size:13px;overflow-wrap:anywhere" }, r.release), r.hi ? h("div", { class: "muted" }, tr("hi")) : null);
           return row;
         }));
     }
@@ -655,7 +816,7 @@ const Subs = (() => {
   function provRows(prov) {
     return h("div", { style: "margin-top:6px" }, Object.entries(prov || {}).map(([k, v]) => {
       const icon = { running: "⏳", done: "✔", error: "✖", skip: "–" }[v.state] || "…";
-      const info = v.state === "running" ? "szukam…" : v.state === "done" ? `${v.count || 0} wyn. · ${Math.round(v.secs || 0)} s` : v.state === "pending" ? "czeka" : (v.error || v.state);
+      const info = v.state === "running" ? tr("searching") : v.state === "done" ? tr("results", v.count || 0, Math.round(v.secs || 0)) : v.state === "pending" ? tr("waiting") : (v.error || v.state);
       return h("div", { class: "prov" }, h("span", { class: v.state === "done" ? "ok" : v.state === "error" ? "err" : "muted" }, icon), h("b", {}, PROVIDERS[k] || k),
         h("span", { class: v.state === "error" ? "err" : "muted" }, info));
     }));
@@ -679,20 +840,20 @@ const Player = (() => {
     v.addEventListener("loadedmetadata", () => { if (saved > 10 && saved < v.duration - 30) v.currentTime = saved; });
     let lastSave = 0;
     v.addEventListener("timeupdate", () => { if (Date.now() - lastSave > 5000) { lastSave = Date.now(); store.set(key, String(Math.floor(v.currentTime))); } });
-    const err = h("p", { class: "err", hidden: true }, "Przeglądarka nie umie odtworzyć tego pliku (zwykle HEVC/x265, AV1 albo dźwięk E-AC3/DTS). Użyj „Na komputerze” albo „Link do VLC”.");
+    const err = h("p", { class: "err", hidden: true }, tr("cantPlay"));
     v.addEventListener("error", () => err.hidden = false);
     openDialog(ref.title || ref.path.split("/").pop(), h("div", {}, v, err,
       h("div", { class: "row", style: "margin-top:10px" },
         h("button", { class: "btn", onclick: () => { const t = v.currentTime; $("#dlg").close();
-          act(async () => { await api("/api/player/open", { ...ref, start: t }); setTab("remote"); }, "Gra na komputerze od " + clock(t)); } }, "▶ Na komputer od tego miejsca"),
-        h("span", { class: "muted" }, subs.length ? `napisy: ${subs.length} (menu odtwarzacza)` : "bez napisów obok pliku"))),
+          act(async () => { await api("/api/player/open", { ...ref, start: t }); setTab("remote"); }, tr("playingFrom", clock(t))); } }, tr("toComputerHere")),
+        h("span", { class: "muted" }, subs.length ? tr("subsCount", subs.length) : tr("noSubs")))),
       () => { store.set(key, String(Math.floor(v.currentTime || 0))); v.pause(); v.removeAttribute("src"); v.load(); });
   }
   return { open };
 })();
 
 ping();
-if (pairCode) pairWith(pairCode).then(() => setTab(tab), e => { toast("Parowanie: " + e.message); setTab(tab); });
+if (pairCode) pairWith(pairCode).then(() => setTab(tab), e => { toast(tr("pairing") + e.message); setTab(tab); });
 else setTab(tab);
 </script>
 </body>

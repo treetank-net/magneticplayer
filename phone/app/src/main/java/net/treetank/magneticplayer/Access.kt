@@ -55,24 +55,23 @@ object Access {
     private fun notify(ctx: Context, srv: Server, id: String, name: String, ip: String, expiresIn: Int) {
         if (!canNotify(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Prośby o dostęp", NotificationManager.IMPORTANCE_HIGH))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, ctx.getString(R.string.srv_access_channel), NotificationManager.IMPORTANCE_HIGH))
         val nid = notifId(srv.key, id)
         val open = PendingIntent.getActivity(ctx, nid, Intent(ctx, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle("$name prosi o dostęp")
-            .setContentText("do ${srv.name} (z $ip)")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("„$name” (adres $ip w sieci domowej) prosi o dostęp do " +
-                "${srv.name}. Gość może tylko oglądać; domownik może wszystko. Nic nie rób, a prośba wygaśnie."))
+            .setContentTitle(ctx.getString(R.string.srv_access_title, name))
+            .setContentText(ctx.getString(R.string.srv_access_text, srv.name, ip))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(ctx.getString(R.string.srv_access_big, name, ip, srv.name)))
             .setContentIntent(open)
             .setTimeoutAfter(expiresIn * 1000L)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .addExtras(android.os.Bundle().apply { putString("srv", srv.key); putString("req", id) })
-            .addAction(0, "Gość (dzień)", action(ctx, srv.key, id, name, "guest", nid * 4))
-            .addAction(0, "Domownik", action(ctx, srv.key, id, name, "owner", nid * 4 + 1))
-            .addAction(0, "Odrzuć", action(ctx, srv.key, id, name, "deny", nid * 4 + 2))
+            .addAction(0, ctx.getString(R.string.srv_access_guest_day), action(ctx, srv.key, id, name, "guest", nid * 4))
+            .addAction(0, ctx.getString(R.string.srv_access_member), action(ctx, srv.key, id, name, "owner", nid * 4 + 1))
+            .addAction(0, ctx.getString(R.string.srv_decline), action(ctx, srv.key, id, name, "deny", nid * 4 + 2))
             .build()
         nm.notify(TAG, nid, n)
     }
@@ -83,12 +82,12 @@ object Access {
         val api = Api.of(ctx, srvKey) ?: return
         val msg = try {
             when (what) {
-                "deny" -> { api.accessDecide(id, false); "Odrzucono prośbę: $name" }
-                "owner" -> { api.accessDecide(id, true, "owner"); "Wpuszczono $name jako domownika" }
-                else -> { api.accessDecide(id, true, "guest", 1); "Wpuszczono $name jako gościa na dzień" }
+                "deny" -> { api.accessDecide(id, false); ctx.getString(R.string.srv_access_declined, name) }
+                "owner" -> { api.accessDecide(id, true, "owner"); ctx.getString(R.string.srv_access_member_ok, name) }
+                else -> { api.accessDecide(id, true, "guest", 1); ctx.getString(R.string.srv_access_guest_ok, name) }
             }
         } catch (e: Exception) {
-            "Prośba $name: ${e.message}"
+            ctx.getString(R.string.srv_access_error, name, e.message)
         }
         ContextCompat.getMainExecutor(ctx).execute { Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show() }
     }
@@ -102,7 +101,7 @@ class AccessReceiver : BroadcastReceiver() {
         thread {
             try {
                 Access.decide(app, intent.getStringExtra("srv") ?: return@thread, intent.getStringExtra("req") ?: return@thread,
-                    intent.getStringExtra("name") ?: "urządzenie", intent.getStringExtra("what") ?: "deny")
+                    intent.getStringExtra("name") ?: app.getString(R.string.srv_device), intent.getStringExtra("what") ?: "deny")
             } finally {
                 pending.finish()
             }

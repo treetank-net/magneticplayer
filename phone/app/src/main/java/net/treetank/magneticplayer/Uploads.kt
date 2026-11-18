@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.work.BackoffPolicy
@@ -229,8 +230,8 @@ object Uploads {
 
     private fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CH_ASK, "Przesyłanie pobranych filmów", NotificationManager.IMPORTANCE_DEFAULT))
-        nm.createNotificationChannel(NotificationChannel(CH_PROGRESS, "Postęp przesyłania", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CH_ASK, ctx.getString(R.string.media_upload_channel_ask), NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(CH_PROGRESS, ctx.getString(R.string.media_upload_channel_progress), NotificationManager.IMPORTANCE_LOW))
     }
 
     private fun canNotify(ctx: Context) = Build.VERSION.SDK_INT < 33 ||
@@ -270,13 +271,13 @@ object Uploads {
         notify(ctx, id, NotificationCompat.Builder(ctx, CH_ASK)
             .setSilent(overlay)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Pobrano ${v.name}")
-            .setContentText("${humanBytes(v.size)}. Przesłać na ${srv.name}?")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("${v.name} (${humanBytes(v.size)}). Przesłać na ${srv.name}? " +
-                "Prześle się samo, gdy telefon będzie w sieci Wi-Fi serwera."))
+            .setContentTitle(ctx.getString(R.string.media_upload_ask_title, v.name))
+            .setContentText(ctx.getString(R.string.media_upload_ask_text, humanBytes(v.size), srv.name))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                ctx.getString(R.string.media_upload_ask_big, v.name, humanBytes(v.size), srv.name)))
             .setAutoCancel(true)
-            .addAction(0, "Prześlij", receiverIntent(ctx, ACTION_UPLOAD, v, false, id * 4))
-            .addAction(0, "Prześlij i usuń z telefonu", receiverIntent(ctx, ACTION_UPLOAD, v, true, id * 4 + 1))
+            .addAction(0, ctx.getString(R.string.media_upload_action), receiverIntent(ctx, ACTION_UPLOAD, v, false, id * 4))
+            .addAction(0, ctx.getString(R.string.media_upload_action_delete), receiverIntent(ctx, ACTION_UPLOAD, v, true, id * 4 + 1))
             .build())
     }
 
@@ -292,7 +293,7 @@ object Uploads {
 
     fun enqueue(ctx: Context, v: PhoneVideo, delete: Boolean, delay: Long = 0) {
         val srv = target(ctx) ?: run {
-            Toast.makeText(ctx, "Nie ma serwera do przesłania (Ustawienia → Dodaj serwer)", Toast.LENGTH_LONG).show()
+            Toast.makeText(ctx, ctx.getString(R.string.media_upload_no_server), Toast.LENGTH_LONG).show()
             return
         }
         val data = Data.Builder().putLong("id", v.id).putString("name", v.name).putLong("size", v.size)
@@ -325,11 +326,11 @@ object Uploads {
         notify(ctx, notifId(v.id), NotificationCompat.Builder(ctx, CH_PROGRESS)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(v.name)
-            .setContentText("Czeka na $server — prześle się, gdy telefon będzie w jego sieci")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("Czeka na $server — prześle się, gdy telefon będzie w jego sieci (Wi-Fi)."))
+            .setContentText(ctx.getString(R.string.media_upload_waiting, server))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(ctx.getString(R.string.media_upload_waiting_big, server)))
             .setOngoing(false)
             .setSilent(true)
-            .addAction(0, "Anuluj", cancelAction(ctx, v))
+            .addAction(0, ctx.getString(R.string.media_cancel), cancelAction(ctx, v))
             .build())
     }
 
@@ -372,12 +373,12 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 
     private fun progressNotif(done: Long, server: String) = NotificationCompat.Builder(ctx, Uploads.CH_PROGRESS)
         .setSmallIcon(android.R.drawable.stat_sys_upload)
-        .setContentTitle("Przesyłam na $server")
-        .setContentText("${v.name}: ${humanBytes(done)} z ${humanBytes(v.size)}")
+        .setContentTitle(ctx.getString(R.string.media_upload_progress_title, server))
+        .setContentText(ctx.getString(R.string.media_upload_progress_text, v.name, humanBytes(done), humanBytes(v.size)))
         .setProgress(1000, if (v.size > 0) (done * 1000 / v.size).toInt() else 0, false)
         .setOngoing(true)
         .setSilent(true)
-        .addAction(0, "Anuluj", Uploads.cancelAction(ctx, v))
+        .addAction(0, ctx.getString(R.string.media_cancel), Uploads.cancelAction(ctx, v))
         .build()
 
     private fun fgInfo(done: Long, server: String) =
@@ -397,7 +398,7 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
     }
 
     private fun failed(text: String): Result {
-        finish("Nie przesłano: ${v.name}", text)
+        finish(ctx.getString(R.string.media_upload_failed_title, v.name), text)
         return Result.failure()
     }
 
@@ -405,12 +406,12 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 
     private suspend fun work(): Result {
         val d = inputData
-        val srv = Servers.get(ctx, d.getString("server")) ?: return failed("Nie ma już serwera, na który miał trafić")
+        val srv = Servers.get(ctx, d.getString("server")) ?: return failed(ctx.getString(R.string.media_upload_err_server_gone))
         val api = Api(Settings(ctx), srv)
         val id = d.getString("upload_id") ?: return Result.failure()
         val size = runCatching { ctx.contentResolver.openFileDescriptor(v.uri, "r")?.use { it.statSize } }.getOrNull()
-        if (size == null || size < 0) return failed("Plik zniknął z telefonu albo apka straciła do niego dostęp")
-        if (size != v.size) return failed("Plik zmienił się na telefonie (${humanBytes(v.size)} → ${humanBytes(size)})")
+        if (size == null || size < 0) return failed(ctx.getString(R.string.media_upload_err_file_gone))
+        if (size != v.size) return failed(ctx.getString(R.string.media_upload_err_file_changed, humanBytes(v.size), humanBytes(size)))
         if (!api.ping(3000)) {
             // poza siecią serwera: następna próba za kwadrans; nowe zlecenie zamiast retry(), bo backoff liniowy rośnie
             Uploads.waiting(ctx, v, srv.name)
@@ -424,14 +425,14 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
             while (true) {
                 val (code, st) = api.uploadStatus(id)
                 if (code == 404 && !st.has("received"))
-                    return failed("${srv.name} nie umie przyjmować plików. Zaktualizuj agenta (install.sh).")
-                if (code == 401) return failed("${srv.name} nie zna już tego telefonu. Sparuj go ponownie.")
+                    return failed(ctx.getString(R.string.media_upload_err_unsupported, srv.name))
+                if (code == 401) return failed(ctx.getString(R.string.media_upload_err_unpaired, srv.name))
                 if (code >= 400 && code != 404) return failed(st.optString("error").ifEmpty { "HTTP $code" })
                 if (st.optBoolean("done")) return done(srv, st.optString("name"))
                 var off = st.optLong("received")
                 // sprawdzenie bez danych: wolne miejsce i zgodność miejsca, zanim popłyną gigabajty
                 val (c0, r0) = api.uploadPut(id, v.name, size, off, null, 0)
-                if (c0 == 507) return failed("Za mało miejsca na ${srv.name}: ${r0.optString("error")}")
+                if (c0 == 507) return failed(ctx.getString(R.string.media_upload_err_no_space, srv.name, r0.optString("error")))
                 if (c0 == 409) { if (++conflicts > 3) return Result.retry(); continue }
                 if (c0 >= 400) return failed(r0.optString("error").ifEmpty { "HTTP $c0" })
                 ctx.contentResolver.openFileDescriptor(v.uri, "r")?.use { pfd ->
@@ -450,13 +451,13 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                                     else Uploads.notify(ctx, nid, pn, tag = null)
                                 }
                             }
-                            if (c == 507) return failed("Za mało miejsca na ${srv.name}: ${r.optString("error")}")
+                            if (c == 507) return failed(ctx.getString(R.string.media_upload_err_no_space, srv.name, r.optString("error")))
                             if (c >= 400) break  // 409 i inne: od nowa od stanu na serwerze
                             if (r.optBoolean("done")) return done(srv, r.optString("name"))
                             off = r.optLong("received")
                         }
                     }
-                } ?: return failed("Nie da się otworzyć pliku na telefonie")
+                } ?: return failed(ctx.getString(R.string.media_upload_err_open))
                 if (++conflicts > 3) return Result.retry()
             }
         } catch (e: ApiException) {
@@ -465,26 +466,25 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
             Uploads.waiting(ctx, v, srv.name)
             return Result.retry()
         } catch (e: IOException) {  // odczyt pliku na telefonie
-            return if (isStopped) Result.retry() else failed("Nie da się czytać pliku na telefonie: ${e.message}")
+            return if (isStopped) Result.retry() else failed(ctx.getString(R.string.media_upload_err_read, e.message.toString()))
         } catch (e: SecurityException) {
-            return failed("Apka straciła dostęp do filmów (uprawnienie)")
+            return failed(ctx.getString(R.string.media_upload_err_permission))
         }
     }
 
     private fun done(srv: Server, name: String): Result {
         val shown = name.ifEmpty { v.name }
         if (!inputData.getBoolean("delete", false)) {
-            finish("Przesłano na ${srv.name}", "$shown jest w Bibliotece (Z telefonu).")
+            finish(ctx.getString(R.string.media_upload_done_title, srv.name), ctx.getString(R.string.media_upload_done_text, shown))
         } else if (Uploads.deleteSilently(ctx, v)) {
-            finish("Przesłano na ${srv.name} i usunięto z telefonu", "$shown jest w Bibliotece (Z telefonu).")
+            finish(ctx.getString(R.string.media_upload_done_deleted_title, srv.name), ctx.getString(R.string.media_upload_done_text, shown))
         } else if (Build.VERSION.SDK_INT >= 30) {
             val pi = PendingIntent.getActivity(ctx, nid, Intent(ctx, UploadDeleteActivity::class.java)
                 .setData(v.uri).putExtra("nid", nid), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            finish("Przesłano na ${srv.name}. Dotknij, aby usunąć z telefonu", "$shown jest w Bibliotece (Z telefonu). " +
-                "Dotknij, aby usunąć go z telefonu (Android zapyta o zgodę, bo plik należy do przeglądarki).", pi)
+            finish(ctx.getString(R.string.media_upload_done_tap_title, srv.name),
+                ctx.getString(R.string.media_upload_done_tap_text, shown), pi)
         } else {
-            finish("Przesłano na ${srv.name}", "$shown jest w Bibliotece (Z telefonu). Android 10 i starsze nie pozwalają " +
-                "apce usunąć pliku przeglądarki: usuń go w Plikach albo w przeglądarce (Pobrane).")
+            finish(ctx.getString(R.string.media_upload_done_title, srv.name), ctx.getString(R.string.media_upload_done_old_text, shown))
         }
         return Result.success()
     }
@@ -497,7 +497,7 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 /** Przezroczysta: systemowe „Usunąć ten film?” dla pliku przeglądarki (Android 11+), potem znika. */
 class UploadDeleteActivity : ComponentActivity() {
     private val launcher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        Toast.makeText(this, if (r.resultCode == Activity.RESULT_OK) "Usunięto z telefonu" else "Zostawiono na telefonie",
+        Toast.makeText(this, getString(if (r.resultCode == Activity.RESULT_OK) R.string.media_upload_deleted else R.string.media_upload_kept),
             Toast.LENGTH_SHORT).show()
         finish()
     }
@@ -512,7 +512,7 @@ class UploadDeleteActivity : ComponentActivity() {
             val pi = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
             launcher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
         } catch (e: Exception) {
-            Toast.makeText(this, "Nie da się usunąć (może już go nie ma): ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.media_upload_delete_failed, e.message.toString()), Toast.LENGTH_LONG).show()
             finish()
         }
     }
@@ -527,14 +527,13 @@ fun UploadSettings() {
     var chosen by remember { mutableStateOf(Uploads.target(ctx)?.key) }
     val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (Uploads.canReadVideos(ctx)) { Uploads.enable(ctx); on = true }
-        else Toast.makeText(ctx, "Bez dostępu do filmów apka nie zobaczy pobranych plików", Toast.LENGTH_LONG).show()
+        else Toast.makeText(ctx, ctx.getString(R.string.media_upload_no_permission), Toast.LENGTH_LONG).show()
     }
-    Text("Przesyłanie na serwer", style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.media_upload_settings_title), style = MaterialTheme.typography.titleMedium)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Pytaj o przesłanie pobranych filmów")
-            Text("Gdy przeglądarka pobierze film (katalog Download, bez aparatu), apka zapyta w powiadomieniu, czy " +
-                "przesłać go na serwer. Prześle się samo, gdy telefon będzie w sieci Wi-Fi serwera, także po powrocie do domu.",
+            Text(stringResource(R.string.media_upload_settings_ask))
+            Text(stringResource(R.string.media_upload_settings_ask_desc),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(on, { want ->
@@ -554,21 +553,21 @@ fun UploadSettings() {
     }
     val overlayOk = remember(resumed) { UploadOverlay.allowed(ctx) }
     val deleteOk = remember(resumed) { Uploads.canDeleteSilently() }
-    PermRow("Okienko nad przeglądarką", if (overlayOk) "Pytanie wyskakuje nad przeglądarką, gdy film się pobierze."
-        else "Bez tego pytanie jest tylko w powiadomieniach. Wymaga zgody „Wyświetlanie nad innymi aplikacjami”.",
+    PermRow(stringResource(R.string.media_upload_overlay_title), stringResource(if (overlayOk) R.string.media_upload_overlay_on
+        else R.string.media_upload_overlay_off),
         overlayOk) { ctx.startActivity(UploadOverlay.settingsIntent(ctx)) }
-    if (Build.VERSION.SDK_INT >= 30) PermRow("Usuwaj bez pytania", if (deleteOk) "Po przesłaniu apka sama usuwa film z telefonu."
-        else "Bez tego Android po przesłaniu pyta, czy usunąć plik przeglądarki. Wymaga zgody „Dostęp do wszystkich plików” (szeroka: apka mogłaby czytać i zmieniać wszystkie pliki).",
+    if (Build.VERSION.SDK_INT >= 30) PermRow(stringResource(R.string.media_upload_silent_title), stringResource(if (deleteOk)
+        R.string.media_upload_silent_on else R.string.media_upload_silent_off),
         deleteOk) { ctx.startActivity(Uploads.allFilesIntent(ctx)) }
     val servers = Servers.all(ctx)
     val able = servers.filter { Uploads.canUpload(it) }
     if (able.isEmpty()) {
-        Text("Żaden serwer jeszcze nie zgłosił przesyłania (stary agent albo brak katalogu biblioteki). " +
-            "Do tego czasu próbuję: ${Uploads.target(ctx)?.name ?: "brak serwera"}.",
+        Text(stringResource(R.string.media_upload_no_capable,
+            Uploads.target(ctx)?.name ?: stringResource(R.string.media_upload_no_server_name)),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         return
     }
-    Text("Przesyłaj na:", style = MaterialTheme.typography.bodyMedium)
+    Text(stringResource(R.string.media_upload_to), style = MaterialTheme.typography.bodyMedium)
     able.forEach { srv ->
         Row(Modifier.fillMaxWidth().clickable { s.uploadServer = srv.key; chosen = srv.key },
             verticalAlignment = Alignment.CenterVertically) {

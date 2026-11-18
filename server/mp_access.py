@@ -15,6 +15,8 @@ import secrets
 import threading
 import time
 
+from mp_i18n import T
+
 TTL = 5 * 60
 MAX_PENDING = 5
 NAME_MAX = 60
@@ -51,21 +53,23 @@ class AccessRequests:
 
     def request(self, name, ip):
         if not is_lan(ip):
-            raise AccessError("prośba o dostęp działa tylko w sieci domowej", 403)
+            raise AccessError(T("access requests only work on the home network", "prośba o dostęp działa tylko w sieci domowej"), 403)
         name = " ".join(str(name or "").split())[:NAME_MAX]
         if not name:
-            raise AccessError("podaj nazwę urządzenia (żeby domownik wiedział, kto prosi)")
+            raise AccessError(T("enter a device name (so a household member knows who is asking)",
+                                "podaj nazwę urządzenia (żeby domownik wiedział, kto prosi)"))
         now = time.time()
         with self.lock:
             self._gc()
             self.recent = [t for t in self.recent if now - t < 60]
             if len(self.recent) >= 10:
-                raise AccessError("za dużo próśb, odczekaj minutę", 429)
+                raise AccessError(T("too many requests, wait a minute", "za dużo próśb, odczekaj minutę"), 429)
             for k, v in list(self.reqs.items()):  # ponowna prośba z tego samego adresu zastępuje poprzednią
                 if v["ip"] == ip and v["state"] == "pending":
                     del self.reqs[k]
             if sum(v["state"] == "pending" for v in self.reqs.values()) >= MAX_PENDING:
-                raise AccessError("za dużo oczekujących próśb, spróbuj za kilka minut", 429)
+                raise AccessError(T("too many pending requests, try again in a few minutes",
+                                        "za dużo oczekujących próśb, spróbuj za kilka minut"), 429)
             self.recent.append(now)
             rid, secret = secrets.token_hex(8), secrets.token_urlsafe(16)
             self.reqs[rid] = {"secret": secret, "name": name, "ip": ip, "at": now, "exp": now + TTL,
@@ -78,7 +82,7 @@ class AccessRequests:
             self._gc()
             r = self.reqs.get(rid)
             if not r or not secrets.compare_digest(str(secret or ""), r["secret"]):
-                raise AccessError("nie ma takiej prośby (wygasła?)", 404)
+                raise AccessError(T("no such request (expired?)", "nie ma takiej prośby (wygasła?)"), 404)
             out = {"state": r["state"], "expires_in": int(r["exp"] - time.time())}
             if r["state"] == "approved" and r["code"]:
                 out.update(code=r["code"], role=r["role"])
@@ -99,12 +103,12 @@ class AccessRequests:
     def decide(self, rid, body, devices, by):
         action = body.get("action")
         if action not in ("approve", "deny"):
-            raise AccessError("action: approve albo deny")
+            raise AccessError(T("action: approve or deny", "action: approve albo deny"))
         with self.lock:
             self._gc()
             r = self.reqs.get(rid)
             if not r or r["state"] != "pending":
-                raise AccessError("prośba wygasła albo ktoś już ją rozpatrzył", 409)
+                raise AccessError(T("the request has expired or someone already handled it", "prośba wygasła albo ktoś już ją rozpatrzył"), 409)
             if action == "deny":
                 r["state"] = "denied"
                 r["exp"] = min(r["exp"], time.time() + 60)

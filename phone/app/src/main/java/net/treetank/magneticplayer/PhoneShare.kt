@@ -83,9 +83,9 @@ object PhoneShare {
     fun start(ctx: Context, ref: MediaRef): MediaSrc {
         val app = ctx.applicationContext
         val item = OfflineStore.get(app, ref.key())?.takeIf { hasWhole(app, ref.key()) }
-            ?: throw ApiException("Tego filmu nie ma w całości na telefonie")
-        val ip = lanIp(app) ?: throw ApiException("Telefon nie jest w Wi-Fi, więc ekran go nie zobaczy")
-        val size = item.size.takeIf { it > 0 } ?: throw ApiException("Nie znam rozmiaru pliku")
+            ?: throw ApiException(app.getString(R.string.media_share_not_whole))
+        val ip = lanIp(app) ?: throw ApiException(app.getString(R.string.media_share_no_wifi))
+        val size = item.size.takeIf { it > 0 } ?: throw ApiException(app.getString(R.string.media_share_no_size))
         val subs = item.subs.filter { File(it.file).exists() }
         shared = Shared(item.key, size, ref.title, mime(ref.title), subs)
         val sock = server ?: ServerSocket(0).also { s ->
@@ -297,18 +297,18 @@ class ShareService : Service() {
             return START_NOT_STICKY
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "Udostępnianie z telefonu", NotificationManager.IMPORTANCE_LOW))
+            NotificationChannel(CHANNEL, getString(R.string.media_share_channel), NotificationManager.IMPORTANCE_LOW))
         val stopPi = PendingIntent.getService(this, 0, Intent(this, ShareService::class.java).setAction("stop"),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).putExtra("tab", TAB_REMOTE),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Film z telefonu na ekranie")
+            .setContentTitle(getString(R.string.media_share_title))
             .setContentText(intent?.getStringExtra("title") ?: "")
             .setOngoing(true)
             .setContentIntent(open)
-            .addAction(0, "Zatrzymaj", stopPi)
+            .addAction(0, getString(R.string.media_share_stop), stopPi)
             .build()
         ServiceCompat.startForeground(this, NOTIF_ID, n,
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)

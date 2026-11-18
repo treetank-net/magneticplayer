@@ -101,11 +101,16 @@ data class SubResult(
 }
 data class SubFile(val name: String, val lang: String, val ext: String)
 
-val AFTER_LABELS = linkedMapOf(
-    "none" to "nic (seeduje dalej)",
-    "stop" to "zatrzymaj torrent",
-    "suspend" to "uśpij komputer",
+/** Etykiety akcji po pobraniu w języku telefonu (zasoby media_after_*). */
+fun afterLabels(ctx: Context): Map<String, String> = linkedMapOf(
+    "none" to ctx.getString(R.string.media_after_none),
+    "stop" to ctx.getString(R.string.media_after_stop),
+    "suspend" to ctx.getString(R.string.media_after_suspend),
 )
+
+/** Język telefonu dla agenta: wybiera po nim język komunikatów błędów. */
+fun HttpURLConnection.acceptPhoneLanguage() =
+    setRequestProperty("Accept-Language", java.util.Locale.getDefault().toLanguageTag())
 
 /**
  * Wskazanie pliku na serwerze `srv` (klucz z [Servers]): z torrenta, z biblioteki albo „to, co gra teraz w mpv”.
@@ -199,17 +204,18 @@ class Api(val s: Settings, val srv: Server) {
         fun of(ctx: Context, key: String?): Api? = Servers.get(ctx, key)?.let { Api(Settings(ctx), it) }
         /** Serwer, z którego pochodzi film. */
         fun forRef(ctx: Context, ref: MediaRef): Api =
-            of(ctx, ref.srv) ?: throw ApiException("Nie ma już serwera, z którego był ten film")
+            of(ctx, ref.srv) ?: throw ApiException(ctx.getString(R.string.media_err_server_gone_for_video))
     }
 
     private fun call(method: String, path: String, body: JSONObject? = null, timeout: Int = 8000): String {
-        if (!configured) throw ApiException("Dodaj serwer (Ustawienia → Dodaj serwer)")
+        if (!configured) throw ApiException(ctx.getString(R.string.media_err_add_server))
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {
             c.requestMethod = method
             c.connectTimeout = timeout
             c.readTimeout = timeout
             c.setRequestProperty("Authorization", "Bearer ${srv.token}")
+            c.acceptPhoneLanguage()
             if (body != null) {
                 c.doOutput = true
                 c.setRequestProperty("Content-Type", "application/json")
@@ -223,7 +229,8 @@ class Api(val s: Settings, val srv: Server) {
             }
             return text
         } catch (e: IOException) {
-            throw ApiException("${srv.name.ifEmpty { "Serwer" }} nie odpowiada (${e.javaClass.simpleName})")
+            throw ApiException(ctx.getString(R.string.media_err_no_response,
+                srv.name.ifEmpty { ctx.getString(R.string.media_server_cap) }, e.javaClass.simpleName))
         } finally {
             c.disconnect()
         }
@@ -240,6 +247,7 @@ class Api(val s: Settings, val srv: Server) {
         val c = runCatching { URL("$base/api/ping").openConnection() as HttpURLConnection }.getOrNull() ?: return false
         return try {
             c.connectTimeout = timeout; c.readTimeout = timeout
+            c.acceptPhoneLanguage()
             val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
             val id = j.optString("id")
             wrongServer = srv.uid != null && id.isNotEmpty() && id != srv.uid
@@ -496,13 +504,14 @@ class Api(val s: Settings, val srv: Server) {
 
     private fun uploadRequest(method: String, path: String, length: Long, input: java.io.InputStream?,
                               onProgress: ((Long) -> Unit)?): Pair<Int, JSONObject> {
-        if (!configured) throw ApiException("Dodaj serwer (Ustawienia → Dodaj serwer)")
+        if (!configured) throw ApiException(ctx.getString(R.string.media_err_add_server))
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {
             c.requestMethod = method
             c.connectTimeout = 8000
             c.readTimeout = 90_000
             c.setRequestProperty("Authorization", "Bearer ${srv.token}")
+            c.acceptPhoneLanguage()
             if (method == "PUT") {
                 c.doOutput = true
                 c.setFixedLengthStreamingMode(length)
@@ -512,7 +521,7 @@ class Api(val s: Settings, val srv: Server) {
                     var sent = 0L
                     while (input != null && sent < length) {
                         val n = input.read(buf, 0, minOf(buf.size.toLong(), length - sent).toInt())
-                        if (n < 0) throw IOException("plik na telefonie jest krótszy, niż był")
+                        if (n < 0) throw IOException("file on the phone is shorter than before")
                         out.write(buf, 0, n)
                         sent += n
                         onProgress?.invoke(sent)
@@ -523,7 +532,8 @@ class Api(val s: Settings, val srv: Server) {
             val text = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
             return code to (runCatching { JSONObject(text) }.getOrNull() ?: JSONObject())
         } catch (e: IOException) {
-            throw ApiException("${srv.name.ifEmpty { "Serwer" }} nie odpowiada (${e.javaClass.simpleName})")
+            throw ApiException(ctx.getString(R.string.media_err_no_response,
+                srv.name.ifEmpty { ctx.getString(R.string.media_server_cap) }, e.javaClass.simpleName))
         } finally {
             c.disconnect()
         }
@@ -533,7 +543,7 @@ class Api(val s: Settings, val srv: Server) {
     fun mediaUrl(ref: MediaRef): String = when (ref) {
         is MediaRef.InTorrent -> "$base/media/${ref.torrentId}/${ref.index}/${Uri.encode(ref.title)}?token=${Uri.encode(srv.token)}"
         is MediaRef.InLibrary -> "$base/lib/${ref.root}/${ref.path.split('/').joinToString("/") { Uri.encode(it) }}?token=${Uri.encode(srv.token)}"
-        is MediaRef.Playing -> throw ApiException("nie da się strumieniować „tego, co gra”")
+        is MediaRef.Playing -> throw ApiException(ctx.getString(R.string.media_err_cannot_stream_playing))
     }
 
     /**
@@ -543,12 +553,12 @@ class Api(val s: Settings, val srv: Server) {
      */
     suspend fun ensureAwake(onStatus: (String) -> Unit): Unit = withContext(Dispatchers.IO) {
         if (ping()) return@withContext
-        if (wrongServer) throw ApiException("Pod adresem ${srv.host} odpowiada inny serwer. Sparuj ${srv.name} ponownie.")
+        if (wrongServer) throw ApiException(ctx.getString(R.string.media_err_wrong_server, srv.host, srv.name))
         val mac = Servers.get(ctx, srv.key)?.mac.orEmpty().ifBlank { srv.mac }
         if (mac.isBlank()) throw ApiException(
-            "${srv.name} nie odpowiada, a nie znam jego MAC. Połącz się raz, gdy działa (Ustawienia → serwer → Testuj)."
+            ctx.getString(R.string.media_err_no_mac, srv.name)
         )
-        val name = srv.name.ifEmpty { "serwer" }
+        val name = srv.name.ifEmpty { ctx.getString(R.string.media_server_lower) }
         val start = System.currentTimeMillis()
         var lastWol = 0L
         var via: String? = null
@@ -565,7 +575,9 @@ class Api(val s: Settings, val srv: Server) {
                     if (a.ping(1000) && runCatching { a.wakeOther(mac, srv.host) }.isSuccess) o.name else null
                 } ?: ""
             }
-            onStatus(if (!via.isNullOrEmpty()) "Budzę $name przez $via… ${(now - start) / 1000} s" else "Budzę $name… ${(now - start) / 1000} s")
+            val secs = ((now - start) / 1000).toInt()
+            onStatus(if (!via.isNullOrEmpty()) ctx.getString(R.string.media_waking_via, name, via, secs)
+                else ctx.getString(R.string.media_waking, name, secs))
             if (ping(1500)) {
                 Servers.update(ctx, srv.key) { it.copy(wakeOk = true) }
                 // agent zapamięta to dla wszystkich urządzeń (starszy agent nie zna endpointu: trudno)
@@ -574,7 +586,7 @@ class Api(val s: Settings, val srv: Server) {
             }
             delay(1500)
         }
-        throw ApiException("$name nie wstał w 2 minuty. Sprawdź Wake-on-LAN w BIOS-ie i kabel sieciowy.")
+        throw ApiException(ctx.getString(R.string.media_err_wake_timeout, name))
     }
 
     /** Dodanie magneta z ponawianiem — po wybudzeniu deluged/deluge-web potrzebują chwili. */
@@ -587,11 +599,11 @@ class Api(val s: Settings, val srv: Server) {
                 } catch (e: ApiException) {
                     if (e.code != 502 && e.code != 0) throw e
                     last = e
-                    onStatus("Czekam na Deluge… (${attempt + 1})")
+                    onStatus(ctx.getString(R.string.media_waiting_deluge, attempt + 1))
                     delay(3000)
                 }
             }
-            throw last ?: ApiException("Nie udało się dodać")
+            throw last ?: ApiException(ctx.getString(R.string.media_err_add_failed))
         }
 }
 

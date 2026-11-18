@@ -21,6 +21,7 @@ import threading
 import time
 
 from mp_devices import CODE_ALPHABET, normalize_code
+from mp_i18n import T
 
 TTL = 30 * 60
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,7 +58,8 @@ class Installs:
 
     def new_code(self, device):
         if not self.available():
-            raise InstallError("brak skryptów instalacyjnych obok agenta — uruchom ponownie install.sh", 409)
+            raise InstallError(T("install scripts are missing next to the agent — run install.sh again",
+                                 "brak skryptów instalacyjnych obok agenta — uruchom ponownie install.sh"), 409)
         with self.lock:
             self._gc()
             code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
@@ -70,12 +72,12 @@ class Installs:
         with self.lock:
             self.fails = [t for t in self.fails if now - t < 60]
             if len(self.fails) >= 10:
-                raise InstallError("za dużo prób, odczekaj minutę", 429)
+                raise InstallError(T("too many attempts, wait a minute", "za dużo prób, odczekaj minutę"), 429)
             self._gc()
             c = self.codes.get(normalize_code(code))
             if not c or c["state"] == "joined":
                 self.fails.append(now)
-                raise InstallError("zły, zużyty albo przeterminowany kod instalacji", 403)
+                raise InstallError(T("invalid, used or expired install code", "zły, zużyty albo przeterminowany kod instalacji"), 403)
             return c
 
     # ---- nowy komputer (bez tokenu)
@@ -91,7 +93,8 @@ class Installs:
         """Windows: `irm <url>/ps | iex` (zawsze instalacja lekka)."""
         self.script(code, base, False)  # ten sam stan i kontrola kodu
         if not all(os.path.isfile(os.path.join(HERE, f)) for f in ("install.ps1", "join.ps1")):
-            raise InstallError("ten serwer nie ma instalatora dla Windows (install.ps1) — zaktualizuj go", 409)
+            raise InstallError(T("this server has no Windows installer (install.ps1) — update it",
+                                     "ten serwer nie ma instalatora dla Windows (install.ps1) — zaktualizuj go"), 409)
         return template("join.ps1").replace("@URL@", f"{base}/i/{normalize_code(code)}")
 
     def bundle(self, code):
@@ -114,7 +117,7 @@ class Installs:
         c = self._get(body.get("code"))
         pair = normalize_code(body.get("pair_code"))
         if len(pair) != 6 or not body.get("id"):
-            raise InstallError("brak kodu parowania albo id nowego serwera")
+            raise InstallError(T("missing pairing code or new server id", "brak kodu parowania albo id nowego serwera"))
         with self.lock:
             c["state"] = "joined"
             c["server"] = {"host": host, "port": int(body.get("port") or 8765), "id": str(body["id"])[:40],
@@ -131,7 +134,7 @@ class Installs:
             self._gc()
             c = self.codes.get(normalize_code(code))
             if not c or c["by"] != device:
-                raise InstallError("nie ma takiego kodu instalacji", 404)
+                raise InstallError(T("no such install code", "nie ma takiego kodu instalacji"), 404)
             return {"state": c["state"], "server": c["server"], "downloads": c["downloads"],
                     "expires_in": int(c["exp"] - time.time())}
 

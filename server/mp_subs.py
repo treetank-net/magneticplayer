@@ -9,7 +9,10 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, wait
 
+from mp_i18n import T, bind
+
 VENV = os.path.expanduser("~/.local/share/magneticplayer/venv")
+STOPPED = ("interrupted", "przerwane")  # (en, pl) — stan źródła po „Wystarczy”
 BY_HASH_ONLY = {"bsplayer", "napiprojekt"}  # szukają po hashu pliku — zmiana tytułu nic im nie da
 FREE_PROVIDERS = ["podnapisi", "bsplayer", "gestdown", "napiprojekt"]  # tvsubtitles: 403
 
@@ -39,7 +42,7 @@ def _subliminal():
             import subliminal
             from babelfish import Language
         except ImportError:
-            raise SubsError("brak subliminal — uruchom ponownie server/install.sh", 500)
+            raise SubsError(T("subliminal is missing — run server/install.sh again", "brak subliminal — uruchom ponownie server/install.sh"), 500)
         subliminal.region.configure("dogpile.cache.memory")
         _sl = (subliminal, Language)
     return _sl
@@ -80,7 +83,7 @@ class Subtitles:
     def _video(self, full):
         sl, _ = _subliminal()
         if not os.path.exists(full):
-            raise SubsError("pliku jeszcze nie ma na dysku", 404)
+            raise SubsError(T("the file isn't on disk yet", "pliku jeszcze nie ma na dysku"), 404)
         v = sl.scan_video(full)
         names, _ = self.providers()
         try:
@@ -116,14 +119,14 @@ class Subtitles:
         names, configs = self.providers()
         prov = (progress if progress is not None else {}).setdefault("providers", {})
         for n in names:
-            prov[n] = {"state": "skip", "error": "szuka po hashu — bez zmian"} if n in skip else {"state": "pending"}
+            prov[n] = {"state": "skip", "error": T("searches by hash — no change", "szuka po hashu — bez zmian")} if n in skip else {"state": "pending"}
         names = [n for n in names if n not in skip]
 
-        stopped = {"przerwane"}
+        stopped = set(STOPPED)
 
         def one(name):
             if (progress or {}).get("stop"):
-                prov[name] = {"state": "skip", "error": "przerwane"}
+                prov[name] = {"state": "skip", "error": T(*STOPPED)}
                 return []
             prov[name] = {"state": "running"}
             t0 = time.time()
@@ -134,8 +137,10 @@ class Subtitles:
                 subs = list(getattr(res, "subtitles", None) or [])
                 state = {"UNSUPPORTED_VIDEO": "skip", "UNSUPPORTED_LANGUAGES": "skip",
                          "OUTAGE": "error", "FAILURE": "error"}.get(status, "done")
-                why = {"UNSUPPORTED_VIDEO": "nie dla tego typu wideo", "UNSUPPORTED_LANGUAGES": "nie ma tych języków",
-                       "OUTAGE": "serwis nie działa", "FAILURE": "błąd lub brak połączenia"}.get(status)
+                why = {"UNSUPPORTED_VIDEO": T("not for this type of video", "nie dla tego typu wideo"),
+                       "UNSUPPORTED_LANGUAGES": T("doesn't have these languages", "nie ma tych języków"),
+                       "OUTAGE": T("service is down", "serwis nie działa"),
+                       "FAILURE": T("error or no connection", "błąd lub brak połączenia")}.get(status)
                 if prov[name].get("error") not in stopped:  # „Wystarczy” — wynik już nikogo nie obchodzi
                     prov[name] = {"state": state, "count": len(subs), "secs": round(time.time() - t0, 1),
                                   **({"error": why} if why else {})}
@@ -146,7 +151,7 @@ class Subtitles:
                 return []
 
         ex = ThreadPoolExecutor(max_workers=max(1, len(names)))
-        futs = {ex.submit(one, n): n for n in names}
+        futs = {ex.submit(bind(one), n): n for n in names}
         pending, subs = set(futs), []
         while pending:
             done, pending = wait(pending, timeout=0.4)
@@ -154,7 +159,7 @@ class Subtitles:
                 subs += f.result()
             if pending and (progress or {}).get("stop"):
                 for f in pending:  # wątki dobiegną w tle, ale już na nie nie czekamy
-                    prov[futs[f]] = {"state": "skip", "error": "przerwane"}
+                    prov[futs[f]] = {"state": "skip", "error": T(*STOPPED)}
                 break
         ex.shutdown(wait=False)
         found, results = {}, []
@@ -196,20 +201,20 @@ class Subtitles:
                 job["error"] = repr(e)
             job["phase"] = "done"
             job["done"] = True
-        threading.Thread(target=run, daemon=True).start()
+        threading.Thread(target=bind(run), daemon=True).start()
         return jid
 
     def stop(self, jid):
         """„Wystarczy”: nie czekaj na wolne źródła, pokaż to, co już jest (bez drugiej rundy)."""
         j = self.jobs.get(jid)
         if not j:
-            raise SubsError("nie ma takiego wyszukiwania", 404)
+            raise SubsError(T("no such search", "nie ma takiego wyszukiwania"), 404)
         j["stop"] = True
 
     def job(self, jid):
         j = self.jobs.get(jid)
         if not j:
-            raise SubsError("nie ma takiego wyszukiwania (agent restartował?)", 404)
+            raise SubsError(T("no such search (did the agent restart?)", "nie ma takiego wyszukiwania (agent restartował?)"), 404)
         out = dict(j)
         out["providers"] = {k: dict(v) for k, v in (j.get("providers") or {}).items()}
         out["elapsed"] = round(time.time() - j["started"], 1)
@@ -225,7 +230,7 @@ class Subtitles:
             except ValueError:
                 pass
         if not langs:
-            raise SubsError("podaj języki, np. en,pl", 400)
+            raise SubsError(T("give languages, e.g. en,pl", "podaj języki, np. en,pl"), 400)
         progress["phase"] = "file"  # hash pliku + rozpoznanie tytułu
         v = self._video(full)
         self._set_title(v, title, year)
@@ -270,11 +275,11 @@ class Subtitles:
         try:
             type(prov).download_subtitle.__wrapped__(prov, s)
         except DownloadLimitReached:
-            raise SubsError("OpenSubtitles: dzienny limit pobrań wyczerpany", 429)
+            raise SubsError(T("OpenSubtitles: daily download limit reached", "OpenSubtitles: dzienny limit pobrań wyczerpany"), 429)
         except Exception as e:  # noqa: BLE001
             raise SubsError(f"OpenSubtitles: {e}", 502)
         if not s.content:
-            raise SubsError("OpenSubtitles nie oddał napisów", 502)
+            raise SubsError(T("OpenSubtitles returned no subtitles", "OpenSubtitles nie oddał napisów"), 502)
 
     def download(self, full, sub_id, provider, languages=("en",), title=None, year=None):
         sl, _ = _subliminal()
@@ -286,7 +291,8 @@ class Subtitles:
             with self.lock:
                 c = self.cache.get(full)
             if not c or key not in c[2]:
-                raise SubsError("tych napisów już nie ma w wynikach — szukaj jeszcze raz", 404)
+                raise SubsError(T("these subtitles are no longer in the results — search again",
+                                  "tych napisów już nie ma w wynikach — szukaj jeszcze raz"), 404)
         _, v, found = c
         s = found[key]
         names, configs = self.providers()
@@ -294,12 +300,13 @@ class Subtitles:
             if provider == "opensubtitlescom" and "username" not in configs.get(provider, {}):
                 self._oscom_anonymous(pool, s)
             elif not pool.download_subtitle(s) or not s.content:
-                raise SubsError(f"{provider} nie oddał napisów (limit pobrań?)", 502)
+                raise SubsError(T(f"{provider} returned no subtitles (download limit?)", f"{provider} nie oddał napisów (limit pobrań?)"), 502)
         before = time.time() - 1
         try:
             sl.save_subtitles(v, [s], encoding="utf-8")
         except OSError as e:
-            raise SubsError(f"nie da się zapisać napisów obok filmu: {e.strerror}", 500)
+            raise SubsError(T(f"can't save subtitles next to the video: {e.strerror}",
+                              f"nie da się zapisać napisów obok filmu: {e.strerror}"), 500)
         d = os.path.dirname(full)
         stem = os.path.splitext(os.path.basename(full))[0]
         saved = sorted((n for n in os.listdir(d) if n.startswith(stem) and n != os.path.basename(full)

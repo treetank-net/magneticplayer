@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -93,7 +94,7 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
     }
     val api = remember(target) { Api.of(ctx, target) ?: Api(Settings(ctx), Server.NONE) }
     var phase by remember { mutableStateOf(Phase.Working) }
-    var status by remember { mutableStateOf("Sprawdzam ${api.srv.name.ifEmpty { "serwer" }}…") }
+    var status by remember { mutableStateOf(ctx.getString(R.string.media_magnet_checking, api.srv.name.ifEmpty { ctx.getString(R.string.media_server_lower) })) }
     var attempt by remember { mutableIntStateOf(0) }
     var sequential by remember { mutableStateOf(api.s.sequential) }
     var autoClose by remember { mutableStateOf(true) }
@@ -105,21 +106,21 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
 
     LaunchedEffect(attempt) {
         if (magnet == null) {
-            phase = Phase.Error; status = "W tym, co przyszło, nie ma magnet linka."; return@LaunchedEffect
+            phase = Phase.Error; status = ctx.getString(R.string.media_magnet_no_link); return@LaunchedEffect
         }
         if (!api.configured) {
-            phase = Phase.Error; status = "Najpierw dodaj serwer z torrentami (Ustawienia → Dodaj serwer)."; return@LaunchedEffect
+            phase = Phase.Error; status = ctx.getString(R.string.media_magnet_no_server); return@LaunchedEffect
         }
         phase = Phase.Working
         try {
             api.ensureAwake { status = it }
-            status = "Wysyłam do ${api.srv.name}…"
+            status = ctx.getString(R.string.media_magnet_sending, api.srv.name)
             tid = api.addMagnetRetrying(magnet, sequential, after) { status = it }
             phase = Phase.Done
-            status = "Dodano. Pobiera się na ${api.srv.name}."
+            status = ctx.getString(R.string.media_magnet_added, api.srv.name)
         } catch (e: ApiException) {
             phase = Phase.Error
-            status = e.message ?: "Błąd"
+            status = e.message ?: ctx.getString(R.string.media_error)
         }
     }
     LaunchedEffect(phase, autoClose) {
@@ -154,9 +155,10 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
                 }
                 if (phase == Phase.Done && tid != null) {
                     Spacer(Modifier.height(10.dp))
-                    Text("Gdy się pobierze:", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.media_magnet_when_done), style = MaterialTheme.typography.labelMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("none" to "nic", "stop" to "zatrzymaj", "suspend" to "uśpij serwer")
+                        listOf("none" to stringResource(R.string.media_magnet_after_none), "stop" to stringResource(R.string.media_magnet_after_stop),
+                            "suspend" to stringResource(R.string.media_magnet_after_suspend))
                             .forEach { (k, label) ->
                                 FilterChip(after == k, {
                                     autoClose = false
@@ -169,21 +171,21 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
                 if (phase == Phase.Error && magnet != null && api.configured) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(sequential, { sequential = it })
-                        Text("pobieranie sekwencyjne (do oglądania w trakcie)", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.media_magnet_sequential), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     when (phase) {
-                        Phase.Working -> TextButton(onClose) { Text("Anuluj") }
+                        Phase.Working -> TextButton(onClose) { Text(stringResource(R.string.media_cancel)) }
                         Phase.Done -> {
-                            TextButton({ onOpenApp(TAB_TORRENTS) }) { Text("Pokaż") }
+                            TextButton({ onOpenApp(TAB_TORRENTS) }) { Text(stringResource(R.string.media_magnet_show)) }
                             TextButton(onClose) { Text(if (autoClose) "OK ($countdown)" else "OK") }
                         }
                         Phase.Error -> {
-                            if (!api.configured) TextButton({ onOpenApp(TAB_SETTINGS) }) { Text("Ustawienia") }
-                            else if (magnet != null) TextButton({ attempt++ }) { Text("Ponów") }
-                            TextButton(onClose) { Text("Zamknij") }
+                            if (!api.configured) TextButton({ onOpenApp(TAB_SETTINGS) }) { Text(stringResource(R.string.media_settings)) }
+                            else if (magnet != null) TextButton({ attempt++ }) { Text(stringResource(R.string.media_retry)) }
+                            TextButton(onClose) { Text(stringResource(R.string.media_close)) }
                         }
                     }
                 }
@@ -198,7 +200,7 @@ private fun MagnetTargetDialog(targets: List<Server>, name: String, onClose: () 
     var keep by remember { mutableStateOf(false) }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onClose,
-        title = { Text("Gdzie pobrać?") },
+        title = { Text(stringResource(R.string.media_magnet_where)) },
         text = {
             Column {
                 Text(name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -212,10 +214,10 @@ private fun MagnetTargetDialog(targets: List<Server>, name: String, onClose: () 
                 }
                 Row(Modifier.clickable { keep = !keep }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(keep, { keep = it })
-                    Text("zapamiętaj (zmienisz w Ustawieniach)", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.media_magnet_remember), style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
-        confirmButton = { TextButton(onClose) { Text("Anuluj") } },
+        confirmButton = { TextButton(onClose) { Text(stringResource(R.string.media_cancel)) } },
     )
 }

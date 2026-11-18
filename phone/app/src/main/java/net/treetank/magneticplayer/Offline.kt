@@ -11,14 +11,14 @@ import java.security.MessageDigest
 
 /** Kiedy kasować pobrany film: po obejrzeniu, po N dniach od pobrania albo tylko ręcznie. */
 val RETENTION = listOf(
-    "watched" to "po obejrzeniu",
-    "days:2" to "po 2 dniach",
-    "days:7" to "po tygodniu",
-    "days:30" to "po miesiącu",
-    "manual" to "tylko ręcznie",
+    "watched" to R.string.media_ret_watched,
+    "days:2" to R.string.media_ret_2d,
+    "days:7" to R.string.media_ret_7d,
+    "days:30" to R.string.media_ret_30d,
+    "manual" to R.string.media_ret_manual,
 )
 
-fun retentionLabel(policy: String) = RETENTION.firstOrNull { it.first == policy }?.second ?: policy
+fun retentionLabel(ctx: Context, policy: String) = RETENTION.firstOrNull { it.first == policy }?.let { ctx.getString(it.second) } ?: policy
 
 /** Napisy zapisane na telefonie razem z pobranym filmem. */
 data class LocalSub(val name: String, val lang: String, val ext: String, val file: String) {
@@ -118,6 +118,7 @@ fun headProbe(url: String, from: Long): Pair<Long, Long> {
         c.requestMethod = "HEAD"
         c.connectTimeout = 8_000; c.readTimeout = 8_000
         c.setRequestProperty("Range", "bytes=$from-")
+        c.acceptPhoneLanguage()
         if (c.responseCode !in 200..299) throw IOException("HTTP ${c.responseCode}")
         val size = c.getHeaderField("Content-Range")?.substringAfter('/')?.toLongOrNull()
             ?: c.getHeaderField("Content-Length")?.toLongOrNull() ?: throw IOException("brak rozmiaru")
@@ -133,6 +134,7 @@ fun download(url: String, f: File) {
     val c = URL(url).openConnection() as HttpURLConnection
     try {
         c.connectTimeout = 8_000; c.readTimeout = 15_000
+        c.acceptPhoneLanguage()
         if (c.responseCode != 200) throw IOException("HTTP ${c.responseCode}")
         f.parentFile?.mkdirs()
         c.inputStream.use { inp -> f.outputStream().use { inp.copyTo(it) } }

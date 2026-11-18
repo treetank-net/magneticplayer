@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -126,23 +127,23 @@ object UploadOverlay {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.CloudUpload, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(10.dp))
-                    Text("Przesłać na $server?", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.media_overlay_title, server), style = MaterialTheme.typography.titleMedium)
                 }
                 Spacer(Modifier.padding(top = 6.dp))
                 Text(v.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(end = 8.dp))
-                Text("${humanBytes(v.size)} · prześle się, gdy telefon będzie w sieci Wi-Fi serwera",
+                Text(stringResource(R.string.media_overlay_size, humanBytes(v.size)),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(end = 8.dp))
-                Text("„Prześlij i usuń”: po przesłaniu film zniknie z telefonu" +
-                    if (Uploads.canDeleteSilently()) "." else " (Android zapyta o zgodę).",
+                Text(stringResource(if (Uploads.canDeleteSilently()) R.string.media_overlay_delete_note_silent
+                    else R.string.media_overlay_delete_note_ask),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(end = 8.dp, top = 2.dp))
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                     verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(dismiss) { Text("Nie") }
-                    FilledTonalButton({ upload(false) }) { Text("Prześlij") }
-                    Button({ upload(true) }) { Text("Prześlij i usuń") }
+                    TextButton(dismiss) { Text(stringResource(R.string.media_no)) }
+                    FilledTonalButton({ upload(false) }) { Text(stringResource(R.string.media_upload_action)) }
+                    Button({ upload(true) }) { Text(stringResource(R.string.media_overlay_send_delete)) }
                 }
             }
         }

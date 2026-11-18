@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -66,7 +67,7 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     var opening by remember { mutableStateOf<String?>(null) }
     val canScreen = true  // ekrany mpv, Chromecasty, telewizory DLNA: wybór pokaże, co jest w sieci
     fun playOn(item: OfflineItem, key: String?, cast: CastTarget?, tv: DlnaTarget? = null) = scope.launch {
-        opening = "Otwieram…"
+        opening = ctx.getString(R.string.media_opening)
         try {
             if (cast != null) Screens.cast(ctx, item.ref, cast, null) { opening = it }
             else if (tv != null) Screens.dlna(ctx, item.ref, tv, null) { opening = it }
@@ -93,8 +94,7 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
         }
     }
     val list = rows ?: return
-    if (list.isEmpty()) return Hint("Nic nie ma na telefonie. Żeby obejrzeć film bez sieci (w drodze, poza domem), " +
-        "w Bibliotece albo przy torrencie otwórz menu ⋮ filmu → „Pobierz na telefon”.")
+    if (list.isEmpty()) return Hint(stringResource(R.string.media_offline_empty))
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(list, key = { it.item.key }) { r ->
             OfflineCard(r, dl[r.item.key],
@@ -122,15 +122,15 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     confirmDelete?.let { item ->
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
-            title = { Text("Usunąć z telefonu?") },
-            text = { Text("${item.title}\n\nNa serwerze zostaje.") },
+            title = { Text(stringResource(R.string.media_offline_delete_title)) },
+            text = { Text(stringResource(R.string.media_offline_delete_text, item.title)) },
             confirmButton = {
                 TextButton({
                     confirmDelete = null
                     scope.launch { withContext(Dispatchers.IO) { MediaCache.remove(ctx, item.key) }; refresh++ }
-                }) { Text("Usuń") }
+                }) { Text(stringResource(R.string.media_delete)) }
             },
-            dismissButton = { TextButton({ confirmDelete = null }) { Text("Anuluj") } },
+            dismissButton = { TextButton({ confirmDelete = null }) { Text(stringResource(R.string.media_cancel)) } },
         )
     }
 }
@@ -149,48 +149,48 @@ private fun OfflineCard(
             val done = i.size > 0 && r.cached >= i.size
             val line = when {
                 dlStatus != null -> dlStatus
-                done -> "Cały film na telefonie · ${humanBytes(i.size)}"
-                i.complete -> "Film zniknął z telefonu (${(frac * 100).toInt()}%). Pobierz ponownie"
+                done -> stringResource(R.string.media_offline_whole, humanBytes(i.size))
+                i.complete -> stringResource(R.string.media_offline_gone, (frac * 100).toInt())
                 i.error != null -> "${i.error} · ${(frac * 100).toInt()}%"
-                i.want -> "W kolejce do pobrania"
-                i.size > 0 -> "Na telefonie ${(frac * 100).toInt()}% · ${humanBytes(r.cached)} z ${humanBytes(i.size)}"
+                i.want -> stringResource(R.string.media_offline_queued)
+                i.size > 0 -> stringResource(R.string.media_offline_partial, (frac * 100).toInt(), humanBytes(r.cached), humanBytes(i.size))
                 else -> humanBytes(r.cached)
             }
             Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // z którego serwera (gdy jest ich kilka): tam idzie „Wznów” i stamtąd są napisy
             val ctx = androidx.compose.ui.platform.LocalContext.current
-            val from = remember(i.ref.srv) { if (Servers.all(ctx).size > 1) Servers.get(ctx, i.ref.srv)?.name ?: "usunięty serwer" else null }
-            if (from != null) Text("z: $from", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            val from = remember(i.ref.srv) { if (Servers.all(ctx).size > 1) Servers.get(ctx, i.ref.srv)?.name ?: ctx.getString(R.string.media_offline_deleted_server) else null }
+            if (from != null) Text(stringResource(R.string.media_offline_from, from), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             if (!done && i.size > 0) LinearProgressIndicator({ frac.toFloat() }, Modifier.fillMaxWidth())
             // ile da się obejrzeć od początku bez sieci (szacunek ze średniego bitrate)
             if (i.durationMs > 0 && i.size > 0 && !done && r.fromStart > 0) {
-                Text("Bez sieci od początku: do ${clock(i.durationMs / 1000.0 * r.fromStart / i.size)} z ${clock(i.durationMs / 1000.0)}",
+                Text(stringResource(R.string.media_offline_from_start, clock(i.durationMs / 1000.0 * r.fromStart / i.size), clock(i.durationMs / 1000.0)),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onPlay) {
-                    Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Odtwórz")
+                    Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.media_play))
                 }
                 if (onScreen != null) OutlinedButton(onScreen) {
-                    Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Na ekran")
+                    Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.media_to_screen))
                 }
                 if (!done && dlStatus == null && !i.want) OutlinedButton(onDownload) {
                     Icon(Icons.Filled.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                    Text(if (i.pinned) "Wznów" else "Pobierz całość")
+                    Text(stringResource(if (i.pinned) R.string.media_resume else R.string.media_download_whole))
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onDelete) { Icon(Icons.Filled.Delete, "usuń z telefonu") }
+                IconButton(onDelete) { Icon(Icons.Filled.Delete, stringResource(R.string.media_cd_delete_from_phone)) }
             }
             if (i.pinned) Box {
                 TextButton({ menu = true }) {
                     Icon(Icons.Filled.Schedule, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
-                    Text("Kasowanie: ${retentionLabel(i.policy)}" + daysLeft(i))
+                    Text(stringResource(R.string.media_offline_retention, retentionLabel(ctx, i.policy)) + daysLeft(ctx, i))
                 }
                 DropdownMenu(menu, { menu = false }) {
-                    RETENTION.forEach { (p, label) -> DropdownMenuItem({ Text(label) }, { menu = false; onPolicy(p) }) }
+                    RETENTION.forEach { (p, label) -> DropdownMenuItem({ Text(stringResource(label)) }, { menu = false; onPolicy(p) }) }
                 }
             } else {
-                Text("Bufor z oglądania: zniknie po obejrzeniu albo po 2 dniach bez oglądania. „Pobierz całość” zatrzyma go na dłużej.",
+                Text(stringResource(R.string.media_offline_buffer_note),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -198,12 +198,12 @@ private fun OfflineCard(
 }
 
 /** Dla zasady „po N dniach”: ile zostało (liczone od pobrania albo zmiany zasady). */
-private fun daysLeft(i: OfflineItem): String {
+private fun daysLeft(ctx: android.content.Context, i: OfflineItem): String {
     val days = i.policy.removePrefix("days:").toLongOrNull() ?: return ""
     val leftH = (i.created + days * 24 * 3600_000L - System.currentTimeMillis()) / 3600_000L
-    return when {
-        leftH >= 48 -> " (zostało ${leftH / 24} dni)"
-        leftH > 0 -> " (zostało $leftH h)"
-        else -> " (przy najbliższym starcie apki)"
+    return " " + when {
+        leftH >= 48 -> (leftH / 24).toInt().let { ctx.resources.getQuantityString(R.plurals.media_offline_days_left, it, it) }
+        leftH > 0 -> ctx.getString(R.string.media_offline_hours_left, leftH.toInt())
+        else -> ctx.getString(R.string.media_offline_next_start)
     }
 }
