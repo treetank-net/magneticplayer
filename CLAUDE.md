@@ -7,7 +7,8 @@ jako pilotem. Opis dla ludzi jest w `README.md` i `docs/`. Przeczytaj je przed w
 - `docs/instalacja-i-utrzymanie.md`: deploy, aktualizacje apki, klucz podpisu, typowe problemy;
 - `docs/siec-i-bezpieczenstwo.md`: założenie „tylko LAN”, token, `auto_unlock`;
 - `docs/urzadzenia.md`: jak zapytać Chromecasta/DLNA/Samsunga, kim jest i co umie; profile Chromecastów i źródła;
-- `docs/plan-wiele-serwerow.md`: decyzje etapu 1 (wiele serwerów, pliki vs ekran, parowanie, tokeny per urządzenie), wdrożony.
+- `docs/plan-wiele-serwerow.md`: decyzje etapu 1 (wiele serwerów, pliki vs ekran, parowanie, tokeny per urządzenie), wdrożony;
+- `docs/plan-biblioteka.md`: tagi i widoczność katalogów, magnet → katalog, porządkowanie dysków, okładki (w toku).
 
 Odpowiadaj po polsku.
 
