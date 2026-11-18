@@ -244,6 +244,7 @@ Najpierw przetestuj u siebie, potem:
 
 ```bash
 phone/tools/publish.sh          # out/MagneticPlayer.apk + version.json → jmpc:~/.local/share/magneticplayer/apk/
+phone/tools/publish.sh --release latest   # to samo z APK z wydania na GitHubie (klucz treetank, jak na telefonach)
 ```
 
 - Apka po połączeniu z komputerem pyta `/api/app/version`. Gdy wersja jest nowsza od zainstalowanej, pokazuje pasek

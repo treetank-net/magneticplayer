@@ -33,8 +33,10 @@ scp -q server/*.py server/*.sh jmpc:.local/share/magneticplayer/ && scp -q serve
 ssh jmpc systemctl --user restart magneticplayer
 ssh jmpc journalctl --user -u magneticplayer -n 50
 
-# apka: build w kontenerze (kilka minut), potem publikacja jako aktualizacja dla wszystkich telefonów
-phone/tools/build-apk.sh && phone/tools/publish.sh
+# apka: telefony mają klucz treetank, więc aktualizacja = wydanie z CI (lokalny build ma klucz deweloperski,
+# do emulatora). Tag → CI buduje i wystawia na GitHubie → publikacja dla wszystkich telefonów:
+phone/tools/tag-release.sh            # po commicie i pushu; CI ~10 min
+phone/tools/publish.sh --release latest
 ```
 
 Testy API na PC, bez wyciągania tokenu na zewnątrz:
