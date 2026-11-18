@@ -100,7 +100,20 @@ builds on the previous one.
       away). Subtitles next to the file stay; embedded subtitles and chapters are kept.
     - One background task per request, with progress in the app and one notification at the end ("Shrunk 14
       files, saved 38 GB, 1 error").
-17. Photos and documents (rules like `year/month/name.pdf`) — outside the app (Immich, PhotoPrism, Paperless-ngx).
+17. **MCP server in the agent (organising by an AI assistant):** the user's own assistant (e.g. Claude Code on a
+    computer in the LAN) connects to `http://<agent>:8765/mcp` and organises the library with the same tools the
+    app uses. Access is approved on the owner's phone, like the existing access requests: the assistant asks, the
+    phone shows "Claude on <host> wants to manage the library", the owner allows it, the assistant gets its own
+    device token (revocable in the device list). OAuth through the MCP authorization flow if clients accept it over
+    plain HTTP in the LAN (OAuth 2.1 expects HTTPS outside localhost; to be checked), otherwise the token is passed
+    as a header.
+    - Read tools (only stage 1 needed): list folders and tags, browse, search, file details (ffprobe),
+      `identify` (guess), disk usage.
+    - Write tools: set tags/visibility/exclusions (stage 1), propose a tidy-up plan and apply it as a background
+      task (stage 3), set storage profiles (stage 6). Nothing moves or gets re-encoded without a preview the
+      owner confirms (in the assistant's session or on the phone).
+    - Scope per token: `read` or `organise`; guests never.
+18. Photos and documents (rules like `year/month/name.pdf`) — outside the app (Immich, PhotoPrism, Paperless-ngx).
 
 ## Folder model (config.json)
 
@@ -126,3 +139,5 @@ builds on the previous one.
 5. **Shared library and covers** in the app.
 6. **Storage profiles:** `tidy` first (lossless, quick), then lossy profiles with a savings preview, verification
    and a trash (decision 16). Builds on stage 3 (background tasks) and the existing converter (`mp_media`).
+7. **MCP server** (decision 17): read tools and tags can come early (they need only stage 1), moving and
+   re-encoding after stages 3 and 6.
