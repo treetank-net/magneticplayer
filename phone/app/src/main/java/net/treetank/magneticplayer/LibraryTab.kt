@@ -33,7 +33,8 @@ import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
@@ -165,15 +166,18 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
     var query by rememberSaveable { mutableStateOf("") }
     val tasks = srv.libraryTasks && !srv.isGuest
     Column(Modifier.fillMaxSize()) {
-    if (srv.librarySearch || tasks) Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp),
+    if (srv.librarySearch) Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        if (srv.librarySearch) {
-            OutlinedTextField(query, { query = it }, Modifier.weight(1f),
-                placeholder = { Text(stringResource(R.string.media_lib_search)) }, singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
-                trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.media_cancel)) } })
-        } else Spacer(Modifier.weight(1f))
-        if (tasks) IconButton(onDisks) { Icon(Icons.Filled.CleaningServices, stringResource(R.string.lib_disks_title)) }
+        OutlinedTextField(query, { query = it }, Modifier.weight(1f),
+            placeholder = { Text(stringResource(R.string.media_lib_search)) }, singleLine = true,
+            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.media_cancel)) } })
+    }
+    // the fullest disk, for the "Disks and tidying up" card (the walk over the library can take a few seconds)
+    var fullest by remember { mutableStateOf<Disk?>(null) }
+    LaunchedEffect(tasks, reload) {
+        if (tasks) fullest = runCatching { withContext(Dispatchers.IO) { api.disks() } }.getOrNull()
+            ?.disks?.filter { it.total > 0 }?.maxByOrNull { 1.0 - it.free.toDouble() / it.total }
     }
     if (query.trim().length >= 2) {
         SearchResults(api, query.trim(), snack, onPlayingOnPc, onOpen)
@@ -191,6 +195,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
         if (list == null) Hint(stringResource(R.string.media_loading))
         else if (list.isEmpty() && others.isEmpty()) Hint(stringResource(if (tagFilter == null) R.string.media_lib_no_roots else R.string.lib_tag_none))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (tasks && tagFilter == null) item(key = "disks") { DisksCard(fullest, onDisks) }
             items(list, key = { it.index }) { r ->
                 Card(Modifier.fillMaxWidth().clickable(enabled = r.exists && r.open) { onOpen(r.index, "") }) {
                     Row(Modifier.padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -641,6 +646,26 @@ private fun DirScreen(
                 }
                 HorizontalDivider()
             }
+        }
+    }
+}
+
+/** Entry to Disks and tidying up: the fullest disk, in warning colours when it is nearly full. */
+@Composable
+private fun DisksCard(d: Disk?, onClick: () -> Unit) {
+    val full = d != null && d.free < d.total / 10
+    val bg = if (full) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer
+    val fg = if (full) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = bg, contentColor = fg)) {
+        Row(Modifier.padding(16.dp, 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Storage, null)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.lib_disks_title), style = MaterialTheme.typography.titleSmall)
+                d?.let { Text(stringResource(R.string.lib_disks_card_free, it.name, humanBytes(it.free), humanBytes(it.total)),
+                    style = MaterialTheme.typography.bodySmall) }
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
         }
     }
 }

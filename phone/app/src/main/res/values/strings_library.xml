@@ -161,4 +161,5 @@
     <string name="lib_encoder">Encoder</string>
     <string name="lib_encoder_saves">saves %1$s</string>
     <string name="lib_encoder_work">about %1$s h of work</string>
+    <string name="lib_disks_card_free">%1$s: %2$s free of %3$s</string>
 </resources>
