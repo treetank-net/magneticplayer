@@ -93,9 +93,11 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
     var editing by remember { mutableStateOf<LibRoot?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     // domownik na serwerze z tagami (agent 1.4+) widzi też katalogi ukryte przed tym telefonem, żeby je ustawić
-    val manage = api.srv.libraryTags && !api.srv.isGuest
+    // świeży wpis serwera: `api.srv` bywa sprzed odświeżenia /api/info (np. po aktualizacji agenta)
+    val srv = remember(reload) { Servers.get(ctx, api.srv.key) ?: api.srv }
+    val manage = srv.libraryTags && !srv.isGuest
 
-    LaunchedEffect(reload) {
+    LaunchedEffect(reload, manage) {
         roots = try { withContext(Dispatchers.IO) { api.libraryRoots(manage) } } catch (e: ApiException) {
             snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); emptyList()
         }
