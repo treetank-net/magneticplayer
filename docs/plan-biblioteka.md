@@ -48,7 +48,15 @@ potrzeby replikacji. Etapy idą po kolei, bo każdy stoi na poprzednim.
     - plik obok filmu (`poster.jpg`, `folder.jpg`, `<nazwa>.jpg`) ma pierwszeństwo;
     - bez niego klatka z filmu (ffmpeg, ~10% długości), w pamięci podręcznej agenta, bez kont i sieci;
     - opcjonalnie klucz TMDB (jak klucz OpenSubtitles): plakat, opis, rok; wymaga podpisu „dane z TMDB”.
-13. Zdjęcia i dokumenty (reguły typu `rok/miesiąc/nazwa.pdf`) — poza apką (Immich, PhotoPrism, Paperless-ngx).
+13. **Porządkowanie „na zlecenie” jak u nas 18.11:** użytkownik zleca, agent przechodzi katalogi `guessit`em
+    i proponuje strukturę (`Filmy/`, `Seriale/<tytuł>/`, `Bajki/`, `Muzyka/`, `Inne/` per dysk, każdy jako katalog
+    biblioteki z tagiem), z listą do akceptacji. Ręcznie zrobione na jmpc: 105 pozycji, dziennik do cofnięcia
+    w `~/.config/magneticplayer/porzadki-2026-11-18.json`. Rozpoznanie wymagało poprawek ręcznych (np. film z liczbą
+    w tytule jako odcinek, anime i program kulinarny bez S01E01 jako film, komiksy i muzyka), więc podgląd przed
+    przeniesieniem jest konieczny. Tego samego oczekujemy od użytkowników z własnym agentem AI.
+14. Pobierany torrent nie zmienia nazw plików (protokół), ale pobiera się od razu do katalogu wybranego regułami
+    (punkt 6), więc kolekcja zostaje uporządkowana bez przenosin.
+15. Zdjęcia i dokumenty (reguły typu `rok/miesiąc/nazwa.pdf`) — poza apką (Immich, PhotoPrism, Paperless-ngx).
 
 ## Model katalogu (config.json)
 
