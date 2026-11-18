@@ -1,5 +1,6 @@
 """Biblioteka: przeglądanie wybranych katalogów komputera (tylko filmy/muzyka + napisy obok)."""
 import os
+import stat
 import re
 
 from mp_i18n import T
@@ -107,16 +108,18 @@ class Library:
         if not os.path.isdir(full):
             raise LibError(T("not a folder", "to nie katalog"), 400)
         dirs, files = [], []
+        # os.stat zamiast DirEntry.is_dir()/stat(): te w Pythonie 3.10 (jmpc) robią stat() bez zwolnienia GIL, a budzący się
+        # stary dysk USB (ntfs-3g) odpowiada po kilka sekund; cały agent stał wtedy w miejscu, także /api/ping
         for e in os.scandir(full):
             if e.name.startswith("."):
                 continue
             try:
-                if e.is_dir():
+                st = os.stat(e.path)
+                if stat.S_ISDIR(st.st_mode):
                     dirs.append(e.name)
-                elif e.is_file():
+                elif stat.S_ISREG(st.st_mode):
                     kind = media_kind(e.name)
                     if kind or show_all:
-                        st = e.stat()
                         files.append({"name": e.name, "size": st.st_size, "mtime": st.st_mtime, "media": kind,
                                       "subs": [s["lang"] or s["ext"] for s in sidecar_subs(e.path)] if kind == "video" else []})
             except OSError:
@@ -152,8 +155,8 @@ class Library:
             return {"path": "", "parent": None, "dirs": [p for p in starts if os.path.isdir(p)]}
         path = os.path.realpath(path)
         try:
-            dirs = sorted((os.path.join(path, e.name) for e in os.scandir(path)
-                           if e.is_dir() and not e.name.startswith(".")), key=str.lower)
+            dirs = sorted((e.path for e in os.scandir(path)  # os.path.isdir: zwalnia GIL (patrz browse)
+                           if not e.name.startswith(".") and os.path.isdir(e.path)), key=str.lower)
         except OSError as e:
             raise LibError(T(f"can't open: {e.strerror}", f"nie da się otworzyć: {e.strerror}"), 403)
         return {"path": path, "parent": os.path.dirname(path) if path != "/" else "", "dirs": dirs}

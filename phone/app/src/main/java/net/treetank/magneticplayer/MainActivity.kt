@@ -250,9 +250,12 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     LaunchedEffect(ver) {
         var first = true
         var pings = 0
+        var fails = 0
         while (true) {
             val ok = withContext(Dispatchers.IO) { api.ping() }
-            online = ok
+            // „śpi” dopiero po dwóch nieudanych próbach z rzędu (pojedyncza może przepaść w Wi-Fi)
+            fails = if (ok) 0 else fails + 1
+            if (ok || fails >= 2 || online == null) online = ok
             wrong = api.wrongServer
             // możliwości serwera (przyciski, budzenie) odświeżane raz po połączeniu
             if (ok && first) {

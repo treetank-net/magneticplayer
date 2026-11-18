@@ -245,12 +245,14 @@ class Api(val s: Settings, val srv: Server) {
     /**
      * Czy serwer odpowiada. Bez tokenu (/api/ping), a gdy pod adresem jest inny serwer (inne id), to tak jakby
      * nie odpowiadał: wtedy [wrongServer] = true i nie wysyłamy mu tokenu.
+     * [timeout] dotyczy połączenia (śpiący komputer nie odpowiada na nie wcale); na odpowiedź czekamy dłużej, bo
+     * działający agent potrafi się spóźnić o kilka sekund, gdy budzi się stary dysk USB.
      */
-    fun ping(timeout: Int = 1500): Boolean {
+    fun ping(timeout: Int = 1500, readTimeout: Int = 5000): Boolean {
         if (srv.host.isBlank()) return false
         val c = runCatching { URL("$base/api/ping").openConnection() as HttpURLConnection }.getOrNull() ?: return false
         return try {
-            c.connectTimeout = timeout; c.readTimeout = timeout
+            c.connectTimeout = timeout; c.readTimeout = maxOf(timeout, readTimeout)
             c.acceptPhoneLanguage()
             val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
             val id = j.optString("id")
