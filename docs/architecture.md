@@ -306,7 +306,7 @@ mode and can say "Update now"; it never sends code to the agent.
 A single file without dependencies (vanilla JS), served at `/` without a token. The data goes through the API with
 a token anyway.
 - The token arrives in `#t=`, goes to `localStorage` and disappears from the address bar. `#tab=` selects a tab.
-- Tabs: Torrents, Library and Remote (polling `/api/player/status`, tracks, keyboard shortcuts).
+- Tabs: Downloading (torrents), Library and Remote (polling `/api/player/status`, tracks, keyboard shortcuts).
 - The page reads `/api/info` once and hides what the server doesn't have: "Sleep" without `power.suspend`, "Screen"
   without `features.player`/`unlock`, Torrents without `features.torrent`, and without `features.player` also
   "▶ On computer" and the mpv remote (the Remote then shows only Chromecast). The header status shows the server's
@@ -332,7 +332,7 @@ agent errors come back in the same language.
 | `Api.kt` | `Settings` (SharedPreferences), models, `MediaRef` (with `srv`), `Wol`, the HTTP client for one server, waking (also through another server) |
 | `Servers.kt` | server list, selected file server and screen, migration of old settings (the `legacy` server), pairing (`Pairing`) |
 | `ServersUi.kt` | server switcher, "asleep" panel, sleep dialog, screen picker, Settings → Servers, adding, devices, "Pair another" |
-| `MainActivity.kt` | Torrents, Remote and Settings tabs, top bar (server, Wake/Sleep), update bar |
+| `MainActivity.kt` | Downloading (torrents), Remote and Settings tabs, top bar (server, Wake/Sleep), update bar |
 | `Announce.kt` | broadcasting "what's playing" (multicast, `MulticastLock`): the phone announces the DLNA TV it started a video on and listens to others (the Remote takes over someone else's TV via `Dlna.adopt`) |
 | `CastNet.kt` | Chromecasts from the phone without the agent and without the Cast SDK: mDNS discovery (NsdManager, while the Remote is on screen) and its own Cast v2 protocol client (TLS :8009, hand-written protobuf): state from any sender, pause, seek, volume, close |
 | `Remote.kt` | the shared "remote player" (mpv, Chromecast, DLNA) and the Remote's target choice (`Pilot`) |

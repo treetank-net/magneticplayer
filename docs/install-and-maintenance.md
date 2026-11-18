@@ -268,7 +268,7 @@ from the computer as before.
 
 - Each computer with the agent is a separate server: "files" (torrents and/or library) and/or "screen" (mpv).
   A computer just for watching: `BACKEND=none bash server/install.sh`.
-- The server name is at the top of the app; ▾ (when there are several servers) switches where Torrents and Library
+- The server name is at the top of the app; ▾ (when there are several servers) switches where Downloading and Library
   come from.
 - The screen button next to a video plays it on the selected computer. When the video is on another server, the
   screen gets a URL with a ticket and pulls the video over the network. The Remote has target chips: the screen (▾
@@ -312,7 +312,7 @@ tab right away.
 
 | tab | what it can do |
 |---|---|
-| Torrents | adding a magnet, "after download", pause and resume, files with "how much can be watched", earlier jobs |
+| Downloading | adding a magnet, "after download", pause and resume, files with "how much can be watched", earlier jobs |
 | Library | browsing folders (they are added in the app) |
 | Remote | the same as in the app, plus keys: space, ← →, ↑ ↓, `f`, `m` |
 

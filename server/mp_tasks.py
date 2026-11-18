@@ -476,9 +476,9 @@ class Tasks:
         def run(p):
             import hashlib
             by_size = {}
-            for r in self.library.roots():
-                if not r["exists"] or set(r["tags"]) & HIDDEN_TAGS:  # `kopia` is a copy on purpose
-                    continue
+            roots = [r for r in self.library.roots() if r["exists"] and not set(r["tags"]) & HIDDEN_TAGS]  # `kopia`: on purpose
+            for n, r in enumerate(roots):
+                p["progress"] = int(30 * n / max(len(roots), 1))  # walking the folders: 0–30 %
                 for dp, dirs, fs in os.walk(r["path"]):
                     dirs[:] = [d for d in dirs if not d.startswith(".")]
                     for f in fs:
@@ -491,7 +491,19 @@ class Tasks:
                             continue
                         if sz >= 50 << 20:
                             by_size.setdefault(sz, []).append((r, fp))
-            groups = [g for g in by_size.values() if len({os.path.realpath(fp) for _, fp in g}) > 1]
+            def distinct(g):
+                # one entry per file on disk: symlinks and hard links to the same data are not copies (nothing to free)
+                seen, out = set(), []
+                for r, fp in g:
+                    try:
+                        st = os.stat(fp)
+                    except OSError:
+                        continue
+                    if (st.st_dev, st.st_ino) not in seen:
+                        seen.add((st.st_dev, st.st_ino))
+                        out.append((r, fp))
+                return out
+            groups = [g for g in (distinct(g) for g in by_size.values() if len(g) > 1) if len(g) > 1]
 
             def quick(fp, sz):
                 h = hashlib.sha1()
@@ -502,14 +514,17 @@ class Tasks:
                 return h.hexdigest()
 
             def full(fp):
+                # two more 4 MB samples from the middle instead of reading gigabytes over USB: with the same size, start
+                # and end that is as good as certain for video, and what gets deleted goes to the trash first anyway
                 h = hashlib.sha1()
                 with open(fp, "rb") as f:
-                    while chunk := f.read(8 << 20):
-                        h.update(chunk)
+                    for frac in (1 / 3, 2 / 3):
+                        f.seek(int(sz * frac))
+                        h.update(f.read(4 << 20))
                 return h.hexdigest()
             out = []
             for k, g in enumerate(groups):
-                p["progress"] = int(100 * k / max(len(groups), 1))
+                p["progress"] = 30 + int(70 * k / max(len(groups), 1))
                 sz = os.stat(g[0][1]).st_size
                 for hf in (lambda fp: quick(fp, sz), full):
                     buckets = {}

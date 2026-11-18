@@ -136,5 +136,10 @@ Win11 in VirtualBox: the `~/.cache/winvm/LOCK` protocol (shared with timeprotect
 - **Agent 1.5.0 + app v1.261118.2108: verified on the Pixel** (magnet → recognised folder, "Change" moves the torrent
   and remembers the choice, library search). The player's own reconnect wasn't really exercised: an agent restart
   is covered by the buffer. Missing: re-recognising a magnet without `dn=` once metadata arrives.
+- **Agent 1.6.1 + app v1.261118.2230: verified on the Pixel** (read-only on the real library: disks with library vs
+  other files, previews of free-up, tidy, duplicates and shrink, folder profile and "Also copy to", covers, tag filter,
+  agent update switch). Not exercised on hardware yet: running a real move/shrink task to the end and its
+  notification (only on local test files), replication on jmpc, self-update from a real release (1.6.0 → 1.6.1 was
+  hand-deployed), MCP with Claude Code (needs the user's OAuth approval on the phone).
 
 - Idea: remote access from outside the LAN (Tailscale/WireGuard, described in `docs/network-and-security.md`).

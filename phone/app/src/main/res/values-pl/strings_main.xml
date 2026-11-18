@@ -15,7 +15,7 @@
     <string name="main_screen_on_unlock">Włącz i odblokuj ekran</string>
     <string name="main_switch_server">Zmień serwer</string>
     <string name="main_servers_pairing">Serwery i parowanie</string>
-    <string name="main_tab_torrents">Torrenty</string>
+    <string name="main_tab_torrents">Pobieranie</string>
     <string name="main_tab_library">Biblioteka</string>
     <string name="main_tab_offline">Na telefonie</string>
     <string name="main_tab_remote">Pilot</string>

@@ -81,7 +81,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   <button class="btn" id="btnSuspend" data-i18n-title="sleepTitle" data-i18n="sleep">Sleep</button>
   <button class="btn" id="btnScreen" data-i18n-title="screenTitle" data-i18n="screen">Screen</button>
   <nav>
-    <button data-tab="torrents" class="active" data-i18n="tabTorrents">Torrents</button>
+    <button data-tab="torrents" class="active" data-i18n="tabTorrents">Downloading</button>
     <button data-tab="library" data-i18n="tabLibrary">Library</button>
     <button data-tab="remote" data-i18n="tabRemote">Remote</button>
   </nav>
@@ -112,7 +112,7 @@ document.documentElement.lang = LANG;
 const T = {
   en: {
     sleep: "Sleep", sleepTitle: "Put the computer to sleep", screen: "Screen", screenTitle: "Turn on and unlock the computer screen",
-    tabTorrents: "Torrents", tabLibrary: "Library", tabRemote: "Remote",
+    tabTorrents: "Downloading", tabLibrary: "Library", tabRemote: "Remote",
     loginTitle: "Pair this browser",
     loginHelp: 'Get a pairing code (e.g. <span class="kbd">7KQ-M4X</span>) from the phone app: Settings → server → “Pair another device”, or on the computer: <span class="kbd">magneticplayer_agent.py --pair</span>. An old token works too. This browser will remember the access.',
     tokenPh: "pairing code or token", connect: "Connect",
@@ -158,7 +158,7 @@ const T = {
     libHelp: "Folders are added and removed in the phone app.", unavailable: " — unavailable", folders: "Folders",
     subsList: " · subtitles: ", noVideos: "No videos in this folder.",
     fullscreen: "Fullscreen", exitFullscreen: "Exit fullscreen",
-    idle: "Nothing is playing on the computer.", idleHelp: "Pick a video in Torrents or Library → “On computer”.",
+    idle: "Nothing is playing on the computer.", idleHelp: "Pick a video in Downloading or Library → “On computer”.",
     noPlayer: "This server doesn't play on its own screen.", noPlayerHelp: "It shares files: in Library use “In browser” or “Chromecast…”.",
     video: "video ", quieter: "🔉 quieter", louder: "🔊 louder", stop: "⏹ Stop", audio: "audio ", subs: "subtitles ",
     subDelay: d => `subtitles ${d} s`, findSubs: "Find subtitles…",
@@ -184,7 +184,7 @@ const T = {
   },
   pl: {
     sleep: "Uśpij", sleepTitle: "Uśpij komputer", screen: "Ekran", screenTitle: "Włącz i odblokuj ekran komputera",
-    tabTorrents: "Torrenty", tabLibrary: "Biblioteka", tabRemote: "Pilot",
+    tabTorrents: "Pobieranie", tabLibrary: "Biblioteka", tabRemote: "Pilot",
     loginTitle: "Sparuj tę przeglądarkę",
     loginHelp: 'Kod parowania (np. <span class="kbd">7KQ-M4X</span>) da apka na telefonie: Ustawienia → serwer → „Sparuj kolejne”, albo komputer: <span class="kbd">magneticplayer_agent.py --pair</span>. Działa też stary token. Zapamiętam dostęp w tej przeglądarce.',
     tokenPh: "kod parowania albo token", connect: "Połącz",
@@ -230,7 +230,7 @@ const T = {
     libHelp: "Katalogi dodajesz i usuwasz w apce na telefonie.", unavailable: " — niedostępny", folders: "Katalogi",
     subsList: " · napisy: ", noVideos: "Brak filmów w tym katalogu.",
     fullscreen: "Pełny ekran", exitFullscreen: "Wyjdź z pełnego ekranu",
-    idle: "Na komputerze nic nie gra.", idleHelp: "Wybierz film w Torrentach albo Bibliotece → „Na komputerze”.",
+    idle: "Na komputerze nic nie gra.", idleHelp: "Wybierz film w Pobieraniu albo Bibliotece → „Na komputerze”.",
     noPlayer: "Ten serwer nie odtwarza na swoim ekranie.", noPlayerHelp: "Udostępnia pliki: w Bibliotece „W przeglądarce” albo „Chromecast…”.",
     video: "wideo ", quieter: "🔉 ciszej", louder: "🔊 głośniej", stop: "⏹ Zakończ", audio: "audio ", subs: "napisy ",
     subDelay: d => `napisy ${d.replace(".", ",")} s`, findSubs: "Szukaj napisów…",

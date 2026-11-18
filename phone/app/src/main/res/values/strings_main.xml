@@ -15,7 +15,7 @@
     <string name="main_screen_on_unlock">Turn on and unlock screen</string>
     <string name="main_switch_server">Switch server</string>
     <string name="main_servers_pairing">Servers and pairing</string>
-    <string name="main_tab_torrents">Torrents</string>
+    <string name="main_tab_torrents">Downloading</string>
     <string name="main_tab_library">Library</string>
     <string name="main_tab_offline">On phone</string>
     <string name="main_tab_remote">Remote</string>
