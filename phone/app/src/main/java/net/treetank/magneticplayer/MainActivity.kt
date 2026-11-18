@@ -217,9 +217,6 @@ private fun CoroutineScope.io(ctx: Context, snack: SnackbarHostState, block: sus
 
 /** licznik powrotów apki na ekran (onResume), do sprawdzania aktualizacji */
 private val appResumes = androidx.compose.runtime.mutableIntStateOf(0)
-private var lastUpdateCheck = 0L
-/** wynik ostatniego sprawdzenia: przeżywa odtworzenie ekranu (inaczej pasek znikał na 10 min, aż do kolejnego sprawdzenia) */
-private var lastUpdate: AppUpdate? = null
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -242,17 +239,12 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     var confirmSuspend by remember { mutableStateOf(false) }
     var sheet by remember { mutableStateOf(false) }
     var addServer by remember { mutableStateOf(false) }
-    var update by remember { mutableStateOf(lastUpdate?.takeIf { it.code > Updater.installedCode(ctx) }) }
+    var update by remember { mutableStateOf<AppUpdate?>(null) }
     var updating by remember { mutableStateOf<Int?>(null) }
-    // aktualizacja: po połączeniu, po zmianie ustawień, po powrocie apki na ekran i co 10 min, gdy apka jest otwarta
+    // aktualizacja: przy otwarciu apki i powrocie na ekran (po połączeniu z serwerem) oraz po zmianie serwera; jedno
+    // zapytanie, bez pamięci podręcznej. W trakcie (np. na Pilocie przy oglądaniu) nie sprawdza.
     LaunchedEffect(online == true, ver, appResumes.intValue) {
-        while (online == true) {
-            if (System.currentTimeMillis() - lastUpdateCheck > 10 * 60_000L) {
-                lastUpdateCheck = System.currentTimeMillis()
-                update = withContext(Dispatchers.IO) { Updater.check(ctx, api) }.also { lastUpdate = it }
-            }
-            delay(60_000)
-        }
+        if (online == true) update = withContext(Dispatchers.IO) { Updater.check(ctx, api) }
     }
 
     LaunchedEffect(ver) {

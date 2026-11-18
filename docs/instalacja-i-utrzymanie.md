@@ -247,8 +247,9 @@ phone/tools/publish.sh          # out/MagneticPlayer.apk + version.json → jmpc
 phone/tools/publish.sh --release latest   # to samo z APK z wydania na GitHubie (klucz treetank, jak na telefonach)
 ```
 
-- Apka po połączeniu z komputerem pyta `/api/app/version`. Gdy wersja jest nowsza od zainstalowanej, pokazuje pasek
-  „Jest aktualizacja”.
+- Apka przy każdym otwarciu i powrocie na ekran (po połączeniu z komputerem) pyta `/api/app/version`, bez pamięci
+  podręcznej. Gdy wersja jest nowsza od zainstalowanej, pokazuje pasek „Jest aktualizacja”. Otwarta apka (np. Pilot
+  przy oglądaniu) nie sprawdza w tle.
 - „Zaktualizuj” pobiera plik przez PackageInstaller i Android prosi o potwierdzenie. Za pierwszym razem prosi też
   o zgodę na instalowanie aplikacji z MagneticPlayera.
 - Sam build niczego nie publikuje.
