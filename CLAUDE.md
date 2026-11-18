@@ -119,5 +119,4 @@ Win11 w VirtualBox: protokół `~/.cache/winvm/LOCK` (wspólny z timeprotect), p
     przycisk „Sprawdź budzenie” usunięty jako zbędny);
   - Pilot odświeża się 4×/s, więc `uiautomator dump` często nie działa („could not get idle state”): przy testach zrzuty ekranu.
 
-- Pomysł: sprawdzanie aktualizacji, gdy apka wraca na pierwszy plan (dziś tylko gdy apka złapie połączenie z PC albo zmienią się ustawienia).
 - Pomysł: zdalny dostęp spoza LAN (Tailscale/WireGuard, opisane w `docs/siec-i-bezpieczenstwo.md`).
