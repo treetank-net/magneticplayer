@@ -279,6 +279,9 @@ class DelugeBackend:
         opts = {"sequential_download": bool(sequential), "prioritize_first_last_pieces": bool(sequential)}
         if dest:
             opts["download_location"] = dest
+        m = re.search(r"btih:([0-9a-fA-F]{40})", uri)
+        if m and self.call("core.get_torrent_status", m.group(1).lower(), ["name"]):
+            return m.group(1).lower()  # already in the client: with download_location Deluge raises instead of returning None
         tid = self.call("core.add_torrent_magnet", uri, opts)
         if not tid:  # Deluge returns None when the torrent is already in the list
             m = re.search(r"btih:([0-9a-fA-F]{40})", uri)

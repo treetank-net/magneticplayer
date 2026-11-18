@@ -2,7 +2,7 @@
 # Release: tag v1.YYMMDD.HHMM on a pushed main; GitLab CI does the rest (build, signatures, GitHub) via tools/release-ci.sh.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-[ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "niezacommitowane zmiany" >&2; exit 1; }
+[ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "uncommitted changes" >&2; exit 1; }
 git fetch -q origin main
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || { echo "HEAD differs from origin/main: push first" >&2; exit 1; }
 TAG="v1.$(date +%y%m%d.%H%M)"
