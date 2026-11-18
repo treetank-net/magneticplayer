@@ -125,7 +125,7 @@ def save_config(cfg):
 # stay closed to guests until someone deliberately adds them here.
 GUEST_ALLOWED = {
     "GET": ("/api/info", "/api/announce", "/api/app/version", "/app/MagneticPlayer.apk", "/api/library",
-            "/api/library/browse", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
+            "/api/library/browse", "/api/library/search", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
             "/api/media/converts", "/api/jobs", "/api/player/status", "/api/cast/status", "/api/cast/devices",
             "/api/renderers", "/api/torrents"),
     "POST": ("/api/media/ticket", "/api/player/open", "/api/player/cmd", "/api/cast/play", "/api/cast/cmd",
@@ -907,6 +907,7 @@ class App:
                 "torrent": self.cfg["backend"] if has_torrent else None,
                 "library": library,
                 "library_tags": True,  # folder tags, visibility and exclusions (agent 1.4+)
+                "library_search": True,  # GET /api/library/search (agent 1.5+)
                 "library_guess": True,  # magnet identification and downloading straight into a folder (agent 1.5+)
                 "player": self.is_screen(),
                 "subs_search": self.subs_available(wait=False),
@@ -1419,6 +1420,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     a.library.add_root(b["path"], b.get("name"))
                 return self.send_json(a.library.visible_roots(True))
+            if p == "/api/library/search" and method == "GET":
+                return self.send_json(a.library.search(qd.get("q", "")))
             if p == "/api/library/browse" and method == "GET":
                 return self.send_json(a.library.browse(int(qd.get("root", 0)), qd.get("path", ""), qd.get("all") == "1"))
             if p == "/api/fs" and method == "GET":

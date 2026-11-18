@@ -7,6 +7,17 @@ import threading
 
 from mp_i18n import T
 
+SEARCH_TTL = 300
+_search_cache = {}  # real path of a library folder -> (time, [(relative path, is_dir, size)])
+_search_lock = threading.Lock()
+
+
+def _fold(s):
+    """Lowercase without diacritics and punctuation, for search ("Żółw.2016" ~ "zolw 2016")."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s.replace("ł", "l").replace("Ł", "L")).encode("ascii", "ignore").decode().lower()
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", s).split())
+
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}
 AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 SUB_EXT = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
@@ -274,6 +285,67 @@ class Library:
             raise LibError(T("no such folder", "nie ma takiego katalogu"), 404)
         del self.cfg["library"][i]
         self.save_cfg()
+
+    # ---- search
+
+    def _names(self, r):
+        """All folders and media files under a library folder as (relative path, is_dir, size), cached for a few
+        minutes so typing a query doesn't spin up USB disks on every letter. os.listdir + os.stat (not DirEntry),
+        see browse()."""
+        import time
+        key = os.path.realpath(r["path"])
+        with _search_lock:
+            hit = _search_cache.get(key)
+            if hit and time.time() - hit[0] < SEARCH_TTL:
+                return hit[1]
+        out, stack, t0 = [], [""], time.time()
+        while stack and len(out) < 200000 and time.time() - t0 < 60:
+            rel = stack.pop()
+            full = os.path.join(r["path"], rel)
+            try:
+                names = os.listdir(full)
+            except OSError:
+                continue
+            for n in names:
+                if n.startswith("."):
+                    continue
+                p = f"{rel}/{n}" if rel else n
+                try:
+                    st = os.stat(os.path.join(full, n))
+                except OSError:
+                    continue
+                if stat.S_ISDIR(st.st_mode):
+                    out.append((p, True, 0))
+                    stack.append(p)
+                elif stat.S_ISREG(st.st_mode) and media_kind(n):
+                    out.append((p, False, st.st_size))
+        with _search_lock:
+            _search_cache[key] = (time.time(), out)
+        return out
+
+    def search(self, q, limit=100):
+        """Folders and media files whose name (or folder path) contains every word of the query; case and
+        diacritics don't matter. Only folders the asking device sees, without excluded subfolders."""
+        words = _fold(q).split()
+        if not words:
+            return []
+        v, res = current_viewer(), []
+        for r in self.roots():
+            if not r["exists"] or not can_see(r, v) or set(r["tags"]) & HIDDEN_TAGS:
+                continue
+            for p, is_dir, size in self._names(r):
+                folded = _fold(p)
+                if not all(w in folded for w in words):
+                    continue
+                if not any(w in _fold(p.rsplit("/", 1)[-1]) for w in words):
+                    continue  # at least one word in the item's own name, not only in its parent folders
+                if v is not None and excluded(r, p):
+                    continue
+                res.append({"root": r["index"], "root_name": r["name"], "path": p, "dir": is_dir, "size": size,
+                            "media": None if is_dir else media_kind(p)})
+        # whole-name matches and shallow items first, folders before their files
+        res.sort(key=lambda x: (x["path"].count("/"), not x["dir"], x["path"].lower()))
+        return res[:limit]
 
     @staticmethod
     def fs_dirs(path):

@@ -38,6 +38,8 @@ data class Server(
     /** Tags, visibility and exclusions of library directories (agent 1.4+). */
     val libraryTags get() = features?.optBoolean("library_tags", false) ?: false
     /** Agent 1.5+: recognizes a magnet and downloads straight into a library directory (`/api/library/guess`). */
+    /** Agent 1.5+: library search (`/api/library/search`). */
+    val librarySearch get() = features?.optBoolean("library_search", false) ?: false
     val libraryGuess get() = features?.optBoolean("library_guess", false) ?: false
     /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */
     val canInstall get() = features?.optBoolean("install", false) ?: false

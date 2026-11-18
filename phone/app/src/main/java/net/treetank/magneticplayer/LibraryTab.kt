@@ -24,6 +24,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
@@ -74,7 +76,7 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     if (!online) return Hint(stringResource(R.string.media_lib_offline))
     val r = root
     if (r == null) {
-        RootsScreen(api, snack) { root = it; path = "" }
+        RootsScreen(api, snack, onPlayingOnPc) { r0, p -> root = r0; path = p }
     } else {
         BackHandler { if (path.isEmpty()) root = null else path = path.substringBeforeLast('/', "") }
         DirScreen(api, r, path, snack, onPlayingOnPc,
@@ -84,7 +86,7 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
 }
 
 @Composable
-private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Unit) {
+private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onOpen: (Int, String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var roots by remember { mutableStateOf<List<LibRoot>?>(null) }
@@ -102,13 +104,25 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
             snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); emptyList()
         }
     }
+    var query by rememberSaveable { mutableStateOf("") }
+    Column(Modifier.fillMaxSize()) {
+    if (srv.librarySearch) {
+        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
+            placeholder = { Text(stringResource(R.string.media_lib_search)) }, singleLine = true,
+            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.media_cancel)) } })
+    }
+    if (query.trim().length >= 2) {
+        SearchResults(api, query.trim(), snack, onPlayingOnPc, onOpen)
+        return@Column
+    }
     Box(Modifier.fillMaxSize()) {
         val list = roots
         if (list == null) Hint(stringResource(R.string.media_loading))
         else if (list.isEmpty()) Hint(stringResource(R.string.media_lib_no_roots))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(list, key = { it.index }) { r ->
-                Card(Modifier.fillMaxWidth().clickable(enabled = r.exists && r.open) { onOpen(r.index) }) {
+                Card(Modifier.fillMaxWidth().clickable(enabled = r.exists && r.open) { onOpen(r.index, "") }) {
                     Row(Modifier.padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (r.exists) Icons.Filled.Storage else Icons.Filled.FolderOff, null)
                         Spacer(Modifier.width(14.dp))
@@ -132,6 +146,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
             onClick = { picker = true }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text(stringResource(R.string.media_lib_add_folder)) },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )
+    }
     }
     if (picker) DirPicker(api, onDismiss = { picker = false }) { chosen ->
         picker = false
@@ -162,6 +177,55 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onOpen: (Int) -> Uni
             },
             dismissButton = { TextButton({ removing = null }) { Text(stringResource(R.string.media_cancel)) } },
         )
+    }
+}
+
+/** Search across the library folders this device sees: folders open, files have the usual actions. */
+@Composable
+private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onOpen: (Int, String) -> Unit) {
+    val ctx = LocalContext.current
+    var hits by remember { mutableStateOf<List<LibHit>?>(null) }
+    LaunchedEffect(query) {
+        kotlinx.coroutines.delay(350)  // wait until typing pauses
+        hits = try { withContext(Dispatchers.IO) { api.librarySearch(query) } } catch (e: ApiException) {
+            snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); emptyList()
+        }
+    }
+    val list = hits ?: return Hint(stringResource(R.string.media_loading))
+    if (list.isEmpty()) return Hint(stringResource(R.string.media_lib_search_none))
+    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        items(list, key = { "${it.root}/${it.path}" }) { h ->
+            val name = h.path.substringAfterLast('/')
+            val parent = h.path.substringBeforeLast('/', "")
+            val where = h.rootName + (if (parent.isNotEmpty()) " / $parent" else "")
+            if (h.dir) {
+                Row(Modifier.fillMaxWidth().clickable { onOpen(h.root, h.path) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(where, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.StartEllipsis)
+                    }
+                }
+            } else {
+                val ref = MediaRef.InLibrary(h.root, h.path, api.srv.key)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Row(Modifier.clickable { onOpen(h.root, parent) }, verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (h.media == "audio") Icons.Filled.MusicNote else Icons.Filled.Movie, null,
+                            Modifier.size(20.dp), tint = MaterialTheme.colorScheme.tertiary)
+                        Spacer(Modifier.width(10.dp))
+                        Text(name, fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text("$where · ${humanBytes(h.size)}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 30.dp),
+                        maxLines = 2, overflow = TextOverflow.StartEllipsis)
+                    Box(Modifier.padding(start = 24.dp, top = 4.dp)) { MediaActions(api, ref, snack, onPlayingOnPc) }
+                }
+            }
+            HorizontalDivider()
+        }
     }
 }
 

@@ -99,6 +99,8 @@ data class LibRoot(
     val tags: List<String> = emptyList(), val visible: String = "all", val devices: List<String> = emptyList(),
     val exclude: List<String> = emptyList(), val open: Boolean = true,
 )
+/** Search hit: a folder or a media file somewhere in a library folder. */
+data class LibHit(val root: Int, val rootName: String, val path: String, val dir: Boolean, val size: Long, val media: String?)
 data class LibFile(val name: String, val size: Long, val media: String?, val subs: List<String>)
 data class LibDir(val root: Int, val path: String, val dirs: List<String>, val files: List<LibFile>)
 /** Subtitle search progress on the computer (each source separately). */
@@ -363,6 +365,15 @@ class Api(val s: Settings, val srv: Server) {
         if (dest != null) b.put("root", dest.root).put("sub", dest.sub).put("guess", guess)
         return JSONObject(call("POST", "/api/torrents", b, 20000))
             .optString("id").takeIf { it.isNotEmpty() && it != "null" }
+    }
+
+    fun librarySearch(q: String): List<LibHit> {
+        val a = JSONArray(call("GET", "/api/library/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"), timeout = 30000))
+        return List(a.length()) { i ->
+            val h = a.getJSONObject(i)
+            LibHit(h.getInt("root"), h.optString("root_name"), h.getString("path"), h.optBoolean("dir"), h.optLong("size"),
+                h.optString("media").takeIf { it.isNotEmpty() && it != "null" })
+        }
     }
 
     /** Agent 1.5+: recognition (IMDb index, Wikidata for uncertain ones) and a directory suggestion. */

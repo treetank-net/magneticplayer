@@ -208,6 +208,8 @@
     </plurals>
     <string name="media_lib_edit">Ustawienia katalogu</string>
     <string name="media_lib_name">Nazwa</string>
+    <string name="media_lib_search">Szukaj w bibliotece</string>
+    <string name="media_lib_search_none">Nic nie znaleziono.</string>
     <string name="media_lib_tags">Tagi</string>
     <string name="media_lib_tags_hint">Co jest w tym katalogu. Nowe pobrania trafiają do katalogu z pasującym tagiem.</string>
     <string name="media_lib_own_tag">Własny tag</string>

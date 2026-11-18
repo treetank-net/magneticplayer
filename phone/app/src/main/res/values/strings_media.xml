@@ -202,6 +202,8 @@
     </plurals>
     <string name="media_lib_edit">Folder settings</string>
     <string name="media_lib_name">Name</string>
+    <string name="media_lib_search">Search the library</string>
+    <string name="media_lib_search_none">Nothing found.</string>
     <string name="media_lib_tags">Tags</string>
     <string name="media_lib_tags_hint">What this folder holds. New downloads go to the folder with the matching tag.</string>
     <string name="media_lib_own_tag">Your own tag</string>
