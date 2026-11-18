@@ -129,7 +129,7 @@
     <string name="main_os_anonymous">on (no account, anonymous downloads)</string>
     <string name="main_os_configured">configured (%1$s)</string>
     <string name="main_os_saved">saved</string>
-    <string name="main_subs_info">Searched by server %1$s (subliminal): BSPlayer, Podnapisi, Addic7ed, TVsubtitles, NapiProjekt — no accounts needed. Optionally OpenSubtitles (the largest English database): an account on opensubtitles.com (not .org), account menu → API consumers → New consumer. Username and password are optional (higher download limit).</string>
+    <string name="main_subs_info">Searched by server %1$s (subliminal): BSPlayer, Podnapisi, Addic7ed, NapiProjekt — no accounts needed. Optionally OpenSubtitles (the largest English database): an account on opensubtitles.com (not .org), account menu → API consumers → New consumer. Username and password are optional (higher download limit).</string>
     <string name="main_subs_state">OpenSubtitles: %1$s.</string>
     <string name="main_subs_langs_label">Subtitle languages, in order (e.g. en,pl)</string>
     <string name="main_os_key_label">OpenSubtitles: API key (empty = unchanged)</string>

@@ -129,7 +129,7 @@
     <string name="main_os_anonymous">włączone (bez konta, pobrania anonimowe)</string>
     <string name="main_os_configured">skonfigurowane (%1$s)</string>
     <string name="main_os_saved">zapisane</string>
-    <string name="main_subs_info">Szuka serwer %1$s (subliminal): BSPlayer, Podnapisi, Addic7ed, TVsubtitles, NapiProjekt — bez kont. Opcjonalnie OpenSubtitles (największa baza angielskich): konto na opensubtitles.com (nie .org), menu konta → API consumers → New consumer. Login i hasło opcjonalne (większy limit pobrań).</string>
+    <string name="main_subs_info">Szuka serwer %1$s (subliminal): BSPlayer, Podnapisi, Addic7ed, NapiProjekt — bez kont. Opcjonalnie OpenSubtitles (największa baza angielskich): konto na opensubtitles.com (nie .org), menu konta → API consumers → New consumer. Login i hasło opcjonalne (większy limit pobrań).</string>
     <string name="main_subs_state">OpenSubtitles: %1$s.</string>
     <string name="main_subs_langs_label">Języki napisów, w kolejności (np. en,pl)</string>
     <string name="main_os_key_label">OpenSubtitles: klucz API (puste = bez zmian)</string>
