@@ -212,4 +212,15 @@
         <item quantity="one">a day</item>
         <item quantity="other">%d days</item>
     </plurals>
+    <!-- shrinking settings (agent 1.7+) -->
+    <string name="srv_shrink_encoder">Shrinking encoder</string>
+    <string name="srv_shrink_auto">Automatic</string>
+    <string name="srv_shrink_auto_is">Automatic (%1$s)</string>
+    <string name="srv_shrink_auto_note">The agent picks what this computer does best</string>
+    <string name="srv_shrink_detecting">Checking which encoders work…</string>
+    <string name="srv_shrink_change">Change</string>
+    <string name="srv_shrink_save">Save</string>
+    <string name="srv_shrink_while_watching">Shrink while someone watches</string>
+    <string name="srv_shrink_while_watching_on">Other disks at full speed, the same disk slower; a film being watched is swapped after it ends</string>
+    <string name="srv_shrink_while_watching_off">Shrinking pauses while someone watches</string>
 </resources>

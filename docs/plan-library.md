@@ -92,8 +92,10 @@ yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. The API 
       "after seeding" instead.
     - Before starting: a preview with the estimated size after (from bitrate and profile) and the total saved, per
       folder; the user confirms. The estimate is checked against reality after the first few files.
-    - Encoder: x265 on the CPU at `nice 19` (better quality per byte), at night or when the PC is idle and nobody
-      is watching; NVENC as an option where it is good enough (on jmpc a GTX 970: HEVC 8-bit only, weaker quality).
+    - Encoder: chosen per task in the preview (agent 1.7): x265 on the CPU at `nice 19` (better quality per byte)
+      or the graphics card (NVENC/VAAPI), with saving and hours of work shown for each. `auto` takes the card only
+      when it does HEVC B-frames (RTX 20xx and newer); on jmpc a GTX 970 (no B-frames, 8-bit only) stays on the CPU
+      by default. Encoding goes on while somebody watches; see architecture.md for how it yields to the stream.
       AV1 (SVT-AV1) where the household's players handle it.
     - Compatibility: the agent knows the household's players (Chromecast profiles, the DLNA TV, phones). If one of
       them can't play the target codec (e.g. Chromecast gen 1–3 and HEVC), the preview says so and offers H.264 at

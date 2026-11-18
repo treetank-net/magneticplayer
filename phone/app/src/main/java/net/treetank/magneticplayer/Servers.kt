@@ -62,6 +62,10 @@ data class Server(
     val appUpdates: String? get() = features?.optString("app_updates")?.ifEmpty { null }
     /** The agent's own updates from GitHub (agent 1.6+): "auto", "manual", null = not supported (old agent, Windows). */
     val agentUpdates: String? get() = features?.optString("agent_updates")?.ifEmpty { null }
+    /** Shrinking encoder setting (agent 1.7+): "auto", "cpu", "gpu", null = old agent (no choice). */
+    val shrinkEncoder: String? get() = features?.optString("shrink_encoder")?.ifEmpty { null }
+    /** What shrinking does while someone watches (agent 1.7+): "continue", "pause", null = old agent. */
+    val shrinkWhileWatching: String? get() = features?.optString("shrink_while_watching")?.ifEmpty { null }
     /** A newer agent version found in the latest release, or null. */
     val agentAvailable: String? get() = features?.optString("agent_available")?.ifEmpty { null }
     val canPoweroff get() = power?.optBoolean("poweroff", true) ?: true

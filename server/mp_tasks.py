@@ -17,7 +17,13 @@ Shrinking (`op: shrink`), storage profiles set per library folder or per subfold
   dropped, DTS/TrueHD → E-AC3), `good` (HEVC ≤1080p), `compact` (HEVC ≤720p), `tiny` (HEVC ≤480p);
 - only files outside the torrent client; HEVC/AV1 already at or below the target height and files whose estimate
   saves less than 15% are skipped;
-- x265 on the CPU at nice 19 / idle I/O (or NVENC when `shrink_encoder` is "gpu"), paused while somebody streams;
+- the encoder is chosen per task (`encoder`: `cpu` = x265 at nice 19, `gpu` = the graphics card's HEVC encoder from
+  `mp_media.detect_hevc`; `auto`, the default `shrink_encoder`, takes the card only when it can do B-frames);
+- while somebody watches (`shrink_while_watching`, default `continue`): an encode on another disk goes on at full speed,
+  one on the disk being read runs a third of the time if it reads more than 8 MB/s itself (a graphics card; x265
+  reads far less and runs on), a conversion for a TV pauses it, and a film that is being
+  watched (or probed by a phone that plays its own copy) is swapped only once nobody has touched it for a minute;
+  `pause` = the old behaviour, any stream pauses the encode;
 - the result is checked (duration, a full decode, really smaller) and only then replaces the original; the original
   goes to `<library folder>/.mp-trash/` for `trash_days` days (default 14, 0 = delete right away).
 
@@ -55,6 +61,11 @@ LOSSLESS_AUDIO = {"truehd", "dts", "flac", "mlp"} | {f"pcm_{x}" for x in ("s16le
 MIN_SAVING = 0.15
 MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
+ENCODERS = ("auto", "cpu", "gpu")
+WATCH_MODES = ("continue", "pause")
+GPU_SIZE = {True: 1.1, False: 1.3}  # video size from a graphics card vs x265 at the same quality (rough guesses)
+SAME_DISK_DUTY = (1.0, 2.0)  # an encode on the disk somebody watches from: seconds running, seconds stopped
+SAME_DISK_FREE = 8 << 20  # ... unless it reads less than this per second (x265 does), then it runs at full speed
 FILM_TAGS = {"filmy", "bajki"}  # films for adults and for children: moving between them is only a suggestion
 KEEP = 50  # finished tasks kept in tasks.json
 
@@ -118,10 +129,12 @@ def _dev(path):
 
 
 class Tasks:
-    def __init__(self, path, cfg, save_cfg, library, backend, streaming, renderers, log):
-        """streaming(): True while somebody watches (encodes pause); backend(): the torrent client."""
+    def __init__(self, path, cfg, save_cfg, library, backend, watching, renderers, log):
+        """watching(): files in use now, [{"path", "kind"}] with kind stream (a GET from the library or a torrent),
+        probe (HEAD only: a phone playing its own copy), mpv (the computer's screen) or convert (a version for a TV);
+        backend(): the torrent client."""
         self.path, self.cfg, self.save_cfg, self.library = path, cfg, save_cfg, library
-        self.backend, self.streaming, self.renderers, self.log = backend, streaming, renderers, log
+        self.backend, self.watching, self.renderers, self.log = backend, watching, renderers, log
         self.lock = threading.Lock()
         self.plans = {}  # id → {state, progress, result | error}; in memory, an hour
         self.proc = None
@@ -134,6 +147,8 @@ class Tasks:
         except (OSError, ValueError):
             self.items = []
         for t in self.items:  # interrupted by a restart: continue
+            t.pop("hold", None)
+            t["paused"] = False
             if t["state"] == "running":
                 t["state"] = "queued"
         threading.Thread(target=self._loop, daemon=True).start()
@@ -146,9 +161,88 @@ class Tasks:
             json.dump(self.items, f, ensure_ascii=False)
         os.replace(tmp, self.path)
 
+    def streaming(self):
+        """Somebody really reads a video now (not just a phone probing its own copy)."""
+        return any(w["kind"] != "probe" for w in self.watching())
+
     def public(self, t):
-        return {k: v for k, v in t.items() if k != "items"} | {
+        out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc")} | {
             "items": [{k: v for k, v in i.items() if not k.startswith("_")} for i in t["items"]]}
+        if t.get("enc"):
+            out["encoder"] = self.encoder_label(t["enc"])
+        if t.get("hold"):
+            out["note"] = self.hold_text(t["hold"])
+        return out
+
+    @staticmethod
+    def hold_text(hold):
+        return {"watching": T("Paused, somebody is watching", "Wstrzymane, ktoś ogląda"),
+                "conversion": T("Paused while a version for a TV is being prepared",
+                                "Wstrzymane, trwa przygotowanie wersji dla telewizora"),
+                "same_disk": T("Slower: somebody is watching from the same disk", "Wolniej: ktoś ogląda z tego samego dysku"),
+                "in_use": T("Waiting to swap: this film is being watched", "Czeka z podmianą: ten film jest właśnie oglądany"),
+                }.get(hold, "")
+
+    # ---- encoders (shrinking)
+
+    def encoders(self):
+        """Encoders to choose from, labelled in the request's language (the card only once detection has found it)."""
+        det = mp_media.hevc_info() or {}
+        out = [{"id": "cpu", "label": self.encoder_label("cpu"), "bframes": True,
+                "note": T("smallest files, slowest", "najmniejsze pliki, najwolniej")}]
+        if g := det.get("gpu"):
+            out.append({"id": "gpu", "label": self.encoder_label("gpu"), "bframes": g["bframes"],
+                        "note": T("fast, files a little larger than from the processor",
+                                  "szybko, pliki trochę większe niż z procesora") if g["bframes"] else
+                        T("fast, but an older card without B-frames: files about 30% larger",
+                          "szybko, ale starsza karta bez B-klatek: pliki o ok. 30% większe")})
+        return out
+
+    @staticmethod
+    def encoder_label(enc):
+        if enc == "gpu":
+            return ((mp_media.hevc_info() or {}).get("gpu") or {}).get("label") or T("graphics card", "karta graficzna")
+        return T("Processor (x265)", "Procesor (x265)")
+
+    def encoder_auto(self):
+        g = (mp_media.hevc_info() or {}).get("gpu")
+        return "gpu" if g and g["bframes"] else "cpu"
+
+    def resolve_encoder(self, choice=None):
+        choice = choice or self.cfg.get("shrink_encoder") or "auto"
+        if choice == "auto":
+            return self.encoder_auto()
+        return "gpu" if choice == "gpu" and (mp_media.hevc_info() or {}).get("gpu") else "cpu"
+
+    def shrink_config(self):
+        return {"encoder": self.cfg.get("shrink_encoder") or "auto", "auto": self.encoder_auto(),
+                "while_watching": self.cfg.get("shrink_while_watching") or "continue",
+                "detecting": mp_media.hevc_info() is None, "encoders": self.encoders()}
+
+    def set_shrink_config(self, b):
+        if "encoder" in b:
+            if b["encoder"] not in ENCODERS:
+                raise TaskError(T("encoder must be auto, cpu or gpu", "koder to auto, cpu albo gpu"))
+            self.cfg["shrink_encoder"] = b["encoder"]
+        if "while_watching" in b:
+            if b["while_watching"] not in WATCH_MODES:
+                raise TaskError(T("while_watching must be continue or pause", "while_watching to continue albo pause"))
+            self.cfg["shrink_while_watching"] = b["while_watching"]
+        self.save_cfg()
+        return self.shrink_config()
+
+    def _speed(self, enc):
+        """Pixel·seconds of video per second of work: learned from real encodes, else the detection trial."""
+        learned = (self.cfg.get("shrink_speed") or {}).get(enc)
+        return learned or ((mp_media.hevc_info() or {}).get(enc) or {}).get("speed")
+
+    def _learn_speed(self, enc, px_seconds, work):
+        if work < 30:
+            return
+        v = px_seconds / work
+        sp = self.cfg.setdefault("shrink_speed", {})
+        sp[enc] = round(v if not sp.get(enc) else 0.7 * sp[enc] + 0.3 * v)
+        self.save_cfg()
 
     def list(self):
         with self.lock:
@@ -199,7 +293,8 @@ class Tasks:
         t = {"id": secrets.token_hex(4), "kind": res["kind"], "title": res["title"], "state": "queued",
              "created": time.time(), "started": None, "finished": None, "items": items,
              "total": sum(i["size"] for i in items), "done_bytes": 0, "current": None, "pct": 0,
-             "saved": 0, "errors": 0, "lang": mp_i18n.lang()}
+             "saved": 0, "errors": 0, "lang": mp_i18n.lang(),
+             **({"enc": res["encoder_id"]} if res.get("encoder_id") else {})}
         with self.lock:
             self.items.append(t)
             done = [x for x in self.items if x["state"] not in ("queued", "running")]
@@ -594,8 +689,16 @@ class Tasks:
                              f"{c.get('name')} ({label(prof)}) nie odtwarza HEVC: przed oglądaniem trzeba będzie użyć \"Przygotuj\""))
         return out
 
-    def plan_shrink(self, root_index, rel=""):
+    def plan_shrink(self, root_index, rel="", encoder=None):
+        if encoder is not None and encoder not in ENCODERS:
+            raise TaskError(T("encoder must be auto, cpu or gpu", "koder to auto, cpu albo gpu"))
+
         def run(p):
+            mp_media.detect_hevc()  # the choice needs to know the card (seconds, once)
+            enc = self.resolve_encoder(encoder)
+            choices = [e["id"] for e in self.encoders()]
+            est_by = {e: 0 for e in choices}
+            work_by = {e: 0.0 for e in choices}
             roots = self.library.roots()
             if not 0 <= root_index < len(roots):
                 raise TaskError(T("no such library folder", "nie ma takiego katalogu biblioteki"), 404)
@@ -649,19 +752,33 @@ class Tasks:
                         continue
                     vkbps = pr["kbps"] * (h / pr["height"]) ** 1.5
                     akbps = sum(_audio_kbps(a, pr["audio"]) for a in _audio_keep(info, pr["audio"]))
-                    est = int(dur * (vkbps + akbps) * 1000 / 8 * 1.02)
+                    g = ((mp_media.hevc_info() or {}).get("gpu") or {})
+                    ests = {e: int(dur * (vkbps * (GPU_SIZE[g.get("bframes", False)] if e == "gpu" else 1) + akbps)
+                                   * 1000 / 8 * 1.02) for e in choices}
+                    est = ests[enc]
                 if est > size * (1 - pr.get("min_saving", MIN_SAVING)):
                     skipped.append(dict(item, reason=T("already small, little to gain", "już mały, niewiele do zyskania"),
                                         est=est))
                     continue
                 items.append(dict(item, est=est, codec=v.get("codec"), height=v.get("height"), to_height=h,
                                   duration=dur, bitrate=int(size * 8 / dur / 1000)))
+                for e in choices:
+                    if pr.get("copy"):
+                        est_by[e] += est
+                        work_by[e] += size / (40 << 20)  # a copy of the picture: about disk speed
+                    else:
+                        est_by[e] += ests[e]
+                        sp = self._speed(e)
+                        work_by[e] = work_by[e] + dur * h * h * 16 / 9 / sp if sp and work_by[e] is not None else None
             saved = sum(i["size"] - i["est"] for i in items)
             hours = sum(i["duration"] for i in items) / 3600
             return {"kind": "shrink", "title": T(f"Shrink {r['name']}" + (f"/{rel}" if rel else ""),
                                                  f"Zmniejsz {r['name']}" + (f"/{rel}" if rel else "")),
                     "items": items, "bytes": sum(i["size"] for i in items), "est": sum(i["est"] for i in items),
-                    "saved": saved, "hours": round(hours, 1), "encoder": self._encoder_label(),
+                    "saved": saved, "hours": round(hours, 1), "encoder": self.encoder_label(enc), "encoder_id": enc,
+                    "encoders": [dict(e, est=est_by[e["id"]], saved=sum(i["size"] for i in items) - est_by[e["id"]],
+                                      work_hours=None if work_by[e["id"]] is None else round(work_by[e["id"]] / 3600, 1))
+                                 for e in self.encoders()],
                     "warnings": self._codec_warnings(), "skipped": skipped[:100],
                     "trash_days": self.trash_days()}
         return self._plan("shrink", run)
@@ -669,12 +786,6 @@ class Tasks:
     def trash_days(self):
         return int(self.cfg.get("trash_days", 14))
 
-    def _encoder(self):
-        return "gpu" if self.cfg.get("shrink_encoder") == "gpu" and "nvenc" in str(
-            (mp_media.encoder_info() or {}).get("encoder")) else "cpu"
-
-    def _encoder_label(self):
-        return "NVIDIA NVENC (HEVC)" if self._encoder() == "gpu" else T("CPU (x265, in the background)", "CPU (x265, w tle)")
 
     # ---- worker
 
@@ -933,16 +1044,22 @@ class Tasks:
         stem, ext = os.path.splitext(full)
         out_final = stem + ".mkv"
         part = os.path.join(os.path.dirname(full), f".{os.path.basename(stem)}.mp-shrink.part.mkv")
-        cmd = self._shrink_cmd(full, part, info, pr)
+        enc = t.get("enc") or "cpu"  # tasks from before 1.7 ran on the processor
+        if enc == "gpu" and not mp_media.detect_hevc().get("gpu"):
+            self.log("shrink: the graphics card's encoder is gone, using the processor")
+            enc = "cpu"
+        cmd = self._shrink_cmd(full, part, info, pr, enc)
         dur = info["duration"]
-        self.log("shrink:", os.path.basename(full), i["profile"], self._encoder())
+        self.log("shrink:", os.path.basename(full), i["profile"], enc)
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                              start_new_session=True)
         with self.lock:
             self.proc = p
         err_tail = []
         threading.Thread(target=lambda: err_tail.extend(p.stderr.read().splitlines()[-5:]), daemon=True).start()
-        paused = False
+        done = threading.Event()
+        work = [0.0]  # seconds the encoder was allowed to run (to learn its speed)
+        threading.Thread(target=self._govern, args=(p, t, full, done, work), daemon=True).start()
         try:
             for line in p.stdout:
                 if line.startswith("out_time_us=") and dur:
@@ -950,22 +1067,20 @@ class Tasks:
                         progress(int(i["size"] * min(int(line.split("=")[1]) / 1e6 / dur, 1)))
                     except ValueError:
                         pass
-                want_pause = bool(self.streaming())
-                if want_pause != paused and sys.platform != "win32":
-                    p.send_signal(signal.SIGSTOP if want_pause else signal.SIGCONT)
-                    paused = want_pause
-                    t["paused"] = paused
                 if self.cancel_ev.is_set():
                     raise _Cancelled()
             p.wait()
         except _Cancelled:
-            p.send_signal(signal.SIGCONT)
+            done.set()
+            _signal(p, "SIGCONT")
             p.terminate()
             p.wait()
             _rm(part)
             raise
         finally:
-            t["paused"] = False
+            done.set()
+            _signal(p, "SIGCONT")
+            t.update(paused=False, hold=None)
             with self.lock:
                 self.proc = None
         if self.cancel_ev.is_set():
@@ -993,6 +1108,19 @@ class Tasks:
         if dec.returncode != 0 or dec.stderr.strip():
             _rm(part)
             raise TaskError(T("the result doesn't decode cleanly, the original was kept", "wynik nie dekoduje się czysto, oryginał został"))
+        if not pr.get("copy"):
+            h = (ninfo.get("video") or {}).get("height") or 0
+            self._learn_speed(enc, dur * h * h * 16 / 9, work[0])
+        # a film being watched (or probed by a phone that plays its own copy) keeps its name until it's left alone:
+        # the player asks for byte ranges of the original
+        real = os.path.realpath(full)
+        while any(os.path.realpath(w["path"]) == real for w in self.watching()):
+            t["hold"] = "in_use"
+            if self.cancel_ev.wait(5):
+                t["hold"] = None
+                _rm(part)
+                raise _Cancelled()
+        t["hold"] = None
         # swap: the original to the trash (same disk: a rename), the result in its place
         trash = os.path.join(root, TRASH, time.strftime("%Y-%m-%d"), os.path.dirname(i["path"]))
         os.makedirs(trash, exist_ok=True)
@@ -1005,7 +1133,56 @@ class Tasks:
         i.update(saved=st.st_size - new, new_size=new, new_path=os.path.relpath(out_final, root))
         self.log(f"shrink done: {os.path.basename(full)} {st.st_size >> 20} → {new >> 20} MB")
 
-    def _shrink_cmd(self, full, out, info, pr):
+    def _hold(self, full_dev):
+        """Why an encode should not run at full speed now: None, watching / conversion (stop), same_disk (slower)."""
+        w = [x for x in self.watching() if x["kind"] != "probe"]
+        if not w:
+            return None
+        if (self.cfg.get("shrink_while_watching") or "continue") == "pause":
+            return "watching"
+        if any(x["kind"] == "convert" for x in w):
+            return "conversion"
+        for x in w:
+            try:
+                if os.stat(x["path"]).st_dev == full_dev:
+                    return "same_disk"
+            except OSError:
+                pass
+        return None
+
+    def _govern(self, p, t, full, done, work):
+        """Runs next to an encode: stops it, slows it down on a busy disk (SIGSTOP/SIGCONT) or lets it run.
+        On the disk somebody watches from, only an encode that reads a lot (a graphics card on a big file) is slowed
+        down: x265 reads a few MB/s and a USB disk serves a stream next to it with plenty to spare."""
+        try:
+            dev = os.stat(full).st_dev
+        except OSError:
+            dev = None
+        can = sys.platform != "win32"
+        last, rate = _read_bytes(p.pid), None
+        while not done.is_set():
+            hold = self._hold(dev) if can else None
+            if hold == "same_disk" and rate is not None and rate < SAME_DISK_FREE:
+                hold = None
+            t["hold"] = hold
+            t["paused"] = hold in ("watching", "conversion")
+            if hold in ("watching", "conversion"):
+                _signal(p, "SIGSTOP")
+                done.wait(2)
+                continue
+            run = SAME_DISK_DUTY[0] if hold == "same_disk" else 1.0
+            _signal(p, "SIGCONT")
+            done.wait(run)
+            work[0] += run
+            now = _read_bytes(p.pid)
+            if now is not None and last is not None:
+                rate = (now - last) / run  # bytes read while it was allowed to run
+            last = now
+            if hold == "same_disk" and not done.is_set():
+                _signal(p, "SIGSTOP")
+                done.wait(SAME_DISK_DUTY[1])
+
+    def _shrink_cmd(self, full, out, info, pr, enc="cpu"):
         v = info["video"]
         h = min(v.get("height") or pr.get("height", 0), pr.get("height", 1 << 16))
         vf = f"scale=-2:{h}" if (v.get("height") or 0) > h else "null"
@@ -1016,9 +1193,10 @@ class Tasks:
         cmd += ["-map", "0:s?", "-map_chapters", "0"]
         if pr.get("copy"):
             cmd += ["-c:v", "copy"]
-        elif self._encoder() == "gpu":
-            cmd += ["-vf", f"{vf},format=yuv420p", "-c:v", "hevc_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", str(pr["cq"]),
-                    "-b:v", "0"]
+        elif enc == "gpu":
+            pre, vfx, vargs = mp_media.hevc_cmd(mp_media.detect_hevc()["gpu"], pr["cq"])
+            cmd[6:6] = pre  # input options (e.g. the VAAPI device) go before -i
+            cmd += ["-vf", f"{vf},{vfx}", *vargs]
         else:
             cmd += ["-vf", f"{vf},format=yuv420p", "-c:v", "libx265", "-preset", self.cfg.get("shrink_preset", "fast"),
                     "-crf", str(pr["crf"]), "-x265-params", "log-level=error"]
@@ -1074,6 +1252,28 @@ def _mount(path):
     while not os.path.ismount(p):
         p = os.path.dirname(p)
     return p
+
+
+def _read_bytes(pid):
+    """Bytes a process has read (Linux /proc; with the page cache, which is fine as an upper bound), or None."""
+    try:
+        with open(f"/proc/{pid}/io") as f:
+            for line in f:
+                if line.startswith("rchar:"):  # read_bytes misses reads through FUSE (ntfs-3g USB disks)
+                    return int(line.split()[1])
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _signal(p, name):
+    """SIGSTOP/SIGCONT to an encode (not on Windows; a process that has just ended is fine)."""
+    if sys.platform == "win32" or p.poll() is not None:
+        return
+    try:
+        p.send_signal(getattr(signal, name))
+    except (OSError, ProcessLookupError):
+        pass
 
 
 def _nice(cmd):

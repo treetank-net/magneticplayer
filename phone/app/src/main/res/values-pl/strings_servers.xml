@@ -216,4 +216,15 @@
         <item quantity="many">%d dni</item>
         <item quantity="other">%d dnia</item>
     </plurals>
+    <!-- shrinking settings (agent 1.7+) -->
+    <string name="srv_shrink_encoder">Koder przy zmniejszaniu</string>
+    <string name="srv_shrink_auto">Automatycznie</string>
+    <string name="srv_shrink_auto_is">Automatycznie (%1$s)</string>
+    <string name="srv_shrink_auto_note">Agent wybiera to, co ten komputer robi najlepiej</string>
+    <string name="srv_shrink_detecting">Sprawdzam, które kodery działają…</string>
+    <string name="srv_shrink_change">Zmień</string>
+    <string name="srv_shrink_save">Zapisz</string>
+    <string name="srv_shrink_while_watching">Zmniejszaj, gdy ktoś ogląda</string>
+    <string name="srv_shrink_while_watching_on">Inne dyski pełną parą, ten sam dysk wolniej; oglądany film podmieni się po seansie</string>
+    <string name="srv_shrink_while_watching_off">Zmniejszanie czeka, aż nikt nie będzie oglądał</string>
 </resources>

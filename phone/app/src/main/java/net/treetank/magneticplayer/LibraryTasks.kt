@@ -409,6 +409,8 @@ private fun TaskCard(t: LibTask, onCancel: () -> Unit) {
                     Text(t.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(if (active && cancelling) stringResource(R.string.lib_task_cancelling) else taskState(t.state), style = MaterialTheme.typography.labelMedium,
                         color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    t.encoder?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 if (active && !cancelling) TextButton({ cancelling = true; onCancel() }) { Text(stringResource(R.string.media_cancel)) }
             }
@@ -416,8 +418,10 @@ private fun TaskCard(t: LibTask, onCancel: () -> Unit) {
                 LinearProgressIndicator(progress = { (t.pct / 100f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 8.dp))
                 Text("${t.pct}% · ${humanBytes(t.doneBytes)} / ${humanBytes(t.total)}", style = MaterialTheme.typography.bodySmall)
                 t.current?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.MiddleEllipsis) }
-                if (t.paused) Text(stringResource(R.string.lib_task_paused), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.tertiary)
+                // agent 1.7+ says why it is slower or waiting; an older one only has "paused"
+                (t.note ?: if (t.paused) stringResource(R.string.lib_task_paused) else null)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                }
             }
             if (t.kind == "shrink" && t.saved > 0) Text(stringResource(R.string.lib_task_saved, humanBytes(t.saved)),
                 style = MaterialTheme.typography.bodySmall)
@@ -458,10 +462,13 @@ fun PlanScreen(api: Api, body: String, onBack: () -> Unit, onStarted: () -> Unit
     var plan by remember(body) { mutableStateOf<LibPlan?>(null) }
     var error by remember(body) { mutableStateOf<String?>(null) }
     var attempt by remember(body) { mutableIntStateOf(0) }
-    LaunchedEffect(body, attempt) {
+    // shrink (agent 1.7+): another encoder picked in the preview = the same request again with "encoder"
+    var encoder by remember(body) { mutableStateOf<String?>(null) }
+    LaunchedEffect(body, attempt, encoder) {
         plan = null; error = null
         try {
-            var p = withContext(Dispatchers.IO) { api.planStart(JSONObject(body)) }
+            val req = JSONObject(body).apply { encoder?.let { put("encoder", it) } }
+            var p = withContext(Dispatchers.IO) { api.planStart(req) }
             plan = p
             while (p.state == "running") {
                 delay(1000)
@@ -491,7 +498,7 @@ fun PlanScreen(api: Api, body: String, onBack: () -> Unit, onStarted: () -> Unit
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             }
             result.optString("kind") == "dupes" -> DupesContent(result, onPlan)
-            else -> PlanContent(api, p!!.id, result, onStarted) { error = it }
+            else -> PlanContent(api, p!!.id, result, onStarted, onEncoder = { encoder = it }) { error = it }
         }
     }
 }
@@ -510,18 +517,21 @@ private fun JSONObject.objects(k: String): List<JSONObject> =
     optJSONArray(k)?.let { a -> List(a.length()) { a.optJSONObject(it) ?: JSONObject() } } ?: emptyList()
 
 @Composable
-private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -> Unit, onError: (String) -> Unit) {
+private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -> Unit, onEncoder: (String) -> Unit,
+                        onError: (String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val kind = r.optString("kind")
     val items = remember(planId) { r.objects("items") }
     val skipped = remember(planId) { r.objects("skipped") }
+    val encoders = remember(planId) { if (kind == "shrink") r.objects("encoders") else emptyList() }
     var picked by remember(planId) { mutableStateOf(items.indices.filter { !items[it].optBoolean("unsure") }.toSet()) }
     var showSkipped by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
             item { PlanSummary(r, items.size) }
+            if (encoders.size > 1) item { EncoderChoice(encoders, r.optString("encoder_id"), onEncoder) }
             if (items.isEmpty()) item {
                 Text(stringResource(R.string.lib_plan_empty), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -602,6 +612,36 @@ private fun PlanSummary(r: JSONObject, count: Int) {
         warnings.forEach { Text("⚠ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         if (kind == "move" && count > 0) Text(stringResource(R.string.lib_sum_move_hint), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+    }
+    HorizontalDivider()
+}
+
+/** Shrink preview (agent 1.7+): the encoders to choose from, each with what it saves and how long the computer works. */
+@Composable
+private fun EncoderChoice(encoders: List<JSONObject>, selected: String, onPick: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Text(stringResource(R.string.lib_encoder), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 16.dp))
+        encoders.forEach { e ->
+            val id = e.optString("id")
+            val pick = { if (id != selected) onPick(id) }
+            Row(Modifier.fillMaxWidth().clickable(onClick = pick).padding(end = 16.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(id == selected, pick)
+                Column(Modifier.weight(1f)) {
+                    Text(e.optString("label").ifEmpty { id }, style = MaterialTheme.typography.bodyMedium)
+                    val parts = buildList {
+                        add(stringResource(R.string.lib_encoder_saves, humanBytes(e.optLong("saved"))))
+                        e.optDouble("work_hours").takeIf { !it.isNaN() }?.let {
+                            add(stringResource(R.string.lib_encoder_work, String.format(java.util.Locale.getDefault(), "%.1f", it)))
+                        }
+                    }
+                    Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                    e.optStr("note")?.let {
+                        Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
     HorizontalDivider()
 }

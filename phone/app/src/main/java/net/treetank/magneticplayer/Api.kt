@@ -119,7 +119,19 @@ data class LibTask(
     val id: String, val kind: String, val title: String, val state: String, val created: Double, val finished: Double?,
     val total: Long, val doneBytes: Long, val pct: Int, val current: String?, val saved: Long, val errors: Int,
     val paused: Boolean, val items: List<TaskItem>,
+    /** agent 1.7+: encoder label of a shrink task and a status note ("Slower: someone is watching…"), both localized */
+    val encoder: String? = null, val note: String? = null,
 )
+/** An encoder for shrinking (agent 1.7+); label and note come localized from the agent. */
+data class ShrinkEncoder(val id: String, val label: String, val note: String, val bframes: Boolean)
+/**
+ * Shrinking settings (`/api/config/shrink`, agent 1.7+): `encoder` auto|cpu|gpu, `auto` = what auto resolves to,
+ * `whileWatching` continue|pause, `detecting` = the agent is still checking which encoders work.
+ */
+data class ShrinkConfig(val encoder: String, val auto: String, val whileWatching: String, val detecting: Boolean,
+                        val encoders: List<ShrinkEncoder>) {
+    fun label(id: String) = encoders.firstOrNull { it.id == id }?.label
+}
 /** Search hit: a folder or a media file somewhere in a library folder. */
 data class LibHit(val root: Int, val rootName: String, val path: String, val dir: Boolean, val size: Long, val media: String?)
 data class LibFile(val name: String, val size: Long, val media: String?, val subs: List<String>)
@@ -339,6 +351,22 @@ class Api(val s: Settings, val srv: Server) {
     fun devices(): JSONArray = JSONArray(call("GET", "/api/devices"))
     fun setAppUpdates(auto: Boolean) { call("POST", "/api/config/app_updates", JSONObject().put("mode", if (auto) "auto" else "manual")) }
     fun setAgentUpdates(auto: Boolean) { call("POST", "/api/config/agent_updates", JSONObject().put("mode", if (auto) "auto" else "manual")) }
+    /** Shrinking settings (agent 1.7+). */
+    fun shrinkConfig(): ShrinkConfig = shrinkCfg(JSONObject(call("GET", "/api/config/shrink")))
+    /** Changes the shrinking encoder (auto|cpu|gpu) and/or what happens while someone watches (continue|pause); owner only. */
+    fun setShrinkConfig(encoder: String? = null, whileWatching: String? = null): ShrinkConfig =
+        shrinkCfg(JSONObject(call("POST", "/api/config/shrink", JSONObject().apply {
+            if (encoder != null) put("encoder", encoder)
+            if (whileWatching != null) put("while_watching", whileWatching)
+        })))
+    private fun shrinkCfg(o: JSONObject): ShrinkConfig {
+        val a = o.optJSONArray("encoders") ?: JSONArray()
+        return ShrinkConfig(o.optString("encoder", "auto"), o.optString("auto", "cpu"), o.optString("while_watching", "continue"),
+            o.optBoolean("detecting"), List(a.length()) { i ->
+                val x = a.getJSONObject(i)
+                ShrinkEncoder(x.optString("id"), x.optString("label").ifEmpty { x.optString("id") }, x.optString("note"), x.optBoolean("bframes"))
+            })
+    }
     fun updateAgent() { call("POST", "/api/agent/update", JSONObject()) }
     fun revoke(id: String) { call("POST", "/api/devices/revoke", JSONObject().put("id", id)) }
     fun wakeOther(mac: String, host: String) { call("POST", "/api/wake", JSONObject().put("mac", mac).put("ip", host), 4000) }
@@ -525,7 +553,7 @@ class Api(val s: Settings, val srv: Server) {
                 val x = arr.getJSONObject(i)
                 TaskItem(x.optString("name").ifEmpty { x.optString("path").substringAfterLast('/') }, x.optString("path"),
                     x.optLong("size"), x.optString("state"), x.optStr("error"), x.optLong("saved"))
-            })
+            }, o.optStr("encoder"), o.optStr("note"))
     }
 
     /** Saves a storage profile for a folder (`path` "") or a subfolder. */

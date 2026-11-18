@@ -191,4 +191,8 @@
         <item quantity="many">Usunięto %1$d pozycji</item>
         <item quantity="other">Usunięto %1$d pozycji</item>
     </plurals>
+    <!-- shrink preview: encoder choice (agent 1.7+) -->
+    <string name="lib_encoder">Koder</string>
+    <string name="lib_encoder_saves">oszczędza %1$s</string>
+    <string name="lib_encoder_work">około %1$s h pracy</string>
 </resources>

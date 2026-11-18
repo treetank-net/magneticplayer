@@ -238,8 +238,20 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    DTS/TrueHD/PCM → E-AC3 640k or AAC; at least 3% saved), `good` (HEVC ≤1080p, x265 CRF 24), `compact` (≤720p, CRF 25, stereo), `tiny` (≤480p, CRF 26, small stereo AAC);
    smaller profiles keep Polish, English, undefined and default audio tracks; subtitles and chapters are copied.
    Only files outside the torrent client; HEVC/AV1 already small enough and estimates saving under 15% are
-   skipped. x265 `-preset fast` at `nice 19` and `ionice -c3` (`shrink_encoder: "gpu"` = NVENC), SIGSTOP while a
-   stream is active. The result must have the same duration (±0.5%), decode without errors and be at least 7.5%
+   skipped. The encoder is chosen per task (agent 1.7+): `cpu` = x265 `-preset fast` at `nice 19` and `ionice -c3`,
+   `gpu` = the card's HEVC encoder (NVENC or VAAPI) found by `mp_media.detect_hevc` with trial encodes: the full
+   set of options first (B-frames, AQ, lookahead), then fewer, so an old card (GTX 970: no HEVC B-frames) still works
+   and is marked as making larger files. `auto` (the default `shrink_encoder`) takes the card only when it can do
+   B-frames. The trial also gives a first speed (two encodes of 2 and 8 s of 1080p, the difference leaves out
+   ffmpeg's start); real encodes refine it in `shrink_speed`, and the preview shows saving and hours of work for
+   each encoder. While somebody watches (`shrink_while_watching`: `continue` by default, `pause` = stop on any
+   stream) a governor thread next to ffmpeg decides: another disk → full speed; the same disk → one second in three
+   (SIGSTOP/SIGCONT) only when the encoder itself reads over 8 MB/s (`rchar`; x265 reads ~0.3 MB/s, NVENC tens of
+   MB/s; measured on jmpc: a 3 MB/s stream from the same USB disk kept its pace, and an unthrottled one got 43 MB/s
+   next to x265); a conversion for a TV → stop. "Watching" = a GET of that file in the last 30 s, mpv playing it, or
+   a conversion; HEAD-only requests (a phone playing its own copy probes the file every few seconds) don't slow
+   anything down but do hold the swap: the result replaces a file only when nobody has touched it for a minute,
+   since a player asks for byte ranges of the original. The result must have the same duration (±0.5%), decode without errors and be at least 7.5%
    smaller; then the original goes to `<library folder>/.mp-trash/<date>/` and the `.mkv` result takes its place.
    The trash is purged after `trash_days` (default 14).
 5. The phone shows one notification per finished task.

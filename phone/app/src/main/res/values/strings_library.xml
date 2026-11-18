@@ -157,4 +157,8 @@
         <item quantity="one">Deleted %1$d item</item>
         <item quantity="other">Deleted %1$d items</item>
     </plurals>
+    <!-- shrink preview: encoder choice (agent 1.7+) -->
+    <string name="lib_encoder">Encoder</string>
+    <string name="lib_encoder_saves">saves %1$s</string>
+    <string name="lib_encoder_work">about %1$s h of work</string>
 </resources>

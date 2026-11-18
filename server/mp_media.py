@@ -87,6 +87,94 @@ def encoder_info():
     return (_hw or None) if _hw is not None else None
 
 
+# ---- HEVC encoders for shrinking (mp_tasks): the processor (x265) and the graphics card next to it.
+# Old NVENC (Maxwell, e.g. GTX 970) can't do B-frames in HEVC, so the files come out larger at the same quality;
+# Turing (RTX 20xx) and newer can. Each option is tried with a trial encode, from the full set of options down.
+HW_HEVC = {
+    "h264_nvenc": ("hevc_nvenc", "NVIDIA NVENC (HEVC)", [], "format=yuv420p", [
+        (True, ["-bf", "3", "-b_ref_mode", "middle", "-spatial_aq", "1", "-temporal_aq", "1", "-rc-lookahead", "32"]),
+        (True, ["-bf", "3", "-spatial_aq", "1", "-rc-lookahead", "32"]),
+        (False, ["-bf", "0", "-spatial_aq", "1", "-rc-lookahead", "32"]),
+        (False, ["-bf", "0"])]),
+    "h264_vaapi": ("hevc_vaapi", "VAAPI (HEVC)", ["-vaapi_device", "/dev/dri/renderD128"], "format=nv12,hwupload", [
+        (True, ["-bf", "2"]), (False, ["-bf", "0"])]),
+}
+_hevc = None
+_hevc_lock = threading.Lock()
+
+
+def _hevc_args(name, q):
+    """Quality arguments of a HEVC encoder: `q` is the profile's NVENC CQ (also used as the VAAPI QP)."""
+    if name == "hevc_nvenc":
+        return ["-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", str(q), "-b:v", "0"]
+    return ["-qp", str(q)]
+
+
+def _bench(pre, vf, args):
+    """Seconds of work per second of 1080p video, or None when the encoder fails. Two trials (2 s and 8 s of
+    video): the difference leaves out ffmpeg's start, which on a graphics card takes longer than the encode."""
+    def run(seconds):
+        cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", *pre, "-f", "lavfi",
+               "-i", f"testsrc2=size=1920x1080:rate=25:duration={seconds}", "-vf", vf, *args, "-f", "null", "-"]
+        if sys.platform != "win32" and shutil.which("nice"):
+            cmd = ["nice", "-n", "19", *cmd]
+        t0 = time.time()
+        try:
+            ok = subprocess.run(cmd, capture_output=True, timeout=180).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return time.time() - t0 if ok else None
+    short = run(2)
+    if short is None:
+        return None
+    long = run(8)
+    if long is None:
+        return None
+    return max(long - short, 0.05) / 6
+
+
+def detect_hevc():
+    """HEVC encoders for shrinking: {"cpu": {...}, "gpu": {...}?}; each has "encoder", "label", "hw", "bframes",
+    "pre", "vf" (appended to the scale filter), "args" (without quality) and "speed" (pixel·seconds of video per
+    second of work, from a trial on a synthetic picture: only a rough first guess, real encodes refine it).
+    Computed once, in the background after detect_encoder()."""
+    global _hevc
+    with _hevc_lock:
+        if _hevc is not None:
+            return _hevc
+        out = {}
+        h264 = detect_encoder()
+        px = 1920 * 1080
+        if h264:
+            if (t := _bench([], "format=yuv420p", ["-c:v", "libx265", "-preset", "fast", "-crf", "24",
+                                                   "-x265-params", "log-level=error"])):
+                out["cpu"] = {"encoder": "libx265", "label": "x265", "hw": False, "bframes": True, "pre": [],
+                              "vf": "format=yuv420p", "args": [], "speed": px / t}
+            hw = HW_HEVC.get(h264["encoder"])
+            if hw and (h264["encoder"] != "h264_vaapi" or os.path.exists("/dev/dri/renderD128")):
+                name, label, pre, vf, tries = hw
+                for bframes, args in tries:
+                    if (t := _bench(pre, vf, ["-c:v", name, *_hevc_args(name, 27), *args])):
+                        out["gpu"] = {"encoder": name, "label": label, "hw": True, "bframes": bframes, "pre": pre,
+                                      "vf": vf, "args": args, "speed": px / t}
+                        break
+        _hevc = out
+        return _hevc
+
+
+def hevc_info():
+    """Without waiting: the detected HEVC encoders, or None while detection still runs."""
+    return _hevc
+
+
+def hevc_cmd(enc, q):
+    """(input options, filter suffix, video codec arguments) of a detected HEVC encoder for quality `q` (CRF for
+    x265, CQ/QP for the graphics card)."""
+    if enc["encoder"] == "libx265":
+        return [], enc["vf"], ["-c:v", "libx265", "-preset", "fast", "-crf", str(q), "-x265-params", "log-level=error"]
+    return enc["pre"], enc["vf"], ["-c:v", enc["encoder"], *_hevc_args(enc["encoder"], q), *enc["args"]]
+
+
 _probes = {}
 _probe_lock = threading.Lock()
 

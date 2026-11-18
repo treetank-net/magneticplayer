@@ -53,6 +53,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -586,6 +587,7 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                         }
                     }
                 }
+                if (s.shrinkEncoder != null && !s.isGuest) ShrinkSettings(s, snack, reload) { server = Servers.get(ctx, key) }
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_name_in_app)) }, singleLine = true)
                 HorizontalDivider()
                 Text(stringResource(R.string.srv_paired_devices), style = MaterialTheme.typography.titleSmall)
@@ -659,6 +661,91 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
         },
         dismissButton = { TextButton({ confirmRemove = false }) { Text(stringResource(R.string.srv_cancel)) } },
     )
+}
+
+/** "Processor (x265)" -> "Processor": the short name of an encoder for "Automatic (…)". */
+private fun shortLabel(label: String) = label.substringBefore(" (").ifEmpty { label }
+
+/** Shrinking settings of a server (agent 1.7+, owner only): which encoder and whether to go on while someone watches. */
+@Composable
+private fun ShrinkSettings(s: Server, snack: SnackbarHostState, reload: Int, onInfo: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var cfg by remember { mutableStateOf<ShrinkConfig?>(null) }
+    var pick by remember { mutableStateOf(false) }
+    LaunchedEffect(reload) {
+        // while the agent is still checking the graphics card, ask again a few times
+        repeat(10) {
+            val c = runCatching { withContext(Dispatchers.IO) { Api(Settings(ctx), s).shrinkConfig() } }.getOrNull() ?: return@LaunchedEffect
+            cfg = c
+            if (!c.detecting) return@LaunchedEffect
+            delay(3000)
+        }
+    }
+    fun save(encoder: String? = null, whileWatching: String? = null) {
+        scope.launch {
+            try {
+                cfg = withContext(Dispatchers.IO) { Api(Settings(ctx), s).run { setShrinkConfig(encoder, whileWatching).also { info() } } }
+                onInfo()
+            } catch (e: ApiException) {
+                snack.showSnackbar(e.message ?: ctx.getString(R.string.srv_error))
+            }
+        }
+    }
+    val c = cfg
+    val current = c?.encoder ?: s.shrinkEncoder ?: "auto"
+    val currentText = when {
+        c == null -> if (current == "auto") stringResource(R.string.srv_shrink_auto) else current
+        current == "auto" -> c.label(c.auto)?.let { stringResource(R.string.srv_shrink_auto_is, shortLabel(it)) }
+            ?: stringResource(R.string.srv_shrink_auto)
+        else -> c.label(current) ?: current
+    }
+    Row(Modifier.fillMaxWidth().clickable(enabled = c != null) { pick = true }, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.srv_shrink_encoder), style = MaterialTheme.typography.bodyMedium)
+            Text(currentText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (c?.detecting == true) Text(stringResource(R.string.srv_shrink_detecting), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (c != null) TextButton({ pick = true }) { Text(stringResource(R.string.srv_shrink_change)) }
+    }
+    val watching = c?.whileWatching ?: s.shrinkWhileWatching ?: "continue"
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.srv_shrink_while_watching), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(if (watching == "continue") R.string.srv_shrink_while_watching_on else R.string.srv_shrink_while_watching_off),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(watching == "continue", { on -> save(whileWatching = if (on) "continue" else "pause") })
+    }
+    if (pick && c != null) {
+        var chosen by remember { mutableStateOf(c.encoder) }
+        AlertDialog(
+            onDismissRequest = { pick = false },
+            title = { Text(stringResource(R.string.srv_shrink_encoder)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    val options = listOf(Triple("auto", c.label(c.auto)?.let { stringResource(R.string.srv_shrink_auto_is, shortLabel(it)) }
+                        ?: stringResource(R.string.srv_shrink_auto), stringResource(R.string.srv_shrink_auto_note))) +
+                        c.encoders.map { Triple(it.id, it.label, it.note) }
+                    options.forEach { (id, label, note) ->
+                        Row(Modifier.fillMaxWidth().clickable { chosen = id }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(chosen == id, { chosen = id })
+                            Column(Modifier.weight(1f)) {
+                                Text(label, style = MaterialTheme.typography.bodyMedium)
+                                if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton({ pick = false; if (chosen != c.encoder) save(encoder = chosen) }) { Text(stringResource(R.string.srv_shrink_save)) }
+            },
+            dismissButton = { TextButton({ pick = false }) { Text(stringResource(R.string.srv_cancel)) } },
+        )
+    }
 }
 
 private fun lastSeen(ctx: Context, d: JSONObject): String {

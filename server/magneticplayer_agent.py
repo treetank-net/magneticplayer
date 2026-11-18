@@ -50,7 +50,7 @@ import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.6.2"
+VERSION = "1.7.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -848,10 +848,11 @@ class App:
         self.app_updates.start()
         # the agent itself from GitHub releases (mp_selfupdate.py): installed when nobody is streaming or converting
         self.streams, self.stream_last, self.stream_lock = 0, 0.0, threading.Lock()
+        self.watch = {}  # real path of a video → {active GETs, last request, last GET} (see watched())
         # background file tasks: moving between disks, shrinking by storage profiles (mp_tasks.py); encodes pause while
         # somebody streams from the library
         self.tasks = mp_tasks.Tasks(os.path.join(CONFIG_DIR, "tasks.json"), cfg, lambda: save_config(cfg), self.library,
-                                    lambda: self.backend, lambda: self.streams > 0 or time.time() - self.stream_last < 30,
+                                    lambda: self.backend, self.watched,
                                     self.renderers, log)
         self.agent_updates = mp_selfupdate.AgentUpdates(cfg, lambda: save_config(cfg), os.path.dirname(os.path.abspath(__file__)),
                                                         VERSION, cfg["port"], self.busy, log)
@@ -862,11 +863,33 @@ class App:
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # which H.264 encoder works on this hardware (NVENC/VAAPI/...): a trial encode takes seconds, so in the background
         threading.Thread(target=mp_media.detect_encoder, daemon=True).start()
+        # HEVC encoders for shrinking (processor and graphics card, with a speed trial): after the one above
+        threading.Thread(target=mp_media.detect_hevc, daemon=True).start()
         # importing subliminal is slow (~30 s on a fresh Windows): in the background so the first /api/info (pairing) doesn't wait
         threading.Thread(target=self.subs_available, daemon=True).start()
 
     def name(self):
         return self.cfg.get("name") or socket.gethostname()
+
+    def watched(self):
+        """Videos in use now, for shrink tasks: [{"path", "kind"}]. A GET in the last 30 s = stream; only HEADs in the
+        last 60 s = probe (a phone playing its own copy still asks about the file); mpv on this screen; a conversion."""
+        now, out = time.time(), []
+        with self.stream_lock:
+            for path, w in list(self.watch.items()):
+                if w["active"] or now - w["read"] < 30:
+                    out.append({"path": path, "kind": "stream"})
+                elif now - w["last"] < 60:
+                    out.append({"path": path, "kind": "probe"})
+                elif now - w["last"] > 3600:
+                    del self.watch[path]
+        try:
+            if self.mpv.running() and (path := self.mpv.prop("path")) and os.path.isfile(path):
+                out.append({"path": os.path.realpath(path), "kind": "mpv"})
+        except Exception:  # noqa: BLE001 — mpv just ending
+            pass
+        out += [{"path": j["path"], "kind": "convert"} for j in self.convert.all() if j["state"] in ("queued", "running")]
+        return out
 
     def busy(self):
         """Why a restart (self-update) should wait now, or None: a stream or upload in the last 5 minutes, a conversion."""
@@ -937,6 +960,8 @@ class App:
                 "library_guess": True,  # magnet identification and downloading straight into a folder (agent 1.5+)
                 # disks, background tasks (moving, shrinking), storage profiles, trash (agent 1.6+)
                 "library_tasks": True,
+                "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
+                "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 "library_profiles": list(mp_tasks.PROFILE_NAMES),
                 "player": self.is_screen(),
@@ -1464,10 +1489,10 @@ class Handler(BaseHTTPRequestHandler):
                 full, f = a.resolve_file(tid, idx)
                 self.caption_header(q, f"torrent_id={tid}&file_index={idx}")
                 if qd0.get("v") == "cast" and mp_media.variant(full):
-                    return self.stream(mp_media.variant(full), method == "HEAD")
+                    return self.stream(mp_media.variant(full), method == "HEAD", watch=full)
                 # downloaded pieces only: instead of zeros from a not-yet-downloaded file we wait for Deluge (see stream())
                 return self.stream(full, method == "HEAD", f.get("_pieces"),
-                                   lambda: a.resolve_file(tid, idx)[1].get("_pieces"))
+                                   lambda: a.resolve_file(tid, idx)[1].get("_pieces"), watch=full)
             if p == "/api/player/open" and method == "POST":
                 if not a.is_screen():
                     raise ApiError(T(f"{a.name()} isn't a screen (no mpv/session or config: player)",
@@ -1527,7 +1552,7 @@ class Handler(BaseHTTPRequestHandler):
                 if kind == "shrink":
                     if b.get("profile"):  # choosing a profile for this folder/file is remembered (new files follow it)
                         a.tasks.set_profile(int(b["root"]), b.get("path", ""), b["profile"])
-                    return self.send_json(a.tasks.plan_shrink(int(b["root"]), b.get("path", "")))
+                    return self.send_json(a.tasks.plan_shrink(int(b["root"]), b.get("path", ""), b.get("encoder")))
                 if kind == "move":
                     return self.send_json(a.tasks.plan_move(b.get("items") or []))
                 if kind == "tidy":
@@ -1573,8 +1598,8 @@ class Handler(BaseHTTPRequestHandler):
                 full = a.library.resolve(int(m.group(1)), urllib.parse.unquote(m.group(2)))
                 self.caption_header(q, f"root={int(m.group(1))}&path={urllib.parse.quote(urllib.parse.unquote(m.group(2)))}")
                 if qd0.get("v") == "cast" and mp_media.variant(full):
-                    return self.stream(mp_media.variant(full), method == "HEAD")
-                return self.stream(full, method == "HEAD")
+                    return self.stream(mp_media.variant(full), method == "HEAD", watch=full)
+                return self.stream(full, method == "HEAD", watch=full)
             # ---- subtitles
             if p == "/api/subs/list" and method == "GET":
                 return self.send_json(sidecar_subs(a.resolve_ref(qd)))
@@ -1617,6 +1642,10 @@ class Handler(BaseHTTPRequestHandler):
                 if mode not in mp_appupdate.MODES:
                     raise ApiError(T("mode must be auto or manual", "tryb to auto albo manual"), 400)
                 return self.send_json(a.app_updates.set_mode(mode))
+            if p == "/api/config/shrink" and method == "GET":
+                return self.send_json(a.tasks.shrink_config())
+            if p == "/api/config/shrink" and method == "POST":
+                return self.send_json(a.tasks.set_shrink_config(self.body()))
             if p == "/api/config/agent_updates" and method == "GET":
                 return self.send_json(a.agent_updates.status())
             if p == "/api/config/agent_updates" and method == "POST":
@@ -1693,7 +1722,23 @@ class Handler(BaseHTTPRequestHandler):
 
     STALL_WAIT = 20  # seconds of waiting for further pieces, then we drop the connection (the player retries)
 
-    def stream(self, full, head_only, pieces=None, refresh=None):
+    def stream(self, full, head_only, pieces=None, refresh=None, watch=None):
+        if watch:  # which video is in use (shrink tasks slow down on its disk and don't swap it): App.watched
+            with self.app.stream_lock:
+                w = self.app.watch.setdefault(os.path.realpath(watch), {"active": 0, "last": 0.0, "read": 0.0})
+                w["active"] += 0 if head_only else 1
+            try:
+                return self._stream_dbg(full, head_only, pieces, refresh)
+            finally:
+                with self.app.stream_lock:
+                    now = time.time()
+                    w["last"] = now
+                    if not head_only:
+                        w["active"] -= 1
+                        w["read"] = now
+        return self._stream_dbg(full, head_only, pieces, refresh)
+
+    def _stream_dbg(self, full, head_only, pieces=None, refresh=None):
         # diagnostics: `touch ~/.config/magneticplayer/debug-stream` logs every request (range, time, bytes sent)
         if not os.path.exists(os.path.join(os.path.dirname(CONFIG_PATH), "debug-stream")):
             return self._stream(full, head_only, pieces, refresh)
