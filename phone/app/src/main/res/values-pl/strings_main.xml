@@ -155,4 +155,10 @@
     <string name="main_tv_rejected">Telewizor odrzucił %1$s: %2$s</string>
     <string name="main_tv_rejected_http">Telewizor odrzucił %1$s (HTTP %2$d)</string>
     <string name="main_tv_no_answer">Telewizor nie odpowiada (%1$s)</string>
+    <string name="main_close_app_title">Zamknąć %1$s na %2$s?</string>
+    <string name="main_close_app_text">To zamknie aplikację na Chromecaście, nawet jeśli ktoś inny z niej korzysta.</string>
+    <string name="main_open_app">%1$s: otwarte %2$s</string>
+    <string name="main_confirm_foreign_stop">Pytaj przed zamknięciem innych aplikacji na Chromecaście</string>
+    <string name="main_confirm_foreign_stop_desc">Spotify, YouTube i inne: „Zakończ” zamyka aplikację na telewizorze</string>
+    <string name="main_notif_confirm_stop">Dotknij ■ jeszcze raz, żeby zamknąć %1$s</string>
 </resources>

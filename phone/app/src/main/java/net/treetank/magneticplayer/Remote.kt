@@ -13,6 +13,8 @@ data class RemoteState(
     val volume: Int? = null, val muted: Boolean = false,
     /** dopisek pod tytułem: „film z telefonu”, „telewizor nie odpowiada”… */
     val note: String? = null,
+    /** cudza aplikacja na Chromecaście (Spotify, YouTube…); „Zakończ” ją zamyka, więc najpierw pytamy */
+    val app: String? = null,
     /** pełny stan mpv (ścieżki, napisy, pełny ekran) */
     val mpv: JSONObject? = null,
     val at: Long = System.currentTimeMillis(),
@@ -116,7 +118,7 @@ class AgentCastRemote(private val ctx: Context, val api: Api, private val device
         RemoteState(o.optString("title"), d("pos"), d("duration"), o.optString("state") == "PLAYING",
             o.optString("state") == "BUFFERING",
             volume = if (o.optBoolean("volume_fixed")) null else o.optInt("volume"), muted = o.optBoolean("muted"),
-            note = app ?: if (!o.optBoolean("mine")) ctx.getString(R.string.main_note_other_device) else null).also { last = it }
+            note = app ?: if (!o.optBoolean("mine")) ctx.getString(R.string.main_note_other_device) else null, app = app).also { last = it }
     }
 
     private suspend fun cmd(c: String, v: Any? = null) = withContext(Dispatchers.IO) { api.castCmd(c, v, device) }
@@ -143,7 +145,7 @@ class DirectCastRemote(private val id: String) : Remote {
         val s = CastNet.statusOf(id)?.takeIf { it.active } ?: return null.also { last = null }
         val app = s.app?.takeIf { it != "Default Media Receiver" }
         return RemoteState(s.title ?: "", s.pos, s.dur, s.state == "PLAYING", s.state == "BUFFERING",
-            volume = if (s.fixedVolume) null else (s.volume * 100).toInt(), muted = s.muted, note = app, at = s.at).also { last = it }
+            volume = if (s.fixedVolume) null else (s.volume * 100).toInt(), muted = s.muted, note = app, app = app, at = s.at).also { last = it }
     }
     override suspend fun setPlaying(play: Boolean) {
         CastNet.media(id, if (play) "PLAY" else "PAUSE")

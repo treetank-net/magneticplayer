@@ -81,6 +81,10 @@ Plan i decyzje: [plan-wiele-serwerow.md](plan-wiele-serwerow.md), makiety: `ux-w
   tego nie widać: ścieżki, napisy i pełny ekran są tylko dla mpv, a głośność nie pojawia się przy stałej głośności.
   Przyciski głośności telefonu sterują celem Pilota (mpv tylko na zakładce Pilot). Gdy coś gra, Pilot nie wygasza
   ekranu (ustawienie „Pilot nie wygasza ekranu”, domyślnie włączone).
+  „Zakończ” przy cudzej aplikacji na Chromecaście (Spotify, YouTube) zamyka ją, więc najpierw pyta: w apce oknem,
+  w powiadomieniu drugim dotknięciem w ciągu 5 s (ustawienie „Pytaj przed zamknięciem innych aplikacji na
+  Chromecaście”, domyślnie włączone). Pilot pokazuje też Chromecasty z otwartą aplikacją, która nic nie gra (np. Spotify
+  zostawione po słuchaniu dalej pokazuje okładkę), z przyciskiem „Zamknij” (`CastNet.openIdle`).
   - DLNA po ubiciu apki: co wysłano, leży w SharedPreferences `dlna`. Przy starcie apka pyta telewizor
     (GetTransportInfo, GetMediaInfo) i jeśli gra dalej ten sam adres, Pilot i powiadomienie wracają.
   - Start DLNA od zapamiętanej pozycji: Seek po wejściu w PLAYING, sprawdzenie pozycji i do 4 prób
@@ -220,6 +224,11 @@ Jeden plik bez zależności (vanilla JS), serwowany pod `/` bez tokenu. Dane i t
   wypisywało „null[object HTMLDivElement]”.
 
 ## Apka (`phone/`)
+
+Teksty w zasobach: angielski domyślnie (`res/values/strings_*.xml`), polski w `res/values-pl/`. Język apki idzie za
+językiem telefonu; na Androidzie 13+ można go zmienić osobno w Ustawieniach systemu → „Języki aplikacji”
+(`res/xml/locales_config.xml`). Zapytania do agenta niosą ten język w `Accept-Language`, więc błędy agenta przychodzą
+w tym samym języku.
 
 | plik | co jest w środku |
 |---|---|

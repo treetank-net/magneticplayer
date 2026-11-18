@@ -36,8 +36,12 @@ object CastNet {
     data class Status(
         val device: Device, val app: String?, val volume: Double, val muted: Boolean, val fixedVolume: Boolean,
         val title: String?, val state: String?, val pos: Double, val dur: Double, val at: Long = System.currentTimeMillis(),
+        /** aplikacja to ekran bezczynności (Backdrop, tryb otoczenia), nie coś, co ktoś otworzył */
+        val idleScreen: Boolean = false,
     ) {
         val active get() = state == "PLAYING" || state == "PAUSED" || state == "BUFFERING"
+        /** otwarta aplikacja (np. Spotify po słuchaniu), która nic nie gra: Pilot pozwala ją zamknąć */
+        val openIdle get() = !active && !idleScreen && !app.isNullOrBlank()
     }
 
     /** id (jak w TXT `id`, 32 znaki hex) → urządzenie; stan Compose, żeby Pilot odświeżał chipy */
@@ -109,6 +113,9 @@ object CastNet {
     /** Chromecasty, na których coś teraz gra. */
     fun playing(): List<Status> = status.values.filter { it.active }.sortedBy { it.device.name }
 
+    /** Chromecasty z otwartą aplikacją, która nic nie gra (Spotify zostawione po słuchaniu). */
+    fun openIdle(): List<Status> = status.values.filter { it.openIdle }.sortedBy { it.device.name }
+
     suspend fun statusOf(id: String): Status? = withContext(Dispatchers.IO) {
         val d = devices[id] ?: return@withContext null
         runCatching { readStatus(d) }.getOrNull()?.also { status[id] = it }
@@ -121,14 +128,16 @@ object CastNet {
         val vol = st.optJSONObject("volume") ?: JSONObject()
         val app = st.optJSONArray("applications")?.optJSONObject(0)
         val base = Status(d, app?.optString("displayName"), vol.optDouble("level", 0.0), vol.optBoolean("muted"),
-            vol.optString("controlType") == "fixed", null, null, 0.0, 0.0)
+            vol.optString("controlType") == "fixed", null, null, 0.0, 0.0,
+            idleScreen = app?.optBoolean("isIdleScreen") == true || app?.optString("displayName") == "Backdrop")
+        // sessionId także dla aplikacji bez mediów (np. Spotify na Google TV), żeby „Zakończ” mogło ją zamknąć
+        c.appSession = app?.optString("sessionId")?.takeIf { it.isNotBlank() }
         if (app == null || !hasMedia(app)) return base
         val tid = app.getString("transportId")
         val m = c.request(Client.NS_MEDIA, tid, JSONObject().put("type", "GET_STATUS"))
         val ms = m.optJSONArray("status")?.optJSONObject(0) ?: return base
         c.mediaSession = ms.optInt("mediaSessionId")
         c.transport = tid
-        c.appSession = app.optString("sessionId")
         val media = ms.optJSONObject("media")
         return base.copy(
             title = media?.optJSONObject("metadata")?.optString("title")?.takeIf { it.isNotBlank() }
@@ -161,7 +170,7 @@ object CastNet {
     suspend fun stopApp(id: String) = withContext(Dispatchers.IO) {
         val d = devices[id] ?: return@withContext
         val c = client(d)
-        if (c.appSession == null) readStatus(d)
+        readStatus(d)  // świeży sessionId: aplikacja mogła się zmienić
         val sid = c.appSession ?: return@withContext
         c.request(Client.NS_RECEIVER, "receiver-0", JSONObject().put("type", "STOP").put("sessionId", sid))
         status.remove(id)

@@ -12,9 +12,13 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.MainScope
@@ -39,6 +43,21 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
     /** ile odczytów z rzędu nic nie grało (usługa kończy się po kilku) */
     var idlePolls = 0
         private set
+    /** „Zakończ” z powiadomienia przy cudzej aplikacji: drugie dotknięcie do tej chwili zamyka (zamiast okna z pytaniem) */
+    @Volatile private var armedUntil = 0L
+
+    /** Przycisk „Zakończ” w powiadomieniu. Cudzą aplikację (Spotify…) zamyka dopiero drugie dotknięcie w ciągu 5 s. */
+    fun stopTapped() {
+        val now = System.currentTimeMillis()
+        if (st?.app != null && Settings(ctx).confirmForeignStop && now > armedUntil) {
+            armedUntil = now + 5000
+            invalidateState()
+            scope.launch { delay(5100); invalidateState() }  // podpowiedź znika sama
+            return
+        }
+        armedUntil = 0
+        run { stop() }
+    }
 
     init {
         scope.launch {
@@ -95,7 +114,9 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
         if (s == null || r == null) return b.setPlaybackState(Player.STATE_IDLE).build()
         val item = MediaItemData.Builder(r.kind)
             .setMediaItem(MediaItem.Builder().setMediaId(r.kind).build())
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).setArtist(r.name).build())
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).setArtist(
+                if (s.app != null && System.currentTimeMillis() < armedUntil) ctx.getString(R.string.main_notif_confirm_stop, s.app)
+                else r.name).build())
             .setDurationUs(if (s.dur > 0) (s.dur * 1_000_000).toLong() else C.TIME_UNSET)
             .setIsSeekable(true)
             .build()
@@ -186,7 +207,23 @@ class RemoteSessionService : MediaSessionService() {
         val open = android.app.PendingIntent.getActivity(this, KINDS.indexOf(kind),
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             android.app.PendingIntent.FLAG_IMMUTABLE)
-        sessions[kind] = MediaSession.Builder(this, RemotePlayer(this, kind)).setId("remote-$kind").setSessionActivity(open).build()
+        val stopCmd = SessionCommand(CMD_STOP, android.os.Bundle.EMPTY)
+        val stopBtn = CommandButton.Builder(CommandButton.ICON_STOP).setDisplayName(getString(R.string.main_stop))
+            .setSessionCommand(stopCmd).setSlots(CommandButton.SLOT_OVERFLOW).build()
+        sessions[kind] = MediaSession.Builder(this, RemotePlayer(this, kind)).setId("remote-$kind").setSessionActivity(open)
+            .setCallback(object : MediaSession.Callback {
+                override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo) =
+                    MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(stopCmd).build())
+                        .build()
+                override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo,
+                                             customCommand: SessionCommand, args: android.os.Bundle): ListenableFuture<SessionResult> {
+                    if (customCommand.customAction == CMD_STOP) (session.player as RemotePlayer).stopTapped()
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+            })
+            .setMediaButtonPreferences(ImmutableList.of(stopBtn))
+            .build()
             // bez tego media3 pokaże powiadomienie dopiero, gdy podłączy się jakiś kontroler (np. System UI)
             .also { addSession(it) }
     }
@@ -216,6 +253,7 @@ class RemoteSessionService : MediaSessionService() {
 
     companion object {
         private const val EXTRA_KIND = "kind"
+        private const val CMD_STOP = "net.treetank.magneticplayer.STOP"
         private val KINDS = listOf("screen", "dlna", "cast")
 
         /** Powiadomienie dla celu `kind` ("screen" | "dlna" | "cast"), dopóki coś na nim gra. */

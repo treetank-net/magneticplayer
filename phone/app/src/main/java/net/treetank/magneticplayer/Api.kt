@@ -29,6 +29,10 @@ class Settings(ctx: Context) {
     var pilotKeepScreen: Boolean
         get() = p.getBoolean("pilot_keep_screen", true)
         set(v) = p.edit().putBoolean("pilot_keep_screen", v).apply()
+    /** pytać przed zamknięciem cudzej aplikacji na Chromecaście (Spotify, YouTube…) */
+    var confirmForeignStop: Boolean
+        get() = p.getBoolean("confirm_foreign_stop", true)
+        set(v) = p.edit().putBoolean("confirm_foreign_stop", v).apply()
     /** domyślna akcja po pobraniu: none | stop | suspend */
     var afterDefault: String
         get() = p.getString("after", "none")!!

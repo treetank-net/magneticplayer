@@ -720,6 +720,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             if ("dlna" in avail) FilterChip(target == "dlna", { Pilot.focus.value = "dlna" },
                 { Text(Dlna.current?.name ?: Announce.foreignDlna()?.targetName ?: stringResource(R.string.main_tv)) }, leadingIcon = { Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)) })
         }
+        OpenCastApps(snack)
         when (target) {
             "cast", "dlna" -> key(target, target == "cast" && Cast.session(ctx) == null) {
                 val remote = remember { Pilot.remote(ctx, target) }
@@ -736,6 +737,38 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
             else -> Hint(stringResource(R.string.main_no_screen))
         }
     }
+}
+
+/** „Zamknąć Spotify na Duży pokój?”: zamknięcie cudzej aplikacji na Chromecaście (ktoś może z niej korzystać). */
+@Composable
+private fun CloseAppDialog(app: String, device: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.main_close_app_title, app, device)) },
+        text = { Text(stringResource(R.string.main_close_app_text)) },
+        confirmButton = { TextButton(onConfirm) { Text(stringResource(R.string.main_close)) } },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.main_cancel)) } })
+}
+
+/**
+ * Chromecasty z otwartą aplikacją, która nic nie gra (Spotify zostawione po słuchaniu dalej pokazuje okładkę na
+ * telewizorze): wiersz z „Zamknij”. Stan z [CastNet.refresh] w pętli Pilota.
+ */
+@Composable
+private fun OpenCastApps(snack: SnackbarHostState) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var ask by remember { mutableStateOf<CastNet.Status?>(null) }
+    fun close(st: CastNet.Status) = scope.io(ctx, snack) { CastNet.stopApp(st.device.id) }
+    CastNet.openIdle().forEach { st ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Cast, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.main_open_app, st.device.name, st.app ?: ""), Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TextButton({ if (Settings(ctx).confirmForeignStop) ask = st else close(st) }) { Text(stringResource(R.string.main_close)) }
+        }
+    }
+    ask?.let { st -> CloseAppDialog(st.app ?: "", st.device.name, { ask = null }) { ask = null; close(st) } }
 }
 
 /** mpv na ekranie serwera: budzenie, „nic nie gra”, a gdy gra, wspólny pilot plus ścieżki, napisy i pełny ekran. */
@@ -860,9 +893,12 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
         Spacer(Modifier.height(20.dp))
         extras(s)
         Spacer(Modifier.height(10.dp))
-        FilledTonalButton({ act { stop() }; if (remote.kind != "screen") onGone() }) {
+        var ask by remember { mutableStateOf(false) }
+        fun doStop() { act { stop() }; if (remote.kind != "screen") onGone() }
+        FilledTonalButton({ if (s.app != null && Settings(ctx).confirmForeignStop) ask = true else doStop() }) {
             Icon(Icons.Filled.Stop, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_stop))
         }
+        if (ask) CloseAppDialog(s.app ?: "", remote.name, { ask = false }) { ask = false; doStop() }
     }
 }
 
@@ -1017,6 +1053,16 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(keepScreen, { keepScreen = it; s.pilotKeepScreen = it })
+        }
+        HorizontalDivider()
+        var confirmStop by remember { mutableStateOf(s.confirmForeignStop) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.main_confirm_foreign_stop))
+                Text(stringResource(R.string.main_confirm_foreign_stop_desc), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(confirmStop, { confirmStop = it; s.confirmForeignStop = it })
         }
         HorizontalDivider()
         UploadSettings()
