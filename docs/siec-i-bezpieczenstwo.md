@@ -35,6 +35,14 @@ Kod działa raz, przez dobę, a sam dostęp przez dzień, tydzień albo bez limi
 wszystko tutaj. Gość ogląda i włącza filmy, ale nie zmienia niczego na serwerze (lista w `docs/api.md`).
 Domownik odbiera dostęp w szczegółach serwera (lista urządzeń).
 
+### Co widać w bibliotece
+
+Każdy katalog biblioteki ma ustawienie „Kto go widzi” (Biblioteka → ołówek przy katalogu, agent 1.4+): wszyscy
+(także goście), tylko domownicy albo wybrane urządzenia. Do tego ukryte podkatalogi, których nie zobaczy nikt.
+Agent sprawdza to przy każdym dostępie do pliku (lista, strumień, bilet dla ekranu i Chromecasta, napisy), a nie
+tylko na liście. Katalog z tagiem `kopia` nie pokazuje się w Bibliotece nikomu. Domyślnie wszystko widzą wszyscy,
+jak przed 1.4, a `~/Downloads` nie trafia już sam do biblioteki przy pierwszym starcie.
+
 ### Prośba o dostęp
 
 Bez zaproszenia: niesparowana przeglądarka w domowej sieci wpisuje nazwę i dotyka „Poproś o dostęp” (strona

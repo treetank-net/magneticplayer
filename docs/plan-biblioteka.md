@@ -1,7 +1,8 @@
 # Plan: biblioteka z tagami, porządkowanie dysków, okładki
 
-Stan (2026-11-18): plan uzgodniony z użytkownikiem, nic jeszcze nie zrobione. Etapy idą po kolei, bo każdy stoi na
-poprzednim.
+Stan (2026-11-18): etap 1 (tagi, widoczność, wykluczenia) w agencie 1.4.0 i w apce, bez ekranu przy setupie serwera
+(na razie ołówek przy katalogu w Bibliotece). API dalej wskazuje katalog indeksem; `id` jest w konfiguracji na
+potrzeby replikacji. Etapy idą po kolei, bo każdy stoi na poprzednim.
 
 ## Dziś
 

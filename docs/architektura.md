@@ -118,6 +118,15 @@ Endpointy odtwarzania i napisów przyjmują jedną z form:
 
 Odpowiada za to `App.resolve_ref`, który zawsze zwraca ścieżkę wewnątrz katalogu pobierania albo biblioteki.
 
+### Widoczność katalogów biblioteki
+
+Katalog w `config.json` (`library`) ma oprócz `name` i `path` stałe `id`, `tags`, `visible` (`"all"`, `"owners"` albo
+lista id urządzeń) i `exclude` (podkatalogi względem katalogu). Handler po sprawdzeniu tokenu ustawia w wątku, kto
+pyta (`mp_library.set_viewer`), a `Library.root`/`resolve`/`browse` odmawiają ukrytego katalogu i wykluczonej ścieżki.
+Bez ustawionego pytającego (bilet na jeden plik, wątki w tle) ograniczeń nie ma: bilet wydaje się dopiero po
+sprawdzeniu. Indeksy katalogów zostają globalne, więc lista dla gościa może mieć dziury (np. 0 i 2).
+Plan dalszych kroków (magnet → katalog po tagu, porządkowanie, okładki): `plan-biblioteka.md`.
+
 ## Przepływy
 
 ### Magnet → pobieranie

@@ -42,10 +42,11 @@ from mp_i18n import T
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 from mp_devices import Devices
 from mp_jobs import AFTER, Jobs
+import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 API_LEVEL = 2  # /api/info: id, features, power; tokeny urządzeń, bilety, player/open z url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -885,6 +886,7 @@ class App:
             "features": {
                 "torrent": self.cfg["backend"] if has_torrent else None,
                 "library": library,
+                "library_tags": True,  # tagi, widoczność i wykluczenia katalogów (agent 1.4+)
                 "player": self.is_screen(),
                 "subs_search": self.subs_available(wait=False),
                 "unlock": AUTO_UNLOCK and platform.can_unlock(),
@@ -1126,11 +1128,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.access.request(self.body().get("name"), self.client_address[0]))
             if (m := re.fullmatch(r"/api/access/request/([0-9a-f]{16})", p)) and method == "GET":
                 return self.send_json(a.access.poll(m.group(1), (q.get("secret") or [""])[0]))
+            mp_library.set_viewer(None)
             self.device = self.authorized(q)
             qd0 = {k: v[0] for k, v in q.items()}
             if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
                 raise ApiError(T("invalid token", "zły token"), 401)
             self.role = a.devices.role(self.device)
+            mp_library.set_viewer(self.device, self.role)  # widoczność katalogów biblioteki dla tego urządzenia
             if self.role == "guest" and not guest_allowed(method, p):
                 raise ApiError(T("guests don't have access to this (ask a household member)", "gość nie ma do tego dostępu (poproś domownika)"), 403)
             if p.startswith("/api/upload/") and method in ("GET", "PUT"):
@@ -1355,14 +1359,16 @@ class Handler(BaseHTTPRequestHandler):
             # ---- biblioteka
             qd = {k: v[0] for k, v in q.items()}
             if p == "/api/library" and method == "GET":
-                return self.send_json(a.library.roots())
+                return self.send_json(a.library.visible_roots(qd.get("manage") == "1"))
             if p == "/api/library" and method == "POST":
                 b = self.body()
                 if b.get("op") == "remove":
                     a.library.remove_root(int(b["index"]))
+                elif b.get("op") == "update":
+                    a.library.update_root(int(b["index"]), b)
                 else:
                     a.library.add_root(b["path"], b.get("name"))
-                return self.send_json(a.library.roots())
+                return self.send_json(a.library.visible_roots(True))
             if p == "/api/library/browse" and method == "GET":
                 return self.send_json(a.library.browse(int(qd.get("root", 0)), qd.get("path", ""), qd.get("all") == "1"))
             if p == "/api/fs" and method == "GET":

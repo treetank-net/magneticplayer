@@ -86,7 +86,12 @@ data class Job(
     val magnet: String?, val inClient: Boolean, val progress: Double?,
 )
 
-data class LibRoot(val index: Int, val name: String, val path: String, val exists: Boolean)
+/** Katalog biblioteki. `visible`: "all", "owners" albo lista id urządzeń (`devices`); `open`: czy ten telefon może go otworzyć. */
+data class LibRoot(
+    val index: Int, val name: String, val path: String, val exists: Boolean,
+    val tags: List<String> = emptyList(), val visible: String = "all", val devices: List<String> = emptyList(),
+    val exclude: List<String> = emptyList(), val open: Boolean = true,
+)
 data class LibFile(val name: String, val size: Long, val media: String?, val subs: List<String>)
 data class LibDir(val root: Int, val path: String, val dirs: List<String>, val files: List<LibFile>)
 /** Postęp wyszukiwania napisów na komputerze (każde źródło osobno). */
@@ -367,10 +372,20 @@ class Api(val s: Settings, val srv: Server) {
     // ---- biblioteka
     private fun roots(a: JSONArray) = List(a.length()) { i ->
         val r = a.getJSONObject(i)
-        LibRoot(r.getInt("index"), r.getString("name"), r.getString("path"), r.optBoolean("exists"))
+        fun strs(x: JSONArray?) = x?.let { j -> List(j.length()) { j.getString(it) } } ?: emptyList()
+        val vis = r.opt("visible")
+        LibRoot(r.getInt("index"), r.getString("name"), r.getString("path"), r.optBoolean("exists"),
+            strs(r.optJSONArray("tags")), if (vis is JSONArray) "devices" else (vis as? String ?: "all"),
+            strs(vis as? JSONArray), strs(r.optJSONArray("exclude")), r.optBoolean("open", true))
     }
 
-    fun libraryRoots(): List<LibRoot> = roots(JSONArray(call("GET", "/api/library")))
+    /** `manage`: także katalogi ukryte przed tym telefonem (domownik, do zmiany ustawień). */
+    fun libraryRoots(manage: Boolean = false): List<LibRoot> =
+        roots(JSONArray(call("GET", "/api/library" + if (manage) "?manage=1" else "")))
+    fun libraryUpdate(index: Int, name: String, tags: List<String>, visible: String, devices: List<String>, exclude: List<String>): List<LibRoot> =
+        roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "update").put("index", index).put("name", name)
+            .put("tags", JSONArray(tags)).put("visible", if (visible == "devices") JSONArray(devices) else visible)
+            .put("exclude", JSONArray(exclude)))))
     fun libraryAdd(path: String): List<LibRoot> =
         roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "add").put("path", path))))
     fun libraryRemove(index: Int): List<LibRoot> =

@@ -1,13 +1,55 @@
 """Biblioteka: przeglądanie wybranych katalogów komputera (tylko filmy/muzyka + napisy obok)."""
 import os
-import stat
 import re
+import secrets
+import stat
+import threading
 
 from mp_i18n import T
 
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}
 AUDIO_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 SUB_EXT = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
+
+
+TAGS = ("filmy", "seriale", "bajki", "kopia")  # podpowiedzi w apce; własne tagi też wolno
+HIDDEN_TAGS = {"kopia"}  # katalog z takim tagiem nie pokazuje się w bibliotece (tylko w zarządzaniu)
+VISIBLE = ("all", "owners")  # albo lista id urządzeń
+
+# Kto pyta w tym wątku (handler ustawia po sprawdzeniu tokenu). None = wewnętrzne wywołanie albo bilet na jeden plik,
+# czyli dostęp już sprawdzony wcześniej; wtedy widoczność katalogów nie ogranicza.
+_viewer = threading.local()
+
+
+def set_viewer(device=None, role=None):
+    _viewer.v = (device, role) if device else None
+
+
+def current_viewer():
+    return getattr(_viewer, "v", None)
+
+
+def can_see(r, viewer, manage=False):
+    """Czy urządzenie widzi katalog. `manage`: lista do zarządzania (domownik widzi wtedy wszystkie)."""
+    if viewer is None:
+        return True
+    dev, role = viewer
+    if manage and role == "owner":
+        return True
+    if HIDDEN_TAGS & set(r.get("tags") or []):
+        return False
+    vis = r.get("visible") or "all"
+    if vis == "all":
+        return True
+    if vis == "owners":
+        return role == "owner"
+    return dev in vis
+
+
+def excluded(r, rel):
+    """Czy ścieżka (względna w katalogu) leży w wykluczonym podkatalogu."""
+    rel = rel.strip("/")
+    return any(rel == x or rel.startswith(x + "/") for x in (e.strip("/") for e in r.get("exclude") or []) if x)
 
 
 class LibError(Exception):
@@ -83,17 +125,28 @@ class Library:
         if not lib:  # pierwsze uruchomienie: katalogi pobierania + ~/Wideo
             seen, lib = set(), []
             cands = list(self.default_dirs()) + [os.path.expanduser(p) for p in ("~/Wideo", "~/Videos", "~/Filmy")]
-            for p in cands:
-                if p and os.path.isdir(p) and os.path.realpath(p) not in seen:
+            downloads = {os.path.realpath(os.path.expanduser(p)) for p in ("~/Downloads", "~/Pobrane")}
+            for p in cands:  # bez ~/Downloads: tam trafia wszystko z przeglądarki, nie tylko filmy
+                if p and os.path.isdir(p) and os.path.realpath(p) not in seen | downloads:
                     seen.add(os.path.realpath(p))
                     lib.append({"name": os.path.basename(p.rstrip("/")) or p, "path": p})
             self.cfg["library"] = lib
             self.save_cfg()
-        return [dict(r, index=i, exists=os.path.isdir(r["path"])) for i, r in enumerate(lib)]
+        if any("id" not in r for r in lib):  # stały identyfikator (replikacja, później API zamiast indeksu)
+            for r in lib:
+                r.setdefault("id", secrets.token_hex(3))
+            self.save_cfg()
+        return [dict(r, index=i, exists=os.path.isdir(r["path"]), tags=r.get("tags") or [], visible=r.get("visible") or "all",
+                     exclude=r.get("exclude") or []) for i, r in enumerate(lib)]
+
+    def visible_roots(self, manage=False):
+        """Katalogi, które widzi pytające urządzenie (indeksy zostają globalne)."""
+        v = current_viewer()
+        return [dict(r, open=can_see(r, v)) for r in self.roots() if can_see(r, v, manage)]
 
     def root(self, i):
         roots = self.roots()
-        if not 0 <= i < len(roots):
+        if not 0 <= i < len(roots) or not can_see(roots[i], current_viewer()):
             raise LibError(T("no such library folder", "nie ma takiego katalogu biblioteki"), 404)
         if not roots[i]["exists"]:
             raise LibError(T(f"folder {roots[i]['path']} is unavailable (disk disconnected?)",
@@ -101,7 +154,11 @@ class Library:
         return roots[i]["path"]
 
     def resolve(self, i, rel):
-        return safe_join(self.root(i), rel or "")
+        base = self.root(i)
+        full = safe_join(base, rel or "")
+        if current_viewer() is not None and excluded(self.roots()[i], os.path.relpath(full, os.path.realpath(base))):
+            raise LibError(T("no such file", "nie ma takiego pliku"), 404)
+        return full
 
     def browse(self, i, rel, show_all=False):
         full = self.resolve(i, rel)
@@ -124,6 +181,9 @@ class Library:
                                       "subs": [s["lang"] or s["ext"] for s in sidecar_subs(e.path)] if kind == "video" else []})
             except OSError:
                 continue
+        if current_viewer() is not None:
+            r = self.roots()[i]
+            dirs = [d for d in dirs if not excluded(r, f"{(rel or '').strip('/')}/{d}")]
         dirs.sort(key=str.lower)
         files.sort(key=lambda f: f["name"].lower())
         return {"root": i, "path": (rel or "").strip("/"), "dirs": dirs, "files": files}
@@ -135,7 +195,37 @@ class Library:
         self.roots()
         if any(os.path.realpath(r["path"]) == path for r in self.cfg["library"]):
             raise LibError(T("this folder is already in the library", "ten katalog już jest w bibliotece"), 409)
-        self.cfg["library"].append({"name": name or os.path.basename(path) or path, "path": path})
+        self.cfg["library"].append({"id": secrets.token_hex(3), "name": name or os.path.basename(path) or path, "path": path})
+        self.save_cfg()
+
+    def update_root(self, i, b):
+        """Zmiana nazwy, tagów, widoczności i wykluczeń katalogu (tylko podane pola)."""
+        self.roots()
+        if not 0 <= i < len(self.cfg["library"]):
+            raise LibError(T("no such folder", "nie ma takiego katalogu"), 404)
+        r = self.cfg["library"][i]
+        if "name" in b:
+            name = str(b["name"] or "").strip()[:80]
+            if not name:
+                raise LibError(T("the name can't be empty", "nazwa nie może być pusta"))
+            r["name"] = name
+        if "tags" in b:
+            tags = []
+            for t in b["tags"] or []:
+                t = str(t).strip().lower()[:30]
+                if t and t not in tags:
+                    tags.append(t)
+            r["tags"] = tags[:10]
+        if "visible" in b:
+            v = b["visible"]
+            if isinstance(v, list):
+                v = [str(x) for x in v][:50]
+            elif v not in VISIBLE:
+                raise LibError(T("visible must be all, owners or a list of devices",
+                                 "widoczność: all, owners albo lista urządzeń"))
+            r["visible"] = v
+        if "exclude" in b:
+            r["exclude"] = [x for x in (str(e).strip().strip("/") for e in b["exclude"] or []) if x and ".." not in x.split("/")][:100]
         self.save_cfg()
 
     def remove_root(self, i):

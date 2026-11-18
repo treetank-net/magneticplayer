@@ -113,8 +113,8 @@ Z konsoli: `magneticplayer_agent.py --pair` (kod + QR w terminalu), `--devices`,
 
 | metoda i ścieżka | opis |
 |---|---|
-| `GET /api/library` | katalogi: `index`, `name`, `path`, `exists` |
-| `POST /api/library` | `{"path", "name"?}` dodaje katalog, `{"op": "remove", "index"}` go usuwa; zwraca listę |
+| `GET /api/library` | katalogi widoczne dla urządzenia: `index`, `id`, `name`, `path`, `exists`, `tags`, `visible`, `exclude`, `open`; `?manage=1` (domownik): także ukryte przed nim i z tagiem `kopia` (`open: false`, gdy nie może ich otworzyć) |
+| `POST /api/library` | `{"path", "name"?}` dodaje katalog, `{"op": "remove", "index"}` go usuwa, `{"op": "update", "index", "name"?, "tags"?, "visible"?, "exclude"?}` zmienia (agent 1.4+, `features.library_tags`); zwraca listę jak `?manage=1` |
 | `GET /api/library/browse?root=&path=` | `root`, `path`, `dirs`, `files` (`name`, `size`, `mtime`, `media`, `subs`) |
 | `GET /api/fs?path=` | podkatalogi do wyboru nowego katalogu (`parent`, `dirs`) |
 | `GET /lib/<root>/<ścieżka>` | strumień pliku z biblioteki (Range) |

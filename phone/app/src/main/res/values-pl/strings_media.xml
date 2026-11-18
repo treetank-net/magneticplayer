@@ -198,4 +198,38 @@
         <item quantity="many">(zostało %1$d dni)</item>
         <item quantity="other">(zostało %1$d dni)</item>
     </plurals>
+    <string name="media_lib_edit">Ustawienia katalogu</string>
+    <string name="media_lib_name">Nazwa</string>
+    <string name="media_lib_tags">Tagi</string>
+    <string name="media_lib_tags_hint">Co jest w tym katalogu. Później nowe pobrania będą trafiać do katalogu z pasującym tagiem.</string>
+    <string name="media_lib_own_tag">Własny tag</string>
+    <string name="media_lib_tag_add">Dodaj</string>
+    <string name="media_lib_tag_movies">filmy</string>
+    <string name="media_lib_tag_series">seriale</string>
+    <string name="media_lib_tag_kids">bajki</string>
+    <string name="media_lib_tag_backup">kopia</string>
+    <string name="media_lib_backup_hint">Katalog z kopią nie pokazuje się w Bibliotece, tylko tutaj.</string>
+    <string name="media_lib_who_sees">Kto go widzi</string>
+    <string name="media_lib_vis_all">Wszyscy, także goście</string>
+    <string name="media_lib_vis_owners">Tylko domownicy</string>
+    <string name="media_lib_vis_devices">Tylko wybrane urządzenia</string>
+    <string name="media_lib_guest_suffix"> (gość)</string>
+    <string name="media_lib_excluded">Ukryte podkatalogi</string>
+    <string name="media_lib_excluded_hint">Zaznaczone podkatalogi nie pokazują się w Bibliotece i nie da się ich odtworzyć, na żadnym urządzeniu.</string>
+    <string name="media_lib_save">Zapisz</string>
+    <string name="media_lib_hidden_backup">poza Biblioteką</string>
+    <string name="media_lib_vis_owners_short">tylko domownicy</string>
+    <string name="media_lib_not_for_this_phone">ukryty przed tym telefonem</string>
+    <plurals name="media_lib_vis_devices_short">
+        <item quantity="one">%1$d urządzenie</item>
+        <item quantity="few">%1$d urządzenia</item>
+        <item quantity="many">%1$d urządzeń</item>
+        <item quantity="other">%1$d urządzenia</item>
+    </plurals>
+    <plurals name="media_lib_excluded_short">
+        <item quantity="one">%1$d ukryty podkatalog</item>
+        <item quantity="few">%1$d ukryte podkatalogi</item>
+        <item quantity="many">%1$d ukrytych podkatalogów</item>
+        <item quantity="other">%1$d ukrytego podkatalogu</item>
+    </plurals>
 </resources>

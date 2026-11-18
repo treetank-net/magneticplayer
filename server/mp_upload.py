@@ -73,7 +73,7 @@ class Uploads:
         if d:
             return os.path.realpath(os.path.expanduser(d))
         try:
-            roots = [r for r in self.library.roots() if r["exists"]]
+            roots = [r for r in self.library.roots() if r["exists"] and not {"kopia"} & set(r["tags"])]
         except LibError:
             roots = []
         return os.path.join(os.path.realpath(roots[0]["path"]), DEFAULT_SUBDIR) if roots else None

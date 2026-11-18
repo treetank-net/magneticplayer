@@ -192,4 +192,34 @@
         <item quantity="one">(%1$d day left)</item>
         <item quantity="other">(%1$d days left)</item>
     </plurals>
+    <string name="media_lib_edit">Folder settings</string>
+    <string name="media_lib_name">Name</string>
+    <string name="media_lib_tags">Tags</string>
+    <string name="media_lib_tags_hint">What this folder holds. Later new downloads will go to the folder with the matching tag.</string>
+    <string name="media_lib_own_tag">Your own tag</string>
+    <string name="media_lib_tag_add">Add</string>
+    <string name="media_lib_tag_movies">movies</string>
+    <string name="media_lib_tag_series">series</string>
+    <string name="media_lib_tag_kids">kids</string>
+    <string name="media_lib_tag_backup">backup</string>
+    <string name="media_lib_backup_hint">A backup folder doesn\'t show in the Library, only here.</string>
+    <string name="media_lib_who_sees">Who sees it</string>
+    <string name="media_lib_vis_all">Everyone, guests too</string>
+    <string name="media_lib_vis_owners">Household members only</string>
+    <string name="media_lib_vis_devices">Selected devices only</string>
+    <string name="media_lib_guest_suffix"> (guest)</string>
+    <string name="media_lib_excluded">Hidden subfolders</string>
+    <string name="media_lib_excluded_hint">Checked subfolders never show in the Library and can\'t be played, on any device.</string>
+    <string name="media_lib_save">Save</string>
+    <string name="media_lib_hidden_backup">not in the Library</string>
+    <string name="media_lib_vis_owners_short">household only</string>
+    <string name="media_lib_not_for_this_phone">hidden from this phone</string>
+    <plurals name="media_lib_vis_devices_short">
+        <item quantity="one">%1$d device</item>
+        <item quantity="other">%1$d devices</item>
+    </plurals>
+    <plurals name="media_lib_excluded_short">
+        <item quantity="one">%1$d hidden subfolder</item>
+        <item quantity="other">%1$d hidden subfolders</item>
+    </plurals>
 </resources>
