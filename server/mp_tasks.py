@@ -38,6 +38,7 @@ import threading
 import time
 
 import mp_media
+import mp_i18n
 from mp_i18n import T
 import mp_library
 from mp_library import HIDDEN_TAGS, SUB_EXT, VIDEO_EXT
@@ -54,6 +55,7 @@ LOSSLESS_AUDIO = {"truehd", "dts", "flac", "mlp"} | {f"pcm_{x}" for x in ("s16le
 MIN_SAVING = 0.15
 MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
+FILM_TAGS = {"filmy", "bajki"}  # films for adults and for children: moving between them is only a suggestion
 KEEP = 50  # finished tasks kept in tasks.json
 
 
@@ -197,7 +199,7 @@ class Tasks:
         t = {"id": secrets.token_hex(4), "kind": res["kind"], "title": res["title"], "state": "queued",
              "created": time.time(), "started": None, "finished": None, "items": items,
              "total": sum(i["size"] for i in items), "done_bytes": 0, "current": None, "pct": 0,
-             "saved": 0, "errors": 0}
+             "saved": 0, "errors": 0, "lang": mp_i18n.lang()}
         with self.lock:
             self.items.append(t)
             done = [x for x in self.items if x["state"] not in ("queued", "running")]
@@ -252,7 +254,7 @@ class Tasks:
             except Exception as e:  # noqa: BLE001 — reported to the app
                 p.update(state="error", error=str(e)[:300])
                 self.log("plan failed:", kind, e)
-        threading.Thread(target=run, daemon=True).start()
+        threading.Thread(target=mp_i18n.bind(run), daemon=True).start()  # titles and notes in the request's language
         return dict(p)
 
     def plan_status(self, pid):
@@ -444,6 +446,10 @@ class Tasks:
                             "extra": companions(full) if os.path.isfile(full) else [], "tag": tag,
                             "guess": {k2: g.get(k2) for k2 in ("kind", "title", "year", "confidence", "why")},
                             "unsure": g.get("confidence") == "low"}
+                    if tag in FILM_TAGS and set(r["tags"]) & FILM_TAGS:
+                        # a film either way, only "for children" differs: the user's choice of folder wins unless confirmed
+                        item["unsure"] = True
+                        item["guess"]["confidence"] = "low"
                     where = self._inside(full, torrents)
                     if where in ("contains", "in"):
                         skipped.append(dict(item, reason=T("contains torrents still in the client",
@@ -685,6 +691,7 @@ class Tasks:
                 self._run(t)
 
     def _run(self, t):
+        mp_i18n.set_lang(t.get("lang"))  # item errors in the language of whoever started the task
         self.log(f"task {t['id']} ({t['kind']}): {t['title']}, {len(t['items'])} items")
         done_before = sum(i["size"] for i in t["items"] if i["state"] in ("done", "error", "skipped"))
         t["done_bytes"] = done_before
