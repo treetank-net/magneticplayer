@@ -56,7 +56,18 @@ potrzeby replikacji. Etapy idą po kolei, bo każdy stoi na poprzednim.
     przeniesieniem jest konieczny. Tego samego oczekujemy od użytkowników z własnym agentem AI.
 14. Pobierany torrent nie zmienia nazw plików (protokół), ale pobiera się od razu do katalogu wybranego regułami
     (punkt 6), więc kolekcja zostaje uporządkowana bez przenosin.
-15. Zdjęcia i dokumenty (reguły typu `rok/miesiąc/nazwa.pdf`) — poza apką (Immich, PhotoPrism, Paperless-ngx).
+15. **Rozpoznawanie (`server/mp_ident.py`, jeszcze niepodpięte do API):** sam `guessit` nie wystarcza (nie zna
+    gatunku, myli liczby w tytułach z odcinkami). Magnet ma tylko nazwę, torrent nazwę i listę plików, czasem `.nfo`
+    z identyfikatorem IMDb. Dlatego agent trzyma mały indeks z darmowych zrzutów IMDb (datasets.imdbws.com, użytek
+    osobisty): filmy i seriale z ≥300 głosami, gatunki jako maska bitów, znormalizowane tytuły; ~125 tys. tytułów,
+    12 MB SQLite, budowa ~20 s. Kolejność: IMDb z `.nfo` → `guessit` + indeks (rok, rodzaj, popularność) → zawartość
+    (odcinki S01E01, muzyka, programy/komiksy, katalog bez filmów zostaje na miejscu). Serial tylko po oznaczeniach
+    odcinków, nie po liczbie plików (kolekcja filmów to nie serial). Bajki: animacja + `Family` pewnie; sama animacja
+    albo sam `Family` z niską pewnością, bo IMDb nie odróżnia anime dla dorosłych od bajek. Test na uporządkowanej
+    ręcznie kolekcji jmpc: 87/92 zgodnie, przy wysokiej pewności 61/62; chybienia to tytuły tylko po polsku
+    (później Wikidata), anime dla dorosłych, aktorskie remaki i serial animowany dla dzieci bez `Family`. Niska
+    pewność = pytanie na telefonie, a wybór użytkownika warto zapamiętać.
+16. Zdjęcia i dokumenty (reguły typu `rok/miesiąc/nazwa.pdf`) — poza apką (Immich, PhotoPrism, Paperless-ngx).
 
 ## Model katalogu (config.json)
 
