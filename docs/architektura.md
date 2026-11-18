@@ -41,8 +41,9 @@ usługi jest autostart `HKCU\…\Run` przy logowaniu, a mpv słucha na nazwanym 
 Plan i decyzje: [plan-wiele-serwerow.md](plan-wiele-serwerow.md), makiety: `ux-wiele-serwerow.html`.
 - Serwer ma `id` (losowe, w `config.json`) i `name`. Apka trzyma listę serwerów, a przy każdym zapytaniu `ping`
   sprawdza `id`, więc nie wyśle tokenu do innego komputera, który dostał stary adres.
-- „Śpi” w nagłówku apki: dopiero po dwóch nieudanych `ping` z rzędu. Na połączenie apka czeka 1,5 s (uśpiony komputer
-  nie odpowiada wcale), na odpowiedź 5 s. Agent nie robi `stat()` przez `DirEntry` z `os.scandir`, bo w Pythonie 3.10
+- „Śpi” w nagłówku apki: dopiero po dwóch nieudanych `ping` z rzędu (druga próba po 1 s), także zaraz po otwarciu
+  apki, kiedy do tego czasu widać „…”. Na połączenie apka czeka 3 s (uśpiony komputer nie odpowiada wcale; po
+  dłuższej przerwie Wi-Fi telefonu bywa wolne), na odpowiedź 5 s. Agent nie robi `stat()` przez `DirEntry` z `os.scandir`, bo w Pythonie 3.10
   ten nie zwalnia GIL: budzący się stary dysk USB zatrzymywał na kilka sekund cały agent, łącznie z `/api/ping`.
 - Role: serwer plików (`features.torrent`/`library`) i ekran (`features.player`). Jeden komputer może mieć obie.
 - Film z serwera A na ekranie B: apka bierze z A bilet (`/api/media/ticket`) i wysyła do B `player/open` z URL.

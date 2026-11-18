@@ -255,10 +255,11 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         var pings = 0
         var fails = 0
         while (true) {
-            val ok = withContext(Dispatchers.IO) { api.ping() }
-            // „śpi” dopiero po dwóch nieudanych próbach z rzędu (pojedyncza może przepaść w Wi-Fi)
+            // 3 s na połączenie: po dłuższej przerwie Wi-Fi telefonu i pierwsze połączenie bywają wolne
+            val ok = withContext(Dispatchers.IO) { api.ping(3000) }
+            // „śpi” dopiero po dwóch nieudanych próbach z rzędu, także zaraz po otwarciu apki (do tego czasu „…”)
             fails = if (ok) 0 else fails + 1
-            if (ok || fails >= 2 || online == null) online = ok
+            if (ok || fails >= 2) online = ok
             wrong = api.wrongServer
             // możliwości serwera (przyciski, budzenie) odświeżane raz po połączeniu
             if (ok && first) {
@@ -268,7 +269,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             }
             // prośby o dostęp z sieci domowej (Access.kt): co ~15 s, póki apka jest na ekranie i serwer odpowiada
             if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) { Access.check(ctx, api) }
-            delay(if (ok) 5000 else 3000)
+            delay(if (ok) 5000 else if (fails == 1) 1000 else 3000)  // po pierwszej porażce szybko druga próba
         }
     }
     val srv = remember(ver, online, infoVer) { Servers.get(ctx, api.srv.key) ?: api.srv }
