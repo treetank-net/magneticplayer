@@ -1,12 +1,12 @@
 # Plan: a tagged library, tidying up disks, covers
 
-Status (2026-11-18): stage 1 (tags, visibility, exclusions) is in agent 1.4.0 and in the app, without a screen during
+Status (2026-11-19): stage 1 (tags, visibility, exclusions) is in agent 1.4.0 and in the app, without a screen during
 server setup (for now a pencil next to the folder in the Library). Stage 2 (magnet → folder) is in agent 1.5.0 and in
 the app: recognition, downloading straight into the folder with the tag, "Change" with moving and remembering the
 choice. Missing: re-recognizing a magnet without a name (`dn=`) once the metadata has been downloaded. Stages 3–7 are
 in agent 1.6.0 (with its self-update): background tasks with moving and replication, disks, tidy-up, duplicates,
 covers, storage profiles with a trash, the MCP server; the app has screens for them (Library → "Disks and tidy-up", folder settings, plan preview, task notifications). Not done
-yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. The API still points to a folder by index;
+yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. Stage 8 (browsing as films, files from phones) is in agent 1.8.0. The API still points to a folder by index;
 `id` is in the configuration for replication.
 
 ## Today
@@ -153,3 +153,14 @@ duplicates and shrinking are the same kind of task in the app and over MCP. Meas
 only ~59 GB of the 891 GB used on TOSHIBA (the rest isn't in the library), so moving frees at most that; a "free"
 plan for 30 GB picked 3 items (28 GB) to My Passport. The tidy-up checked 74 items and proposed 1 move; duplicates:
 one pair (2.8 GB).
+8. **Browsing the collection as films (agent 1.8.0, `mp_catalog.py`):** besides folders, the library is a catalog of
+   titles: genres, age, audio and subtitle languages, cast, directors and topics, without TMDB. Data: the local IMDb
+   index (now also rating and runtime), ffprobe of the main video and the subtitle files next to it, and Wikidata by
+   IMDb id (cast in billing order with roles, directors, main subjects, FSK/MPAA, the Polish label). The Polish title
+   is shown only when the film has Polish audio or subtitles. Covers are synthetic (genre colour + title). The app:
+   Discover / Browse / Folders in the Library, a title screen, a person screen, "what next" after a film ends, which
+   also lists films that are not on the disks (greyed out), a shared "want to watch" list, and an optional "Search"
+   button for a missing film that opens a search address the user typed in the server settings (the project ships
+   none). The Downloads screen also lists files sent from phones (`uploads.json`), so they don't stay forgotten in
+   "Z telefonu": each one can be moved to the folder identification suggests or kept where it is. The disks screen
+   lists every disk, also ones without library folders (the system disk), with "Add folder".

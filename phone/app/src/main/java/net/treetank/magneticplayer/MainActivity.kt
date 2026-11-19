@@ -64,6 +64,8 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Tv
@@ -164,6 +166,17 @@ class MainActivity : ComponentActivity() {
     /** magneticplayer://pair… (QR from a computer or from another phone): pairing with one or several servers. */
     private fun handleIntent(i: Intent) {
         if (i.hasExtra("tab")) tab.intValue = i.getIntExtra("tab", 0)
+        // "What next" after a film on the phone player (PlayerActivity.offerNext): Library of that server
+        val nextImdb = i.getStringExtra("next_imdb")
+        val nextSrv = i.getStringExtra("next_srv")
+        if (nextImdb != null && nextSrv != null) {
+            i.removeExtra("next_imdb")
+            CatalogNav.pending.value = nextSrv to nextImdb
+            if (Servers.activeKey(this) != nextSrv && Servers.get(this, nextSrv) != null) {
+                Servers.setActive(this, nextSrv); settingsVersion.intValue++
+            }
+            tab.intValue = TAB_LIBRARY
+        }
         val data = i.data ?: return
         if (data.scheme != "magneticplayer") return
         val targets = Pairing.parse(data)
@@ -268,7 +281,12 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 infoVer++
             }
             // access requests from the home network (Access.kt): every ~15 s while the app is on screen and the server responds
-            if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) { Access.check(ctx, api); Tasks.check(ctx, api) }
+            if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) {
+                Access.check(ctx, api); Tasks.check(ctx, api)
+                // files sent from phones waiting to be put away (badge on Downloads)
+                UploadsBadge.count.intValue = if (Servers.get(ctx, api.srv.key)?.hasCatalog == true)
+                    runCatching { api.uploads().new }.getOrDefault(UploadsBadge.count.intValue) else 0
+            }
             delay(if (ok) 5000 else if (fails == 1) 1000 else 3000)  // after the first failure a quick second attempt
         }
     }
@@ -330,7 +348,10 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         },
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(tab.intValue == TAB_TORRENTS, { tab.intValue = TAB_TORRENTS }, { Icon(Icons.Filled.Download, null) }, label = { NavLabel(stringResource(R.string.main_tab_torrents)) })
+                NavigationBarItem(tab.intValue == TAB_TORRENTS, { tab.intValue = TAB_TORRENTS }, {
+                    val n = UploadsBadge.count.intValue
+                    if (n > 0) BadgedBox({ Badge { Text(n.toString()) } }) { Icon(Icons.Filled.Download, null) } else Icon(Icons.Filled.Download, null)
+                }, label = { NavLabel(stringResource(R.string.main_tab_torrents)) })
                 NavigationBarItem(tab.intValue == TAB_LIBRARY, { tab.intValue = TAB_LIBRARY }, { Icon(Icons.Filled.VideoLibrary, null) }, label = { NavLabel(stringResource(R.string.main_tab_library)) })
                 NavigationBarItem(tab.intValue == TAB_OFFLINE, { tab.intValue = TAB_OFFLINE }, { Icon(Icons.Filled.DownloadForOffline, null) }, label = { NavLabel(stringResource(R.string.main_tab_offline)) })
                 NavigationBarItem(tab.intValue == TAB_REMOTE, { tab.intValue = TAB_REMOTE }, { Icon(Icons.Filled.SmartDisplay, null) }, label = { NavLabel(stringResource(R.string.main_tab_remote)) })
@@ -367,12 +388,12 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                     Hint(stringResource(R.string.main_hint_no_server))
                 (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) ->
                     AsleepPane(srv, waking, wrong) { wake() }
-                t == TAB_TORRENTS && !srv.hasTorrent ->
+                t == TAB_TORRENTS && !srv.hasTorrent && !srv.hasCatalog ->
                     Hint(stringResource(R.string.main_hint_no_torrent, srv.name))
                 t == TAB_LIBRARY && !srv.hasLibrary -> Hint(stringResource(R.string.main_hint_no_library, srv.name))
                 else -> key(api.srv.key) {
                     when (t) {
-                        TAB_TORRENTS -> TorrentsTab(api, online == true, snack, onPlaying)
+                        TAB_TORRENTS -> TorrentsTab(api, srv, online == true, snack, onPlaying)
                         TAB_LIBRARY -> LibraryTab(api, online == true, snack, onPlaying) { key, root ->
                             LibraryNav.openAfterSwitch(key, root); Servers.setActive(ctx, key); changed()
                         }
@@ -403,7 +424,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
 // ---------------------------------------------------------------- Torrents
 
 @Composable
-private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
+private fun TorrentsTab(api: Api, srv: Server, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var torrents by remember { mutableStateOf<List<Torrent>>(emptyList()) }
@@ -413,8 +434,9 @@ private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onP
     var onlyMine by rememberSaveable { mutableStateOf(false) }
     var jobs by remember { mutableStateOf<List<Job>>(emptyList()) }
 
+    val uploads = rememberUploads(api, online, srv.hasCatalog)
     LaunchedEffect(online, refresh, onlyMine) {
-        while (online) {
+        while (online && srv.hasTorrent) {
             try {
                 torrents = withContext(Dispatchers.IO) { api.torrents() }
                 if (onlyMine) jobs = withContext(Dispatchers.IO) { api.jobs() }
@@ -438,7 +460,13 @@ private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onP
             !online -> Hint(stringResource(R.string.main_connecting))
             error != null -> Hint(error!!)
             else -> LazyColumn(contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
+                uploadSections(api, uploads, snack, recent = false)
+                val hasUploads = uploads.data.value?.items.orEmpty().isNotEmpty()
+                if (srv.hasCatalog && srv.hasTorrent) item(key = "torrents/head") {
+                    Text(stringResource(R.string.up_torrents), style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 8.dp, start = 4.dp))
+                }
+                if (srv.hasTorrent) item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(!onlyMine, { onlyMine = false }, { Text(stringResource(R.string.main_filter_all, torrents.size)) })
                         FilterChip(onlyMine, { onlyMine = true }, { Text(stringResource(R.string.main_filter_mine)) },
@@ -446,9 +474,13 @@ private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onP
                     }
                 }
                 val shown = if (onlyMine) torrents.filter { it.mine } else torrents
-                if (shown.isEmpty()) item {
-                    Text(if (onlyMine) stringResource(R.string.main_empty_mine) else stringResource(R.string.main_empty_torrents),
-                        Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (shown.isEmpty() && (srv.hasTorrent || !hasUploads)) item {
+                    Text(when {
+                        onlyMine -> stringResource(R.string.main_empty_mine)
+                        !srv.hasTorrent -> stringResource(R.string.up_empty_no_torrent)
+                        srv.hasCatalog && !hasUploads -> stringResource(R.string.up_empty_all)
+                        else -> stringResource(R.string.main_empty_torrents)
+                    }, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 items(shown, key = { it.id }) { t ->
                     TorrentCard(t, onClick = { selected = t.id }, onAfter = { after ->
@@ -480,6 +512,7 @@ private fun TorrentsTab(api: Api, online: Boolean, snack: SnackbarHostState, onP
                         }
                     }
                 }
+                uploadSections(api, uploads, snack, recent = true)
             }
         }
         ExtendedFloatingActionButton(

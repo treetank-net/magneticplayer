@@ -99,6 +99,14 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     // disks and tidy-up, and a plan (preview) on top of whatever was open: its request body, or null
     var disks by rememberSaveable { mutableStateOf(false) }
     var plan by rememberSaveable { mutableStateOf<String?>(null) }
+    // the catalog (agent 1.8+): Discover / Browse / Folders and a stack of film screens on top of the folder view
+    val srv = remember(online) { Servers.get(ctx, api.srv.key) ?: api.srv }
+    var mode by rememberSaveable { mutableStateOf("discover") }
+    var stack by rememberSaveable { mutableStateOf("[]") }
+    val pendingNext = CatalogNav.pending.value
+    LaunchedEffect(pendingNext) {
+        if (pendingNext != null && pendingNext.first == api.srv.key) { root = null; path = ""; disks = false; plan = null }
+    }
     if (!online) return Hint(stringResource(R.string.media_lib_offline))
     val r = root
     val p = plan
@@ -113,6 +121,12 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
         disks -> {
             BackHandler { disks = false }
             DisksScreen(api, snack, onBack = { disks = false }) { plan = it }
+        }
+        r == null && srv.hasCatalog -> CatalogArea(api, snack, onPlayingOnPc, mode, { mode = it }, stack, { stack = it },
+            onOpenFolder = { r0, p0 -> root = r0; path = p0 }) {
+            RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
+                root = r0; path = p0
+            }
         }
         r == null -> RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
             root = r0; path = p0
@@ -530,10 +544,10 @@ private fun Section(title: String) {
     Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
 }
 
-/** Directory picker on the computer (folder navigation). */
+/** Directory picker on the computer (folder navigation); [start]: where it opens (e.g. a disk's mount point). */
 @Composable
-private fun DirPicker(api: Api, onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    var path by remember { mutableStateOf("") }
+internal fun DirPicker(api: Api, onDismiss: () -> Unit, start: String = "", onPick: (String) -> Unit) {
+    var path by remember { mutableStateOf(start) }
     var parent by remember { mutableStateOf<String?>(null) }
     var dirs by remember { mutableStateOf<List<String>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }

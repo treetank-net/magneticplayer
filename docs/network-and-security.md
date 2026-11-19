@@ -32,6 +32,12 @@ MagneticPlayer is designed for a home network:
   `"ident_online": false` in `config.json` (recognition then uses what is already in the index);
   `"ident_refresh_days"` changes the refresh frequency. The user's choices are in `ident-memory.json` next to the
   configuration.
+- **The catalog (agent 1.8+)** asks Wikidata (wikidata.org, query.wikidata.org) for details of the films in the
+  library by their IMDb ids, in batches, about once a month per film: cast, directors, topics, age rating, Polish
+  title. For a person or "what next" screen it asks which films have that person or topic. Only IMDb and Wikidata
+  ids are sent, never file names or anything about the devices. `"ident_online": false` turns this off too. The
+  results are in `catalog.json` next to the configuration. The optional "Search" addresses for missing films are
+  opened by the phone's browser; the agent never contacts them.
 
 ## Guests
 

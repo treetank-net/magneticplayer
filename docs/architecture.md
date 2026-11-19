@@ -354,6 +354,10 @@ agent errors come back in the same language.
 | `PhoneShare.kt` | the phone as a file server for a screen, Chromecast and DLNA |
 | `LibraryTab.kt` | the library (folders of every server, tag filter, search, covers), folder settings (tags, visibility, storage profile, "Also copy to") and picking a folder on the computer |
 | `LibraryTasks.kt` | agent 1.6+: "Disks and tidy-up" (disks with the library vs other files, trash, tasks with progress and cancel), the plan preview with checkboxes (free up space, move, tidy, shrink, duplicates, delete), profile choice, covers (`Covers`, `CoverThumb`) |
+| `Catalog.kt` | agent 1.8+: catalog models and requests (`/api/catalog*`, wishlist, search engines, `/api/uploads`), `CatalogCache` (per server, in memory, refreshed with `?since=<version>`), "continue watching" from local positions, filter conditions (`Cond`) |
+| `CatalogUi.kt` | synthetic covers (gradient by first genre, title in heavy type, greyscale when not on the disks; catalog screens never fetch frame covers), cover cards and rows, people, genre names, badges |
+| `CatalogScreens.kt` | the Library on a server with a catalog: Discover / Browse / Folders switch (Folders is the folder view above), results with combinable filters, title, missing title (want to watch, the user's own search engines, paste magnet), person, "What next?" (also opened by the player after a film ends), want-to-watch list, the search engines dialog; screens are a saveable stack inside the Library tab |
+| `UploadsUi.kt` | "Sent from phones" in the Downloading tab: files waiting to be put away (Move, Other folder…, Keep here), moving progress, "Put away this week", the badge on the tab |
 | `Tasks.kt` | one notification per finished file task (checked with `Access` while the app is on screen) |
 | `MediaUi.kt` | Phone, screen and VLC buttons, subtitle dialog |
 | `PlayerActivity.kt` | the player on the phone |

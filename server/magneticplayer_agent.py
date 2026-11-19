@@ -45,12 +45,13 @@ from mp_i18n import T
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 from mp_devices import Devices
 from mp_jobs import AFTER, Jobs, magnet_name
+import mp_catalog
 import mp_ident
 import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -837,10 +838,16 @@ class App:
         # announcing "what is playing" between remotes (LAN multicast): this server's mpv + a list from others for the page
         self.announce = Announcer(log, lambda: {"id": self.cfg["id"], "name": self.name()}, self._announce_mine)
         self.announce.start()
-        self.uploads = mp_upload.Uploads(cfg, self.library, log)  # uploading videos from the phone
+        # uploading videos from the phone, with a history of what landed where (Downloads screen)
+        self.uploads = mp_upload.Uploads(cfg, self.library, log, os.path.join(CONFIG_DIR, "uploads.json"))
         # magnet identification (movie/series/kids' show → folder): a small IMDb index refreshed in the background + Wikidata
         self.ident = mp_ident.Service(cfg, os.path.join(CONFIG_DIR, "ident-memory.json"), log)
         self.ident.start()
+        # the library as films and series (genres, age, languages, people, topics; Wikidata by IMDb id), shared wishlist
+        self.catalog = mp_catalog.Catalog(os.path.join(CONFIG_DIR, "catalog.json"), cfg, self.library, self.ident, log)
+        self.catalog.start()
+        mp_library.ON_CHANGE.append(self.catalog.refresh)
+        self.wishlist = mp_catalog.Wishlist(os.path.join(CONFIG_DIR, "wishlist.json"))
         self.installs = mp_install.Installs(log)  # installation on another computer (join code)
         self.access = mp_access.AccessRequests(log)  # access requests from the home network (mp_access.py)
         # app for phones from GitHub releases (mp_appupdate.py); the phone sets the mode
@@ -963,6 +970,9 @@ class App:
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
+                # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
+                "catalog": True,
+                "search_engines": len(self.cfg.get("search_engines") or []),
                 "library_profiles": list(mp_tasks.PROFILE_NAMES),
                 "player": self.is_screen(),
                 "subs_search": self.subs_available(wait=False),
@@ -1172,6 +1182,11 @@ class Handler(BaseHTTPRequestHandler):
         """This server's address as the client sees it (for URLs for another screen on the same network)."""
         host = self.headers.get("Host") or f"{self.server.server_address[0]}:{self.server.server_address[1]}"
         return "http://" + host
+
+    def device_name(self):
+        """Name of the asking device (paired phone), or None."""
+        dev = getattr(self, "device", None)
+        return next((d["name"] for d in self.app.devices.list() if d["id"] == dev), None) if dev else None
 
     def body(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -1642,6 +1657,72 @@ class Handler(BaseHTTPRequestHandler):
                 if mode not in mp_appupdate.MODES:
                     raise ApiError(T("mode must be auto or manual", "tryb to auto albo manual"), 400)
                 return self.send_json(a.app_updates.set_mode(mode))
+            # ---- catalog: films and series instead of folders (mp_catalog.py)
+            if p == "/api/catalog" and method == "GET":
+                if qd.get("since") and qd["since"] == str(a.catalog.version):
+                    return self.send_json({"version": a.catalog.version, "same": True})
+                return self.send_json(a.catalog.public(mp_i18n.lang()))
+            if p == "/api/catalog/title" and method == "GET":
+                try:
+                    return self.send_json(a.catalog.title(qd.get("imdb", ""), mp_i18n.lang()))
+                except ValueError:
+                    raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
+            if p == "/api/catalog/person" and method == "GET":
+                try:
+                    return self.send_json(a.catalog.person(qd.get("id", ""), mp_i18n.lang()))
+                except ValueError:
+                    raise ApiError(T("bad person id", "zły identyfikator osoby"), 400)
+            if p == "/api/catalog/next" and method == "GET":
+                return self.send_json(a.catalog.next(qd.get("imdb", ""), mp_i18n.lang()))
+            if p == "/api/wishlist" and method == "GET":
+                return self.send_json({"items": a.wishlist.list(a.catalog, mp_i18n.lang())})
+            if p == "/api/wishlist" and method == "POST":
+                try:
+                    a.wishlist.add(self.body(), self.device_name())
+                except ValueError:
+                    raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
+                return self.send_json({"items": a.wishlist.list(a.catalog, mp_i18n.lang())})
+            if p == "/api/wishlist/remove" and method == "POST":
+                a.wishlist.remove(str(self.body().get("imdb") or ""))
+                return self.send_json({"items": a.wishlist.list(a.catalog, mp_i18n.lang())})
+            if p == "/api/config/search" and method == "GET":
+                return self.send_json({"engines": a.cfg.get("search_engines") or []})
+            if p == "/api/config/search" and method == "POST":
+                eng = []
+                for e in (self.body().get("engines") or [])[:10]:
+                    name, url = str(e.get("name") or "").strip()[:40], str(e.get("url") or "").strip()[:500]
+                    if not name or not re.match(r"https?://[^\s/]+", url) or not re.search(r"\{(title|imdb)\}", url):
+                        raise ApiError(T("each search needs a name and an http(s) address with {title} or {imdb}",
+                                         "każda wyszukiwarka potrzebuje nazwy i adresu http(s) z {title} albo {imdb}"), 400)
+                    eng.append({"name": name, "url": url})
+                a.cfg["search_engines"] = eng
+                save_config(a.cfg)
+                return self.send_json({"engines": eng})
+            # ---- files that phones sent to the server (mp_upload.py history)
+            if p == "/api/uploads" and method == "GET":
+                items = a.uploads.list()
+                for h in items:
+                    if h["state"] == "new":
+                        g = a.ident.guess(h["name"])
+                        kind = g.get("kind") if g.get("tag") in ("seriale", "bajki") else None
+                        h.update(a.library.targets(g.get("tag"), g.get("title"), kind), guess=g)
+                        here = os.path.realpath(h["dir"])
+                        for t in h["targets"]:  # where it lies now is not a suggestion
+                            t["here"] = os.path.realpath(t["path"]) == here
+                        if h.get("pick") is not None and h["targets"][h["pick"]]["here"]:
+                            h["pick"] = None
+                    h.pop("dir", None)
+                    h.pop("path", None)
+                return self.send_json({"items": items, "new": sum(h["state"] == "new" for h in items)})
+            if p == "/api/uploads/keep" and method == "POST":
+                return self.send_json(a.uploads.keep(str(self.body().get("id") or "")))
+            if p == "/api/uploads/move" and method == "POST":
+                b = self.body()
+                root = a.library.roots()[int(b["root"])]
+                dest = a.library.dest(int(b["root"]), str(b.get("sub") or ""))
+                if b.get("learn") and b.get("guess") and root["tags"]:
+                    a.ident.learn(b["guess"], root["tags"][0])
+                return self.send_json(a.uploads.move(str(b.get("id") or ""), dest, root["name"]))
             if p == "/api/config/shrink" and method == "GET":
                 return self.send_json(a.tasks.shrink_config())
             if p == "/api/config/shrink" and method == "POST":
@@ -1666,7 +1747,8 @@ class Handler(BaseHTTPRequestHandler):
                 a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
                 return self.send_json({"ok": True})
             raise ApiError(T("no such endpoint", "nie ma takiego endpointu"), 404)
-        except (LibError, SubsError, CastError, mp_install.InstallError, mp_access.AccessError, mp_tasks.TaskError) as e:
+        except (LibError, SubsError, CastError, mp_install.InstallError, mp_access.AccessError, mp_tasks.TaskError,
+                mp_upload.UploadError) as e:
             self.send_json({"error": str(e)}, e.status)
         except ApiError as e:
             self.send_json({"error": str(e)}, e.status)

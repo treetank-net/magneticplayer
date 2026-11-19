@@ -63,16 +63,21 @@ def build(path, src=DATASETS, log=print):
     """Downloads the dumps and builds the index at `path` (atomic replace). `src`: URL or a directory with .tsv.gz files."""
     t0 = time.time()
     get = (lambda f: _lines(src + f)) if src.startswith("http") else (lambda f: _local(os.path.join(src, f)))
-    votes = {}
+    votes, rating = {}, {}
     for row in get("title.ratings.tsv.gz"):
         if row[0].startswith("tt") and row[2].isdigit() and int(row[2]) >= MIN_VOTES:
             votes[row[0]] = int(row[2])
+            try:
+                rating[row[0]] = round(float(row[1]) * 10)
+            except ValueError:
+                pass
     tmp = path + ".tmp"
     if os.path.exists(tmp):
         os.remove(tmp)
     db = sqlite3.connect(tmp)
     db.executescript("""
-        CREATE TABLE t (id INTEGER PRIMARY KEY, kind INTEGER, title TEXT, year INTEGER, end INTEGER, g INTEGER, votes INTEGER);
+        CREATE TABLE t (id INTEGER PRIMARY KEY, kind INTEGER, title TEXT, year INTEGER, end INTEGER, g INTEGER, votes INTEGER,
+                        r INTEGER, min INTEGER);
         CREATE TABLE k (key TEXT, id INTEGER);
     """)
     n = 0
@@ -81,11 +86,13 @@ def build(path, src=DATASETS, log=print):
             continue
         tid = int(row[0][2:])
         mask = sum(G.get(x, 0) for x in row[8].split(","))
-        db.execute("INSERT INTO t VALUES (?,?,?,?,?,?,?)", (tid, KINDS[row[1]], row[2], _int(row[5]), _int(row[6]), mask, votes[row[0]]))
+        db.execute("INSERT INTO t VALUES (?,?,?,?,?,?,?,?,?)", (tid, KINDS[row[1]], row[2], _int(row[5]), _int(row[6]), mask,
+                                                              votes[row[0]], rating.get(row[0]), _int(row[7])))
         keys = {norm(row[2]), norm(row[3])}
         db.executemany("INSERT INTO k VALUES (?,?)", [(k, tid) for k in keys if k])
         n += 1
     db.execute("CREATE INDEX k_key ON k(key)")
+    db.execute("CREATE INDEX t_votes ON t(votes)")
     db.commit()
     db.execute("VACUUM")
     db.close()
@@ -109,11 +116,48 @@ class Index:
         self.path = path
         self.db = sqlite3.connect(path, check_same_thread=False) if os.path.exists(path) else None
 
+    @property
+    def rated(self):
+        """Whether the index has ratings and runtimes (built by 1.8.0 or later); an older one is rebuilt early."""
+        if not self.db:
+            return False
+        return any(c[1] == "r" for c in self.db.execute("PRAGMA table_info(t)"))
+
     def get(self, imdb_id):
         if not self.db:
             return None
-        r = self.db.execute("SELECT * FROM t WHERE id=?", (int(str(imdb_id).lstrip("t")),)).fetchone()
+        try:
+            r = self.db.execute("SELECT * FROM t WHERE id=?", (int(str(imdb_id).lstrip("t")),)).fetchone()
+        except ValueError:
+            return None
         return _row(r) if r else None
+
+    def many(self, ids):
+        """{imdb id: row} for a list of ids (missing ones are left out)."""
+        if not self.db:
+            return {}
+        nums = [int(str(i)[2:]) for i in ids if str(i)[:2] == "tt" and str(i)[2:].isdigit()]
+        out = {}
+        for k in range(0, len(nums), 500):
+            chunk = nums[k:k + 500]
+            for r in self.db.execute(f"SELECT * FROM t WHERE id IN ({','.join('?' * len(chunk))})", chunk):
+                row = _row(r)
+                out[row["imdb"]] = row
+        return out
+
+    def popular(self, mask, kind=0, years=None, limit=30, exclude=()):
+        """The most voted titles sharing all genres of `mask` (movies by default), optionally within `years`
+        (from, to). For "what next" suggestions from outside the collection."""
+        if not self.db:
+            return []
+        q, args = "SELECT * FROM t WHERE kind=? AND (g & ?)=?", [kind, mask, mask]
+        if years:
+            q += " AND year BETWEEN ? AND ?"
+            args += list(years)
+        q += " ORDER BY votes DESC LIMIT ?"
+        args.append(limit + len(exclude))
+        ex = set(exclude)
+        return [x for x in (_row(r) for r in self.db.execute(q, args)) if x["imdb"] not in ex][:limit]
 
     def find(self, title, year=None, kind=None):
         """Best title: exact key first, then year (±1) and kind, finally popularity."""
@@ -134,8 +178,12 @@ class Index:
 
 
 def _row(r):
-    return {"imdb": f"tt{r[0]:07d}", "kind": "series" if r[1] else "movie", "title": r[2], "year": r[3], "end": r[4],
-            "genres": genres(r[5]), "votes": r[6]}
+    out = {"imdb": f"tt{r[0]:07d}", "kind": "series" if r[1] else "movie", "title": r[2], "year": r[3], "end": r[4],
+           "genres": genres(r[5]), "votes": r[6]}
+    if len(r) > 8:  # an index from before 1.8.0 has no rating and runtime
+        out["rating"] = r[7] / 10 if r[7] is not None else None
+        out["minutes"] = r[8]
+    return out
 
 
 # ---- identification
@@ -235,7 +283,11 @@ def wd_kids(w):
 def _guessit(name):
     try:
         import guessit  # in the agent venv (a subliminal dependency)
-        return dict(guessit.guessit(name))
+        g = dict(guessit.guessit(name))
+        for k in ("title", "year", "season", "type"):  # some names give a list ("A / B", two years): the first counts
+            if isinstance(g.get(k), list):
+                g[k] = g[k][0] if g[k] else None
+        return g
     except ImportError:  # without guessit: title up to the year, season/episode from the name
         n = re.sub(r"[._]", " ", name)
         m = re.search(r"\b(19\d\d|20\d\d)\b", n)
@@ -375,7 +427,8 @@ class Service:
                 age = time.time() - os.path.getmtime(self.path)
             except OSError:
                 age = None
-            if self.online and days > 0 and (age is None or age > days * 86400):
+            stale = age is None or age > days * 86400 or not self.index.rated
+            if self.online and days > 0 and stale:
                 self.rebuild()
             time.sleep(6 * 3600)
 

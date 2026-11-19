@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OndemandVideo
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Tv
@@ -66,9 +67,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Buttons for a video: phone, screen (mpv on some server), and in the menu VLC, subtitles, download. */
+/**
+ * Buttons for a video: phone, screen (mpv on some server), and in the menu VLC, subtitles, download.
+ * [big] (catalog title screen): a large "Play" on the phone, then screen, TV/Chromecast and download as icons, the rest in
+ * the menu; the same actions. [imdb] lets the phone player offer "What next" after the film.
+ */
 @Composable
-fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnPc: () -> Unit) {
+fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
+                 imdb: String? = null, big: Boolean = false) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
@@ -92,42 +98,61 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
     // notification with download progress (Android 13+ asks for permission; downloading works without it anyway)
     val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        FilledTonalButton({ ctx.startActivity(PlayerActivity.intent(ctx, ref)) }) {
+    fun download() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx,
+                android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        DownloadService.start(ctx, ref)
+        scope.launch { snack.showSnackbar(ctx.getString(R.string.media_downloading_snack)) }
+    }
+    fun onScreen() {
+        // one screen and on the same server: immediately, as before; otherwise a screen picker
+        if (screens.size == 1 && screens[0].key == ref.srv) playOn(screens[0].key) else chooser = true
+    }
+    @Composable
+    fun moreMenu(withDownload: Boolean) = Box {
+        IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.media_cd_more)) }
+        DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem({ Text(stringResource(R.string.media_open_vlc)) }, {
+                menu = false
+                scope.launch {
+                    val subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
+                    openInVlc(ctx, api.mediaUrl(ref), ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
+                }
+            }, leadingIcon = { Icon(Icons.Filled.OndemandVideo, null) })
+            DropdownMenuItem({ Text(stringResource(R.string.media_subs_menu)) }, { menu = false; subsDialog = true },
+                leadingIcon = { Icon(Icons.Filled.Subtitles, null) })
+            if (withDownload) DropdownMenuItem({ Text(stringResource(R.string.media_download_to_phone)) }, {
+                menu = false; download()
+            }, leadingIcon = { Icon(Icons.Filled.DownloadForOffline, null) })
+        }
+    }
+    if (big) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Button({ ctx.startActivity(PlayerActivity.intent(ctx, ref, imdb)) }, Modifier.weight(1f).height(48.dp)) {
+            Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.cat_play))
+        }
+        if (screens.isNotEmpty()) androidx.compose.material3.FilledTonalIconButton(::onScreen, Modifier.size(48.dp)) {
+            Icon(Icons.Filled.Computer, stringResource(R.string.cat_cd_on_computer))
+        }
+        androidx.compose.material3.FilledTonalIconButton({ chooser = true }, Modifier.size(48.dp)) {
+            Icon(Icons.Filled.Cast, stringResource(R.string.media_cd_cast))
+        }
+        androidx.compose.material3.FilledTonalIconButton(::download, Modifier.size(48.dp)) {
+            Icon(Icons.Filled.DownloadForOffline, stringResource(R.string.media_download_to_phone))
+        }
+        moreMenu(withDownload = false)
+    } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalButton({ ctx.startActivity(PlayerActivity.intent(ctx, ref, imdb)) }) {
             Icon(Icons.Filled.Smartphone, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.media_phone_button))
         }
-        if (screens.isNotEmpty()) FilledTonalButton({
-            // one screen and on the same server: immediately, as before; otherwise a screen picker
-            if (screens.size == 1 && screens[0].key == ref.srv) playOn(screens[0].key) else chooser = true
-        }) {
+        if (screens.isNotEmpty()) FilledTonalButton(::onScreen) {
             Icon(Icons.Filled.Tv, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
             Text(if (screens.size == 1) screens[0].name.take(14) else stringResource(R.string.media_on_screen_ellipsis))
         }
         // Chromecasts (and the other screens) in a single picker
         IconButton({ chooser = true }) { Icon(Icons.Filled.Cast, stringResource(R.string.media_cd_cast)) }
-        Box {
-            IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.media_cd_more)) }
-            DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem({ Text(stringResource(R.string.media_open_vlc)) }, {
-                    menu = false
-                    scope.launch {
-                        val subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
-                        openInVlc(ctx, api.mediaUrl(ref), ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
-                    }
-                }, leadingIcon = { Icon(Icons.Filled.OndemandVideo, null) })
-                DropdownMenuItem({ Text(stringResource(R.string.media_subs_menu)) }, { menu = false; subsDialog = true },
-                    leadingIcon = { Icon(Icons.Filled.Subtitles, null) })
-                DropdownMenuItem({ Text(stringResource(R.string.media_download_to_phone)) }, {
-                    menu = false
-                    if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx,
-                            android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                        notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                    DownloadService.start(ctx, ref)
-                    scope.launch { snack.showSnackbar(ctx.getString(R.string.media_downloading_snack)) }
-                }, leadingIcon = { Icon(Icons.Filled.DownloadForOffline, null) })
-            }
-        }
+        moreMenu(withDownload = true)
     }
     if (subsDialog) SubsDialog(api, ref) { subsDialog = false }
     if (chooser) ScreenChooser(ref, onPhone = null, onPick = { chooser = false; playOn(it) },

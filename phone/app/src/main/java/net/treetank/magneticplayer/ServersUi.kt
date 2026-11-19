@@ -73,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -497,6 +498,7 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
     var revoke by remember { mutableStateOf<JSONObject?>(null) }
     var invite by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
+    var searches by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
         try {
             withContext(Dispatchers.IO) {
@@ -588,6 +590,19 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                     }
                 }
                 if (s.shrinkEncoder != null && !s.isGuest) ShrinkSettings(s, snack, reload) { server = Servers.get(ctx, key) }
+                // search engines for titles that are not on the disks (agent 1.8+): the user's own, none by default
+                if (s.hasCatalog && !s.isGuest) Row(Modifier.fillMaxWidth().clickable { searches = true }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.cat_searches), style = MaterialTheme.typography.bodyMedium)
+                        Text(if (s.searchEngines == 0) stringResource(R.string.cat_searches_none_set)
+                            else pluralStringResource(R.plurals.cat_searches_n, s.searchEngines, s.searchEngines),
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(stringResource(R.string.cat_searches_edit), color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge)
+                }
+                if (searches) SearchEnginesDialog(Api(Settings(ctx), s)) { searches = false; server = Servers.get(ctx, key) }
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_name_in_app)) }, singleLine = true)
                 HorizontalDivider()
                 Text(stringResource(R.string.srv_paired_devices), style = MaterialTheme.typography.titleSmall)

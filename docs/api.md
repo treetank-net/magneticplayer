@@ -138,7 +138,7 @@ chosen ones in the background (one at a time, persisted in `tasks.json`, continu
 
 | method and path | description |
 |---|---|
-| `GET /api/library/disks` | `disks` (fullest first): `id`, `name`, `mount`, `total`, `free`, `used`, `roots` (`root`, `id`, `name`, `tags`, `size`, `files`, `profile`, `profiles`); `trash` (`root`, `root_name`, `day`, `size`, `files`); `trash_days` |
+| `GET /api/library/disks` | `disks` (with library folders first, fullest first): `id`, `name`, `mount`, `total`, `free`, `used`, `system` (1.8+: the system disk), `home` (1.8+: where "add folder" starts browsing), `roots` (`root`, `id`, `name`, `tags`, `size`, `files`, `profile`, `profiles`; empty for disks without library folders, listed since 1.8: `/`, `/home`, `/media/*`, `/mnt/*`, `/run/media/*`, `/srv/*` of at least 8 GB); `trash` (`root`, `root_name`, `day`, `size`, `files`); `trash_days` |
 | `POST /api/library/plan` | starts a planner, returns `{"id", "state": "running", "progress"}`. Kinds: `{"kind": "free", "root", "need"?}` move items off the disk of `root` to folders with the same tag on other disks (default: up to 15% free); `{"kind": "shrink", "root", "path", "profile"?, "encoder"?}` re-encode by storage profiles (`profile` is saved for that folder/subfolder/file first; `encoder`: `auto`/`cpu`/`gpu`, default the server's `shrink_encoder`, agent 1.7+); `{"kind": "tidy"}` items whose recognition doesn't match the folder's tag; `{"kind": "dupes"}` identical videos; `{"kind": "trash", "items": [{"root", "path"}]}` deleting to the trash; `{"kind": "move", "items": [{"root", "path", "to_root", "to_sub"?}]}` explicit moves |
 | `GET /api/library/plan/<id>` | `state` (`running`/`done`/`error`), `progress`, `result`: `kind` (`move`/`shrink`/`trash`/`dupes`), `title`, `items`, `bytes`, `skipped` (with `reason`); free: `need`, `free_before`, `free_after`, `total`; shrink: `est`, `saved`, `hours` (video length), `encoder` (label), `encoder_id` (`cpu`/`gpu`, 1.7+), `encoders` (1.7+: `id`, `label`, `note`, `bframes`, `est`, `saved`, `work_hours` = estimated hours of work or null), `warnings`, `trash_days`; tidy: `checked`; dupes: `groups` (`size`, `files`), `wasted`. Items: `name`, `path`, `root`, `root_name`, `size`; move: `to_root`, `to_name`, `to_sub`, `torrent` (moved by the client), `extra` (subtitles etc. next to a single video), `tag`, `unsure`, `guess`; shrink: `profile`, `est`, `codec`, `height`, `to_height`, `duration`, `bitrate`. Plans live in memory for an hour |
 | `POST /api/tasks` | `{"plan", "pick"?: [item indexes]}` → the task |
@@ -146,6 +146,36 @@ chosen ones in the background (one at a time, persisted in `tasks.json`, continu
 | `GET /api/tasks/<id>`, `POST /api/tasks/<id>/cancel` | one task; stop it (the current item stays as it was) |
 | `POST /api/library/profile` | `{"root", "path", "profile": "original"\|"tidy"\|"good"\|"compact"\|"tiny"}` (`path` empty = the whole folder) |
 | `POST /api/library/trash/empty` | delete everything in the trash now → `{"freed"}` |
+
+## Catalog: films instead of folders (agent 1.8+, `features.catalog`)
+
+The agent walks the library in the background and keeps every film and series as a title: identification (local IMDb
+index), languages of the audio tracks and subtitles (ffprobe once per file + subtitle files next to it) and details from
+Wikidata by IMDb id (cast in billing order with roles, directors, main subjects, age rating, Polish title). See
+`mp_catalog.py`. Lists are in the request's language (`Accept-Language`) where it matters (topics, reasons).
+
+| request | answer |
+|---|---|
+| `GET /api/catalog?since=<version>` | `{"version", "same": true}` when nothing changed since `version`; otherwise `version`, `scanning`, `done`, `total` (walk progress), `last` (time of the last walk), `items`, `people` (`{Wikidata id: name}`), `topics` (`{Wikidata id: label}`). Item: `id` (stable key), `root`, `root_name`, `path` (main video, relative to the folder; a series: its first episode), `dir` (the title's folder or null), `title` (original), `title_pl` (only when the film has Polish audio or subtitles), `year`, `kind` (`movie`/`series`), `imdb`, `genres` (IMDb, English names), `rating` (IMDb, 0–10), `votes`, `minutes`, `height`, `audio`, `subs` (2-letter languages; `?` = a subtitle file of unknown language), `size`, `added` (time), `kids`, `episodes`, `age` (minimum age from FSK/MPAA, 0 for kids' folders, null = unknown), `cast`, `roles` (same order as `cast`), `directors`, `topics` (Wikidata ids). Newest first |
+| `GET /api/catalog/title?imdb=tt…` | a title, also one that is not on the disks: the IMDb index row (`title`, `year`, `kind`, `genres`, `rating`, `votes`, `minutes`) + `have`, `copies` (catalog items with this id), `cast` (`[id, name, role]`), `directors` (`[id, name]`), `topics` (`[id, label]`), `age` |
+| `GET /api/catalog/person?id=Q…` | `id`, `name`, `films` (catalog items with `role` and `as_director`), `missing` (up to 20 best known films with this person that are not on the disks: `imdb`, `title`, `year`, `genres`, `rating`, `votes`, `minutes`, `have: false`) |
+| `GET /api/catalog/next?imdb=tt…` | "what next": `items` (up to 24), titles from the collection first (`have: true` with `id`, `root`, `path`, `audio`, `subs`, `title_pl`?) then ones that are not on the disks (`have: false`); each with `reason` (`actor`/`topic`/`genre`) and `why` (text: "też Cary Grant", "Mystery, Romance"). Wikidata queries are cached for a day; the first answer may take ~10 s |
+| `GET /api/wishlist` | `items`: the shared "want to watch" list: `imdb`, `title`, `year`, `genres`, `why`, `by` (device name), `at`, `have` (+ `id`, `root`, `path`, `where` when the film is on a disk now) |
+| `POST /api/wishlist` | `{"imdb", "title", "year"?, "genres"?, "why"?}` adds (no duplicates) → the list |
+| `POST /api/wishlist/remove` | `{"imdb"}` → the list |
+| `GET /api/config/search` | `engines`: `[{"name", "url"}]` set by the user, empty by default. The app shows "Search" for a film that is not on the disks only when there is at least one, and opens `url` in the browser with `{title}`, `{year}` and `{imdb}` filled in. The agent never queries them and the project ships none |
+| `POST /api/config/search` | `{"engines": [{"name", "url"}]}` (up to 10; `url` is http(s) with `{title}` or `{imdb}`) → the saved list; `features.search_engines` is their number |
+
+## Files sent from phones (agent 1.8+)
+
+Every finished upload is remembered with the phone it came from (`uploads.json`), so the Downloads screen can show what
+landed on the server. Video files in the upload folder without an entry (sent earlier) are listed too.
+
+| request | answer |
+|---|---|
+| `GET /api/uploads` | `new` (how many wait for a decision), `items` (newest first): `id`, `name`, `device` (null for older files), `size`, `at`, `state` (`new`/`moving`/`moved`/`kept`/`gone`), `to` (folder name after a move), `moved_at`, `error`; a `new` one also has `guess` (as in `/api/library/guess`), `targets` (with `here`: the folder it lies in now) and `pick` (suggested target index or null) |
+| `POST /api/uploads/move` | `{"id", "root", "sub"?, "learn"?, "guess"?}` moves the file and its subtitles into the library folder in the background (another disk: a copy, `state: "moving"` meanwhile); `learn` remembers the folder for this title like a magnet does |
+| `POST /api/uploads/keep` | `{"id"}`: leave it where it is (no longer "new") |
 
 ## MCP for an AI assistant (agent 1.6+, `features.mcp`)
 

@@ -241,7 +241,7 @@ private fun targetLabel(t: DlTarget) = t.name + (if (t.sub.isNotEmpty()) " / ${t
 
 /** Changing the download directory after recognition (the agent moves the torrent and remembers the choice for this title). */
 @Composable
-private fun TargetPicker(targets: List<DlTarget>, current: DlTarget?, onClose: () -> Unit, onPick: (DlTarget) -> Unit) {
+internal fun TargetPicker(targets: List<DlTarget>, current: DlTarget?, onClose: () -> Unit, onPick: (DlTarget) -> Unit) {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onClose,
         title = { Text(stringResource(R.string.media_magnet_pick_folder)) },

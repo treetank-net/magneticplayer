@@ -48,6 +48,13 @@ data class Server(
         ?.let { a -> List(a.length()) { a.optString(it) }.filter { it.isNotEmpty() } } ?: emptyList()
     /** Agent 1.6+: covers for folders and videos (`/api/library/cover`). */
     val libraryCovers get() = features?.optBoolean("library_covers", false) ?: false
+    /**
+     * Agent 1.8+: the library as films (`/api/catalog`, person, what next), the shared wishlist, search engines in
+     * the settings and the history of files sent from phones (`/api/uploads`).
+     */
+    val hasCatalog get() = features?.optBoolean("catalog", false) ?: false
+    /** How many search engines the user set on the server (`/api/config/search`); 0 = no "Search" button. */
+    val searchEngines get() = features?.optInt("search_engines", 0) ?: 0
     /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */
     val canInstall get() = features?.optBoolean("install", false) ?: false
     val canAccessRequests get() = features?.optBoolean("access_requests", false) ?: false

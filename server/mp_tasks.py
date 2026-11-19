@@ -377,9 +377,23 @@ class Tasks:
             d["roots"].append({"root": r["index"], "id": r["id"], "name": r["name"], "tags": r["tags"],
                                "size": size, "files": n, "profile": r.get("profile") or "original",
                                "profiles": r.get("profiles") or {}})
-        disks = sorted(out.values(), key=lambda d: d["free"] / max(d["total"], 1))
+        for mnt in _data_mounts():  # disks without library folders too (the system disk, a new one): room for them
+            dev = _dev(mnt)
+            if dev is None or dev in out:
+                continue
+            try:
+                u = shutil.disk_usage(mnt)
+            except OSError:
+                continue
+            if u.total < 8 << 30:  # small partitions (boot, recovery, USB sticks for installers)
+                continue
+            out[dev] = {"id": str(dev), "total": u.total, "free": u.free, "used": u.used, "mount": mnt, "roots": []}
+        disks = sorted(out.values(), key=lambda d: (not d["roots"], d["free"] / max(d["total"], 1)))
+        home = _dev(os.path.expanduser("~"))
         for d in disks:
             d["name"] = os.path.basename(d["mount"].rstrip("/")) or d["mount"]
+            d["system"] = d["mount"] == "/" or (str(home) == d["id"] and d["mount"] in ("/home", os.path.expanduser("~")))
+            d["home"] = os.path.expanduser("~") if str(home) == d["id"] else d["mount"]  # where "add folder" starts
         return disks
 
     # ---- planner: free space on a disk by moving to other disks
@@ -1245,6 +1259,29 @@ class Tasks:
 
 class _Cancelled(Exception):
     pass
+
+
+DATA_FS = {"ext4", "ext3", "btrfs", "xfs", "zfs", "f2fs", "ntfs", "ntfs3", "fuseblk", "exfat", "vfat", "jfs", "reiserfs"}
+
+
+def _data_mounts():
+    """Mount points of disks that could hold films: / and /home, /media/*, /mnt/*, /run/media/*, /srv/*
+    (Linux; elsewhere nothing extra). Not /boot, snaps, containers or network shares."""
+    out = []
+    try:
+        with open("/proc/mounts") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 3 or parts[2] not in DATA_FS:
+            continue
+        mnt = parts[1].replace("\\040", " ")
+        if mnt in ("/", "/home") or mnt.startswith(("/media/", "/mnt/", "/run/media/", "/srv/", "/data")):
+            if mnt not in out:
+                out.append(mnt)
+    return out
 
 
 def _mount(path):

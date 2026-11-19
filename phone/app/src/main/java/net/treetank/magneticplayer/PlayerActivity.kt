@@ -59,8 +59,9 @@ fun openInVlc(ctx: Context, url: String, title: String, subUrl: String? = null) 
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 class PlayerActivity : ComponentActivity() {
     companion object {
-        fun intent(ctx: Context, ref: MediaRef) =
-            Intent(ctx, PlayerActivity::class.java).putExtra("ref", ref.encode())
+        /** [imdb]: a film from the catalog; after it is watched to the end the app offers "What next". */
+        fun intent(ctx: Context, ref: MediaRef, imdb: String? = null) =
+            Intent(ctx, PlayerActivity::class.java).putExtra("ref", ref.encode()).apply { if (imdb != null) putExtra("imdb", imdb) }
     }
 
     private var player: ExoPlayer? = null
@@ -176,6 +177,8 @@ class PlayerActivity : ComponentActivity() {
                     prefetchJob?.cancel()
                     val k = key
                     Thread { MediaCache.onWatched(this@PlayerActivity, k) }.start()
+                    // a catalog film watched to the end: "What next" instead of a black screen
+                    if (offerNext()) finish()
                 }
             }
 
@@ -417,9 +420,30 @@ class PlayerActivity : ComponentActivity() {
                     val k = key
                     Thread { MediaCache.onWatched(this, k) }.start()
                 }
+                // left during the credits (the same "near the end" rule as the position above)
+                if (isFinishing && dur > 0 && pos > dur - 60_000) offerNext()
             }
             it.pause()
         }
+    }
+
+    private var nextOffered = false
+
+    /**
+     * After a film from the catalog (agent 1.8+) has been watched: the Library opens "What next" for it. The IMDb id comes
+     * from the catalog screen that started the player, or from the cached catalog by the file (also when played from Folders).
+     * Series and files without an id get nothing. Returns whether it was opened.
+     */
+    private fun offerNext(): Boolean {
+        if (nextOffered) return false
+        val imdb = intent.getStringExtra("imdb") ?: (ref as? MediaRef.InLibrary)?.let { r ->
+            CatalogCache.itemFor(r.srv, r.root, r.path)?.takeIf { it.kind == "movie" }?.imdb
+        } ?: return false
+        if (Servers.get(this, ref.srv)?.hasCatalog != true) return false
+        nextOffered = true
+        startActivity(Intent(this, MainActivity::class.java).putExtra("next_imdb", imdb).putExtra("next_srv", ref.srv)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        return true
     }
 
     override fun onDestroy() {

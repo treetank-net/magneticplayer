@@ -11,6 +11,7 @@ SEARCH_TTL = 300
 REPLICA = {}  # library folder id → {"pending", "copied", "last", "error"} (mp_tasks replication; shown in /api/library)
 _search_cache = {}  # real path of a library folder -> (time, [(relative path, is_dir, size)])
 _search_lock = threading.Lock()
+ON_CHANGE = []  # callbacks after the library changed (the catalog rescans)
 
 
 def _fold(s):
@@ -289,9 +290,11 @@ class Library:
 
     @staticmethod
     def invalidate():
-        """After moving or shrinking: the search sees the new names right away."""
+        """After moving or shrinking: the search sees the new names right away (and the catalog walks again)."""
         with _search_lock:
             _search_cache.clear()
+        for f in ON_CHANGE:
+            f()
 
     def remove_root(self, i):
         self.roots()
@@ -299,6 +302,7 @@ class Library:
             raise LibError(T("no such folder", "nie ma takiego katalogu"), 404)
         del self.cfg["library"][i]
         self.save_cfg()
+        self.invalidate()
 
     # ---- search
 

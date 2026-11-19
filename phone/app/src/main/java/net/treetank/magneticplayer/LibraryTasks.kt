@@ -225,6 +225,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
     var reload by remember { mutableIntStateOf(0) }
     var freeFor by remember { mutableStateOf<Int?>(null) }
     var confirmEmpty by remember { mutableStateOf(false) }
+    var addOn by remember { mutableStateOf<Disk?>(null) }
     LaunchedEffect(reload) {
         try {
             disks = withContext(Dispatchers.IO) { api.disks() }
@@ -259,7 +260,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
                 Text(stringResource(R.string.lib_tools_hint), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             }
-            items(d.disks, key = { "disk/${it.id}/${it.mount}" }) { disk -> DiskCard(disk, roots) { freeFor = it } }
+            items(d.disks, key = { "disk/${it.id}/${it.mount}" }) { disk -> DiskCard(disk, roots, onAdd = { addOn = disk }) { freeFor = it } }
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
@@ -289,6 +290,19 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
             }
         }
     }
+    addOn?.let { disk ->
+        DirPicker(api, onDismiss = { addOn = null }, start = disk.home.ifEmpty { disk.mount }) { chosen ->
+            addOn = null
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) { api.libraryAdd(chosen) }
+                    reload++
+                } catch (e: ApiException) {
+                    snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error))
+                }
+            }
+        }
+    }
     freeFor?.let { root ->
         FreeSpaceDialog(onDismiss = { freeFor = null }) { need -> freeFor = null; onPlan(PlanBody.free(root, need)) }
     }
@@ -313,10 +327,11 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
 }
 
 @Composable
-private fun DiskCard(disk: Disk, roots: Map<Int, LibRoot>, onFree: (Int) -> Unit) {
+private fun DiskCard(disk: Disk, roots: Map<Int, LibRoot>, onAdd: () -> Unit, onFree: (Int) -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
-            Text(disk.name.ifEmpty { disk.mount }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(disk.name.ifEmpty { disk.mount } + if (disk.system) " · " + stringResource(R.string.lib_disk_system) else "",
+                style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (disk.name.isNotEmpty() && disk.mount.isNotEmpty()) Text(disk.mount, style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(6.dp))
@@ -347,6 +362,12 @@ private fun DiskCard(disk: Disk, roots: Map<Int, LibRoot>, onFree: (Int) -> Unit
             }
             disk.roots.firstOrNull()?.let { first ->
                 TextButton({ onFree(first.root) }, Modifier.padding(top = 4.dp)) { Text(stringResource(R.string.lib_free_up)) }
+            }
+            // agent 1.8+ also lists disks without library folders, so a new disk can be put to use from here
+            if (disk.roots.isEmpty()) {
+                Text(stringResource(R.string.lib_disk_no_folders), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                OutlinedButton(onAdd, Modifier.padding(top = 6.dp)) { Text(stringResource(R.string.media_lib_add_folder)) }
             }
         }
     }

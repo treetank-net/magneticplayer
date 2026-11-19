@@ -7,7 +7,13 @@ with the name, the size and, once finished, the final name (so that a request re
 gets "done" instead of starting over). A directory starting with a dot is not shown in the Library.
 
 Target directory: `upload_dir` from config.json, by default "Z telefonu" (a data value, the folder name) in the first library directory.
+
+History (uploads.json in the config directory): every finished upload with the phone it came from, so the Downloads
+screen can list files that landed on the server and would otherwise be forgotten there. Each one is "new" until the
+user moves it into the library (to the folder identification suggests, like a magnet) or decides to keep it where it is.
+Video files found in the target directory without a history entry (sent before 1.8.0) are listed as "new" too.
 """
+import hashlib
 import json
 import os
 import re
@@ -59,12 +65,19 @@ def free_name(directory, name):
 
 
 class Uploads:
-    def __init__(self, cfg, library, log):
+    def __init__(self, cfg, library, log, history=None):
         self.cfg = cfg
         self.library = library
         self.log = log
         self._locks = {}
         self._guard = threading.Lock()
+        self.history_path = history
+        self.hlock = threading.Lock()
+        try:
+            with open(history) as f:
+                self.history = json.load(f)
+        except (OSError, TypeError, ValueError):
+            self.history = []
 
     # ---- target directory
     def target_dir(self):
@@ -165,7 +178,7 @@ class Uploads:
             received = 0
         return {"received": received, "size": meta["size"], "done": False, "name": meta.get("name")}
 
-    def put(self, uid, q, rfile, length, connection):
+    def put(self, uid, q, rfile, length, connection, device=None):
         """PUT /api/upload/<id>?name=&size=&offset=: appends the body to .part; the last chunk finishes the file."""
         self._check_id(uid)
         try:
@@ -204,7 +217,7 @@ class Uploads:
                                     f"za mało miejsca na serwerze (wolne {free >> 20} MB, potrzeba {need >> 20} MB)"), 507,
                                   {"received": received, "free": free})
             if not meta:
-                meta = {"name": name, "size": size, "started": time.time()}
+                meta = {"name": name, "size": size, "started": time.time(), "device": device}
                 with open(part_p, "wb"):
                     pass
                 self._cleanup(state)
@@ -241,10 +254,113 @@ class Uploads:
             os.replace(part_p, safe_join(target, final))
             meta.update(done=True, done_at=time.time(), final=final)
             self._write_meta(meta_p, meta)
+            self._remember({"id": uid, "name": final, "dir": target, "device": meta.get("device") or device,
+                            "size": size, "at": time.time(), "state": "new"})
             self.log(f"uploaded from phone: {final} → {target}")
             return {"received": size, "size": size, "done": True, "name": final}
         finally:
             lock.release()
+
+    # ---- history: what landed on the server and where it went
+
+    def _save_history(self):
+        if not self.history_path:
+            return
+        tmp = self.history_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(self.history[-500:], f, ensure_ascii=False)
+        os.replace(tmp, self.history_path)
+
+    def _remember(self, entry):
+        with self.hlock:
+            self.history = [h for h in self.history if h["id"] != entry["id"]] + [entry]
+            self._save_history()
+
+    def _update(self, hid, **kw):
+        with self.hlock:
+            for h in self.history:
+                if h["id"] == hid:
+                    h.update(kw)
+            self._save_history()
+
+    def list(self):
+        """History entries (newest first) + video files in the target directory that have none (sent earlier).
+        A "new" entry whose file is gone (moved or deleted by hand) becomes "gone"."""
+        from mp_library import VIDEO_EXT
+        target = self.target_dir()
+        with self.hlock:
+            hist = [dict(h) for h in self.history]
+        known = {(h["dir"], h["name"]) for h in hist}
+        for h in hist:
+            if h["state"] == "new" and not os.path.isfile(os.path.join(h["dir"], h["name"])):
+                h["state"] = "gone"
+        if target:
+            try:
+                names = os.listdir(target)
+            except OSError:
+                names = []
+            for n in names:
+                full = os.path.join(target, n)
+                if n.startswith(".") or (target, n) in known or os.path.splitext(n)[1].lower() not in VIDEO_EXT:
+                    continue
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    continue
+                hist.append({"id": "f-" + hashlib.sha1(full.encode()).hexdigest()[:16], "name": n, "dir": target,
+                             "device": None, "size": st.st_size, "at": st.st_mtime, "state": "new", "untracked": True})
+        hist.sort(key=lambda h: -(h.get("moved_at") or h["at"]))
+        return hist
+
+    def entry(self, hid):
+        h = next((h for h in self.list() if h["id"] == hid), None)
+        if not h:
+            raise UploadError(T("no such file", "nie ma takiego pliku"), 404)
+        if h.get("untracked"):  # acting on an older file: it gets a history entry from now on
+            h = {k: v for k, v in h.items() if k != "untracked"}
+            self._remember(h)
+        return h
+
+    def keep(self, hid):
+        h = self.entry(hid)
+        self._update(h["id"], state="kept", moved_at=time.time())
+        return {"ok": True}
+
+    def move(self, hid, dest, where):
+        """Moves the file (and subtitles named like it) into a library folder in the background; a move to another
+        disk is a copy, so the entry shows "moving" until it is done."""
+        from mp_library import sidecar_subs
+        h = self.entry(hid)
+        if h["state"] == "moving":
+            raise UploadError(T("already being moved", "już jest przenoszony"), 409)
+        src = os.path.join(h["dir"], h["name"])
+        if not os.path.isfile(src):
+            raise UploadError(T("the file is no longer there", "pliku już tam nie ma"), 404)
+        extra = [s["name"] for s in sidecar_subs(src) if "/" not in s["name"]]
+        if shutil.disk_usage(dest).free < os.path.getsize(src) + RESERVE and os.stat(dest).st_dev != os.stat(src).st_dev:
+            raise UploadError(T("not enough space there", "za mało tam miejsca"), 507)
+        self._update(h["id"], state="moving", to=where)
+
+        def run():
+            try:
+                final = free_name(dest, h["name"])
+                shutil.move(src, os.path.join(dest, final))
+                for n in extra:
+                    try:
+                        shutil.move(os.path.join(h["dir"], n), os.path.join(dest, free_name(dest, n)))
+                    except OSError:
+                        pass
+                self._update(h["id"], state="moved", moved_at=time.time(), to=where, path=os.path.join(dest, final))
+                self.log(f"uploaded file moved: {h['name']} → {dest}")
+            except OSError as e:
+                self._update(h["id"], state="new", error=str(e))
+                self.log(f"uploaded file: move failed: {e}")
+            try:
+                self.library.invalidate()
+            except Exception:  # noqa: BLE001
+                pass
+        threading.Thread(target=run, daemon=True).start()
+        return {"ok": True}
 
 
 def handle(handler, method, uid, q):
@@ -255,7 +371,9 @@ def handle(handler, method, uid, q):
             return handler.send_json(up.status(uid))
         if method == "PUT":
             n = handler.headers.get("Content-Length")
-            res = up.put(uid, q, handler.rfile, int(n) if n and n.isdigit() else None, handler.connection)
+            dev = next((d["name"] for d in handler.app.devices.list() if d["id"] == handler.device), None) \
+                if getattr(handler, "device", None) else None
+            res = up.put(uid, q, handler.rfile, int(n) if n and n.isdigit() else None, handler.connection, dev)
             return handler.send_json(res)
         raise UploadError(T("no such endpoint", "nie ma takiego endpointu"), 404)
     except UploadError as e:

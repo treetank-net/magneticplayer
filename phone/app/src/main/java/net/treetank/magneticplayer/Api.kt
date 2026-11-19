@@ -62,7 +62,18 @@ class Settings(ctx: Context) {
 
 
     fun position(key: String): Long = p.getLong("pos:$key", 0)
-    fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).apply()
+    /** Also stamps when it was saved ("pt:"), so "Continue watching" in the catalog can order videos by recency. */
+    fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).putLong("pt:$key", System.currentTimeMillis()).apply()
+
+    /**
+     * Saved positions > 0: video key → (position ms, when it was last saved or watched, epoch ms; 0 = unknown).
+     * Positions saved before the "pt:" stamp existed fall back to the disk buffer's last use ("cu:").
+     */
+    fun positions(): Map<String, Pair<Long, Long>> = p.all.mapNotNull { (k, v) ->
+        if (!k.startsWith("pos:") || v !is Long || v <= 0) return@mapNotNull null
+        val key = k.removePrefix("pos:")
+        key to (v to p.getLong("pt:$key", p.getLong("cu:$key", 0)))
+    }.toMap()
 
     // disk buffer: how much of the video was watched (0–1) and when last watched, for cleanup in MediaCache.sweep
     fun cacheWatched(key: String): Float = p.getFloat("cw:$key", 0f)
@@ -108,7 +119,9 @@ data class Replica(val pending: Int, val copied: Int, val last: Long?, val error
 data class DiskRoot(val root: Int, val id: String, val name: String, val tags: List<String>, val size: Long, val files: Int,
                     val profile: String, val profiles: Map<String, String>)
 data class Disk(val id: String, val name: String, val mount: String, val total: Long, val free: Long, val used: Long,
-                val roots: List<DiskRoot>)
+                val roots: List<DiskRoot>,
+                /** agent 1.8+: the system disk, and where "Add folder" starts browsing (disks without library folders are listed too) */
+                val system: Boolean = false, val home: String = "")
 data class TrashDay(val root: Int, val rootName: String, val day: String, val size: Long, val files: Int)
 data class Disks(val disks: List<Disk>, val trash: List<TrashDay>, val trashDays: Int)
 /** A plan (preview of a file task): `result` is the agent's JSON (kind-specific fields, see docs/api.md). */
@@ -288,6 +301,8 @@ class Api(val s: Settings, val srv: Server) {
     }
 
     fun get(path: String): String = call("GET", path)
+    /** Any API call (used by the catalog, wishlist and uploads in Catalog.kt); errors as [ApiException]. */
+    fun request(method: String, path: String, body: JSONObject? = null, timeout: Int = 8000): String = call(method, path, body, timeout)
 
     /**
      * Whether the server responds. Without a token (/api/ping), and when another server (a different id) is at the address, it is as if it
@@ -521,7 +536,7 @@ class Api(val s: Settings, val srv: Server) {
                     DiskRoot(r.getInt("root"), r.optString("id"), r.optString("name"), List(tags.length()) { tags.getString(it) },
                         r.optLong("size"), r.optInt("files"), r.optString("profile", "original"),
                         pr.keys().asSequence().associateWith { pr.optString(it) })
-                })
+                }, x.optBoolean("system"), x.optString("home").takeIf { !x.isNull("home") }.orEmpty())
         }, List(t.length()) { i ->
             val x = t.getJSONObject(i)
             TrashDay(x.optInt("root"), x.optString("root_name"), x.optString("day"), x.optLong("size"), x.optInt("files"))
