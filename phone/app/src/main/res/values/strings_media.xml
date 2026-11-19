@@ -148,6 +148,13 @@
     <string name="media_playing_on">Playing on %1$s</string>
     <string name="media_player_whole">Whole video on phone · works offline</string>
     <string name="media_player_to_end">On phone to the end of the video</string>
+    <string name="media_player_no_video_title">The phone can\'t show this picture</string>
+    <string name="media_player_no_video">The picture is in an old format (%1$s) that the phone can\'t decode, so you only hear the sound. Open it in VLC or play it on a screen.</string>
+    <string name="media_player_no_video_prepare">The picture is in an old format (%1$s) that the phone can\'t decode, so you only hear the sound. The computer can prepare a version the phone plays (usually a few minutes; it also serves Chromecasts).</string>
+    <string name="media_player_prepare">Prepare</string>
+    <string name="media_player_sound_only">Sound only</string>
+    <string name="media_player_preparing">The computer is preparing a version for the phone: %1$d%%</string>
+    <string name="media_player_variant">Version prepared on the computer</string>
     <string name="media_player_until">On phone up to %1$s (+%2$s)</string>
     <string name="media_dl_channel">Downloading to phone</string>
     <string name="media_dl_preparing">Preparing…</string>

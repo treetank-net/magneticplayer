@@ -148,6 +148,13 @@
     <string name="media_playing_on">Gra na %1$s</string>
     <string name="media_player_whole">Cały film na telefonie · działa bez sieci</string>
     <string name="media_player_to_end">Na telefonie do końca filmu</string>
+    <string name="media_player_no_video_title">Telefon nie pokaże tego obrazu</string>
+    <string name="media_player_no_video">Obraz jest w starym formacie (%1$s), którego telefon nie dekoduje, więc słychać tylko dźwięk. Otwórz w VLC albo odtwórz na ekranie.</string>
+    <string name="media_player_no_video_prepare">Obraz jest w starym formacie (%1$s), którego telefon nie dekoduje, więc słychać tylko dźwięk. Komputer może przygotować wersję, którą telefon odtworzy (zwykle kilka minut; przyda się też dla Chromecasta).</string>
+    <string name="media_player_prepare">Przygotuj</string>
+    <string name="media_player_sound_only">Tylko dźwięk</string>
+    <string name="media_player_preparing">Komputer przygotowuje wersję dla telefonu: %1$d%%</string>
+    <string name="media_player_variant">Wersja przygotowana na komputerze</string>
     <string name="media_player_until">Na telefonie do %1$s (+%2$s)</string>
     <string name="media_dl_channel">Pobieranie na telefon</string>
     <string name="media_dl_preparing">Przygotowanie…</string>

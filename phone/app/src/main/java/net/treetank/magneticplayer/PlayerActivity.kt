@@ -22,6 +22,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -98,6 +99,7 @@ class PlayerActivity : ComponentActivity() {
             setShowPreviousButton(false)
             keepScreenOn = true
         }
+        playerView = view
         val dp = resources.displayMetrics.density
         // top: title and how much can be watched without a network; visible together with the controls
         val top = LinearLayout(this).apply {
@@ -182,6 +184,16 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
 
+            override fun onTracksChanged(tracks: Tracks) {
+                // a picture the phone cannot decode (old DivX 3, WMV…): ExoPlayer plays the sound alone and may then hang on
+                // seeking, so we say so and offer the computer's version
+                val video = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+                if (video.isNotEmpty() && video.none { it.isSupported } && !noVideoHandled) {
+                    noVideoHandled = true
+                    onNoVideo(p, video.first().getTrackFormat(0))
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 // network error (agent restart during an update, a brief loss of Wi-Fi): we reconnect over
                 // ~a minute and keep playing from the same place instead of stopping the video
@@ -246,6 +258,66 @@ class PlayerActivity : ComponentActivity() {
         }
         settings.touchCache(key, settings.cacheWatched(key))
         Thread { OfflineStore.ensure(this, ref); MediaCache.sweep(this, keep = key) }.start()
+    }
+
+    private var noVideoHandled = false
+    private var altSource = false
+    private var playerView: PlayerView? = null
+
+    /** The phone has no decoder for the picture: play the computer's version (made for Chromecasts, H.264 MP4) instead. */
+    private fun onNoVideo(p: ExoPlayer, f: androidx.media3.common.Format) {
+        val codec = (f.codecs ?: f.sampleMimeType?.substringAfter('/') ?: "?").uppercase()
+        val server = Api.of(this, ref.srv)
+        lifecycleScope.launch {
+            val probe = server?.let { withContext(Dispatchers.IO) { runCatching { it.mediaProbe(ref) }.getOrNull() } }
+            if (isFinishing) return@launch
+            if (probe?.optJSONObject("variant") != null) return@launch switchToVariant(p, server)
+            val canPrepare = probe?.optBoolean("ffmpeg") == true
+            val b = android.app.AlertDialog.Builder(this@PlayerActivity)
+                .setTitle(R.string.media_player_no_video_title)
+                .setMessage(getString(if (canPrepare) R.string.media_player_no_video_prepare else R.string.media_player_no_video, codec))
+                .setNeutralButton(R.string.media_player_sound_only, null)
+                .setNegativeButton("VLC") { _, _ ->
+                    p.pause()
+                    openInVlc(this@PlayerActivity, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
+                }
+            if (canPrepare) b.setPositiveButton(R.string.media_player_prepare) { _, _ -> prepareVariant(p, server!!) }
+            b.show()
+        }
+    }
+
+    /** Asks the computer for the version and waits for it, showing progress in the top line; then switches to it. */
+    private fun prepareVariant(p: ExoPlayer, server: Api) = lifecycleScope.launch {
+        p.pause()
+        altSource = true
+        try {
+            withContext(Dispatchers.IO) { server.mediaConvert(ref) }
+            while (isActive) {
+                val pr = withContext(Dispatchers.IO) { runCatching { server.mediaProbe(ref) }.getOrNull() }
+                if (pr?.optJSONObject("variant") != null) return@launch switchToVariant(p, server)
+                val j = pr?.optJSONObject("job")
+                if (j?.optString("state") == "error") throw ApiException(j.optString("error"))
+                info?.text = getString(R.string.media_player_preparing, (j?.optDouble("pct", 0.0) ?: 0.0).toInt())
+                playerView?.showController()
+                delay(3_000)
+            }
+        } catch (e: ApiException) {
+            altSource = false
+            Toast.makeText(this@PlayerActivity, e.message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private suspend fun switchToVariant(p: ExoPlayer, server: Api) {
+        val t = withContext(Dispatchers.IO) { runCatching { server.ticket(ref, "cast") }.getOrNull() } ?: return
+        if (isFinishing) return
+        prefetchJob?.cancel()  // the disk reserve is for the original file
+        altSource = true
+        val item = p.currentMediaItem ?: return
+        val pos = p.currentPosition
+        p.setMediaItem(item.buildUpon().setUri(t.url).setCustomCacheKey("$key#cast").build(), pos)
+        p.prepare()
+        p.playWhenReady = true
+        info?.text = getString(R.string.media_player_variant)
     }
 
     private fun smallButton(text: String, onClick: () -> Unit) = Button(this, null, 0, android.R.style.Widget_Material_Button_Borderless).apply {
@@ -376,6 +448,7 @@ class PlayerActivity : ComponentActivity() {
     private fun showDiskAhead(p: ExoPlayer) = lifecycleScope.launch {
         val cache = MediaCache.get(this@PlayerActivity)
         while (isActive) {
+            if (altSource) { aheadEndMs = 0; delay(1_000); continue }  // preparing or playing the computer's version: its own line
             val dur = p.duration
             val size = fileSize.takeIf { it > 0 } ?: OfflineStore.get(this@PlayerActivity, key)?.size ?: 0L
             if (dur > 0 && size > 0) {

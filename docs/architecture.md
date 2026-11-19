@@ -173,6 +173,11 @@ cached. These give `ready_sec`, i.e. how many seconds can be watched.
   - For torrents the agent serves only downloaded pieces (`ready_end`). When it reaches a missing one, it waits up
     to 20 s for Deluge, then drops the connection, and ExoPlayer retries (up to 60 times). Nobody gets zeros from
     an undownloaded file.
+  - A picture the phone has no decoder for (old DivX 3 / `msmpeg4v3`, WMV…): ExoPlayer would play the sound alone
+    and could hang after a seek ("stuck buffering"). The player notices it in `onTracksChanged` and switches to the
+    agent's "for Chromecast" version (H.264 MP4, `POST /api/media/convert`, ticket with `variant: "cast"`) when
+    there is one; otherwise it asks: Prepare (progress in the top line, then the switch at the same position),
+    VLC, or sound only. The prepared version isn't put in the disk buffer.
   - Subtitles next to the video are added as `SubtitleConfiguration`. The app downloads them from `/sub` to the
     phone (cacheDir/subs) when opening the video, because media3 re-reads the subtitle file when seeking and
     switching tracks. Over the network, without Wi-Fi, that would block fetching the video from the on-disk buffer
