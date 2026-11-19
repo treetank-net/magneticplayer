@@ -225,7 +225,9 @@ cached. These give `ready_sec`, i.e. how many seconds can be watched.
 
 Results are sorted by the language order from the settings, then by score, and the objects are cached for an hour.
 `download` fetches the chosen subtitles and saves them next to the video. If that video is playing in mpv, it adds
-them right away with `sub-add`.
+them right away with `sub-add`. An SRT where nearly every cue lasts zero time or has no text (such uploads exist on
+OpenSubtitles, even with a hash match) is refused with 422 instead of being saved. Sidecar subtitles match the video
+name case-insensitively (`Le film.srt` next to `Le Film.avi`), and so do the companions moved with a video.
 
 OpenSubtitles without a login: subliminal requires logging in (`@requires_auth`) before downloading, while the API
 allows downloading with just a key. That's why `_oscom_anonymous` calls `download_subtitle.__wrapped__`.

@@ -84,8 +84,9 @@ def sidecar_subs(full):
     try:
         for n in sorted(os.listdir(d)):
             s, ext = os.path.splitext(n)
-            if ext.lower() in SUB_EXT and (s == stem or s.startswith(stem + ".")):
-                lang = s[len(stem) + 1:] if s != stem else ""
+            # case-insensitive: "Le film.srt" next to "Le Film.avi" belongs to it too
+            if ext.lower() in SUB_EXT and (s.lower() == stem.lower() or s.lower().startswith(stem.lower() + ".")):
+                lang = s[len(stem) + 1:] if len(s) > len(stem) else ""
                 out.append({"name": n, "lang": lang, "ext": ext.lower()[1:]})
     except OSError:
         pass

@@ -115,7 +115,7 @@ def companions(full):
         names = os.listdir(d)
     except OSError:
         return []
-    return sorted(n for n in names if n != base and n.startswith(stem + ".") and not os.path.isdir(os.path.join(d, n))
+    return sorted(n for n in names if n != base and n.lower().startswith(stem.lower() + ".") and not os.path.isdir(os.path.join(d, n))
                   and os.path.splitext(n)[1].lower() not in VIDEO_EXT)
 
 

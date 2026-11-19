@@ -48,6 +48,25 @@ def _subliminal():
     return _sl
 
 
+_CUE = re.compile(r"(\d+):(\d\d):(\d\d)[,.](\d+)\s*-->\s*(\d+):(\d\d):(\d\d)[,.](\d+)[^\n]*\n(.*?)(?:\n\s*\n|\Z)", re.S)
+
+
+def _broken(sub):
+    """An SRT where nearly every cue lasts zero time or has no text (such uploads exist on OpenSubtitles: 750 cues at
+    00:00 with a space). Other formats are not judged."""
+    try:
+        text = sub.text or ""
+    except Exception:  # noqa: BLE001 — undecodable: let subliminal deal with it
+        return False
+    cues = _CUE.findall(text)
+    if len(cues) < 10:
+        return False
+    def ms(h, m, s, f):
+        return ((int(h) * 60 + int(m)) * 60 + int(s)) * 1000 + int(f[:3].ljust(3, "0"))
+    bad = sum(1 for c in cues if ms(*c[4:8]) <= ms(*c[:4]) or not c[8].strip())
+    return bad > 0.8 * len(cues)
+
+
 class Subtitles:
     def __init__(self, cfg, save_cfg):
         self.cfg = cfg
@@ -301,6 +320,9 @@ class Subtitles:
                 self._oscom_anonymous(pool, s)
             elif not pool.download_subtitle(s) or not s.content:
                 raise SubsError(T(f"{provider} returned no subtitles (download limit?)", f"{provider} nie oddał napisów (limit pobrań?)"), 502)
+        if _broken(s):
+            raise SubsError(T("these subtitles are empty (a broken upload at the provider) — pick others",
+                              "te napisy są puste (zepsuty plik u dostawcy) — wybierz inne"), 422)
         before = time.time() - 1
         try:
             sl.save_subtitles(v, [s], encoding="utf-8")
