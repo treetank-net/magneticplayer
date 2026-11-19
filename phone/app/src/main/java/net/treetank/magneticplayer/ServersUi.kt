@@ -103,16 +103,19 @@ object Screens {
         withContext(Dispatchers.IO) {
             val screen = Api.of(ctx, screenKey) ?: throw ApiException(ctx.getString(R.string.srv_screen_gone))
             screen.ensureAwake(onStatus)
-            val choice = Settings(ctx).subChoice
+            val settings = Settings(ctx)
+            val choice = settings.subChoice
+            // the audio picked for this folder (a series) or in general, as in the phone's player
+            val audio = (ref as? MediaRef.InLibrary)?.let { settings.folderAudio(folderKey(it)) } ?: settings.audioChoice
             if (screenKey == ref.srv) {
                 ensureChosenSubs(ctx, ref, ask, embeddedCounts = true, onStatus)
                 // position from the phone: the video may have last been watched elsewhere (Chromecast, TV, phone)
-                screen.playerOpen(ref, startSec ?: savedStart(ctx, ref), choice)
+                screen.playerOpen(ref, startSec ?: savedStart(ctx, ref), choice, audio)
             } else {
                 val src = source(ctx, ref, onStatus, ask = ask)
                 onStatus(ctx.getString(R.string.srv_opening_on, screen.srv.name))
                 screen.playerOpenUrl(Ticket(src.url, src.subs.map { it.url }, ref.title), startSec ?: savedStart(ctx, ref),
-                    if (src.subsOn) null else "off")
+                    if (src.subsOn) null else "off", audio)
             }
             Servers.setScreen(ctx, screenKey)
             Servers.setScreenRef(ctx, screenKey, ref)

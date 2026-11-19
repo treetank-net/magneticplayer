@@ -68,6 +68,8 @@ data class Server(
     val hasSubsDownloadJob get() = features?.optBoolean("subs_download_job", false) ?: false
     /** /api/player/open takes `sub_lang` (agent 1.12.1+) */
     val hasPlayerSubLang get() = features?.optBoolean("player_sub_lang", false) ?: false
+    /** /api/player/open takes `audio`, the remembered audio choice (agent 1.13.3+) */
+    val hasPlayerAudio get() = features?.optBoolean("player_audio", false) ?: false
     /** POST /api/tasks/<id>/remove (agent 1.12.1+) */
     val hasTaskRemove get() = features?.optBoolean("task_remove", false) ?: false
     /** library plan "subs_get": missing subtitles downloaded for the library, a folder or a film (agent 1.12.1+) */

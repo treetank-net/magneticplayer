@@ -859,18 +859,21 @@ class Api(val s: Settings, srv: Server) {
         call("POST", "/api/player/cmd", b, 4000)
     }
 
-    /** `subLang` (agent 1.12.1+, `features.player_sub_lang`): the last subtitle choice, a language or "off". */
-    fun playerOpen(ref: MediaRef, startSec: Double? = null, subLang: String? = null) {
+    /** `subLang` (agent 1.12.1+, `features.player_sub_lang`): the last subtitle choice, a language or "off".
+     * `audio` (agent 1.13.3+, `features.player_audio`): the remembered audio choice ([AudioPref.encode]). */
+    fun playerOpen(ref: MediaRef, startSec: Double? = null, subLang: String? = null, audio: String? = null) {
         val b = ref.json()
         if (startSec != null) b.put("start", startSec)
         if (subLang != null && srv.hasPlayerSubLang) b.put("sub_lang", subLang)
+        if (audio != null && srv.hasPlayerAudio) b.put("audio", audio)
         call("POST", "/api/player/open", b, 20000)
     }
 
     /** Video from another server (URL with a ticket). */
-    fun playerOpenUrl(t: Ticket, startSec: Double? = null, subLang: String? = null) {
+    fun playerOpenUrl(t: Ticket, startSec: Double? = null, subLang: String? = null, audio: String? = null) {
         val b = JSONObject().put("url", t.url).put("subs", JSONArray(t.subs)).put("title", t.title)
         if (subLang != null && srv.hasPlayerSubLang) b.put("sub_lang", subLang)
+        if (audio != null && srv.hasPlayerAudio) b.put("audio", audio)
         if (startSec != null && startSec > 0) b.put("start", startSec)
         call("POST", "/api/player/open", b, 25000)
     }

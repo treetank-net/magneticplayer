@@ -1005,7 +1005,25 @@ private fun ColumnScope.MpvExtras(api: Api, remote: MpvRemote, st: RemoteState, 
             OutlinedButton({ trackDialog = "video" }) { Text(stringResource(R.string.main_video)) }
     }
     trackDialog?.let { type ->
-        TrackDialog(type, tracks.filter { it.optString("type") == type }, onDismiss = { trackDialog = null }) { id ->
+        if (type == "audio") {
+            // the same sheet as in the phone's player; the pick is remembered for the folder and in general
+            val list = tracks.filter { it.optString("type") == "audio" }
+            fun str(t: JSONObject, k: String) = t.optString(k).takeIf { it.isNotEmpty() && it != "null" }
+            val opts = list.mapIndexed { i, t ->
+                AudioOpt(i, str(t, "lang"), str(t, "title"), t.optInt("demux-channel-count"), str(t, "codec"), t.optBoolean("selected"),
+                    audioKind(str(t, "title"), false, false))
+            }
+            AudioSheet(opts, onDismiss = { trackDialog = null }) { o ->
+                trackDialog = null
+                cmd("track", JSONObject().put("type", "audio").put("id", list[o.index].optInt("id")))
+                val pref = AudioPref.of(o, opts).encode()
+                val settings = Settings(ctx)
+                settings.audioChoice = pref
+                (Servers.screenRef(ctx, api.srv.key) as? MediaRef.InLibrary)
+                    ?.takeIf { r -> s.optString("path").endsWith(r.path.substringAfterLast('/')) }
+                    ?.let { settings.setFolderAudio(folderKey(it), pref) }
+            }
+        } else TrackDialog(type, tracks.filter { it.optString("type") == type }, onDismiss = { trackDialog = null }) { id ->
             trackDialog = null
             cmd("track", JSONObject().put("type", type).put("id", id ?: "no"))
         }

@@ -54,7 +54,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.13.2"
+VERSION = "1.13.3"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -496,6 +496,48 @@ def _iso2(code):
         return code
 
 
+def audio_kind(title, visual_impaired=False):
+    """The kind of an audio track from its title, as the app reads it (AudioSheet.kt `audioKind`): "commentary",
+    "description" (audio description), "lector" (Polish voice-over), "dubbing", "original" or "" (nothing said)."""
+    t = (title or "").lower()
+    if re.search(r"comment|komentarz", t):
+        return "commentary"
+    if visual_impaired or re.search(r"audiodeskrypc|audio descr|\bad\b|descriptive", t):
+        return "description"
+    if re.search(r"lekt|lector|voice.?over|\bvo\b", t):
+        return "lector"
+    if "dub" in t:
+        return "dubbing"
+    if "orig" in t:
+        return "original"
+    return ""
+
+
+def pick_audio(tracks, pref):
+    """The mpv audio track id matching the phone's remembered choice `pref` ("kind|lang", AudioSheet.kt `pickAudio`),
+    or None (leave the file's default): the same kind and language, then the same kind ("original" = the track that is
+    neither lector nor dubbing), then the same language without description or commentary."""
+    kind, _, lang = str(pref).partition("|")
+    audio = [t for t in tracks if t.get("type") == "audio"]
+    if len(audio) < 2:
+        return None
+    opts = [(t["id"], audio_kind(t.get("title"), t.get("visual-impaired")), _iso2((t.get("lang") or "").lower()))
+            for t in audio]
+    plain = [o for o in opts if o[1] not in ("description", "commentary")]
+    voiced = any(o[1] in ("lector", "dubbing") for o in opts)
+    hit = None
+    if kind == "original":
+        hit = next((o for o in plain if o[1] == "original"), None) or (
+            next((o for o in plain if o[1] == ""), None) if voiced else None)
+    elif kind == "":
+        hit = next((o for o in plain if o[2] == lang), None)
+    else:
+        hit = (next((o for o in opts if o[1] == kind and o[2] == lang), None)
+               or next((o for o in opts if o[1] == kind), None)
+               or next((o for o in plain if o[2] == lang and o[1] == ""), None))
+    return hit and hit[0]
+
+
 class Mpv:
     def __init__(self, cfg):
         self.args = cfg.get("mpv_args", [])
@@ -622,9 +664,10 @@ class Mpv:
         except ApiError:
             return default
 
-    def open(self, path, title=None, subs=(), start=None, sub_lang=None):
+    def open(self, path, title=None, subs=(), start=None, sub_lang=None, audio=None):
         """A local file or a URL (a video from another server, with a ticket). `subs`: subtitle URLs, the first one is
-        selected. `sub_lang` (agent 1.12.1+): the phone's last subtitle choice, a language code or "off"."""
+        selected. `sub_lang` (agent 1.12.1+): the phone's last subtitle choice, a language code or "off". `audio`
+        (agent 1.13.3+): the phone's remembered audio choice, "kind|lang" (see `pick_audio`)."""
         wake_screen()
         started = False
         if self.running():
@@ -643,10 +686,10 @@ class Mpv:
                     raise
         if not started:
             self._start(path, title)
-        if subs or start or sub_lang:
-            self._after_load(path, subs, start, sub_lang)
+        if subs or start or sub_lang or audio:
+            self._after_load(path, subs, start, sub_lang, audio)
 
-    def _after_load(self, path, subs, start, sub_lang=None):
+    def _after_load(self, path, subs, start, sub_lang=None, audio=None):
         """Waits until mpv has loaded the file (over the network it takes a while), then subtitles and seeking."""
         for _ in range(150):
             if self.prop("path") == path and self.prop("duration") is not None:
@@ -661,6 +704,13 @@ class Mpv:
                 log("subtitles from", u.split("?")[0], e)
         if sub_lang:
             self._pick_subs(str(sub_lang))
+        if audio:
+            try:
+                aid = pick_audio(self.prop("track-list") or [], audio)
+                if aid is not None:
+                    self.cmd("set_property", "aid", aid)
+            except ApiError as e:
+                log("audio choice", audio, e)
         if start:
             self.cmd("seek", float(start), "absolute")
 
@@ -1116,7 +1166,7 @@ class App:
                 "library_tasks": True,
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
-                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True, "subs_download_job": True, "player_sub_lang": True, "task_remove": True, "subs_get_task": True,  # intro / credits (agent 1.11+)
+                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True, "subs_download_job": True, "player_sub_lang": True, "player_audio": True, "task_remove": True, "subs_get_task": True,  # intro / credits (agent 1.11+)
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
@@ -1731,12 +1781,12 @@ class Handler(BaseHTTPRequestHandler):
                     subs = [str(u) for u in b.get("subs") or [] if str(u).startswith(("http://", "https://"))]
                     if not url.startswith(("http://", "https://")):
                         raise ApiError(T("url must be http(s)", "url musi być http(s)"), 400)
-                    a.mpv.open(url, b.get("title"), subs, b.get("start"), b.get("sub_lang"))
+                    a.mpv.open(url, b.get("title"), subs, b.get("start"), b.get("sub_lang"), b.get("audio"))
                 else:
                     full = a.resolve_ref(b)
                     # mpv finds subtitles next to the video by itself, but not those in a subfolder (Subs/English.srt from torrents)
                     extra = [os.path.join(os.path.dirname(full), x["name"]) for x in sidecar_subs(full) if os.sep in x["name"]]
-                    a.mpv.open(full, start=b.get("start"), subs=extra, sub_lang=b.get("sub_lang"))
+                    a.mpv.open(full, start=b.get("start"), subs=extra, sub_lang=b.get("sub_lang"), audio=b.get("audio"))
                 return self.send_json({"ok": True})
             if p == "/api/player/status" and method == "GET":
                 return self.send_json(a.mpv.status())

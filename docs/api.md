@@ -236,7 +236,7 @@ the pairing code is valid), so the phone has time to collect it.
 
 | method and path | description |
 |---|---|
-| `POST /api/player/open` | `ref` + optionally `start` (seconds); or a video from another server: `{"url", "subs": [url…], "title", "start"?}`. Agent 1.13+ (`features.player_sub_lang`): `sub_lang`, the phone's last subtitle choice: a language (the first subtitle track in it is selected) or `"off"` |
+| `POST /api/player/open` | `ref` + optionally `start` (seconds); or a video from another server: `{"url", "subs": [url…], "title", "start"?}`. Agent 1.13+ (`features.player_sub_lang`): `sub_lang`, the phone's last subtitle choice: a language (the first subtitle track in it is selected) or `"off"`. Agent 1.13.3+ (`features.player_audio`): `audio`, the phone's remembered audio choice `"kind|lang"` (`lector\|pl`, `original\|`, `\|en`; kind from the track title: lector, dubbing, original, description, commentary); the matching track is selected once the file is loaded, as the phone's player does |
 | `GET /api/player/status` | `running`, `title`, `path`, `pos`, `duration`, `paused`, `volume`, `muted`, `fullscreen`, `sub`, `audio`, `tracks[]` (`id`, `type`, `title`, `lang`, `codec`, `selected`, `external`, `default`, `forced`, `demux-channel-count`, `demux-w`, `demux-h`) |
 | `POST /api/player/cmd` | `{"cmd", "value"?}`, commands below |
 

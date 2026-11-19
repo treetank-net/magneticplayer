@@ -99,6 +99,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       [x] 2026-11-19, Pixel, v1.261119.2306: buffered E1/E2 show the "on the phone" icon, the dialog says "4 episodes,
       5.9 GB · 2 already there" for the season (not started).
 
+- [ ] Audio on the computer's screen (agent 1.13.3): a film/episode sent to mpv starts with the audio track picked
+      last on the phone (the same folder's choice first: "lector", "original", a language); the Remote's "Audio"
+      opens the same sheet as the phone's player (tracks by language, kind, channels, codec) and the pick there is
+      remembered too (the next episode on the phone or the screen starts with it).
+
 ## Magnets
 
 - [ ] A magnet without `dn=` (agent 1.13.1): the card says it waits for the name; once the client has the metadata
@@ -146,7 +151,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   more than is there). The check was fixed in agent 1.10.1; the two files only need a new shrink run on that folder.
 - [later] The folder browser plays a single file (no next-episode card, no queue); the catalog's series screen is the
   way to watch a series. An episode picker inside the player will cover the rest.
-- [todo] Audio choice on screens: mpv and Chromecast get the remembered kind of track (the phone part is done).
+- [~] Audio choice on screens: mpv done (agent 1.13.3, see "Catalog and Remote"); Chromecast still plays the file's
+  default track (its receiver switches tracks only in HLS/DASH, a direct file has one audio for it).
   Agreed sheet, for reference: a button next to CC, tracks grouped by language with the file's title
   (lector, dubbing, audio description, commentary), channels (5.1, stereo) and codec; the video pauses while open.
   The choice is remembered as a kind ("original", "Polish lector", "dubbing"), not a track number: per folder in a
