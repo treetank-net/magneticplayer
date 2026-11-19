@@ -157,7 +157,13 @@ fun CatalogArea(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, m
         }
     }
     var wish by remember(srvKey) { mutableStateOf<List<WishItem>?>(null) }
-    LaunchedEffect(srvKey) { wish = withContext(Dispatchers.IO) { runCatching { api.wishlist() }.getOrNull() } }
+    // shared with the other phones: re-read now and then, and whenever the screen changes
+    LaunchedEffect(srvKey, stack) {
+        while (true) {
+            withContext(Dispatchers.IO) { runCatching { api.wishlist() }.getOrNull() }?.let { wish = it }
+            delay(30_000)
+        }
+    }
     var rootTags by remember(srvKey) { mutableStateOf<Map<Int, List<String>>>(emptyMap()) }
     LaunchedEffect(srvKey) {
         rootTags = withContext(Dispatchers.IO) { runCatching { api.libraryRoots().associate { it.index to it.tags } }.getOrDefault(emptyMap()) }
@@ -540,7 +546,8 @@ private fun CoverGrid(c: CatCtx, list: List<CatItem>) {
 @Composable
 private fun TitleScreen(c: CatCtx, x: CatItem) {
     val cat = c.cat ?: return
-    val similar = remember(cat, x) { similar(cat, x) }
+    val ctx = LocalContext.current
+    val similar = remember(cat, x) { similar(ctx, cat, x) }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Box(Modifier.fillMaxWidth().height(300.dp)) {
@@ -595,18 +602,24 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
     }
 }
 
-/** Shared actors count most, then topics, then genres; the reason is the strongest link. */
-private fun similar(cat: CatalogData, x: CatItem): List<Pair<CatItem, String>> =
-    cat.items.asSequence().filter { it.id != x.id }.mapNotNull { y ->
+/** Shared actors and directors count most, then topics, then genres. Genres alone need two specific ones in common
+ *  ("Drama" says little), and kids' titles stay with kids' titles. The reason is the strongest link. */
+private fun similar(ctx: android.content.Context, cat: CatalogData, x: CatItem): List<Pair<CatItem, String>> =
+    cat.items.asSequence().filter { it.id != x.id && it.kids == x.kids }.mapNotNull { y ->
         val actors = x.cast.take(8).filter { it in y.cast }
+        val directors = x.directors.filter { it in y.directors }
         val topics = x.topics.filter { it in y.topics }
-        val genres = x.genres.filter { it in y.genres }
-        val score = actors.size * 3 + topics.size * 2 + genres.size
-        if (score < 2) return@mapNotNull null
-        val why = actors.firstOrNull()?.let { cat.person(it) } ?: topics.firstOrNull()?.let { cat.topics[it] } ?: genres.joinToString(", ")
+        val genres = x.genres.filter { it in y.genres && it !in GENERIC_GENRES }
+        val people = actors.size + directors.size
+        if (people == 0 && topics.isEmpty() && genres.size < 2) return@mapNotNull null
+        val score = people * 3 + topics.size * 2 + genres.size
+        val why = directors.firstOrNull()?.let { cat.person(it) } ?: actors.firstOrNull()?.let { cat.person(it) }
+            ?: topics.firstOrNull()?.let { cat.topics[it] } ?: genres.joinToString(", ") { genreLabel(ctx, it) }
         Triple(y, why, score)
     }.sortedWith(compareByDescending<Triple<CatItem, String, Int>> { it.third }.thenByDescending { it.first.rating ?: 0.0 })
         .take(12).map { it.first to it.second }.toList()
+
+private val GENERIC_GENRES = setOf("Drama")
 
 @Composable
 private fun ratingLine(year: Int?, minutes: Int?, rating: Double?, votes: Int?) = listOfNotNull(

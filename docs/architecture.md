@@ -284,6 +284,11 @@ No network or accounts; TMDB posters remain an option for later.
 Results are in `catalog.json` next to the configuration; `GET /api/catalog?since=<version>` returns only `same`
 when nothing changed.
 
+"Similar in your collection" on the title screen is computed by the app from the catalog: shared actors and
+directors, then topics, then genres. Genres alone need two specific ones in common ("Drama" doesn't count), and
+kids' titles are matched only with kids' titles. The shared want-to-watch list is re-read every 30 s and on every
+screen change, so a title added on another phone shows up without a restart.
+
 ### MCP for an AI assistant
 `mp_mcp.py`: the assistant (e.g. Claude Code on a computer in the LAN) is added with
 `claude mcp add --transport http magneticplayer http://<server>:8765/mcp`. The first call gets `401`, the client

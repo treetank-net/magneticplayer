@@ -70,6 +70,11 @@ FILM_TAGS = {"filmy", "bajki"}  # films for adults and for children: moving betw
 KEEP = 50  # finished tasks kept in tasks.json
 
 
+
+def _title(en, pl):
+    """A task title in the current language plus both versions, so a list read in the other language shows its own."""
+    return {"title": T(en, pl), "titles": {"en": en, "pl": pl}}
+
 class TaskError(Exception):
     def __init__(self, msg, status=400):
         super().__init__(msg)
@@ -166,8 +171,10 @@ class Tasks:
         return any(w["kind"] != "probe" for w in self.watching())
 
     def public(self, t):
-        out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc")} | {
+        out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc", "titles")} | {
             "items": [{k: v for k, v in i.items() if not k.startswith("_")} for i in t["items"]]}
+        if t.get("titles"):
+            out["title"] = t["titles"].get(mp_i18n.lang()) or t["title"]
         if t.get("enc"):
             out["encoder"] = self.encoder_label(t["enc"])
         if t.get("hold"):
@@ -290,7 +297,7 @@ class Tasks:
             raise TaskError(T("nothing selected", "nic nie wybrano"))
         for i in items:
             i["state"] = "pending"
-        t = {"id": secrets.token_hex(4), "kind": res["kind"], "title": res["title"], "state": "queued",
+        t = {"id": secrets.token_hex(4), "kind": res["kind"], "title": res["title"], "titles": res.get("titles"), "state": "queued",
              "created": time.time(), "started": None, "finished": None, "items": items,
              "total": sum(i["size"] for i in items), "done_bytes": 0, "current": None, "pct": 0,
              "saved": 0, "errors": 0, "lang": mp_i18n.lang(),
@@ -467,7 +474,7 @@ class Tasks:
                 chosen.append(pick)
                 freed += pick["size"]
             chosen.sort(key=lambda i: (i["root_name"], i["name"].lower()))
-            return {"kind": "move", "title": T(f"Free up {roots[root_index]['name']}", f"Zwolnij {roots[root_index]['name']}"),
+            return {"kind": "move", **_title(f"Free up {roots[root_index]['name']}", f"Zwolnij {roots[root_index]['name']}"),
                     "need": want, "free_before": u.free, "free_after": u.free + freed, "total": u.total,
                     "items": chosen, "bytes": freed, "skipped": skipped[:50]}
         return self._plan("move", run)
@@ -498,7 +505,7 @@ class Tasks:
                 if where == "self":
                     item["torrent"] = torrents[os.path.realpath(full)]
                 out.append(item)
-            return {"kind": "move", "title": T(f"Move {len(out)} items", f"Przenieś {len(out)} pozycji"),
+            return {"kind": "move", **_title(f"Move {len(out)} items", f"Przenieś {len(out)} pozycji"),
                     "items": out, "bytes": sum(i["size"] for i in out), "skipped": skipped}
         return self._plan("move", run)
 
@@ -575,7 +582,7 @@ class Tasks:
                         continue
                     items.append(dict(item, to_root_id=d["id"], to_root=d["index"], to_name=d["name"]))
             items.sort(key=lambda i: (i["unsure"], i["root_name"], i["name"].lower()))
-            return {"kind": "move", "title": T("Tidy up the library", "Porządki w bibliotece"), "checked": n,
+            return {"kind": "move", **_title("Tidy up the library", "Porządki w bibliotece"), "checked": n,
                     "items": items, "bytes": sum(i["size"] for i in items), "skipped": skipped[:100]}
         return self._plan("tidy", run)
 
@@ -650,7 +657,7 @@ class Tasks:
                                                        "path": os.path.relpath(fp, os.path.realpath(r["path"]))}
                                                       for r, fp in g]})
             out.sort(key=lambda g: -g["size"] * (len(g["files"]) - 1))
-            return {"kind": "dupes", "title": T("Duplicates", "Duplikaty"), "groups": out, "items": [],
+            return {"kind": "dupes", **_title("Duplicates", "Duplikaty"), "groups": out, "items": [],
                     "wasted": sum(g["size"] * (len(g["files"]) - 1) for g in out)}
         return self._plan("dupes", run)
 
@@ -673,7 +680,7 @@ class Tasks:
                                                          "jest jeszcze w kliencie torrentów: usuń go tam")))
                     continue
                 out.append(item)
-            return {"kind": "trash", "title": T(f"Delete {len(out)} items", f"Usuń {len(out)} pozycji"), "items": out,
+            return {"kind": "trash", **_title(f"Delete {len(out)} items", f"Usuń {len(out)} pozycji"), "items": out,
                     "bytes": sum(i["size"] for i in out), "skipped": skipped, "trash_days": self.trash_days()}
         return self._plan("trash", run)
 
@@ -786,7 +793,7 @@ class Tasks:
                         work_by[e] = work_by[e] + dur * h * h * 16 / 9 / sp if sp and work_by[e] is not None else None
             saved = sum(i["size"] - i["est"] for i in items)
             hours = sum(i["duration"] for i in items) / 3600
-            return {"kind": "shrink", "title": T(f"Shrink {r['name']}" + (f"/{rel}" if rel else ""),
+            return {"kind": "shrink", **_title(f"Shrink {r['name']}" + (f"/{rel}" if rel else ""),
                                                  f"Zmniejsz {r['name']}" + (f"/{rel}" if rel else "")),
                     "items": items, "bytes": sum(i["size"] for i in items), "est": sum(i["est"] for i in items),
                     "saved": saved, "hours": round(hours, 1), "encoder": self.encoder_label(enc), "encoder_id": enc,
