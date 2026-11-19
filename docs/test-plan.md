@@ -94,5 +94,12 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [idea] The catalog's "New on your disks" row: sometimes something else, e.g. a carousel "Because you watched <title>"
   (from the disks) or suggestions that are not on the disks (to download by magnet).
 - [idea] A library usable without the computer: the catalog cached on the phone (maybe without covers), with what is
-  downloaded marked and playable.
+  downloaded marked and playable. Moments when the phone reaches a server again are sync points: refresh the cached
+  catalog, send positions and watched marks made offline, refresh downloaded copies' subtitles.
+- [todo] "Continue watching": a series whose last watched episode was finished disappears (the row knows only
+  interrupted files). It should stay with the next episode ("Next: S01E05") until the series ends.
+- [todo] Two season 2 extras of one re-encoded series failed: their AVI originals are truncated (the header promises
+  more than is there). The check was fixed in agent 1.10.1; the two files only need a new shrink run on that folder.
+- [later] The folder browser plays a single file (no next-episode card, no queue); the catalog's series screen is the
+  way to watch a series. An episode picker inside the player will cover the rest.
 - [idea] Own audio track sheet (original / dubbing / lector) with a remembered preference.
