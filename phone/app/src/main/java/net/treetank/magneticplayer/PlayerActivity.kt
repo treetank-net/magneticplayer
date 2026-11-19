@@ -158,6 +158,8 @@ class PlayerActivity : ComponentActivity() {
         top.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
         val buttons = top.apply {
             if (nextEps.isNotEmpty()) addView(smallButton(getString(R.string.media_next_episode)) { playNext() })
+            if (Api.of(this@PlayerActivity, ref.srv) != null)  // searching needs the computer
+                addView(smallButton(getString(R.string.media_psubs_button)) { pickSubtitles() })
             addView(smallButton(getString(R.string.media_to_screen)) { handOffToPc() })
             addView(smallButton("VLC") {
                 player?.pause()
@@ -276,30 +278,8 @@ class PlayerActivity : ComponentActivity() {
                 subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
                 local = withContext(Dispatchers.IO) { localSubs(subs) }
             }
-            // default: per language the file that fits this copy of the film best (agent 1.9+), never one that doesn't fit
-            val rank = { s: SubFile -> when (s.fit) { "good" -> 0; null, "unsure" -> 1; else -> 2 } }
-            val defaults = subs.groupBy { it.lang.takeWhile { c -> c.isLetter() } }.values
-                .mapNotNull { g -> g.minByOrNull(rank)?.takeIf { it.fit != "bad" } }.toSet()
-                .ifEmpty { setOfNotNull(subs.firstOrNull()) }
-            val badMark = getString(R.string.media_subs_bad_mark)
-            val subConfigs = subs.mapNotNull { s ->
-                val mime = when (s.ext) {
-                    "srt" -> MimeTypes.APPLICATION_SUBRIP
-                    "ass", "ssa" -> MimeTypes.TEXT_SSA
-                    "vtt" -> MimeTypes.TEXT_VTT
-                    else -> null
-                } ?: return@mapNotNull null
-                MediaItem.SubtitleConfiguration.Builder(local[s.name] ?: Uri.parse(api.subUrl(ref, s.name)))
-                    .setMimeType(mime)
-                    .setLanguage(s.lang.takeWhile { it.isLetter() }.ifEmpty { null })
-                    .setLabel(s.name + when (s.fit) { "good" -> " ✓"; "bad" -> badMark; else -> "" })
-                    .setSelectionFlags(if (s in defaults) C.SELECTION_FLAG_DEFAULT else 0)
-                    .build()
-            }
-            p.setMediaItem(MediaItem.Builder().setUri(url).setCustomCacheKey(key)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(ref.title).build())
-                .setSubtitleConfigurations(subConfigs)
-                .build())
+            localSubUris = local
+            p.setMediaItem(buildItem())
             p.seekTo(start)
             p.prepare()
             p.playWhenReady = true
@@ -614,6 +594,122 @@ class PlayerActivity : ComponentActivity() {
             if (nextLeft <= 0) return playNext()
             nextLine?.text = getString(R.string.media_next_in, nextLeft)
             nextCancel?.visibility = android.view.View.VISIBLE
+        }
+    }
+
+    private var localSubUris: Map<String, Uri> = emptyMap()
+
+    /**
+     * The video with its subtitle files. Default per language: the file that fits this copy of the film best (agent
+     * 1.9+), never one that doesn't fit; [prefer] (a file just fetched from the player) alone when given.
+     */
+    private fun buildItem(prefer: String? = null): MediaItem {
+        val rank = { s: SubFile -> when (s.fit) { "good" -> 0; null, "unsure" -> 1; else -> 2 } }
+        val defaults = subs.firstOrNull { it.name == prefer }?.let { setOf(it) } ?: subs.groupBy { it.lang.takeWhile { c -> c.isLetter() } }.values
+            .mapNotNull { g -> g.minByOrNull(rank)?.takeIf { it.fit != "bad" } }.toSet()
+            .ifEmpty { setOfNotNull(subs.firstOrNull()) }
+        val badMark = getString(R.string.media_subs_bad_mark)
+        val subConfigs = subs.mapNotNull { s ->
+            val mime = when (s.ext) {
+                "srt" -> MimeTypes.APPLICATION_SUBRIP
+                "ass", "ssa" -> MimeTypes.TEXT_SSA
+                "vtt" -> MimeTypes.TEXT_VTT
+                else -> null
+            } ?: return@mapNotNull null
+            MediaItem.SubtitleConfiguration.Builder(localSubUris[s.name] ?: Uri.parse(api.subUrl(ref, s.name)))
+                .setMimeType(mime)
+                .setLanguage(s.lang.takeWhile { it.isLetter() }.ifEmpty { null })
+                .setLabel(s.name + when (s.fit) { "good" -> " ✓"; "bad" -> badMark; else -> "" })
+                .setSelectionFlags(if (s in defaults) C.SELECTION_FLAG_DEFAULT else 0)
+                .build()
+        }
+        return MediaItem.Builder().setUri(url).setCustomCacheKey(key)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(ref.title).build())
+            .setSubtitleConfigurations(subConfigs)
+            .build()
+    }
+
+    /** Languages offered by "Subtitles": the user's own (settings) first, then common ones. */
+    private fun subLanguageChoices(): List<String> =
+        (settings.subLanguages.split(',') + listOf("pl", "en", "de", "fr", "es", "it", "pt", "nl", "cs", "sk", "uk", "ru",
+            "sv", "no", "da", "fi", "hu", "ro", "hr", "tr", "el", "he", "ar", "ja", "ko", "zh"))
+            .map { it.trim().lowercase() }.filter { it.length in 2..3 }.distinct()
+
+    /** "Subtitles" in the player: a language, then the best fitting file found on the internet, turned on in place. */
+    private fun pickSubtitles() {
+        val codes = subLanguageChoices()
+        val ui = resources.configuration.locales[0]
+        val names = codes.map { c -> java.util.Locale(c).getDisplayLanguage(ui).replaceFirstChar { it.titlecase(ui) } }
+        android.app.AlertDialog.Builder(this).setTitle(R.string.media_psubs_pick_lang)
+            .setItems(names.toTypedArray()) { _, i -> fetchSubtitles(codes[i], names[i]) }
+            .show()
+    }
+
+    /**
+     * Searches (agent: OpenSubtitles & co.), then downloads the candidates best first until one fits this copy of the
+     * film (agent 1.9+ fits it to the speech; at most 3 tries), and reloads the video with it at the same position.
+     */
+    private fun fetchSubtitles(lang: String, langName: String) {
+        val p = player ?: return
+        val status = android.widget.TextView(this).apply {
+            val dp = resources.displayMetrics.density
+            setPadding((24 * dp).toInt(), (16 * dp).toInt(), (24 * dp).toInt(), 0)
+            text = getString(R.string.media_psubs_searching, langName)
+        }
+        var job: String? = null
+        val dlg = android.app.AlertDialog.Builder(this).setTitle(R.string.media_psubs_title).setView(status)
+            .setNegativeButton(R.string.media_next_cancel, null).show()
+        val work = lifecycleScope.launch {
+            try {
+                val id = withContext(Dispatchers.IO) { api.subsSearchStart(ref, langs = lang) }
+                job = id
+                var found: SubsFound? = null
+                for (n in 0 until 120) {  // up to ~2 minutes; BSPlayer can think for 45 s
+                    val pr = withContext(Dispatchers.IO) { api.subsJob(id) }
+                    if (pr.error != null) throw ApiException(pr.error)
+                    if (pr.done) { found = pr.found; break }
+                    delay(1_000)
+                }
+                val results = found?.results.orEmpty()
+                    .sortedWith(compareByDescending<SubResult> { it.hashMatch }.thenByDescending { it.score })
+                if (results.isEmpty()) {
+                    status.text = getString(R.string.media_psubs_none, langName)
+                    return@launch
+                }
+                var got: SubsDownloaded? = null
+                for ((k, r) in results.take(3).withIndex()) {
+                    status.text = getString(R.string.media_psubs_trying, k + 1, minOf(3, results.size), r.release.ifEmpty { r.provider })
+                    val d = withContext(Dispatchers.IO) { runCatching { api.subsDownload(ref, r, langs = lang) }.getOrNull() } ?: continue
+                    got = d
+                    if (d.fit != "bad") break
+                }
+                val d = got ?: run { status.text = getString(R.string.media_psubs_none, langName); return@launch }
+                subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(subs) }
+                localSubUris = withContext(Dispatchers.IO) { localSubs(subs) }
+                val pos = p.currentPosition
+                val playing = p.playWhenReady
+                // the new file on, even when subtitles were switched off or another language was picked by hand
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setPreferredTextLanguage(lang)
+                    .build()
+                p.setMediaItem(buildItem(prefer = d.name), pos)
+                p.prepare()
+                p.playWhenReady = playing
+                dlg.dismiss()
+                Toast.makeText(this@PlayerActivity, getString(when (d.fit) {
+                    "bad" -> R.string.media_psubs_on_bad; "good" -> R.string.media_psubs_on_good; else -> R.string.media_psubs_on
+                }, d.name), Toast.LENGTH_LONG).show()
+            } catch (e: ApiException) {
+                status.text = e.message
+            }
+        }
+        dlg.setOnDismissListener {
+            if (work.isActive) {
+                work.cancel()
+                job?.let { j -> Thread { runCatching { api.subsStop(j) } }.start() }
+            }
         }
     }
 

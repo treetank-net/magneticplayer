@@ -691,14 +691,14 @@ class Api(val s: Settings, val srv: Server) {
 
     fun subUrl(ref: MediaRef, name: String) = "$base/sub?${ref.query()}&name=${Uri.encode(name)}&token=${Uri.encode(srv.token)}"
 
-    private fun subsBody(ref: MediaRef, title: String?, year: Int?) = ref.json().put("languages", s.subLanguages).apply {
+    private fun subsBody(ref: MediaRef, title: String?, year: Int?, langs: String? = null) = ref.json().put("languages", langs ?: s.subLanguages).apply {
         if (!title.isNullOrBlank()) put("title", title.trim())
         if (year != null) put("year", year)
     }
 
     /** Starts a background search; progress via [subsJob]. */
-    fun subsSearchStart(ref: MediaRef, title: String? = null, year: Int? = null): String =
-        JSONObject(call("POST", "/api/subs/search", subsBody(ref, title, year).put("async", true))).getString("job")
+    fun subsSearchStart(ref: MediaRef, title: String? = null, year: Int? = null, langs: String? = null): String =
+        JSONObject(call("POST", "/api/subs/search", subsBody(ref, title, year, langs).put("async", true))).getString("job")
 
     /** "Enough": the agent stops waiting for slow sources and returns what it already has. */
     fun subsStop(id: String) {
@@ -727,9 +727,9 @@ class Api(val s: Settings, val srv: Server) {
     }
 
     /** Downloads subtitles; agent 1.9+ then fits them to the film's speech while we wait (~30 s the first time). */
-    fun subsDownload(ref: MediaRef, r: SubResult, title: String? = null, year: Int? = null): SubsDownloaded {
+    fun subsDownload(ref: MediaRef, r: SubResult, title: String? = null, year: Int? = null, langs: String? = null): SubsDownloaded {
         val fit = srv.hasSubsFit
-        val body = subsBody(ref, title, year).put("id", r.id).put("provider", r.provider).apply { if (fit) put("fit", "wait") }
+        val body = subsBody(ref, title, year, langs).put("id", r.id).put("provider", r.provider).apply { if (fit) put("fit", "wait") }
         val o = JSONObject(call("POST", "/api/subs/download", body, if (fit) 240000 else 90000))
         val f = o.optJSONObject("fit")
         return SubsDownloaded(o.optString("name"), f?.optStr("verdict"), f?.optBoolean("changed") ?: false)

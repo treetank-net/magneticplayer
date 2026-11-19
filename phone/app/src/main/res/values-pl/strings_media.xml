@@ -261,4 +261,14 @@
         <item quantity="many">%1$d ukrytych podkatalogów</item>
         <item quantity="other">%1$d ukrytego podkatalogu</item>
     </plurals>
+    <!-- "Napisy" w odtwarzaczu -->
+    <string name="media_psubs_button">Napisy</string>
+    <string name="media_psubs_pick_lang">Szukaj napisów po</string>
+    <string name="media_psubs_title">Napisy</string>
+    <string name="media_psubs_searching">Szukam napisów: %1$s…</string>
+    <string name="media_psubs_trying">Sprawdzam %1$d z %2$d: %3$s</string>
+    <string name="media_psubs_none">Nie znalazłem napisów: %1$s.</string>
+    <string name="media_psubs_on">Napisy włączone: %1$s</string>
+    <string name="media_psubs_on_good">Napisy włączone, pasują do Twojej kopii: %1$s</string>
+    <string name="media_psubs_on_bad">Żadne ze znalezionych napisów nie pasują dobrze do Twojej kopii; włączone mimo to: %1$s</string>
 </resources>
