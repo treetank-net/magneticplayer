@@ -78,7 +78,7 @@
     <string name="main_screen_not_responding">%1$s nie odpowiada.</string>
     <string name="main_not_responding">%1$s nie odpowiada</string>
     <string name="main_nothing_on_screen">Na ekranie %1$s nic nie gra.</string>
-    <string name="main_pick_video_hint">Wybierz film w zakładce Torrenty albo Biblioteka → przycisk ekranu.</string>
+    <string name="main_pick_video_hint">Wybierz film w Bibliotece albo w Pobieraniu → przycisk ekranu.</string>
     <string name="main_loading">wczytuje…</string>
     <string name="main_cd_pause">pauza</string>
     <string name="main_cd_play">graj</string>

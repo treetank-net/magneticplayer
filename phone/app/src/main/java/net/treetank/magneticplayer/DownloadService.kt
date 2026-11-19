@@ -165,6 +165,12 @@ class DownloadService : Service() {
                     if (missing > noBackupFilesDir.usableSpace - (500L shl 20)) throw NoSpaceException(getString(R.string.media_dl_no_space, humanBytes(missing)))
                     spaceChecked = true
                 }
+                // the tail first (the container's index: MKV Cues, MP4 moov): an interrupted download then plays offline
+                // as far as it got
+                val tail = minOf(size, 4L shl 20)
+                if (cache.getCachedBytes(key, size - tail, tail) < tail && headProbe(url, size - tail).second >= size) {
+                    CacheWriter(writer, DataSpec.Builder().setUri(url).setKey(key).setPosition(size - tail).setLength(tail).build(), null, null).cache()
+                }
                 var at = 0L
                 var waiting = false
                 while (at < size && key !in cancelled) {

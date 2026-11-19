@@ -63,6 +63,8 @@ class PlayerActivity : ComponentActivity() {
         /** the timing bar saves the shift after this long without a tap */
         private const val SYNC_IDLE_MS = 8_000L
         private const val OFFER_MS = 12_000L
+        /** the end of the file kept with every buffer (the container's index lives there) */
+        private const val TAIL_BYTES = 4L shl 20
 
         /** [imdb]: a film from the catalog; after it is watched to the end the app offers "What next".
          *  [next]: the following episodes of a series (same library folder): "Next episode" and a countdown at the end. */
@@ -464,6 +466,7 @@ class PlayerActivity : ComponentActivity() {
     private fun prefetch(p: ExoPlayer): Job = lifecycleScope.launch(Dispatchers.IO) {
         val cache = MediaCache.get(this@PlayerActivity)
         val writer = CacheDataSource(cache, http.createDataSource())
+        var tailDone = false
         while (isActive) {
             val (pos, dur) = withContext(Dispatchers.Main) { p.currentPosition to p.duration }
             if (dur <= 0) { delay(2_000); continue }
@@ -472,6 +475,15 @@ class PlayerActivity : ComponentActivity() {
                 fileSize = size
                 OfflineStore.update(this@PlayerActivity, key) { it.copy(size = size) }
                 MediaCache.setLength(this@PlayerActivity, key, size)
+                // the file's tail first: MKV keeps its index (Cues) and many MP4s their moov at the end, and the player
+                // reads it before the first frame; without it a buffer does not start offline ("stuck buffering")
+                if (!tailDone) {
+                    val tail = minOf(size, TAIL_BYTES)
+                    if (headProbe(url, size - tail).second >= size) {
+                        cacheRange(cache, writer, size - tail, size)
+                        tailDone = true
+                    }
+                }
                 val perMs = size.toDouble() / dur
                 val from = ((pos - 30_000).coerceAtLeast(0) * perMs).toLong().coerceIn(0, size - 1)
                 val readyEnd = headProbe(url, from).second
@@ -488,6 +500,18 @@ class PlayerActivity : ComponentActivity() {
                 false
             }.getOrElse { false }
             if (!worked) delay(3_000)
+        }
+    }
+
+    /** Writes the bytes [from, to) of the video to the disk buffer, skipping what is already there. */
+    private fun cacheRange(cache: androidx.media3.datasource.cache.Cache, writer: CacheDataSource, from: Long, to: Long) {
+        var at = from
+        while (at < to) {
+            val cached = cache.getCachedLength(key, at, to - at)
+            if (cached > 0) { at += cached; continue }
+            val len = minOf(-cached, to - at)
+            CacheWriter(writer, DataSpec.Builder().setUri(url).setKey(key).setPosition(at).setLength(len).build(), null, null).cache()
+            at += len
         }
     }
 
