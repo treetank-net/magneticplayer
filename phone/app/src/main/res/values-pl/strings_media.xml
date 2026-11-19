@@ -273,4 +273,6 @@
     <string name="media_psubs_off">Wyłączone</string>
     <string name="media_psubs_download">⬇ Pobierz: %1$s</string>
     <string name="media_psubs_download_other">⬇ Pobierz w innym języku…</string>
+    <string name="media_psubs_embedded">(wbudowane)</string>
+    <string name="media_psubs_unknown_lang">Nieznany język</string>
 </resources>

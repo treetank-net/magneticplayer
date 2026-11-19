@@ -682,9 +682,25 @@ class PlayerActivity : ComponentActivity() {
         actions += {
             p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
         }
-        for (g in groups) {
+        // the language first; our files: their fit mark, numbered when one language has several; built-in tracks: their
+        // own title is often the release group's ad ("Encoded by…"), so "(built in)" instead
+        val names = groups.map { g ->
             val f = g.getTrackFormat(0)
-            labels += mark(g.isSelected) + (f.label ?: f.language?.let { langName(it) } ?: "?")
+            val file = subs.firstOrNull { f.label?.startsWith(it.name) == true }
+            val lang = f.language?.let { langName(it) } ?: file?.let { getString(R.string.media_psubs_unknown_lang) }
+                ?: f.label?.take(40) ?: getString(R.string.media_psubs_unknown_lang)
+            lang to when {
+                file == null -> " " + getString(R.string.media_psubs_embedded)
+                file.fit == "good" -> " ✓"
+                file.fit == "bad" -> getString(R.string.media_subs_bad_mark)
+                else -> ""
+            }
+        }
+        val dup = names.groupingBy { it.first }.eachCount()
+        val seen = mutableMapOf<String, Int>()
+        for ((g, n) in groups.zip(names)) {
+            val k = seen.merge(n.first, 1, Int::plus)!!
+            labels += mark(g.isSelected) + n.first + (if ((dup[n.first] ?: 0) > 1) " $k" else "") + n.second
             actions += {
                 p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
