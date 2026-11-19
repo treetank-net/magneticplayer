@@ -60,10 +60,12 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Reported: playing something from "On the phone" outside seemed to fail ("the phone refused"). Reproduce in the
       emulator (download a short video, then `svc wifi disable` / `svc data disable`): the player must start from
       the phone's disk, with the saved subtitles, without errors or long waits.
-- [ ] Found 2026-11-19 on the emulator (v1.261119.2229): a watching buffer of an MKV did not start offline
+- [x] Found 2026-11-19 on the emulator (v1.261119.2229): a watching buffer of an MKV did not start offline
       ("Playback stuck buffering and not loading", black, 00:00): the player reads the index (Cues) at the file's end,
       and buffers held only the start. Fixed: the buffer (and a download, before the rest) takes the last 4 MB first.
-      Check: watch a few minutes of an MKV online, close, airplane mode, play it from "On the phone".
+      [x] 2026-11-19, emulator, v1.261119.2327: an MKV episode watched ~1 min online (the new build took the tail first),
+      then airplane mode: it plays from "On the phone" (picture, 24:11 duration). An episode buffered by an older build
+      (no tail) still sticks: watch it once online to fix it.
 - [ ] No "No subtitles, download?" bar and no auto-fetch attempt when the computer cannot be reached.
 - [ ] The app's other tabs without the computer: no error dialogs piling up, a clear "not reachable" state.
 
