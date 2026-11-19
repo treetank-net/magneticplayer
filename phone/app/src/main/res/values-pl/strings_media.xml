@@ -271,8 +271,10 @@
     <string name="media_psubs_on_good">Napisy włączone, pasują do Twojej kopii: %1$s</string>
     <string name="media_psubs_on_bad">Żadne ze znalezionych napisów nie pasują dobrze do Twojej kopii; włączone mimo to: %1$s</string>
     <string name="media_psubs_off">Wyłączone</string>
-    <string name="media_psubs_download">⬇ Pobierz: %1$s</string>
-    <string name="media_psubs_download_other">⬇ Pobierz w innym języku…</string>
+    <string name="media_psubs_download">Pobierz: %1$s</string>
+    <string name="media_psubs_earlier">Wcześniejsza wersja, %1$s %2$s</string>
+    <string name="media_psubs_plain">Wersja bez opisu</string>
+    <string name="media_psubs_download_other">Pobierz w innym języku…</string>
     <string name="media_psubs_embedded">(wbudowane)</string>
     <string name="media_psubs_unknown_lang">Nieznany język</string>
     <string name="media_psubs_back">Wstecz</string>

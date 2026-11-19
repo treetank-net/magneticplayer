@@ -81,7 +81,10 @@ fun langName(code: String, ui: java.util.Locale = java.util.Locale.getDefault())
     java.util.Locale(code).getDisplayLanguage(ui).replaceFirstChar { it.titlecase(ui) }.ifEmpty { code }
 
 /** A subtitle track inside the video (the phone's player only). */
-data class EmbeddedSub(val index: Int, val lang: String?, val selected: Boolean)
+data class EmbeddedSub(val index: Int, val lang: String?, val selected: Boolean) {
+    /** the language code, "" when unknown ("und", "mul", "zxx" or none) */
+    val langKey: String get() = (lang ?: "").takeWhile { it.isLetter() }.lowercase().let { if (it in setOf("und", "mul", "zxx")) "" else it }
+}
 
 sealed class SubPick {
     data object Off : SubPick()
@@ -284,12 +287,12 @@ private fun Languages(
     if (embedded != null) SheetRow(stringResource(R.string.media_psubs_off), onClick = onOff,
         leading = { RadioButton(offSelected, onOff) })
     val mine = api.s.subLanguages.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }
-    val present = (files.map { it.langKey } + embedded.orEmpty().map { (it.lang ?: "").takeWhile { c -> c.isLetter() }.lowercase() })
+    val present = (files.map { it.langKey } + embedded.orEmpty().map { it.langKey })
         .distinct().sortedBy { l -> mine.indexOf(l).let { if (it < 0) 99 else it } }
     for (lang in present) {
         val fs = files.filter { it.langKey == lang }
         val def = fs.firstOrNull { it.default } ?: fs.firstOrNull()
-        val emb = embedded.orEmpty().filter { (it.lang ?: "").takeWhile { c -> c.isLetter() }.lowercase() == lang }
+        val emb = embedded.orEmpty().filter { it.langKey == lang }
         val on = fs.any { it.name == selectedFile } || emb.any { it.selected }
         val count = fs.size + emb.size
         val sub = listOfNotNull(
@@ -320,13 +323,18 @@ private fun Languages(
 }
 
 /** A file's label: the release it came from, else its name without the video's name and the language. */
+@Composable
 private fun versionLabel(f: SubFile, videoStem: String?): String {
     f.source?.release?.takeIf { it.isNotBlank() }?.let { return it }
     var n = f.name.substringAfterLast('/')
     n = n.substringBeforeLast('.')  // .srt
-    if (videoStem != null && n.startsWith(videoStem)) n = n.removePrefix(videoStem).trim('.', ' ').ifEmpty { f.name.substringAfterLast('/') }
-    if (f.langKey.isNotEmpty() && n.endsWith("." + f.lang)) n = n.removeSuffix("." + f.lang)
-    return n.ifEmpty { f.name.substringAfterLast('/') }
+    if (videoStem != null && n.startsWith(videoStem)) n = n.removePrefix(videoStem).trim('.', ' ')
+    if (f.langKey.isNotEmpty() && (n == f.lang || n.endsWith("." + f.lang))) n = n.removeSuffix(f.lang).trimEnd('.')
+    // the agent's tag for a version it moved aside without knowing its source: earlier-YYYYMMDD-HHMM
+    Regex("""earlier-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(-\d+)?""").matchEntire(n)?.groupValues?.let { g ->
+        return stringResource(R.string.media_psubs_earlier, "${g[3].toInt()}.${g[2]}.${g[1]}", "${g[4]}:${g[5]}")
+    }
+    return n.ifEmpty { stringResource(R.string.media_psubs_plain) }  // a bare <video>.pl.srt
 }
 
 @Composable
@@ -354,7 +362,7 @@ private fun LanguagePage(
             leading = { RadioButton(on, { onChoose(f) }) },
             subtitleColor = if (f.fit == "bad") MaterialTheme.colorScheme.error else if (f.fit == "good") GREEN else null)
     }
-    embedded.orEmpty().filter { (it.lang ?: "").takeWhile { c -> c.isLetter() }.lowercase() == lang }.forEach { e ->
+    embedded.orEmpty().filter { it.langKey == lang }.forEach { e ->
         SheetRow(stringResource(R.string.media_psubs_embedded_track, e.index + 1), onClick = { onTrack(e.index) },
             leading = { RadioButton(e.selected, { onTrack(e.index) }) })
     }

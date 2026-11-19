@@ -261,8 +261,10 @@
     <string name="media_psubs_on_good">Subtitles on, they fit your copy: %1$s</string>
     <string name="media_psubs_on_bad">None of the found subtitles fit your copy well; on anyway: %1$s</string>
     <string name="media_psubs_off">Off</string>
-    <string name="media_psubs_download">⬇ Download: %1$s</string>
-    <string name="media_psubs_download_other">⬇ Download in another language…</string>
+    <string name="media_psubs_download">Download: %1$s</string>
+    <string name="media_psubs_earlier">Earlier version, %1$s %2$s</string>
+    <string name="media_psubs_plain">Version without a description</string>
+    <string name="media_psubs_download_other">Download in another language…</string>
     <string name="media_psubs_embedded">(built in)</string>
     <string name="media_psubs_unknown_lang">Unknown language</string>
     <string name="media_psubs_back">Back</string>
