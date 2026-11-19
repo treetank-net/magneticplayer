@@ -209,6 +209,17 @@ class Store:
             return r
         return None
 
+    def move(self, old, new, copy=False):
+        """The assessment follows a file moved (or copied) to another name: same content, same size and mtime."""
+        with _rec_lock:
+            r = self.rec.get(os.path.realpath(old))
+            if r is None:
+                return
+            if not copy:
+                self.rec.pop(os.path.realpath(old), None)
+            self.rec[os.path.realpath(new)] = r
+            self._save()
+
     def _remember(self, sub_path, res):
         st = os.stat(sub_path)
         with _rec_lock:

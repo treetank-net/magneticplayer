@@ -52,8 +52,9 @@ from mp_library import Library, LibError, media_kind, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt
 import mp_subsync
 import mp_segments
+import mp_subfiles
 
-VERSION = "1.11.1"
+VERSION = "1.12.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -832,6 +833,7 @@ class App:
         self.library = Library(cfg, lambda: save_config(cfg), self._default_dirs)
         self.subs = Subtitles(cfg, lambda: save_config(cfg))
         self.subsync = mp_subsync.Store(CONFIG_DIR, log)
+        self.subsources = mp_subfiles.Sources(CONFIG_DIR)  # where each subtitle file came from (agent 1.12+)
         self.segments = mp_segments.Segments(log)
         self.jobs = Jobs(os.path.join(CONFIG_DIR, "jobs.json"), log)
         self.devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
@@ -995,7 +997,7 @@ class App:
                 "library_tasks": True,
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
-                "library_episodes": True, "segments": mp_segments.available(),  # intro / credits (agent 1.11+)
+                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True,  # intro / credits (agent 1.11+)
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
@@ -1674,6 +1676,9 @@ class Handler(BaseHTTPRequestHandler):
                     r = a.subsync.get(sp)
                     if r:  # fitted or assessed before (agent 1.9+): good / unsure / bad for this copy of the film
                         x["fit"] = {"verdict": r["verdict"], "z": r["z"]}
+                    src = a.subsources.get(sp)
+                    if src:  # downloaded by the agent (1.12+): search results it matches are marked "you have it"
+                        x["source"] = {"provider": src["provider"], "id": src["id"], "release": src.get("release", "")}
                     out.append(x)
                 return self.send_json(out)
             if p == "/sub" and method in ("GET", "HEAD"):
@@ -1705,8 +1710,13 @@ class Handler(BaseHTTPRequestHandler):
                 b = self.body()
                 full = a.resolve_ref(b)
                 langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
+                # the new file becomes the default of its language; the current default moves to Subtitles/
                 res = a.subs.download(full, str(b["id"]), b["provider"], langs, (b.get("title") or "").strip() or None,
-                                      b.get("year") or None)
+                                      b.get("year") or None, place=lambda target, src: mp_subfiles.place(
+                                          full, target, src, a.subsources, a.tasks.torrent_owned, a.subsync.move))
+                if res.get("path"):
+                    a.subsources.put(res["path"], b["provider"], b["id"], res.get("release"))
+                res.pop("path", None)
                 # fitted to this copy of the film (agent 1.9+): "fit": "wait" (the app waits, ~30 s the first time for a
                 # film) returns the outcome in "fit"; otherwise it happens in the background
                 fit = res.get("name") and mp_subsync.available()
@@ -1722,6 +1732,19 @@ class Handler(BaseHTTPRequestHandler):
                     threading.Thread(target=bind(a.fit_subs), args=(full, res["name"]), daemon=True).start()
                     res["fit"] = {"verdict": "pending"}
                 return self.send_json(res)
+            if p == "/api/subs/default" and method == "POST":  # this version becomes its language's default (1.12+)
+                b = self.body()
+                full = a.resolve_ref(b)
+                if b.get("name") not in {x["name"] for x in sidecar_subs(full)}:
+                    raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
+                try:
+                    name = mp_subfiles.promote(full, b["name"], a.subsources, a.tasks.torrent_owned, a.subsync.move)
+                except mp_subfiles.FileError as e:
+                    raise ApiError(str(e), e.status)
+                except OSError as e:
+                    raise ApiError(e.strerror or str(e), 500)
+                mp_library.forget_names()
+                return self.send_json({"name": name})
             if p == "/api/subs/fit" and method == "POST":  # one subtitle file next to the video (agent 1.9+)
                 b = self.body()
                 full = a.resolve_ref(b)

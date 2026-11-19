@@ -367,7 +367,10 @@ class Subtitles:
         if not s.content:
             raise SubsError(T("OpenSubtitles returned no subtitles", "OpenSubtitles nie oddał napisów"), 502)
 
-    def download(self, full, sub_id, provider, languages=("en",), title=None, year=None):
+    def download(self, full, sub_id, provider, languages=("en",), title=None, year=None, place=None):
+        """Downloads one result and saves it as `<name>.<lang>.srt` next to the video. `place(path)` (agent 1.12+,
+        mp_subfiles) may first move the current default away and returns where to write: that path, or another one
+        (Subtitles/…) when the default can't move. Returns {"name" (relative to the video's folder), "provider"}."""
         sl, _ = _subliminal()
         key = f"{provider}:{sub_id}"
         with self.lock:
@@ -391,14 +394,23 @@ class Subtitles:
             raise SubsError(T("these subtitles are empty (a broken upload at the provider) — pick others",
                               "te napisy są puste (zepsuty plik u dostawcy) — wybierz inne"), 422)
         before = time.time() - 1
+        d = os.path.dirname(full)
         try:
+            target = s.get_path(v)
+            if place is not None:
+                where = place(target, {"provider": provider, "id": str(sub_id), "release": str(s.info or "")})
+                if where != target:
+                    os.makedirs(os.path.dirname(where), exist_ok=True)
+                    with open(where, "w", encoding="utf-8") as f:
+                        f.write(s.text)
+                    return {"name": os.path.relpath(where, d), "provider": provider, "path": where, "release": str(s.info or "")}
             sl.save_subtitles(v, [s], encoding="utf-8")
         except OSError as e:
             raise SubsError(T(f"can't save subtitles next to the video: {e.strerror}",
                               f"nie da się zapisać napisów obok filmu: {e.strerror}"), 500)
-        d = os.path.dirname(full)
         stem = os.path.splitext(os.path.basename(full))[0]
         saved = sorted((n for n in os.listdir(d) if n.startswith(stem) and n != os.path.basename(full)
                         and os.path.getmtime(os.path.join(d, n)) >= before),
                        key=lambda n: os.path.getmtime(os.path.join(d, n)))
-        return {"name": saved[-1] if saved else None, "provider": provider}
+        return {"name": saved[-1] if saved else None, "provider": provider,
+                "path": os.path.join(d, saved[-1]) if saved else None, "release": str(s.info or "")}

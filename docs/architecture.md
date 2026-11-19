@@ -228,6 +228,15 @@ Results are sorted by the language order from the settings, then by score, and t
 them right away with `sub-add`. An SRT where nearly every cue lasts zero time or has no text (such uploads exist on
 OpenSubtitles, even with a hash match) is refused with 422 instead of being saved. Sidecar subtitles match the video
 name case-insensitively (`Le film.srt` next to `Le Film.avi`), and so do the companions moved with a video.
+**Versions (agent 1.12+, `mp_subfiles`):** the default version of a language is the one used last, as
+`<name>.<lang>.srt` next to the video (what mpv, VLC, TVs, Jellyfin and Plex find by themselves). Other versions wait in
+`Subtitles/<name>.<source>.<lang>.srt` (source = provider and release, telling them apart; the video's name in front
+ties them to one episode of a season folder, so other episodes don't list them). Downloading moves the current
+default there instead of overwriting it; `POST /api/subs/default` swaps a version back. Where each file came from
+(provider, id, release) is kept in `subs-sources.json` (the app marks search results the user already has), and the
+fitting assessments move with the files. A seeding torrent's file is never moved: a new download then goes to
+`Subtitles/`, and picking a torrent's own file copies it. Torrent layouts (`Subs/English.srt`, `Subs/<name>/2_English.srt`)
+are still listed as versions.
 `/sub` serves every `.srt` as UTF-8 SubRip (`mp_subs.readable_srt`): many files named `.srt` are really MicroDVD
 (`{frame}{frame}text`, frame rate from the `{1}{1}25.000` line or the video), MPL2 or TMPlayer, often in cp1250. mpv
 reads those itself, but the phone and browsers showed nothing. The file on disk is not changed. A text `.sub`

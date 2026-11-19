@@ -77,22 +77,28 @@ def media_kind(name):
 
 
 def sidecar_subs(full):
-    """Subtitles next to the movie: <name>.srt, <name>.pl.srt etc."""
+    """Subtitles of the movie. Next to it (<name>.srt, <name>.pl.srt…): the default version of each language
+    ("default": True). In a subfolder: other versions (agent 1.12+: Subtitles/<name>.<source>.pl.srt, see
+    mp_subfiles) and what torrents bring (Subs/English.srt, Subs/<name>/2_English.srt)."""
     d, base = os.path.split(full)
     stem = os.path.splitext(base)[0]
+    sl = stem.lower()
     out = []
     try:
-        for n in sorted(os.listdir(d)):
-            s, ext = os.path.splitext(n)
-            # case-insensitive: "Le film.srt" next to "Le Film.avi" belongs to it too
-            if ext.lower() in SUB_EXT and (s.lower() == stem.lower() or s.lower().startswith(stem.lower() + ".")):
-                lang = s[len(stem) + 1:] if len(s) > len(stem) else ""
-                out.append({"name": n, "lang": lang, "ext": ext.lower()[1:]})
+        listing = sorted(os.listdir(d))
     except OSError:
-        pass
-    # torrents: Subs/English.srt or Subs/<name>/2_English.srt (name with a path relative to the movie directory)
+        listing = []
+    for n in listing:
+        s, ext = os.path.splitext(n)
+        # case-insensitive: "Le film.srt" next to "Le Film.avi" belongs to it too
+        if ext.lower() in SUB_EXT and (s.lower() == sl or s.lower().startswith(sl + ".")):
+            lang = s[len(stem) + 1:] if len(s) > len(stem) else ""
+            out.append({"name": n, "lang": lang, "ext": ext.lower()[1:], "default": True})
+    # other videos of the folder (a season): a subfolder file named after one of them belongs only to that one
+    others = [os.path.splitext(n)[0].lower() for n in listing
+              if os.path.splitext(n)[1].lower() in VIDEO_EXT and os.path.splitext(n)[0].lower() != sl]
     seen = set()  # NTFS/exFAT: "subs" and "Subs" are the same directory
-    for sd in ("Subs", "subs", "Subtitles", "subtitles", "Sub", "sub"):
+    for sd in ("Subtitles", "subtitles", "Subs", "subs", "Sub", "sub"):
         for rel in (sd, os.path.join(sd, stem)):
             try:
                 real = os.path.join(d, rel)
@@ -105,9 +111,23 @@ def sidecar_subs(full):
                 continue
             for n in names:
                 s, ext = os.path.splitext(n)
-                if ext.lower() in SUB_EXT and os.path.isfile(os.path.join(d, rel, n)):
-                    out.append({"name": os.path.join(rel, n), "lang": _lang_guess(s), "ext": ext.lower()[1:]})
+                if ext.lower() not in SUB_EXT or not os.path.isfile(os.path.join(d, rel, n)):
+                    continue
+                low = s.lower()
+                if low.startswith(sl + "."):  # ours: <name>.<source>.<lang>
+                    lang = _lang_tail(s)
+                elif rel == sd and any(low == o or low.startswith(o + ".") for o in others):
+                    continue  # another episode's
+                else:
+                    lang = _lang_guess(s)
+                out.append({"name": os.path.join(rel, n), "lang": lang, "ext": ext.lower()[1:], "default": False})
     return out
+
+
+def _lang_tail(s):
+    """"Film.opensubtitles-ION10.pl" → "pl" (the last part when it looks like a language code), else ""."""
+    t = s.rsplit(".", 1)[-1] if "." in s else ""
+    return t if re.fullmatch(r"[a-z]{2,3}(-[A-Za-z]{2,4})?", t) else ""
 
 
 _LANGS = {"english": "en", "eng": "en", "polish": "pl", "pol": "pl", "polski": "pl", "german": "de", "french": "fr",
