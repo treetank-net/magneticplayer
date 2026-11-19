@@ -89,6 +89,10 @@
     <string name="lib_notif_channel">Library tasks</string>
     <string name="lib_notif_cancelled">Cancelled</string>
 
+    <plurals name="lib_disk_folders">
+        <item quantity="one">%1$d library folder</item>
+        <item quantity="other">%1$d library folders</item>
+    </plurals>
     <plurals name="lib_files">
         <item quantity="one">%1$d file</item>
         <item quantity="other">%1$d files</item>

@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -347,7 +348,14 @@ private fun DiskCard(disk: Disk, roots: Map<Int, LibRoot>, onAdd: () -> Unit, on
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (disk.roots.isNotEmpty() && used > 0.85f && lib < other) Text(stringResource(R.string.lib_disk_mostly_other, humanBytes(lib)),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 2.dp))
-            disk.roots.forEach { r ->
+            // a disk with many library folders takes the whole screen: the list starts folded
+            var open by rememberSaveable(disk.mount) { mutableStateOf(disk.roots.size <= 2) }
+            if (disk.roots.size > 2) Row(Modifier.padding(top = 6.dp).clickable { open = !open }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, Modifier.size(18.dp))
+                Text(pluralStringResource(R.plurals.lib_disk_folders, disk.roots.size, disk.roots.size), style = MaterialTheme.typography.labelMedium)
+            }
+            if (open) disk.roots.forEach { r ->
                 Column(Modifier.padding(top = 8.dp)) {
                     Text(r.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val parts = buildList {

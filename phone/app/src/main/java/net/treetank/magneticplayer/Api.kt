@@ -837,7 +837,7 @@ fun humanBytes(b: Long): String {
     var v = b / 1024.0
     var i = 0
     while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
-    return String.format(java.util.Locale.ROOT, if (v < 10) "%.1f %s" else "%.0f %s", v, units[i])
+    return String.format(java.util.Locale.getDefault(), if (v < 10) "%.1f %s" else "%.0f %s", v, units[i])
 }
 
 fun humanTime(sec: Long): String = when {
