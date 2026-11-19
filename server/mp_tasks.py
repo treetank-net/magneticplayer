@@ -756,7 +756,13 @@ class Tasks:
             items, have = [], 0
             for k, (r, full) in enumerate(files):
                 p["progress"] = int(100 * k / max(len(files), 1))
-                got = {_lang2(x.get("lang")) for x in mp_library.sidecar_subs(full)}
+                side = mp_library.sidecar_subs(full)
+                # a file without a language in its name ("Film.srt"): the language from its text, so a film that has
+                # subtitles is not counted as missing them (each download uses up the daily OpenSubtitles limit)
+                got = set()
+                for x in side:
+                    code = _lang2(x.get("lang"))
+                    got.add(code if len(code) == 2 else mp_library.text_lang(os.path.join(os.path.dirname(full), x["name"])))
                 try:
                     import mp_media
                     got |= {_lang2(s.get("lang")) for s in (mp_media.probe(full).get("subs") or [])}

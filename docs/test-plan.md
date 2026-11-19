@@ -117,6 +117,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       series' episode, the subtitles icon in a folder, "Get subtitles" on the disks screen. Languages to pick, a preview
       of what lacks them (a folder/library) or a snackbar with the count (a film/series); the task in Tasks downloads
       and fits one by one, `note` per video; videos that already have the language (file or track) are left out.
+      [x] 2026-11-19 (emulator, v1.261119.2306): "Get subtitles" shows on the disks screen; library preview with EN:
+      1614 items with the missing language and folder (not started).
+      Agent 1.13.2: a sidecar without a language in its name ("Film.srt") counts by its text's language (common words);
+      [x] checked on jmpc's files (en/pl/fr/es/de/nl/cs right, Danish/Finnish left unsure) and by the plan API: a
+      film with an untagged Polish .srt is gone from the "pl" list and still on the "en" one.
       Found 2026-11-19: "Get subtitles" missing on the disks screen although the agent had `subs_get_task` — the app
       read capabilities once per process, and screens kept the older copy. Fixed: capabilities are re-read when the
       agent's version (from ping) changes, and `Api.srv` is refreshed by `info()`. Check again after an agent update.

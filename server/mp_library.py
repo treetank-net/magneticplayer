@@ -140,6 +140,45 @@ def _lang_guess(s):
     return _LANGS.get(w.lower().split(" ")[0].split(".")[0], w)
 
 
+# frequent short words of each language, for subtitle files whose name does not say the language
+_WORDS = {
+    "en": "the you and to it is that what of in me this don't i'm we have be not your",
+    "pl": "nie to się że jest co na ja tak mi jak ale już mnie jestem tylko",
+    "de": "ich nicht die und das du ist sie es der was wir mir ein zu",
+    "fr": "je de pas le est que vous la et les tu il un ce qui",
+    "es": "que de no la el es y en lo un por qué me se los",
+    "it": "che non di il è la un per mi ti sono ma lo cosa questo",
+    "pt": "que não de o é um você eu se para com uma do me",
+    "nl": "ik je het de niet een is dat van en wat we zijn er",
+    "cs": "to je se na že ne co jsem tak já ale mi jsi tady",
+    "ru": "не что я ты это в на и он мы как да вы так",
+}
+_WORDS = {k: set(v.split()) for k, v in _WORDS.items()}
+
+
+def text_lang(path, limit=40000):
+    """The language of a subtitle file from its text ("en", "pl"…), or "" when unsure. Reads the start only."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(limit)
+    except OSError:
+        return ""
+    for enc in ("utf-8-sig", "cp1250", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", text.lower())
+    if len(words) < 50:
+        return ""
+    score = {k: sum(1 for w in words if w in ws) for k, ws in _WORDS.items()}
+    best = sorted(score, key=score.get, reverse=True)
+    top, second = score[best[0]], score[best[1]]
+    # clearly ahead and frequent enough: a real text in that language, not a few shared words
+    return best[0] if top >= 0.08 * len(words) and top >= 1.5 * max(second, 1) else ""
+
+
 def safe_join(base, rel):
     base = os.path.realpath(base)
     full = os.path.realpath(os.path.join(base, rel.lstrip("/")))
