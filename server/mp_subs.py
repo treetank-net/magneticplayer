@@ -67,6 +67,73 @@ def _broken(sub):
     return bad > 0.8 * len(cues)
 
 
+def _video_fps(video):
+    """Frame rate of the video (ffprobe), for frame-based subtitles without their own declaration."""
+    import subprocess
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+                              "-of", "csv=p=0", video], capture_output=True, text=True, timeout=30).stdout.strip()
+        n, _, d = out.partition("/")
+        fps = float(n) / float(d or 1)
+        return fps if 5 < fps < 121 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ts(sec, sep=","):
+    ms = max(0, round(sec * 1000))
+    return "%02d:%02d:%02d%s%03d" % (ms // 3600000, ms // 60000 % 60, ms // 1000 % 60, sep, ms % 1000)
+
+
+def _cue_text(t):
+    # MicroDVD/MPL2/TMPlayer: "|" separates lines, "/" marks italics, {y:i}-style codes are dropped
+    lines = [re.sub(r"\{[^}]*\}", "", x).strip() for x in t.split("|")]
+    return "\n".join("<i>%s</i>" % x[1:].strip() if x.startswith("/") else x for x in lines if x)
+
+
+def readable_srt(path, video=None):
+    """Text of a sidecar ".srt" as real UTF-8 SubRip. Many files named .srt are something else: MicroDVD
+    ({frame}{frame}text, from NapiProjekt and old OpenSubtitles uploads), MPL2 ([ds][ds]text) or TMPlayer (h:mm:ss:text),
+    often in cp1250. mpv reads them all, the phone (SubRip) and browsers show nothing. The file itself is not changed."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    for enc in ("utf-8-sig", "cp1250", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if re.search(r"\d+:\d\d:\d\d[,.]\d+\s*-->", text):
+        return text
+    cues = []
+    micro = re.findall(r"^\{(\d+)\}\{(\d*)\}(.*)$", text, re.M)
+    if micro:
+        fps = None
+        if micro[0][0] in ("0", "1") and re.fullmatch(r"\d+(\.\d+)?", micro[0][2].strip()):
+            fps = float(micro[0][2])  # {1}{1}25.000: the frame rate the file was made for
+            micro = micro[1:]
+        fps = fps or (video and _video_fps(video)) or 23.976
+        cues = [(int(a) / fps, int(b or int(a) + 3 * fps) / fps, t) for a, b, t in micro]
+    else:
+        mpl = re.findall(r"^\[(\d+)\]\[(\d*)\](.*)$", text, re.M)
+        if mpl:
+            cues = [(int(a) / 10, int(b or int(a) + 30) / 10, t) for a, b, t in mpl]
+        else:
+            tmp = [(int(h) * 3600 + int(m) * 60 + int(sec), t)
+                   for h, m, sec, t in re.findall(r"^(\d{1,2}):(\d\d):(\d\d)[:=](.*)$", text, re.M)]
+            # TMPlayer has no end: until the next line, at most 5 s
+            cues = [(a, min(a + 5, tmp[i + 1][0]) if i + 1 < len(tmp) else a + 5, t) for i, (a, t) in enumerate(tmp)]
+    if not cues:
+        return text
+    out = []
+    for a, b, t in cues:
+        t = _cue_text(t)
+        if t and b > a:
+            out.append("%d\n%s --> %s\n%s\n" % (len(out) + 1, _ts(a), _ts(b), t))
+    return "\n".join(out)
+
+
 class Subtitles:
     def __init__(self, cfg, save_cfg):
         self.cfg = cfg

@@ -247,7 +247,7 @@ Commands:
 | method and path | description |
 |---|---|
 | `GET /api/subs/list?<ref>` | subtitles next to the video: `name`, `lang`, `ext` |
-| `GET /sub?<ref>&name=[&vtt=1]` | the subtitle file. With `vtt=1` the agent converts SRT to WebVTT (for `<track>` in the browser) |
+| `GET /sub?<ref>&name=[&vtt=1]` | the subtitle file. A `.srt` always comes as UTF-8 SubRip, also when the file is really MicroDVD, MPL2 or TMPlayer (often cp1250). With `vtt=1` the agent converts it to WebVTT (for `<track>` in the browser) |
 | `POST /api/subs/search` | `ref` + `languages: "en,pl"`, optionally `title` and `year` (manual correction) → `query`, `title`, `year`, `providers`, `results[]` (`id`, `provider`, `lang`, `release`, `score`, `hash_match`, `hi`, `title_match`), `hidden`. With `"async": true` it returns `{"job"}` right away |
 | `POST /api/subs/job/stop` | `{"id"}`: "That's enough", don't wait for slow providers and skip the second round |
 | `GET /api/subs/job?id=` | progress: `phase` (`file`/`search`/`match`/`done`), `round` (2 = title from `[brackets]`), `query`, `matched`/`total`, `providers` (`state`: `pending`/`running`/`done`/`skip`/`error`, `count`, `error`, `secs`), `elapsed`, `done`, `result` or `error` |

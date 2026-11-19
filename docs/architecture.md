@@ -228,6 +228,10 @@ Results are sorted by the language order from the settings, then by score, and t
 them right away with `sub-add`. An SRT where nearly every cue lasts zero time or has no text (such uploads exist on
 OpenSubtitles, even with a hash match) is refused with 422 instead of being saved. Sidecar subtitles match the video
 name case-insensitively (`Le film.srt` next to `Le Film.avi`), and so do the companions moved with a video.
+`/sub` serves every `.srt` as UTF-8 SubRip (`mp_subs.readable_srt`): many files named `.srt` are really MicroDVD
+(`{frame}{frame}text`, frame rate from the `{1}{1}25.000` line or the video), MPL2 or TMPlayer, often in cp1250. mpv
+reads those itself, but the phone and browsers showed nothing. The file on disk is not changed. Subtitles timed for a
+different frame rate (23.976 vs 25, drifting minutes by the end) are not detected; they need another download.
 
 OpenSubtitles without a login: subliminal requires logging in (`@requires_auth`) before downloading, while the API
 allows downloading with just a key. That's why `_oscom_anonymous` calls `download_subtitle.__wrapped__`.

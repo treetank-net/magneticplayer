@@ -49,9 +49,9 @@ import mp_catalog
 import mp_ident
 import mp_library
 from mp_library import Library, LibError, sidecar_subs
-from mp_subs import Subtitles, SubsError
+from mp_subs import Subtitles, SubsError, readable_srt
 
-VERSION = "1.8.3"
+VERSION = "1.8.4"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -1628,7 +1628,10 @@ class Handler(BaseHTTPRequestHandler):
                 if qd.get("name") not in names:
                     raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
                 if qd.get("vtt") == "1":  # browsers (<track>) understand only WebVTT
-                    return self.send_vtt(os.path.join(os.path.dirname(full), qd["name"]))
+                    return self.send_vtt(os.path.join(os.path.dirname(full), qd["name"]), full)
+                if qd["name"].lower().endswith(".srt"):  # MicroDVD/cp1250 named .srt: the phone gets real UTF-8 SubRip
+                    return self.send_text(readable_srt(os.path.join(os.path.dirname(full), qd["name"]), full),
+                                          "application/x-subrip", method == "HEAD")
                 return self.stream(os.path.join(os.path.dirname(full), qd["name"]), method == "HEAD")
             if p == "/api/subs/search" and method == "POST":
                 b = self.body()
@@ -1787,24 +1790,21 @@ class Handler(BaseHTTPRequestHandler):
         if not head_only:
             self.wfile.write(body)
 
-    def send_vtt(self, path):
-        with open(path, "rb") as f:
-            raw = f.read()
-        for enc in ("utf-8-sig", "cp1250", "latin-1"):
-            try:
-                text = raw.decode(enc)
-                break
-            except UnicodeDecodeError:
-                continue
+    def send_vtt(self, path, video=None):
+        text = readable_srt(path, video)
         if not path.lower().endswith(".vtt"):
-            text = re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", text.replace("\r\n", "\n"))
+            text = re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", text)
             text = "WEBVTT\n\n" + text
+        self.send_text(text, "text/vtt")
+
+    def send_text(self, text, ctype, head_only=False):
         body = text.encode("utf-8")
         self.send_response(200)
-        self.send_header("Content-Type", "text/vtt; charset=utf-8")
+        self.send_header("Content-Type", ctype + "; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if not head_only:
+            self.wfile.write(body)
 
     STALL_WAIT = 20  # seconds of waiting for further pieces, then we drop the connection (the player retries)
 
