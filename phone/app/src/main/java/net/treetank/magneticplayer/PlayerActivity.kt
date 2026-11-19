@@ -83,7 +83,14 @@ class PlayerActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     /** the following episodes when a series is played from the catalog */
     private var nextEps: List<Episode> = emptyList()
-    private var countdown: android.view.View? = null
+    /** "Next episode" card, bottom right: shown in the last [NEXT_SHOW_MS] (or from the credits), independent of the controls */
+    private var nextCard: LinearLayout? = null
+    private var nextLine: android.widget.TextView? = null
+    private var nextCancel: Button? = null
+    private var nextLeft = -1  // seconds of the countdown, -1: not counting
+    private var nextCancelled = false
+    /** where the credits start (ms), when known; the countdown starts there instead of at the very end */
+    private var creditsAtMs = -1L
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     private var root: FrameLayout? = null
     private lateinit var settings: Settings
@@ -210,9 +217,8 @@ class PlayerActivity : ComponentActivity() {
                     val k = key
                     Thread { MediaCache.onWatched(this@PlayerActivity, k) }.start()
                     settings.markWatched(ref.key())
-                    // a series: the next episode after a countdown; a catalog film: "What next" instead of a black screen
-                    if (nextEps.isNotEmpty()) startCountdown()
-                    else if (offerNext()) finish()
+                    // a series: the card's countdown (nextTick); a catalog film: "What next" instead of a black screen
+                    if (nextEps.isEmpty() && offerNext()) finish()
                 }
             }
 
@@ -399,6 +405,7 @@ class PlayerActivity : ComponentActivity() {
         super.onStart()
         stopDiscovery = Cast.discover(this) { casts = it }
         Thread { Dlna.discover() }.start()  // for the "To screen" list (Dlna.found)
+        if (nextEps.isNotEmpty()) { ui.removeCallbacks(nextTick); ui.post(nextTick) }
     }
 
     /** "To screen": a single screen (no Chromecasts) immediately, otherwise a picker (last used marked). */
@@ -531,7 +538,8 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        cancelCountdown()  // the next episode doesn't start behind a locked screen or another app
+        ui.removeCallbacks(nextTick)  // the next episode doesn't start behind a locked screen or another app
+        nextLeft = -1
         stopDiscovery?.invoke()
         stopDiscovery = null
         player?.let {
@@ -563,21 +571,58 @@ class PlayerActivity : ComponentActivity() {
     private fun playNext() {
         val r = ref as? MediaRef.InLibrary ?: return
         val n = nextEps.firstOrNull() ?: return
-        cancelCountdown()
+        ui.removeCallbacks(nextTick)
         player?.pause()
         startActivity(PlayerActivity.intent(this, MediaRef.InLibrary(r.root, n.path, r.srv), null, nextEps.drop(1)))
         finish()
     }
 
-    private fun cancelCountdown() {
-        ui.removeCallbacksAndMessages(null)
-        countdown?.let { root?.removeView(it) }
-        countdown = null
+    private val NEXT_SHOW_MS = 90_000L
+    private val NEXT_COUNT_S = 10
+
+    /**
+     * Every second while a series plays: the position decides, not only STATE_ENDED (a stream may stay "buffering" at
+     * its last second, and seeking around must not lose the card). Near the end the card shows; the countdown runs from
+     * the credits when known, otherwise from the end of the file, and stands while the video is paused. Seeking back out
+     * of the end hides the card and resets "Cancel".
+     */
+    private val nextTick = object : Runnable {
+        override fun run() {
+            ui.postDelayed(this, 1000)
+            val p = player ?: return
+            val dur = p.duration
+            if (dur <= 0 || dur == C.TIME_UNSET) return
+            val pos = p.currentPosition
+            val ended = p.playbackState == Player.STATE_ENDED || pos >= dur - 1_500
+            val credits = creditsAtMs.takeIf { it in 1 until dur }
+            if (!ended && pos < minOf(credits ?: dur, dur - NEXT_SHOW_MS)) {
+                hideNextCard(); nextCancelled = false; nextLeft = -1
+                return
+            }
+            showNextCard()
+            val counting = !nextCancelled && (ended || (credits != null && pos >= credits))
+            if (!counting) {
+                nextLeft = -1
+                nextLine?.text = getString(R.string.media_next_episode)
+                nextCancel?.visibility = android.view.View.GONE
+                return
+            }
+            if (nextLeft < 0) nextLeft = NEXT_COUNT_S
+            else if (ended || p.isPlaying) nextLeft--
+            if (nextLeft <= 0) return playNext()
+            nextLine?.text = getString(R.string.media_next_in, nextLeft)
+            nextCancel?.visibility = android.view.View.VISIBLE
+        }
     }
 
-    /** At the end of an episode: "Next episode in 10 s" with Play now / Cancel, bottom right above the controls. */
-    private fun startCountdown() {
-        if (countdown != null) return
+    private fun hideNextCard() {
+        nextCard?.let { root?.removeView(it) }
+        nextCard = null; nextLine = null; nextCancel = null
+    }
+
+    /** "Next episode (in N s)", the episode's name, Play now / Cancel; above the controls' slider. */
+    private fun showNextCard() {
+        if (nextCard != null) return
         val n = nextEps.firstOrNull() ?: return
         val dp = resources.displayMetrics.density
         val label = listOf(n.label, n.shortName).filter { it.isNotEmpty() }.joinToString(" · ")
@@ -589,10 +634,16 @@ class PlayerActivity : ComponentActivity() {
             text = label; setTextColor(0xFFB0BEC5.toInt()); textSize = 13f; maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
+        val cancel = smallButton(getString(R.string.media_next_cancel)) {
+            nextCancelled = true; nextLeft = -1
+            nextLine?.text = getString(R.string.media_next_episode)
+            nextCancel?.visibility = android.view.View.GONE
+        }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding((16 * dp).toInt(), (12 * dp).toInt(), (12 * dp).toInt(), (12 * dp).toInt())
             background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 14 * dp; setColor(0xE0202124.toInt()) }
+            isClickable = true  // taps on the card don't reach the player (they would toggle the controls)
             addView(line); addView(name)
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -600,23 +651,14 @@ class PlayerActivity : ComponentActivity() {
                 addView(smallButton(getString(R.string.media_next_now)) { playNext() }.apply {
                     (layoutParams as LinearLayout.LayoutParams).marginStart = 0
                 })
-                addView(smallButton(getString(R.string.media_next_cancel)) { cancelCountdown() })
+                addView(cancel)
             })
         }
-        countdown = box
+        nextCard = box; nextLine = line; nextCancel = cancel
+        line.text = getString(R.string.media_next_episode)
         root?.addView(box, FrameLayout.LayoutParams((300 * dp).toInt(), -2, Gravity.BOTTOM or Gravity.END).apply {
             setMargins(0, 0, (16 * dp).toInt(), (96 * dp).toInt())
         })
-        var left = 10
-        val tick = object : Runnable {
-            override fun run() {
-                if (left <= 0) return playNext()
-                line.text = getString(R.string.media_next_in, left)
-                left--
-                ui.postDelayed(this, 1000)
-            }
-        }
-        tick.run()
     }
 
     /**

@@ -442,7 +442,7 @@ agent errors come back in the same language.
 | `UploadsUi.kt` | "Sent from phones" in the Downloading tab: files waiting to be put away (Move, Other folder…, Keep here), moving progress, "Put away this week", the badge on the tab |
 | `Tasks.kt` | one notification per finished file task (checked with `Access` while the app is on screen) |
 | `MediaUi.kt` | Phone, screen and VLC buttons, subtitle dialog |
-| `PlayerActivity.kt` | the player on the phone; a series played from the catalog carries the following episodes ("Next episode" in the top bar, a 10 s countdown with Play now / Cancel at the end; each episode opens a new player) |
+| `PlayerActivity.kt` | the player on the phone; a series played from the catalog carries the following episodes ("Next episode" in the top bar; in the last 90 s a card bottom right, independent of the controls, checked every second by position, not only by the "ended" event; a 10 s countdown with Play now / Cancel from the end of the file, or from the credits when known, standing while paused; seeking back hides the card; each episode opens a new player) |
 | `MagnetActivity.kt` | handling magnets |
 | `Updater.kt` | updates from the computer, sharing its own APK |
 | `Access.kt` | access requests: checking on connect (loop in `MainActivity`), a notification with Guest/Member/Decline buttons, `AccessReceiver` |
