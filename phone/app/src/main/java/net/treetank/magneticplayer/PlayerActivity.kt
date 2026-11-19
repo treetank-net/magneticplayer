@@ -437,9 +437,12 @@ class PlayerActivity : ComponentActivity() {
         Toast.makeText(this, getString(R.string.media_opening_on, name), Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             try {
-                if (cast != null) Screens.cast(this@PlayerActivity, ref, cast, pos / 1000.0) { }
-                else if (tv != null) Screens.dlna(this@PlayerActivity, ref, tv, pos / 1000.0) { }
-                else Screens.play(this@PlayerActivity, ref, screen!!.key, pos / 1000.0) { }
+                // the series goes along: the screen continues with the next episode as this player would
+                val next = (ref as? MediaRef.InLibrary)?.let { r -> nextEps.map { MediaRef.InLibrary(r.root, it.path, r.srv) } }
+                    ?.takeIf { it.isNotEmpty() }
+                if (cast != null) Screens.cast(this@PlayerActivity, ref, cast, pos / 1000.0, null, next) { }
+                else if (tv != null) Screens.dlna(this@PlayerActivity, ref, tv, pos / 1000.0, null, next) { }
+                else Screens.play(this@PlayerActivity, ref, screen!!.key, pos / 1000.0, null, next) { }
                 Toast.makeText(this@PlayerActivity, getString(R.string.media_playing_on, name), Toast.LENGTH_SHORT).show()
                 startActivity(Intent(this@PlayerActivity, MainActivity::class.java).putExtra("tab", TAB_REMOTE)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
@@ -862,14 +865,7 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    /** "pl" of "pl", "pol", "pl-PL"; "" for none or undetermined. */
-    private fun langKey(code: String?): String {
-        val c = androidx.media3.common.util.Util.normalizeLanguageCode(code ?: "")?.takeWhile { it.isLetter() }?.lowercase() ?: ""
-        return if (c in setOf("und", "mul", "zxx")) "" else c
-    }
-
-    /** The folder of a library video (a season): manual subtitle shifts carry over within it. */
-    private fun folderKey(r: MediaRef.InLibrary) = "${r.srv}:${r.root}:${r.path.substringBeforeLast('/', "")}"
+    private fun langKey(code: String?) = subLangKey(code)
 
     private fun rememberSubChoice(lang: String) {
         settings.subChoice = lang
@@ -918,18 +914,12 @@ class PlayerActivity : ComponentActivity() {
             toast.show()
             val d = runCatching { fetchSubtitles(this@PlayerActivity, api, ref, lang, subs.mapNotNull { it.source?.key }.toSet()) }.getOrNull()
                 ?: return@launch
-            carryShift(r, d)
+            carryShift(api, r, d)
+            OfflineSync.refreshLater(applicationContext, r)
             if (isFinishing) return@launch
             Toast.makeText(this@PlayerActivity, getString(R.string.media_psubs_auto_on, langName(lang, java.util.Locale.getDefault())), Toast.LENGTH_SHORT).show()
             applySubFile(d.name, lang)
         }
-    }
-
-    /** Subtitles downloaded without the user: a shift by hand made for this provider in this folder applies too. */
-    private suspend fun carryShift(r: MediaRef.InLibrary, d: SubsDownloaded) {
-        val (provider, by) = settings.folderSubShift(folderKey(r)) ?: return
-        if (provider != d.provider || by == 0.0 || !api.srv.hasSubsShift) return
-        withContext(Dispatchers.IO) { runCatching { api.subsShift(r, d.name, by) } }
     }
 
     private var nextSubsStarted = false
@@ -944,19 +934,11 @@ class PlayerActivity : ComponentActivity() {
         val next = MediaRef.InLibrary(r.root, n.path, r.srv)
         val app = applicationContext
         val provider = subs.firstOrNull { it.langKey == lang && it.default }?.source?.provider
-        lifecycleScope.launch(Dispatchers.IO) {
-            val list = runCatching { api.subsList(next) }.getOrNull() ?: return@launch
-            if (list.any { it.langKey == lang }) return@launch
-            // an embedded track in that language (the agent's probe) is enough
-            val probe = runCatching { api.mediaProbe(next) }.getOrNull()
-            val emb = probe?.optJSONObject("file")?.optJSONArray("subs")
-            if (emb != null && (0 until emb.length()).any { langKey(emb.getJSONObject(it).optString("lang")) == lang }) return@launch
-            val d = runCatching { fetchSubtitles(app, api, next, lang, emptySet(), preferProvider = provider) }.getOrNull() ?: return@launch
-            carryShift(next, d)
-        }
+        lifecycleScope.launch { prepareSubsAhead(app, api, next, provider, embeddedCounts = true) }
     }
 
     private fun applySubFile(name: String, lang: String) {
+        OfflineSync.refreshLater(applicationContext, ref)  // a downloaded copy gets the change too
         val p = player ?: return
         lifecycleScope.launch {
             subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(subs) }
@@ -981,6 +963,11 @@ class PlayerActivity : ComponentActivity() {
      */
     private fun loadSegments() {
         val r = ref as? MediaRef.InLibrary ?: return
+        // a downloaded copy: saved with it (works without the computer); the agent below may know better
+        OfflineStore.get(this, key)?.let { o ->
+            o.intro?.let { intro = it }
+            o.creditsAt?.let { creditsAtMs = it }
+        }
         if (!series || !api.srv.segments) return
         lifecycleScope.launch {
             repeat(8) {

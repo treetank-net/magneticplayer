@@ -323,6 +323,18 @@ class Tasks:
                 pass
             _rm(part)
 
+    def remove(self, tid):
+        """A finished or cancelled task off the list (agent 1.12.1+); a queued or running one has to be cancelled first."""
+        with self.lock:
+            t = next((t for t in self.items if t["id"] == tid), None)
+            if not t:
+                raise TaskError(T("no such task", "nie ma takiego zadania"), 404)
+            if t["state"] in ("queued", "running"):
+                raise TaskError(T("cancel the task first", "najpierw anuluj zadanie"), 409)
+            self.items.remove(t)
+            self._save()
+            return {"ok": True}
+
     def cancel(self, tid):
         with self.lock:
             t = next((t for t in self.items if t["id"] == tid), None)

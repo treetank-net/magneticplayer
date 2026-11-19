@@ -478,7 +478,8 @@ class Api(val s: Settings, val srv: Server) {
             a.getJSONObject(i).let { x ->
                 val u = x.getString("url")
                 // an older agent does not provide "vtt", but /sub supports &vtt=1
-                SubSrc(x.optString("name"), x.optString("lang"), u, x.optString("vtt").ifEmpty { "$u&vtt=1" })
+                SubSrc(x.optString("name"), x.optString("lang"), u, x.optString("vtt").ifEmpty { "$u&vtt=1" },
+                    x.optBoolean("default", '/' !in x.optString("name")))
             }
         }
         return Ticket(o.getString("url"), info.map { it.url }, o.optString("title"), info,
@@ -663,6 +664,8 @@ class Api(val s: Settings, val srv: Server) {
         return List(a.length()) { task(a.getJSONObject(it)) }
     }
     fun taskCancel(id: String) { call("POST", "/api/tasks/$id/cancel", JSONObject()) }
+    /** A finished or cancelled task off the list (agent 1.12.1+, `Server.hasTaskRemove`). */
+    fun taskRemove(id: String) { call("POST", "/api/tasks/$id/remove", JSONObject()) }
 
     private fun task(o: JSONObject): LibTask {
         val arr = o.optJSONArray("items") ?: JSONArray()
@@ -832,15 +835,18 @@ class Api(val s: Settings, val srv: Server) {
         call("POST", "/api/player/cmd", b, 4000)
     }
 
-    fun playerOpen(ref: MediaRef, startSec: Double? = null) {
+    /** `subLang` (agent 1.12.1+, `features.player_sub_lang`): the last subtitle choice, a language or "off". */
+    fun playerOpen(ref: MediaRef, startSec: Double? = null, subLang: String? = null) {
         val b = ref.json()
         if (startSec != null) b.put("start", startSec)
+        if (subLang != null && srv.hasPlayerSubLang) b.put("sub_lang", subLang)
         call("POST", "/api/player/open", b, 20000)
     }
 
     /** Video from another server (URL with a ticket). */
-    fun playerOpenUrl(t: Ticket, startSec: Double? = null) {
+    fun playerOpenUrl(t: Ticket, startSec: Double? = null, subLang: String? = null) {
         val b = JSONObject().put("url", t.url).put("subs", JSONArray(t.subs)).put("title", t.title)
+        if (subLang != null && srv.hasPlayerSubLang) b.put("sub_lang", subLang)
         if (startSec != null && startSec > 0) b.put("start", startSec)
         call("POST", "/api/player/open", b, 25000)
     }

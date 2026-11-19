@@ -82,12 +82,13 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
     var chooser by remember { mutableStateOf(false) }
     var opening by remember { mutableStateOf<String?>(null) }
     val screens = remember { Servers.screens(ctx) }
+    val subsAsk = remember { SubsAsk() }
     fun playOn(key: String?, cast: CastTarget? = null, tv: DlnaTarget? = null) = scope.launch {
         opening = ctx.getString(R.string.media_opening)
         try {
-            if (cast != null) Screens.cast(ctx, ref, cast, null) { opening = it }
-            else if (tv != null) Screens.dlna(ctx, ref, tv, null) { opening = it }
-            else Screens.play(ctx, ref, key!!, null) { opening = it }
+            if (cast != null) Screens.cast(ctx, ref, cast, null, subsAsk::ask) { opening = it }
+            else if (tv != null) Screens.dlna(ctx, ref, tv, null, subsAsk::ask) { opening = it }
+            else Screens.play(ctx, ref, key!!, null, subsAsk::ask) { opening = it }
             onPlayingOnPc()
         } catch (e: ApiException) {
             snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error))
@@ -166,4 +167,6 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
             }
         })
     }
+    SubsAskDialog(subsAsk)
+
 }

@@ -209,4 +209,6 @@
     <string name="lib_encoder_saves">oszczędza %1$s</string>
     <string name="lib_encoder_work">około %1$s h pracy</string>
     <string name="lib_disks_card_free">%1$s: zostało %2$s z %3$s</string>
+    <string name="lib_task_remove">Usuń z listy</string>
+    <string name="lib_refresh">Odśwież</string>
 </resources>

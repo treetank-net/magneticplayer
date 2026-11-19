@@ -299,4 +299,13 @@
         <item quantity="one">%1$d version</item>
         <item quantity="other">%1$d versions</item>
     </plurals>
+    <!-- a series on a screen, TV or Chromecast (TvQueue) -->
+    <string name="tvq_channel">Next episode</string>
+    <string name="tvq_next_in">Next episode in %1$d s</string>
+    <string name="tvq_play_now">Play now</string>
+    <string name="tvq_cancel">Cancel</string>
+    <string name="tvq_next_episode">Next episode</string>
+    <string name="tvq_subs_ask_title">No subtitles in %1$s</string>
+    <string name="tvq_subs_ask_text">The TV can\'t fetch them once the video is playing. Download them now? It takes up to a minute.</string>
+    <string name="tvq_subs_ask_no">Without subtitles</string>
 </resources>

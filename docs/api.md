@@ -62,7 +62,7 @@ button.
 | `POST /api/pair/code` | a new code for another device → `{"code", "expires_in", "host", "port", "id", "name"}`; with `{"role": "guest", "days": N}` a code for a guest (`days` = how long access lasts, 0 or missing = no limit) |
 | `GET /api/devices` | `[{id, name, created, last_seen, current, role, expires, legacy?}]` |
 | `POST /api/devices/revoke` | `{"id"}`; `"legacy"` disables the old shared token |
-| `POST /api/media/ticket` | `ref` (+ `"variant": "cast"`) → `{"url", "subs": [{name, lang, url, vtt}], "title", "expires", "variant", "content_type"}`; URLs with a ticket, host from the `Host` header; `vtt` is the subtitles converted to WebVTT (for Chromecast); with `variant: "cast"` the URL points to the Chromecast version if there is one (`&v=cast`, `content_type: video/mp4`) |
+| `POST /api/media/ticket` | `ref` (+ `"variant": "cast"`) → `{"url", "subs": [{name, lang, default, url, vtt}], "title", "expires", "variant", "content_type"}`; URLs with a ticket, host from the `Host` header; `vtt` is the subtitles converted to WebVTT (for Chromecast); with `variant: "cast"` the URL points to the Chromecast version if there is one (`&v=cast`, `content_type: video/mp4`) |
 
 A **guest** (`role: "guest"`, agent 1.3+) only has an allow-list of endpoints (`GUEST_ALLOWED` in the agent): info,
 Library, the torrent list and their files, video and subtitle files, tickets, format and Chromecast versions, the
@@ -146,6 +146,7 @@ chosen ones in the background (one at a time, persisted in `tasks.json`, continu
 | `POST /api/tasks` | `{"plan", "pick"?: [item indexes]}` → the task |
 | `GET /api/tasks` | newest first: `id`, `kind`, `title` (in the language of the request; tasks created before 1.8.1 keep the language they were made in), `state` (`queued`/`running`/`done`/`cancelled`), `created`, `started`, `finished`, `total`, `done_bytes`, `pct`, `current`, `saved`, `errors`, `paused` (the encode is stopped: somebody streams with `shrink_while_watching: "pause"`, or a conversion runs; `HEAD` probes don't count), `encoder` (label, shrink tasks from 1.7), `note` (1.7+, localized: why it is slower, stopped or waiting to swap a film that is being watched), `items` (with `state`: `pending`/`running`/`done`/`error`/`skipped`, `error`, `saved`) |
 | `GET /api/tasks/<id>`, `POST /api/tasks/<id>/cancel` | one task; stop it (the current item stays as it was) |
+| `POST /api/tasks/<id>/remove` | agent 1.12.1+ (`features.task_remove`): a finished or cancelled task off the list; 409 for a queued or running one |
 | `POST /api/library/profile` | `{"root", "path", "profile": "original"\|"tidy"\|"good"\|"compact"\|"tiny"}` (`path` empty = the whole folder) |
 | `POST /api/library/trash/empty` | delete everything in the trash now → `{"freed"}` |
 
@@ -235,7 +236,7 @@ the pairing code is valid), so the phone has time to collect it.
 
 | method and path | description |
 |---|---|
-| `POST /api/player/open` | `ref` + optionally `start` (seconds); or a video from another server: `{"url", "subs": [url…], "title", "start"?}` |
+| `POST /api/player/open` | `ref` + optionally `start` (seconds); or a video from another server: `{"url", "subs": [url…], "title", "start"?}`. Agent 1.12.1+ (`features.player_sub_lang`): `sub_lang`, the phone's last subtitle choice: a language (the first subtitle track in it is selected) or `"off"` |
 | `GET /api/player/status` | `running`, `title`, `path`, `pos`, `duration`, `paused`, `volume`, `muted`, `fullscreen`, `sub`, `audio`, `tracks[]` (`id`, `type`, `title`, `lang`, `codec`, `selected`, `external`, `default`, `forced`, `demux-channel-count`, `demux-w`, `demux-h`) |
 | `POST /api/player/cmd` | `{"cmd", "value"?}`, commands below |
 

@@ -20,9 +20,9 @@ val RETENTION = listOf(
 
 fun retentionLabel(ctx: Context, policy: String) = RETENTION.firstOrNull { it.first == policy }?.let { ctx.getString(it.second) } ?: policy
 
-/** Subtitles saved on the phone together with a downloaded video. */
-data class LocalSub(val name: String, val lang: String, val ext: String, val file: String) {
-    fun toSubFile() = SubFile(name, lang, ext)
+/** Subtitles saved on the phone together with a downloaded video. `default`: its language's version in use. */
+data class LocalSub(val name: String, val lang: String, val ext: String, val file: String, val default: Boolean = true) {
+    fun toSubFile() = SubFile(name, lang, ext, default = default)
 }
 
 /**
@@ -44,13 +44,23 @@ data class OfflineItem(
     val error: String? = null,
     val created: Long = System.currentTimeMillis(),
     val subs: List<LocalSub> = emptyList(),
+    /** a series episode: intro (ms from, to) and where the credits start (ms), from the agent; for a TV fed by the phone */
+    val intro: Pair<Long, Long>? = null,
+    val creditsAt: Long? = null,
+    /** the series folder's episodes in watching order (paths like [MediaRef.InLibrary.path]); null = not known */
+    val episodes: List<String>? = null,
 ) {
     fun json(): JSONObject = JSONObject().put("key", key).put("ref", ref.encode()).put("title", title)
         .put("size", size).put("dur", durationMs).put("pinned", pinned).put("policy", policy).put("want", want)
         .put("complete", complete).put("error", error ?: JSONObject.NULL).put("created", created)
         .put("subs", JSONArray(subs.map {
-            JSONObject().put("name", it.name).put("lang", it.lang).put("ext", it.ext).put("file", it.file)
+            JSONObject().put("name", it.name).put("lang", it.lang).put("ext", it.ext).put("file", it.file).put("default", it.default)
         }))
+        .apply {
+            intro?.let { put("intro", JSONArray().put(it.first).put(it.second)) }
+            creditsAt?.let { put("credits", it) }
+            episodes?.let { put("episodes", JSONArray(it)) }
+        }
 
     companion object {
         fun from(o: JSONObject): OfflineItem {
@@ -61,8 +71,12 @@ data class OfflineItem(
                 o.optBoolean("want"), o.optBoolean("complete"), o.optString("error").takeIf { !o.isNull("error") && it.isNotEmpty() },
                 o.optLong("created", System.currentTimeMillis()),
                 List(a.length()) { i ->
-                    a.getJSONObject(i).let { LocalSub(it.getString("name"), it.optString("lang"), it.optString("ext"), it.getString("file")) }
+                    a.getJSONObject(i).let { LocalSub(it.getString("name"), it.optString("lang"), it.optString("ext"), it.getString("file"),
+                        it.optBoolean("default", true)) }
                 },
+                o.optJSONArray("intro")?.takeIf { it.length() == 2 }?.let { it.getLong(0) to it.getLong(1) },
+                o.optLong("credits", -1).takeIf { it > 0 },
+                o.optJSONArray("episodes")?.let { e -> List(e.length()) { e.getString(it) } },
             )
         }
     }
@@ -108,6 +122,48 @@ object OfflineStore {
     fun subsDir(ctx: Context, key: String): File {
         val h = MessageDigest.getInstance("SHA-1").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
         return File(ctx.applicationContext.filesDir, "offline/$h")
+    }
+}
+
+/**
+ * What a downloaded video needs from the agent besides its bytes, so the phone can play it (or feed a TV) without the
+ * computer: the subtitles as they are now (fitted, shifted, the version in use), intro and credits, the series' episodes.
+ * Saved when the download starts, again when it completes, and after the subtitles change (a download, a shift).
+ */
+object OfflineSync {
+    /** Blocking: copies the current state from the agent into the item. Subtitles: filesDir/offline/<hash>/. */
+    fun save(ctx: Context, api: Api, key: String) {
+        val item = OfflineStore.get(ctx, key) ?: return
+        val dir = OfflineStore.subsDir(ctx, key)
+        val list = api.subsList(item.ref)
+        val saved = list.mapNotNull { s ->
+            val h = MessageDigest.getInstance("SHA-1").digest(s.name.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
+            val f = File(dir, "$h.${s.ext}")
+            val tmp = File(dir, "$h.${s.ext}.part")
+            runCatching { download(api.subUrl(item.ref, s.name), tmp); tmp.renameTo(f); LocalSub(s.name, s.lang, s.ext, f.path, s.default) }
+                .getOrElse { tmp.delete(); null }
+        }
+        val keep = saved.map { File(it.file).name }.toSet()
+        dir.listFiles()?.filter { it.name !in keep }?.forEach { it.delete() }
+        var intro = item.intro
+        var credits = item.creditsAt
+        var episodes = item.episodes
+        (item.ref as? MediaRef.InLibrary)?.let { r ->
+            if (api.srv.segments) runCatching { api.segments(r.root, r.path) }.getOrNull()?.takeIf { !it.pending }?.let { s ->
+                intro = if (s.introStart != null && s.introEnd != null && s.introEnd > s.introStart) s.introStart to s.introEnd else null
+                credits = s.creditsAt
+            }
+            if (api.srv.libraryEpisodes) runCatching { api.episodes(r.root, r.path.substringBeforeLast('/', "")) }.getOrNull()
+                ?.let { e -> episodes = e.episodes.map { it.path } }
+        }
+        OfflineStore.update(ctx, key) { it.copy(subs = saved, intro = intro, creditsAt = credits, episodes = episodes) }
+    }
+
+    /** After the subtitles of `ref` changed: a downloaded copy gets them too (in the background, when the agent answers). */
+    fun refreshLater(ctx: Context, ref: MediaRef) {
+        val app = ctx.applicationContext
+        if (OfflineStore.get(app, ref.key())?.pinned != true) return
+        Thread { runCatching { Api.forRef(app, ref).let { save(app, it, ref.key()) } } }.start()
     }
 }
 

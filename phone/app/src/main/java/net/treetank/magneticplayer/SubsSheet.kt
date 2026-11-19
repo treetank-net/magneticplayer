@@ -89,6 +89,49 @@ fun langName(code: String, ui: java.util.Locale = java.util.Locale.getDefault())
  * "Download: <language>" and by the player when the remembered language is missing (also ahead, for the next episode).
  * `onStatus` gets a line for the user. Null when nothing was found.
  */
+/** The folder of a library video (a season): the subtitle language picked there is fetched on its own, and a manual
+ * shift carries over to its other episodes. */
+fun folderKey(r: MediaRef.InLibrary) = "${r.srv}:${r.root}:${r.path.substringBeforeLast('/', "")}"
+
+/** "pl" of "pl", "pol", "pl-PL", "napiprojekt.pl", "forced.pl"; "" for none or undetermined. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+fun subLangKey(code: String?): String {
+    val t = (code ?: "").substringAfterLast('.').takeWhile { it.isLetter() }.lowercase()
+    if (t.isEmpty()) return ""
+    val c = androidx.media3.common.util.Util.normalizeLanguageCode(t)?.takeWhile { it.isLetter() }?.lowercase() ?: t
+    return if (c in setOf("und", "mul", "zxx")) "" else c
+}
+
+/** Subtitles downloaded without the user: a shift by hand made for this provider in this folder applies too. */
+suspend fun carryShift(api: Api, r: MediaRef.InLibrary, d: SubsDownloaded) {
+    val (provider, by) = api.s.folderSubShift(folderKey(r)) ?: return
+    if (provider != d.provider || by == 0.0 || !api.srv.hasSubsShift) return
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { api.subsShift(r, d.name, by) } }
+}
+
+/**
+ * The next episode of a series being watched (phone or TV): its subtitles in the language picked last, fetched ahead
+ * (fetching and fitting can take a minute), preferably from `provider` (the source of the current episode's ones).
+ * Only in the folder where that language was picked; nothing when the episode has them already (a file or, with
+ * `embeddedCounts`, a track in the video). True when new ones were downloaded.
+ */
+suspend fun prepareSubsAhead(ctx: android.content.Context, api: Api, next: MediaRef.InLibrary, provider: String?,
+                             embeddedCounts: Boolean): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    val lang = api.s.subChoice?.takeIf { it != "off" } ?: return@withContext false
+    if (folderKey(next) != api.s.subChoiceFolder || !api.srv.hasSubsDownloadJob) return@withContext false
+    val list = runCatching { api.subsList(next) }.getOrNull() ?: return@withContext false
+    if (list.any { it.langKey == lang }) return@withContext false
+    if (embeddedCounts) {
+        val emb = runCatching { api.mediaProbe(next) }.getOrNull()?.optJSONObject("file")?.optJSONArray("subs")
+        if (emb != null && (0 until emb.length()).any { subLangKey(emb.getJSONObject(it).optString("lang")) == lang }) return@withContext false
+    }
+    val d = runCatching { fetchSubtitles(ctx, api, next, lang, list.mapNotNull { it.source?.key }.toSet(), preferProvider = provider) }
+        .getOrNull() ?: return@withContext false
+    carryShift(api, next, d)
+    OfflineSync.refreshLater(ctx, next)
+    true
+}
+
 suspend fun fetchSubtitles(
     ctx: android.content.Context, api: Api, ref: MediaRef, lang: String, have: Set<String>, preferProvider: String? = null,
     onStatus: (String?) -> Unit = {},

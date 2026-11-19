@@ -68,12 +68,14 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     var chooser by remember { mutableStateOf<OfflineItem?>(null) }
     var opening by remember { mutableStateOf<String?>(null) }
     val canScreen = true  // mpv screens, Chromecasts, DLNA TVs: the picker shows what is on the network
+    val subsAsk = remember { SubsAsk() }
+    SubsAskDialog(subsAsk)
     fun playOn(item: OfflineItem, key: String?, cast: CastTarget?, tv: DlnaTarget? = null) = scope.launch {
         opening = ctx.getString(R.string.media_opening)
         try {
-            if (cast != null) Screens.cast(ctx, item.ref, cast, null) { opening = it }
-            else if (tv != null) Screens.dlna(ctx, item.ref, tv, null) { opening = it }
-            else Screens.play(ctx, item.ref, key!!, null) { opening = it }
+            if (cast != null) Screens.cast(ctx, item.ref, cast, null, subsAsk::ask) { opening = it }
+            else if (tv != null) Screens.dlna(ctx, item.ref, tv, null, subsAsk::ask) { opening = it }
+            else Screens.play(ctx, item.ref, key!!, null, subsAsk::ask) { opening = it }
             onPlaying()  // as from the Library: Remote right away
         } catch (e: ApiException) {
             android.widget.Toast.makeText(ctx, e.message, android.widget.Toast.LENGTH_LONG).show()

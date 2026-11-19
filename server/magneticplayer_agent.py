@@ -487,6 +487,15 @@ def socket_exists():
     return os.path.exists(MPV_SOCKET)
 
 
+def _iso2(code):
+    """"pol" → "pl" (mpv reports a Matroska track's language in ISO 639-2), else the code as it is."""
+    try:
+        from babelfish import Language
+        return Language.fromcode(code, "alpha3b" if len(code) == 3 else "alpha2").alpha2
+    except Exception:  # noqa: BLE001  (no babelfish, an unknown code, a language without a 2-letter code)
+        return code
+
+
 class Mpv:
     def __init__(self, cfg):
         self.args = cfg.get("mpv_args", [])
@@ -613,8 +622,9 @@ class Mpv:
         except ApiError:
             return default
 
-    def open(self, path, title=None, subs=(), start=None):
-        """A local file or a URL (a video from another server, with a ticket). `subs`: subtitle URLs, the first one is selected."""
+    def open(self, path, title=None, subs=(), start=None, sub_lang=None):
+        """A local file or a URL (a video from another server, with a ticket). `subs`: subtitle URLs, the first one is
+        selected. `sub_lang` (agent 1.12.1+): the phone's last subtitle choice, a language code or "off"."""
         wake_screen()
         started = False
         if self.running():
@@ -633,10 +643,10 @@ class Mpv:
                     raise
         if not started:
             self._start(path, title)
-        if subs or start:
-            self._after_load(path, subs, start)
+        if subs or start or sub_lang:
+            self._after_load(path, subs, start, sub_lang)
 
-    def _after_load(self, path, subs, start):
+    def _after_load(self, path, subs, start, sub_lang=None):
         """Waits until mpv has loaded the file (over the network it takes a while), then subtitles and seeking."""
         for _ in range(150):
             if self.prop("path") == path and self.prop("duration") is not None:
@@ -649,8 +659,25 @@ class Mpv:
                 self.cmd("sub-add", u, "select" if i == 0 else "auto", timeout=15)
             except ApiError as e:
                 log("subtitles from", u.split("?")[0], e)
+        if sub_lang:
+            self._pick_subs(str(sub_lang))
         if start:
             self.cmd("seek", float(start), "absolute")
+
+    def _pick_subs(self, lang):
+        """Subtitles off, or the first track in `lang` (mpv reads it from the track or from "<name>.pl.srt")."""
+        try:
+            if lang == "off":
+                self.cmd("set_property", "sid", "no")
+                return
+            want = lang.lower().split("-")[0]
+            for t in self.prop("track-list") or []:
+                tl = (t.get("lang") or "").lower().split("-")[0]
+                if t.get("type") == "sub" and tl and (tl == want or _iso2(tl) == want):
+                    self.cmd("set_property", "sid", t["id"])
+                    return
+        except ApiError as e:
+            log("subtitle language", lang, e)
 
     def _start(self, path, title):
         mpv = platform.mpv_path()
@@ -1058,7 +1085,7 @@ class App:
                 "library_tasks": True,
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
-                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True, "subs_download_job": True,  # intro / credits (agent 1.11+)
+                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True, "subs_download_job": True, "player_sub_lang": True, "task_remove": True,  # intro / credits (agent 1.11+)
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
@@ -1162,7 +1189,7 @@ class App:
         cast_v = variant == "cast" and mp_media.variant(full)
         if cast_v:
             url += "&v=cast"
-        subs = [{"name": x["name"], "lang": x.get("lang"),
+        subs = [{"name": x["name"], "lang": x.get("lang"), "default": bool(x.get("default")),
                  "url": f"{base}/sub?{rq}&name={urllib.parse.quote(x['name'])}&{tq}",
                  "vtt": f"{base}/sub?{rq}&name={urllib.parse.quote(x['name'])}&vtt=1&{tq}"} for x in sidecar_subs(full)]
         return {"url": url, "subs": subs, "title": os.path.basename(full), "expires": exp,
@@ -1220,6 +1247,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.mcp.authorize_wait(qd.get("session", "")))
             if p == "/oauth/token" and method == "POST":
                 n = int(self.headers.get("Content-Length") or 0)
+                self.body_read = True
                 raw = self.rfile.read(n).decode() if n else ""
                 form = json.loads(raw) if raw.lstrip().startswith("{") else dict(urllib.parse.parse_qsl(raw))
                 self.extra_headers.append(("Cache-Control", "no-store"))
@@ -1282,7 +1310,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def body(self):
         n = int(self.headers.get("Content-Length") or 0)
+        self.body_read = True
         return json.loads(self.rfile.read(n)) if n else {}
+
+    def _drain(self, path):
+        """A handler that ignored the request body ("Empty trash" with `{}`) left it in the connection: the next
+        request on it was read as "{}GET /api/library/disks" and got 501, so the app's list did not refresh.
+        Read it now; a large one (or one an upload handler streamed itself) closes the connection instead."""
+        n = int(self.headers.get("Content-Length") or 0)
+        if not n or getattr(self, "body_read", False) or path.startswith("/api/upload/"):
+            return
+        if n > 1 << 20:
+            self.close_connection = True
+            return
+        try:
+            self.rfile.read(n)
+        except OSError:
+            self.close_connection = True
 
     def do_GET(self):
         self.dispatch("GET")
@@ -1338,6 +1382,13 @@ class Handler(BaseHTTPRequestHandler):
                 a.stream_last = time.time()
 
     def _dispatch(self, method):
+        self.body_read = False
+        try:
+            return self._dispatch_inner(method)
+        finally:
+            self._drain(urllib.parse.urlsplit(self.path).path)
+
+    def _dispatch_inner(self, method):
         self.extra_headers = []
         mp_i18n.set_from_header(self.headers.get("Accept-Language"))  # message language (errors in JSON)
         u = urllib.parse.urlsplit(self.path)
@@ -1610,12 +1661,12 @@ class Handler(BaseHTTPRequestHandler):
                     subs = [str(u) for u in b.get("subs") or [] if str(u).startswith(("http://", "https://"))]
                     if not url.startswith(("http://", "https://")):
                         raise ApiError(T("url must be http(s)", "url musi być http(s)"), 400)
-                    a.mpv.open(url, b.get("title"), subs, b.get("start"))
+                    a.mpv.open(url, b.get("title"), subs, b.get("start"), b.get("sub_lang"))
                 else:
                     full = a.resolve_ref(b)
                     # mpv finds subtitles next to the video by itself, but not those in a subfolder (Subs/English.srt from torrents)
                     extra = [os.path.join(os.path.dirname(full), x["name"]) for x in sidecar_subs(full) if os.sep in x["name"]]
-                    a.mpv.open(full, start=b.get("start"), subs=extra)
+                    a.mpv.open(full, start=b.get("start"), subs=extra, sub_lang=b.get("sub_lang"))
                 return self.send_json({"ok": True})
             if p == "/api/player/status" and method == "GET":
                 return self.send_json(a.mpv.status())
@@ -1690,6 +1741,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.tasks.create(str(b.get("plan")), None if pick is None else {int(x) for x in pick}))
             if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})", p)) and method == "GET":
                 return self.send_json(a.tasks.get(m.group(1)))
+            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/remove", p)) and method == "POST":
+                return self.send_json(a.tasks.remove(m.group(1)))
             if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/cancel", p)) and method == "POST":
                 return self.send_json(a.tasks.cancel(m.group(1)))
             if p == "/api/library/cover" and method in ("GET", "HEAD"):

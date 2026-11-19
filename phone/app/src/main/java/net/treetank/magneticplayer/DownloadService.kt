@@ -156,7 +156,7 @@ class DownloadService : Service() {
         var spaceChecked = false
         while (key !in cancelled) {
             try {
-                if (!subsDone) subsDone = runCatching { saveSubs(api, item) }.isSuccess
+                if (!subsDone) subsDone = runCatching { OfflineSync.save(this, api, key) }.isSuccess
                 val size = headProbe(url, 0).first
                 OfflineStore.update(this, key) { it.copy(size = size) }
                 MediaCache.setLength(this, key, size)
@@ -180,6 +180,8 @@ class DownloadService : Service() {
                 }
                 if (key in cancelled) return
                 if (at >= size) {
+                    // subtitles fitted meanwhile, intro and credits found meanwhile
+                    runCatching { OfflineSync.save(this, api, key) }
                     OfflineStore.update(this, key) { it.copy(complete = true, want = false, error = null) }
                     finished += item.title
                     return
@@ -195,17 +197,6 @@ class DownloadService : Service() {
                 delay(15_000)
             }
         }
-    }
-
-    /** Subtitles next to the video → filesDir/offline/<hash>/, stored in OfflineItem (for offline playback). */
-    private fun saveSubs(api: Api, item: OfflineItem) {
-        val dir = OfflineStore.subsDir(this, item.key)
-        val list = api.subsList(item.ref)
-        val saved = list.mapIndexedNotNull { i, s ->
-            val f = File(dir, "$i.${s.ext}")
-            runCatching { download(api.subUrl(item.ref, s.name), f); LocalSub(s.name, s.lang, s.ext, f.path) }.getOrNull()
-        }
-        OfflineStore.update(this, item.key) { it.copy(subs = saved) }
     }
 
     private fun progress(item: OfflineItem, done: Long, size: Long) {

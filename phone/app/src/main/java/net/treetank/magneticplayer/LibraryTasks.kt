@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
@@ -214,11 +215,14 @@ object PlanBody {
 // ---------------------------------------------------------------- disks and tasks
 
 @Composable
-private fun ScreenHeader(title: String, onBack: () -> Unit) {
+private fun ScreenHeader(title: String, onBack: () -> Unit, onRefresh: (() -> Unit)? = null) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
         IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up)) }
         Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f))
+        if (onRefresh != null) IconButton(onRefresh) {
+            Icon(Icons.Filled.Refresh, stringResource(R.string.lib_refresh))
+        }
     }
     HorizontalDivider()
 }
@@ -259,7 +263,11 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
         }
     }
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader(stringResource(R.string.lib_disks_title), onBack)
+        // free space changes behind the app's back too (downloads, other phones): read it again on demand
+        ScreenHeader(stringResource(R.string.lib_disks_title), onBack) {
+            reload++
+            scope.launch { runCatching { withContext(Dispatchers.IO) { api.tasks() } }.getOrNull()?.let { tasks = it } }
+        }
         val d = disks ?: return Hint(stringResource(R.string.media_loading))
         LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
@@ -294,10 +302,19 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
                     modifier = Modifier.padding(top = 8.dp))
             }
             items(tasks, key = { "task/${it.id}" }) { t ->
-                TaskCard(t) {
+                TaskCard(t, onRemove = if (api.srv.hasTaskRemove) ({
                     scope.launch {
-                        try { withContext(Dispatchers.IO) { api.taskCancel(t.id) } }
-                        catch (e: ApiException) { snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)) }
+                        try {
+                            withContext(Dispatchers.IO) { api.taskRemove(t.id) }
+                            tasks = tasks.filter { it.id != t.id }  // at once, not at the next read
+                        } catch (e: ApiException) { snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)) }
+                    }
+                }) else null) {
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { api.taskCancel(t.id) }
+                            tasks = withContext(Dispatchers.IO) { runCatching { api.tasks() }.getOrDefault(tasks) }
+                        } catch (e: ApiException) { snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)) }
                     }
                 }
             }
@@ -438,7 +455,7 @@ private fun itemState(s: String) = when (s) {
 }
 
 @Composable
-private fun TaskCard(t: LibTask, onCancel: () -> Unit) {
+private fun TaskCard(t: LibTask, onRemove: (() -> Unit)? = null, onCancel: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     // the agent finishes the current item before the task becomes "cancelled": show that the tap was taken
     var cancelling by remember(t.id) { mutableStateOf(false) }
@@ -454,6 +471,7 @@ private fun TaskCard(t: LibTask, onCancel: () -> Unit) {
                         maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 if (active && !cancelling) TextButton({ cancelling = true; onCancel() }) { Text(stringResource(R.string.media_cancel)) }
+                if (!active && onRemove != null) TextButton(onRemove) { Text(stringResource(R.string.lib_task_remove)) }
             }
             if (active) {
                 LinearProgressIndicator(progress = { (t.pct / 100f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 8.dp))

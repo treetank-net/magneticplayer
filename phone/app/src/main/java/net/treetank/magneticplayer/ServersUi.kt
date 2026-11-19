@@ -95,41 +95,52 @@ object Screens {
     /**
      * Plays `ref` on screen `screenKey` (mpv on a server), waking it if needed. Same server: a local file
      * as before. Different one: a URL with a ticket from the file server or from the phone ([source]). Remembers the screen for Remote.
+     * [ask]: "No subtitles in <language>, download?" (null = only where they are fetched without asking, see [ensureChosenSubs]);
+     * [next]: the following episodes when known (else [TvQueue] finds them).
      */
-    suspend fun play(ctx: Context, ref: MediaRef, screenKey: String, startSec: Double?, onStatus: (String) -> Unit) =
+    suspend fun play(ctx: Context, ref: MediaRef, screenKey: String, startSec: Double?, ask: (suspend (String) -> Boolean)? = null,
+                     next: List<MediaRef.InLibrary>? = null, onStatus: (String) -> Unit) =
         withContext(Dispatchers.IO) {
             val screen = Api.of(ctx, screenKey) ?: throw ApiException(ctx.getString(R.string.srv_screen_gone))
             screen.ensureAwake(onStatus)
+            val choice = Settings(ctx).subChoice
             if (screenKey == ref.srv) {
+                ensureChosenSubs(ctx, ref, ask, embeddedCounts = true, onStatus)
                 // position from the phone: the video may have last been watched elsewhere (Chromecast, TV, phone)
-                screen.playerOpen(ref, startSec ?: savedStart(ctx, ref))
+                screen.playerOpen(ref, startSec ?: savedStart(ctx, ref), choice)
             } else {
-                val src = source(ctx, ref, onStatus)
+                val src = source(ctx, ref, onStatus, ask = ask)
                 onStatus(ctx.getString(R.string.srv_opening_on, screen.srv.name))
-                screen.playerOpenUrl(Ticket(src.url, src.subs.map { it.url }, ref.title), startSec ?: savedStart(ctx, ref))
+                screen.playerOpenUrl(Ticket(src.url, src.subs.map { it.url }, ref.title), startSec ?: savedStart(ctx, ref),
+                    if (src.subsOn) null else "off")
             }
             Servers.setScreen(ctx, screenKey)
             Servers.setScreenRef(ctx, screenKey, ref)
             withContext(Dispatchers.Main) { Pilot.started(ctx, "screen") }
+            TvQueue.sent(ctx, "screen", ref, TvQueue.Target.Screen(screenKey), next)
         }
 
     /** Plays `ref` on a Chromecast (Google's default receiver, subtitles as WebVTT). */
-    suspend fun cast(ctx: Context, ref: MediaRef, target: CastTarget, startSec: Double?, onStatus: (String) -> Unit) {
-        val src = withContext(Dispatchers.IO) { source(ctx, ref, onStatus, variant = "cast") }
+    suspend fun cast(ctx: Context, ref: MediaRef, target: CastTarget, startSec: Double?, ask: (suspend (String) -> Boolean)? = null,
+                     next: List<MediaRef.InLibrary>? = null, onStatus: (String) -> Unit) {
+        val src = withContext(Dispatchers.IO) { source(ctx, ref, onStatus, variant = "cast", ask = ask) }
         onStatus(ctx.getString(R.string.srv_connecting_to, target.name))
         val start = startSec ?: savedStart(ctx, ref)
         Cast.play(ctx, target, ref, src, ((start ?: 0.0) * 1000).toLong())
         Pilot.started(ctx, "cast")
         Settings(ctx).lastTv = target.name
+        TvQueue.sent(ctx, "cast", ref, TvQueue.Target.Chromecast(target), next)
     }
 
     /** Plays `ref` on a DLNA TV (Samsung and others): the original file, SRT subtitles in its own way. */
-    suspend fun dlna(ctx: Context, ref: MediaRef, target: DlnaTarget, startSec: Double?, onStatus: (String) -> Unit) =
+    suspend fun dlna(ctx: Context, ref: MediaRef, target: DlnaTarget, startSec: Double?, ask: (suspend (String) -> Boolean)? = null,
+                     next: List<MediaRef.InLibrary>? = null, onStatus: (String) -> Unit) =
         withContext(Dispatchers.IO) {
-            val src = source(ctx, ref, onStatus)
+            val src = source(ctx, ref, onStatus, ask = ask)
             onStatus(ctx.getString(R.string.srv_sending_to, target.name))
             Dlna.play(ctx, target, ref, src, startSec ?: savedStart(ctx, ref) ?: 0.0)
             Settings(ctx).lastTv = target.name
+            TvQueue.sent(ctx, "dlna", ref, TvQueue.Target.Tv(target), next)
         }
 
     private fun savedStart(ctx: Context, ref: MediaRef) =
@@ -138,18 +149,52 @@ object Screens {
     /**
      * Where the screen gets the file: from the server (ticket) when it responds or the phone does not have the whole video (then we wake it).
      * The server does not respond (e.g. at someone's place as a guest), and the whole video is on the phone: the phone shares it.
+     * The subtitles picked last come first ([MediaSrc.forChoice]); missing ones are fetched first when the server answers.
      */
-    suspend fun source(ctx: Context, ref: MediaRef, onStatus: (String) -> Unit, variant: String? = null): MediaSrc {
+    suspend fun source(ctx: Context, ref: MediaRef, onStatus: (String) -> Unit, variant: String? = null,
+                       ask: (suspend (String) -> Boolean)? = null): MediaSrc {
         val file = Api.of(ctx, ref.srv)
         val onPhone = PhoneShare.hasWhole(ctx, ref.key())
+        val choice = Settings(ctx).subChoice
         if (file != null && (!onPhone || file.ping(1500))) {
             file.ensureAwake(onStatus)
+            ensureChosenSubs(ctx, ref, ask, embeddedCounts = false, onStatus)
             val t = file.ticket(ref, variant)
-            return MediaSrc(t.url, ref.title, t.subInfo, false, t.contentType)
+            return MediaSrc(t.url, ref.title, t.subInfo, false, t.contentType).forChoice(choice)
         }
         if (!onPhone) throw ApiException(ctx.getString(R.string.srv_file_server_gone))
         onStatus(ctx.getString(R.string.srv_sharing_from_phone))
-        return PhoneShare.start(ctx, ref)
+        return PhoneShare.start(ctx, ref).forChoice(choice)
+    }
+
+    /**
+     * A screen cannot fetch subtitles later the way the phone's player does, so before sending: no subtitles in the
+     * language picked last ([Settings.subChoice]) → download them (the best result that fits). In the folder where that
+     * language was picked (a series) without asking, elsewhere after [ask] (none = skip). [embeddedCounts]: mpv shows the
+     * video's own tracks, a TV does not.
+     */
+    private suspend fun ensureChosenSubs(ctx: Context, ref: MediaRef, ask: (suspend (String) -> Boolean)?, embeddedCounts: Boolean,
+                                         onStatus: (String) -> Unit) {
+        val s = Settings(ctx)
+        val lang = s.subChoice?.takeIf { it != "off" } ?: return
+        val r = ref as? MediaRef.InLibrary ?: return
+        val api = Api.of(ctx, r.srv)?.takeIf { it.srv.hasSubsDownloadJob } ?: return
+        val have = runCatching { api.subsList(r) }.getOrNull() ?: return
+        if (have.any { it.langKey == lang }) return
+        if (embeddedCounts) {
+            val emb = runCatching { api.mediaProbe(r) }.getOrNull()?.optJSONObject("file")?.optJSONArray("subs")
+            if (emb != null && (0 until emb.length()).any { subLangKey(emb.getJSONObject(it).optString("lang")) == lang }) return
+        }
+        val auto = folderKey(r) == s.subChoiceFolder
+        if (!auto) {
+            if (ask == null || !ask(langName(lang, java.util.Locale.getDefault()))) return
+            s.subChoiceFolder = folderKey(r)  // as "Download" on the player's bar: this series gets them on its own now
+        }
+        val d = runCatching {
+            fetchSubtitles(ctx, api, r, lang, have.mapNotNull { it.source?.key }.toSet()) { m -> m?.let(onStatus) }
+        }.getOrNull() ?: return
+        carryShift(api, r, d)
+        OfflineSync.refreshLater(ctx, r)
     }
 }
 

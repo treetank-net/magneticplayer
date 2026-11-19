@@ -88,12 +88,25 @@ class CastControlsActivity : ExpandedControllerActivity()
 data class CastTarget(val id: String, val name: String, val desc: String)
 
 /** Subtitles for the screen: the original (mpv) and WebVTT (Chromecast reads only VTT). */
-data class SubSrc(val name: String, val lang: String, val url: String, val vtt: String?)
+data class SubSrc(val name: String, val lang: String, val url: String, val vtt: String?, val default: Boolean = true)
 
 /** Where the screen gets the video: from the server (ticket) or from the phone ([PhoneShare]). */
 data class MediaSrc(val url: String, val title: String, val subs: List<SubSrc>, val viaPhone: Boolean,
                     /** type forced by the server ("for Chromecast" version = video/mp4) */
-                    val contentType: String? = null)
+                    val contentType: String? = null,
+                    /** false = the subtitles go along but none is turned on (the user's last choice was "Off") */
+                    val subsOn: Boolean = true) {
+    /**
+     * The subtitles picked last in the player ([Settings.subChoice]) first, so the screen turns them on (it turns on the
+     * first one): that language's version in use, then its others, then the rest as they were. "off": none on.
+     */
+    fun forChoice(choice: String?): MediaSrc = when (choice) {
+        null -> this
+        "off" -> copy(subsOn = false)
+        else -> copy(subs = subs.sortedByDescending { (if (subLangKey(it.lang) == choice) 2 else 0) + (if (it.default) 1 else 0) }
+            .let { s -> if (s.firstOrNull()?.let { subLangKey(it.lang) } == choice) s else subs })
+    }
+}
 
 /** Chromecasts: discovery (MediaRouter), playback through the default receiver, state for Remote. All on the UI thread. */
 object Cast {
@@ -211,7 +224,7 @@ object Cast {
             .setMediaInfo(info)
             .setAutoplay(true)
             .setCurrentTime(startMs)
-            .apply { if (tracks.isNotEmpty()) setActiveTrackIds(longArrayOf(1)) }
+            .apply { if (tracks.isNotEmpty() && src.subsOn) setActiveTrackIds(longArrayOf(1)) }
             .build()
         val r = suspendCancellableCoroutine { cont -> client.load(req).setResultCallback { cont.resume(it) } }
         if (!r.status.isSuccess) {

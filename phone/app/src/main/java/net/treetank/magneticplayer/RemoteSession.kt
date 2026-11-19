@@ -71,7 +71,10 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
                 remote = r; st = s
                 // a stopped TV (end of video, someone turned it off) counts as "nothing playing"
                 val idle = s == null || (r is DlnaRemote && Dlna.last?.state in Dlna.IDLE_STATES)
-                idlePolls = if (idle) idlePolls + 1 else 0
+                // a Chromecast with the Cast SDK has its own notification, but the series queue needs its state too
+                val q = if (r == null && kind == "cast" && Cast.session(ctx) != null) runCatching { CastRemote(ctx).status() }.getOrNull() else s
+                TvQueue.tick(ctx, kind, q, if (q === s) idle else q == null)
+                idlePolls = if (idle && !TvQueue.holds(kind) && !(q != null && TvQueue.current.value?.kind == kind)) idlePolls + 1 else 0
                 // device name in the system (tile, card in the panel) instead of "This phone"
                 RemoteRoutes.set(ctx, kind, if (s != null && r != null) r.name else null)
                 invalidateState()
@@ -200,6 +203,11 @@ class RemoteSessionService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // the "Next episode" notification's buttons ([TvQueue])
+        when (intent?.action) {
+            TvQueue.ACTION_NOW -> TvQueue.playNext(this)
+            TvQueue.ACTION_CANCEL -> TvQueue.cancel(this)
+        }
         intent?.getStringExtra(EXTRA_KIND)?.takeIf { it in KINDS }?.let { add(it) }
         if (sessions.isEmpty()) add("screen")  // old start without a kind (e.g. a media button)
         return super.onStartCommand(intent, flags, startId)

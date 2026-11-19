@@ -98,7 +98,7 @@ object PhoneShare {
         val base = "http://$ip:${sock.localPort}/$secret"
         return MediaSrc("$base/v/${Uri.encode(ref.title)}", ref.title,
             subs.mapIndexed { i, s ->
-                SubSrc(s.name, s.lang, "$base/s/$i/${Uri.encode(s.name)}", if (s.ext in setOf("srt", "vtt")) "$base/t/$i.vtt" else null)
+                SubSrc(s.name, s.lang, "$base/s/$i/${Uri.encode(s.name)}", if (s.ext in setOf("srt", "vtt")) "$base/t/$i.vtt" else null, s.default)
             }, true)
     }
 

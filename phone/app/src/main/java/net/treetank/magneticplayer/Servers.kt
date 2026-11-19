@@ -66,6 +66,10 @@ data class Server(
     val hasSubsShift get() = features?.optBoolean("subs_shift", false) ?: false
     /** agent 1.12.1+: POST /api/subs/download with "async" → a job with "download" / "fit" phases */
     val hasSubsDownloadJob get() = features?.optBoolean("subs_download_job", false) ?: false
+    /** /api/player/open takes `sub_lang` (agent 1.12.1+) */
+    val hasPlayerSubLang get() = features?.optBoolean("player_sub_lang", false) ?: false
+    /** POST /api/tasks/<id>/remove (agent 1.12.1+) */
+    val hasTaskRemove get() = features?.optBoolean("task_remove", false) ?: false
     /** How many search engines the user set on the server (`/api/config/search`); 0 = no "Search" button. */
     val searchEngines get() = features?.optInt("search_engines", 0) ?: 0
     /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */

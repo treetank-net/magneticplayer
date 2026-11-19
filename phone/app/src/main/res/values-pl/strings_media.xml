@@ -311,4 +311,13 @@
         <item quantity="many">%1$d wersji</item>
         <item quantity="other">%1$d wersji</item>
     </plurals>
+    <!-- serial na ekranie, TV albo Chromecaście (TvQueue) -->
+    <string name="tvq_channel">Następny odcinek</string>
+    <string name="tvq_next_in">Następny odcinek za %1$d s</string>
+    <string name="tvq_play_now">Odtwórz teraz</string>
+    <string name="tvq_cancel">Anuluj</string>
+    <string name="tvq_next_episode">Następny odcinek</string>
+    <string name="tvq_subs_ask_title">Brak napisów: %1$s</string>
+    <string name="tvq_subs_ask_text">Telewizor nie dociągnie ich, gdy film już leci. Pobrać teraz? To potrwa do minuty.</string>
+    <string name="tvq_subs_ask_no">Bez napisów</string>
 </resources>

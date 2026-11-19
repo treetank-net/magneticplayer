@@ -187,7 +187,7 @@ object Dlna {
     /** Sends the video and starts it from `startSec`. Off the UI thread. */
     fun play(ctx: Context, t: DlnaTarget, ref: MediaRef, src: MediaSrc, startSec: Double) {
         res = ctx.applicationContext
-        val srt = src.subs.firstOrNull { it.name.endsWith(".srt", ignoreCase = true) }
+        val srt = src.subs.takeIf { src.subsOn }?.firstOrNull { it.name.endsWith(".srt", ignoreCase = true) }
         // the agent provides CaptionInfo.sec when it knows which subtitles (the phone picks the first itself)
         val url = if (srt != null && t.samsung && !src.viaPhone) "${src.url}&cap=${android.net.Uri.encode(srt.name)}" else src.url
         // Samsung does not know video/x-matroska; the ticket from the server gives the type only for the "for Chromecast" version

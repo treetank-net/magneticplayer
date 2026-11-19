@@ -947,6 +947,7 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
             Text(stringResource(R.string.main_volume_fixed, remote.name),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        TvQueueControls(remote.kind, pos)
         Spacer(Modifier.height(20.dp))
         extras(s)
         Spacer(Modifier.height(10.dp))
