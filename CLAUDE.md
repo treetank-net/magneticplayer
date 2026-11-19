@@ -105,8 +105,10 @@ Win11 in VirtualBox: the `~/.cache/winvm/LOCK` protocol (shared with timeprotect
   doesn't seek.
 - The "Duży pokój" Chromecast has fixed volume (volume only with the TV remote).
 - **Pixel 8a, XviD/DivX (MPEG-4 ASP with B-frames):** the hardware `c2.exynos.mpeg4.decoder` falls behind (~16 of 24
-  fps reached the screen, picture drifted from the sound). The player prefers the software decoder for `video/mp4v-es`.
-  Measure what reaches the screen with `dumpsys SurfaceFlinger --timestats` (the SurfaceView layer's `totalFrames`).
+  fps reached the screen, picture drifted from the sound). The software `c2.android.mpeg4.decoder` keeps 24 fps but
+  decodes such AVI files wrong (blocks all over, frames back and forth: B-frames out of order), so it is NOT used.
+  Measure what reaches the screen with `dumpsys SurfaceFlinger --timestats` (the SurfaceView layer's `totalFrames`)
+  and always look at a paused frame (`adb exec-out screencap -p`), a frame count alone says nothing about the picture.
 - Android clears `cacheDir` when the app exceeds its cache quota: downloaded films live in `noBackupFilesDir/media`.
 - media3 `MediaSessionService`: the session must be added with `addSession()`, otherwise there's no notification until
   a controller connects.
