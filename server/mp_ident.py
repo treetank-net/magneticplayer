@@ -35,6 +35,71 @@ AUDIO = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 OTHER = {".iso", ".dmg", ".exe", ".deb", ".zip", ".rar", ".7z", ".cbr", ".cbz", ".pdf", ".epub"}
 EPISODE = re.compile(r"(?i)\bS\d{1,2}\s?E\d{1,3}\b|\b\d{1,2}x\d{2}\b|(?:^|[\s._-])E(?:p(?:isode)?)?\s?\d{1,3}(?:[\s._-]|$)|\bSeason\s?\d")
 
+# folders and names of what comes with a series or a film but isn't part of it
+EXTRAS = re.compile(r"(?i)^(extras?|featurettes?|bonus(es)?|special[ ._-]?features?|behind[ ._-]?the[ ._-]?scenes|"
+                    r"deleted[ ._-]?scenes|interviews?|trailers?|samples?|shorts?|making[ ._-]?of|dodatki|"
+                    r"materia(l|ł)y[ ._-]?dodatkowe)$")
+EXTRA_NAME = re.compile(r"(?i)(^|[\s._-])(sample|trailer|featurette|behind[ ._-]the[ ._-]scenes|making[ ._-]of|"
+                        r"deleted[ ._-]scenes?|gag[ ._-]?reel|bloopers?)([\s._-]|$)")
+_SE = re.compile(r"(?i)(?<![A-Za-z0-9])S(\d{1,2})\s?E(\d{1,3})(?!\d)|(?<![A-Za-z0-9])(\d{1,2})x(\d{2})(?!\d)|"
+                 r"(?<![A-Za-z0-9])(?:season|sezon|series)[\s._-]?(\d{1,2})[\s._-]*(?:episode|ep|odcinek|odc)[\s._-]?(\d{1,3})(?!\d)|"
+                 r"(?:^|\s-\s)(\d{1,2})\.(\d{1,2})(?=\s|$)")
+_SEASON = re.compile(r"(?i)(?<![A-Za-z0-9])(?:season|sezon|series|staffel|saison)[\s._-]?(\d{1,2})(?!\d)|^S(\d{1,2})$")
+_EP = re.compile(r"(?i)(?:^|[\s._-])(?:E|Ep|Episode|Odc(?:inek)?)[\s._-]?(\d{1,3})(?:[\s._-]|$)")
+_LEAD = re.compile(r"^(\d{1,3})(?=[\s._-]|$)")  # "1-She's Not There", "03 - Title"
+_BARE = re.compile(r"(?:^|[\s_-])(\d{1,3})(?=[\s_-]|$)")  # "Show_01_Title", "Show - 07 - Title"
+
+
+def is_extra(rel):
+    """A video that is an extra (in an Extras/Featurettes… folder, or a sample/trailer by name)."""
+    parts = rel.replace("\\", "/").split("/")
+    return any(EXTRAS.match(d.strip()) for d in parts[:-1]) or bool(EXTRA_NAME.search(os.path.splitext(parts[-1])[0]))
+
+
+def _natural(s):
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s.lower())]
+
+
+def episode_no(rel):
+    """(season, episode) from the path, either may be None."""
+    parts = rel.replace("\\", "/").split("/")
+    name = os.path.splitext(parts[-1])[0]
+    m = _SE.search(name)
+    if m:
+        g = [x for x in m.groups() if x is not None]
+        return int(g[0]), int(g[1])
+    if re.search(r"(?i)\bspecial\b", name):
+        return None, None  # a special without SxxEyy: after the numbered episodes
+    season = None
+    for d in [name, *reversed(parts[:-1])]:
+        m = _SEASON.search(d.strip())
+        if m:
+            season = int(m.group(1) or m.group(2))
+            break
+    bare = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", name)  # no [group]/(year) numbers
+    bare = _SEASON.sub(" ", bare)
+    m = _EP.search(name) or _LEAD.search(bare.strip()) or _BARE.search(bare)
+    return season, int(m.group(1)) if m else None
+
+
+def episodes(files):
+    """(path, size) videos of a series folder → (episodes in watching order, extras). Each: {path, season, episode, size}.
+    Small leftovers (< 15% of the biggest video, e.g. samples) count as extras too."""
+    vids = [(p, s) for p, s in files if os.path.splitext(p)[1].lower() in VIDEO]
+    if not vids:
+        return [], []
+    top = max(s for _, s in vids)
+    eps, extras = [], []
+    for p, s in vids:
+        se, ep = episode_no(p)
+        x = {"path": p, "season": se, "episode": ep, "size": s}
+        (extras if is_extra(p) or (s < 0.15 * top and ep is None) else eps).append(x)
+    # numbered ones by season and episode; ones with no number at all (specials, films of the series) at the end
+    eps.sort(key=lambda x: (x["season"] is None and x["episode"] is None, x["season"] or 0,
+                            x["episode"] if x["episode"] is not None else 1 << 20, _natural(x["path"])))
+    extras.sort(key=lambda x: _natural(x["path"]))
+    return eps, extras
+
 
 def genres(mask):
     return [g for g in GENRES if mask & G[g]]

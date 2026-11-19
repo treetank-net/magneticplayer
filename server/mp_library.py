@@ -176,6 +176,45 @@ class Library:
             raise LibError(T("no such file", "nie ma takiego pliku"), 404)
         return full
 
+    def episodes(self, i, rel):
+        """The videos of a series folder in watching order (season, episode) and its extras, paths relative to the root."""
+        import mp_ident
+        full = self.resolve(i, rel)
+        if not os.path.isdir(full):
+            raise LibError(T("not a folder", "to nie katalog"), 400)
+        base = os.path.realpath(self.root(i))
+        viewer = current_viewer() is not None
+        files = []
+
+        def walk(d, prefix, depth):
+            try:
+                names = sorted(os.listdir(d))
+            except OSError:
+                return
+            for n in names:
+                if n.startswith("."):
+                    continue
+                p = os.path.join(d, n)
+                try:
+                    st = os.stat(p)  # not DirEntry: see browse()
+                except OSError:
+                    continue
+                r = prefix + n
+                if stat.S_ISDIR(st.st_mode):
+                    if depth:
+                        walk(p, r + "/", depth - 1)
+                elif media_kind(n) == "video":
+                    if viewer and excluded(self.roots()[i], os.path.relpath(p, base)):
+                        continue
+                    files.append((r, st.st_size))
+        walk(full, "", 3)
+        eps, extras = mp_ident.episodes(files)
+        top = (rel or "").strip("/")
+        for x in eps + extras:
+            x["name"] = os.path.basename(x["path"])
+            x["path"] = f"{top}/{x['path']}" if top else x["path"]
+        return {"episodes": eps, "extras": extras}
+
     def browse(self, i, rel, show_all=False):
         full = self.resolve(i, rel)
         if not os.path.isdir(full):

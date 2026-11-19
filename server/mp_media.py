@@ -554,18 +554,24 @@ def _first_video(folder, depth=2):
         names = sorted(os.listdir(folder), key=str.lower)
     except OSError:
         return None
+    import mp_ident
     vids = [n for n in names if not n.startswith(".") and os.path.splitext(n)[1].lower() in VIDEO_EXT
-            and "sample" not in n.lower()]
+            and not mp_ident.is_extra(n)]
     if vids:  # the biggest one: the movie, not an extra
         return max((os.path.join(folder, n) for n in vids), key=lambda p: os.stat(p).st_size)
     if depth:
         for n in names:
             p = os.path.join(folder, n)
-            if not n.startswith(".") and os.path.isdir(p):
+            if not n.startswith(".") and not mp_ident.EXTRAS.match(n) and os.path.isdir(p):
                 v = _first_video(p, depth - 1)
                 if v:
                     return v
     return None
+
+
+def is_frame(path):
+    """A cover that is a frame from the video (not a picture that came with it)."""
+    return os.path.realpath(path).startswith(os.path.realpath(cover_dir()) + os.sep)
 
 
 def find_cover(full):
@@ -585,15 +591,35 @@ def find_cover(full):
     return None, full if os.path.splitext(full)[1].lower() in VIDEO_EXT else None
 
 
+def _letterbox(video, at):
+    """A crop (`iw:h:0:y`) without the black bars above and below, from ~3 s of the video at `at`; None when ffmpeg
+    fails. The threshold is a fraction of white, so it also fits 10-bit video."""
+    cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-ss", f"{at:.1f}", "-t", "3", "-i", video, "-map", "0:v:0",
+           "-vf", "cropdetect=limit=0.1:round=2:reset=0", "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    found = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", r.stderr)
+    if not found:
+        return None
+    w, h, x, y = (int(v) for v in found[-1])
+    if w < 64 or h < 64:  # a black stretch (a fade): nothing sensible to crop to
+        return None
+    # only the bars above and below: a dark scene can look like bars at the sides too
+    return f"iw:{h}:0:{y}"
+
+
 def cover(full, width=360):
-    """Path of a JPEG/PNG cover for a folder or a video, or None (nothing to show)."""
+    """Path of a JPEG/PNG cover for a folder or a video, or None (nothing to show). A frame taken by the agent lies in
+    cover_dir() (see is_frame)."""
     pic, video = find_cover(full)
     if pic:
         return pic
     if not video or not shutil.which("ffmpeg"):
         return None
     st = os.stat(video)
-    key = hashlib.sha1(f"{video}|{st.st_size}|{st.st_mtime}|{width}".encode()).hexdigest()
+    key = hashlib.sha1(f"{video}|{st.st_size}|{st.st_mtime}|{width}|v4".encode()).hexdigest()
     out = os.path.join(cover_dir(), key[:2], key + ".jpg")
     if os.path.exists(out):
         return out if os.path.getsize(out) else None
@@ -605,9 +631,12 @@ def cover(full, width=360):
             dur = probe(video).get("duration") or 0
         except Exception:  # noqa: BLE001
             dur = 0
-        at = max(dur * 0.1, 0) if dur else 30
+        # a fifth in: past the opening credits; `thumbnail` picks the most typical of ~3 s of frames (not a black or
+        # half-faded one from a cut)
+        at = max(dur * 0.2, 0) if dur else 60
+        crop = _letterbox(video, at)  # black bars of a widescreen film would show above and below in a portrait card
         cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-y", "-ss", f"{at:.1f}", "-i", video, "-frames:v", "1",
-               "-vf", f"scale={width}:-2", "-q:v", "4", out + ".part.jpg"]
+               "-vf", (f"crop={crop}," if crop else "") + f"thumbnail=75,scale={width}:-2", "-q:v", "4", out + ".part.jpg"]
         if sys.platform != "win32" and shutil.which("nice"):
             cmd = ["nice", "-n", "10", *cmd]
         try:

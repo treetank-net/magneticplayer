@@ -60,12 +60,32 @@ fun openInVlc(ctx: Context, url: String, title: String, subUrl: String? = null) 
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 class PlayerActivity : ComponentActivity() {
     companion object {
-        /** [imdb]: a film from the catalog; after it is watched to the end the app offers "What next". */
-        fun intent(ctx: Context, ref: MediaRef, imdb: String? = null) =
-            Intent(ctx, PlayerActivity::class.java).putExtra("ref", ref.encode()).apply { if (imdb != null) putExtra("imdb", imdb) }
+        /** [imdb]: a film from the catalog; after it is watched to the end the app offers "What next".
+         *  [next]: the following episodes of a series (same library folder): "Next episode" and a countdown at the end. */
+        fun intent(ctx: Context, ref: MediaRef, imdb: String? = null, next: List<Episode> = emptyList()) =
+            Intent(ctx, PlayerActivity::class.java).putExtra("ref", ref.encode()).apply {
+                if (imdb != null) putExtra("imdb", imdb)
+                if (next.isNotEmpty()) putExtra("next", org.json.JSONArray(next.map { e ->
+                    org.json.JSONObject().put("path", e.path).put("name", e.name).put("season", e.season ?: -1).put("episode", e.episode ?: -1)
+                }).toString())
+            }
+
+        private fun nextOf(i: Intent): List<Episode> {
+            val a = runCatching { org.json.JSONArray(i.getStringExtra("next") ?: return emptyList()) }.getOrNull() ?: return emptyList()
+            return List(a.length()) { k ->
+                val o = a.getJSONObject(k)
+                Episode(o.getString("path"), o.optString("name"), o.optInt("season", -1).takeIf { it >= 0 },
+                    o.optInt("episode", -1).takeIf { it >= 0 }, 0)
+            }
+        }
     }
 
     private var player: ExoPlayer? = null
+    /** the following episodes when a series is played from the catalog */
+    private var nextEps: List<Episode> = emptyList()
+    private var countdown: android.view.View? = null
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    private var root: FrameLayout? = null
     private lateinit var settings: Settings
     private lateinit var api: Api
     private lateinit var ref: MediaRef
@@ -84,6 +104,7 @@ class PlayerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         settings = Settings(this)
         ref = intent.getStringExtra("ref")?.let { MediaRef.decode(it) } ?: return finish()
+        nextEps = if (ref is MediaRef.InLibrary) nextOf(intent) else emptyList()
         // the server may have vanished from the app: a downloaded video plays from the phone's disk anyway (the buffer key does not change)
         api = Api.of(this, ref.srv) ?: Api(settings, Server.NONE.copy(key = ref.srv))
         url = try { api.mediaUrl(ref) } catch (e: ApiException) { return finish() }
@@ -124,6 +145,7 @@ class PlayerActivity : ComponentActivity() {
         texts.addView(info)
         top.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
         val buttons = top.apply {
+            if (nextEps.isNotEmpty()) addView(smallButton(getString(R.string.media_next_episode)) { playNext() })
             addView(smallButton(getString(R.string.media_to_screen)) { handOffToPc() })
             addView(smallButton("VLC") {
                 player?.pause()
@@ -141,6 +163,7 @@ class PlayerActivity : ComponentActivity() {
             ?.setBufferedColor(0xCC4FC3F7.toInt())
 
         setContentView(FrameLayout(this).apply {
+            root = this
             setBackgroundColor(Color.BLACK)
             addView(view, FrameLayout.LayoutParams(-1, -1))
             addView(buttons, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply {
@@ -179,8 +202,10 @@ class PlayerActivity : ComponentActivity() {
                     prefetchJob?.cancel()
                     val k = key
                     Thread { MediaCache.onWatched(this@PlayerActivity, k) }.start()
-                    // a catalog film watched to the end: "What next" instead of a black screen
-                    if (offerNext()) finish()
+                    settings.markWatched(ref.key())
+                    // a series: the next episode after a countdown; a catalog film: "What next" instead of a black screen
+                    if (nextEps.isNotEmpty()) startCountdown()
+                    else if (offerNext()) finish()
                 }
             }
 
@@ -499,6 +524,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        cancelCountdown()  // the next episode doesn't start behind a locked screen or another app
         stopDiscovery?.invoke()
         stopDiscovery = null
         player?.let {
@@ -507,6 +533,7 @@ class PlayerActivity : ComponentActivity() {
             // at the end of the video we start from the beginning next time
             if (it.playbackState != Player.STATE_IDLE) {
                 settings.setPosition(ref.key(), if (dur > 0 && pos > dur - 60_000) 0 else pos)
+                if (dur > 0 && pos > dur - 60_000) settings.markWatched(ref.key())  // the credits count as watched
                 // screen locked: we delete nothing; exiting the player at ≥80%: we delete at once
                 val watched = if (dur > 0) pos.toFloat() / dur else 0f
                 settings.touchCache(key, watched)
@@ -524,6 +551,66 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private var nextOffered = false
+
+    /** The next episode in a new player (its own buffer, subtitles and position), the rest of the list after it. */
+    private fun playNext() {
+        val r = ref as? MediaRef.InLibrary ?: return
+        val n = nextEps.firstOrNull() ?: return
+        cancelCountdown()
+        player?.pause()
+        startActivity(PlayerActivity.intent(this, MediaRef.InLibrary(r.root, n.path, r.srv), null, nextEps.drop(1)))
+        finish()
+    }
+
+    private fun cancelCountdown() {
+        ui.removeCallbacksAndMessages(null)
+        countdown?.let { root?.removeView(it) }
+        countdown = null
+    }
+
+    /** At the end of an episode: "Next episode in 10 s" with Play now / Cancel, bottom right above the controls. */
+    private fun startCountdown() {
+        if (countdown != null) return
+        val n = nextEps.firstOrNull() ?: return
+        val dp = resources.displayMetrics.density
+        val label = listOf(n.label, n.shortName).filter { it.isNotEmpty() }.joinToString(" · ")
+        val line = android.widget.TextView(this).apply {
+            setTextColor(Color.WHITE); textSize = 15f
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
+        }
+        val name = android.widget.TextView(this).apply {
+            text = label; setTextColor(0xFFB0BEC5.toInt()); textSize = 13f; maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((16 * dp).toInt(), (12 * dp).toInt(), (12 * dp).toInt(), (12 * dp).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 14 * dp; setColor(0xE0202124.toInt()) }
+            addView(line); addView(name)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, (8 * dp).toInt(), 0, 0)
+                addView(smallButton(getString(R.string.media_next_now)) { playNext() }.apply {
+                    (layoutParams as LinearLayout.LayoutParams).marginStart = 0
+                })
+                addView(smallButton(getString(R.string.media_next_cancel)) { cancelCountdown() })
+            })
+        }
+        countdown = box
+        root?.addView(box, FrameLayout.LayoutParams((300 * dp).toInt(), -2, Gravity.BOTTOM or Gravity.END).apply {
+            setMargins(0, 0, (16 * dp).toInt(), (96 * dp).toInt())
+        })
+        var left = 10
+        val tick = object : Runnable {
+            override fun run() {
+                if (left <= 0) return playNext()
+                line.text = getString(R.string.media_next_in, left)
+                left--
+                ui.postDelayed(this, 1000)
+            }
+        }
+        tick.run()
+    }
 
     /**
      * After a film from the catalog (agent 1.8+) has been watched: the Library opens "What next" for it. The IMDb id comes
@@ -543,6 +630,7 @@ class PlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        ui.removeCallbacksAndMessages(null)
         player?.release()
         player = null
         super.onDestroy()

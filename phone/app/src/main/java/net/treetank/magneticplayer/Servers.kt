@@ -48,6 +48,8 @@ data class Server(
         ?.let { a -> List(a.length()) { a.optString(it) }.filter { it.isNotEmpty() } } ?: emptyList()
     /** Agent 1.6+: covers for folders and videos (`/api/library/cover`). */
     val libraryCovers get() = features?.optBoolean("library_covers", false) ?: false
+    /** Agent 1.10+: a series folder's episodes in order, extras apart (`/api/library/episodes`). */
+    val libraryEpisodes get() = features?.optBoolean("library_episodes", false) ?: false
     /**
      * Agent 1.8+: the library as films (`/api/catalog`, person, what next), the shared wishlist, search engines in
      * the settings and the history of files sent from phones (`/api/uploads`).

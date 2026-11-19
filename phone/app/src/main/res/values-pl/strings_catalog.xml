@@ -27,6 +27,13 @@
         <item quantity="other">%1$d odcinka</item>
     </plurals>
     <string name="cat_play">Odtwórz</string>
+    <string name="cat_play_ep">Odtwórz %1$s</string>
+    <string name="cat_play_resume_ep">Wznów %1$s</string>
+    <string name="cat_episodes_title">Odcinki</string>
+    <string name="cat_season_n">Sezon %1$d</string>
+    <string name="cat_season_other">Inne</string>
+    <string name="cat_ep_at">przerwane na %1$d min</string>
+    <string name="cat_extras_n">Dodatki (%1$d)</string>
     <string name="cat_details">Szczegóły</string>
     <string name="cat_cd_on_computer">Na komputerze</string>
     <string name="cat_badge_pl_audio">PL lektor</string>

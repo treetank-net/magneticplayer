@@ -35,6 +35,17 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 // Building blocks of the catalog screens: synthetic covers, cover cards, person avatars, row headers, labels.
@@ -64,28 +75,58 @@ private fun grey(c: Color): Color {
     return Color(l, l, l)
 }
 
+/** The server whose covers the catalog shows (set by the catalog area); null = drawn covers only. */
+val LocalCoverApi = androidx.compose.runtime.staticCompositionLocalOf<Api?> { null }
+
+/** Where a catalog item's picture comes from: its folder (poster.jpg…, or a frame of its main video) or the file. */
+fun CatItem.art(): Pair<Int, String> = root to (dir ?: path)
+
 /**
- * A drawn cover: a gradient by genre with a soft circle and the title in a heavy font at the bottom.
+ * A cover: the picture that came with the film (poster.jpg…) or, when there is none, a frame the agent took from the
+ * video with the title over a dark fade; while it loads and when there is nothing, a drawn one: a gradient by genre with a
+ * soft circle and the title in a heavy font at the bottom.
+ * [art]: root + path for the agent's cover (needs [LocalCoverApi]); [wide]: the bigger frame, for full-width pictures.
  * [missing] = the title is not on the disks (greyscale). [badge] in the top left corner (e.g. "PL audio").
  */
 @Composable
 fun SyntheticCover(title: String, year: Int?, genres: List<String>, modifier: Modifier, missing: Boolean = false,
-                   badge: String? = null, titleSize: TextUnit = 14.sp, corner: Dp = 10.dp, padding: Dp = 8.dp) {
+                   badge: String? = null, titleSize: TextUnit = 14.sp, corner: Dp = 10.dp, padding: Dp = 8.dp,
+                   art: Pair<Int, String>? = null, wide: Boolean = false) {
     val (a0, b0) = genreColors(genres)
     val a = if (missing) grey(a0) else a0
     val b = if (missing) grey(b0) else b0
+    val api = LocalCoverApi.current?.takeIf { art != null && it.srv.libraryCovers }
+    val k = if (api != null && art != null) Covers.key(api, art.first, art.second, wide) else null
+    var bmp by remember(k) { mutableStateOf(k?.let { Covers.cached(it) }) }
+    if (k != null && bmp == null && !Covers.isMissing(k)) LaunchedEffect(k) {
+        bmp = withContext(Dispatchers.IO) {
+            runCatching { Covers.load(api!!, art!!.first, art.second, if (wide) 720 else 300, wide) }.getOrNull()
+        }
+    }
+    val pic = bmp
+    val frame = pic != null && k != null && Covers.isFrame(k)
     Box(modifier.clip(RoundedCornerShape(corner))) {
-        Canvas(Modifier.fillMaxSize()) {
+        if (pic == null) Canvas(Modifier.fillMaxSize()) {
             // about 160°: mostly top to bottom, light → dark → almost black
             drawRect(Brush.linearGradient(listOf(a, b, Color(0xFF050608)), start = Offset(size.width * 0.3f, 0f),
                 end = Offset(size.width * 0.7f, size.height * 1.05f)))
             val r = size.minDimension * 0.24f
             drawCircle(Color.White.copy(alpha = 0.14f), r, Offset(size.width * 0.8f, size.height * 0.18f))
             drawCircle(Color.White.copy(alpha = 0.06f), r * 1.6f, Offset(size.width * 0.8f, size.height * 0.18f))
+        } else {
+            Image(pic.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                colorFilter = if (missing) androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+                    androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) else null)
+            // a frame has no title of its own: a tint of the genre's colour and a dark fade at the bottom carry it
+            if (frame) Canvas(Modifier.fillMaxSize()) {
+                drawRect(a.copy(alpha = 0.18f))
+                drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f), Color.Black.copy(alpha = 0.88f)),
+                    startY = size.height * 0.35f, endY = size.height))
+            }
         }
         if (badge != null) Text(badge, Modifier.padding(6.dp).clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.55f))
             .padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Column(Modifier.align(Alignment.BottomStart).padding(padding)) {
+        if (pic == null || frame) Column(Modifier.align(Alignment.BottomStart).padding(padding)) {
             Text(title, color = Color.White, fontSize = titleSize, fontWeight = FontWeight.Black, lineHeight = titleSize * 1.1f,
                 maxLines = 4, overflow = TextOverflow.Ellipsis)
             if (year != null) Text(year.toString(), color = Color.White.copy(alpha = 0.75f), fontSize = (titleSize.value * 0.7f).sp)
@@ -106,7 +147,7 @@ fun plBadge(audio: List<String>, subs: List<String>): String? = when {
 fun CoverCard(item: CatItem, meta: String?, width: Dp = 112.dp, progress: Float? = null, onClick: () -> Unit) {
     Column(Modifier.width(width).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SyntheticCover(item.title, item.year, item.genres, Modifier.width(width).height(width * 1.5f),
-            badge = plBadge(item.audio, item.subs))
+            badge = plBadge(item.audio, item.subs), art = item.art())
         if (progress != null) LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(4.dp))
         if (meta != null) Text(meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -232,4 +273,53 @@ fun InfoBadge(text: String) {
 /** Plays a catalog item on the phone (the same activity as the library's "Phone" button); [imdb] enables "What next". */
 fun playOnPhone(ctx: android.content.Context, ref: MediaRef, imdb: String?, kind: String) {
     ctx.startActivity(PlayerActivity.intent(ctx, ref, imdb.takeIf { kind == "movie" }))
+}
+
+/** Grows each time the screen comes back (e.g. from the player), for state read from this phone's history. */
+@Composable
+fun rememberResumedTick(): Int {
+    var n by remember { mutableStateOf(0) }
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) n++ }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    return n
+}
+
+/**
+ * Which episode a series continues at: the one being watched (a saved position), else the one after the last one watched
+ * to the end, else the first. Only this phone's history counts.
+ */
+fun continueIndex(s: Settings, srv: String, root: Int, eps: List<Episode>): Int {
+    var best = -1
+    var bestAt = 0L
+    eps.forEachIndexed { i, e ->
+        val k = MediaRef.InLibrary(root, e.path, srv).key()
+        val at = maxOf(s.positionAt(k), s.watchedAt(k))
+        if (at > bestAt) { bestAt = at; best = i }
+    }
+    if (best < 0) return 0
+    val k = MediaRef.InLibrary(root, eps[best].path, srv).key()
+    val finished = s.position(k) <= 0 && s.watchedAt(k) > 0
+    return if (finished) (best + 1).takeIf { it < eps.size } ?: 0 else best
+}
+
+/** Episode [i] in the phone's player, the following ones queued ("Next episode", a countdown at the end). */
+fun playEpisode(ctx: android.content.Context, srv: String, root: Int, eps: List<Episode>, i: Int) {
+    ctx.startActivity(PlayerActivity.intent(ctx, MediaRef.InLibrary(root, eps[i].path, srv), null, eps.drop(i + 1)))
+}
+
+/** "Play" on a catalog card: a film from its main file; a series where this phone left off, without its extras. */
+fun playItem(ctx: android.content.Context, item: CatItem, srv: String) {
+    val api = Api.of(ctx, srv)
+    if (!item.series || item.dir == null || api == null || !api.srv.libraryEpisodes) {
+        return playOnPhone(ctx, item.ref(srv), item.imdb, item.kind)
+    }
+    kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch {
+        val eps = withContext(Dispatchers.IO) { runCatching { api.episodes(item.root, item.dir).episodes }.getOrNull() }
+        if (eps.isNullOrEmpty()) playOnPhone(ctx, item.ref(srv), item.imdb, item.kind)
+        else playEpisode(ctx, srv, item.root, eps, continueIndex(Settings(ctx), srv, item.root, eps))
+    }
 }

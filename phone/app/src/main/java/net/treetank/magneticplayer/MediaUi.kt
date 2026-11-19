@@ -74,7 +74,7 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
-                 imdb: String? = null, big: Boolean = false) {
+                 imdb: String? = null, big: Boolean = false, onPlay: (() -> Unit)? = null, playLabel: String? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
@@ -129,8 +129,10 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
         }
     }
     if (big) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.material3.Button({ ctx.startActivity(PlayerActivity.intent(ctx, ref, imdb)) }, Modifier.weight(1f).height(48.dp)) {
-            Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.cat_play))
+        androidx.compose.material3.Button({ onPlay?.invoke() ?: ctx.startActivity(PlayerActivity.intent(ctx, ref, imdb)) },
+            Modifier.weight(1f).height(48.dp)) {
+            Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp))
+            Text(playLabel ?: stringResource(R.string.cat_play), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
         if (screens.isNotEmpty()) androidx.compose.material3.FilledTonalIconButton(::onScreen, Modifier.size(48.dp)) {
             Icon(Icons.Filled.Computer, stringResource(R.string.cat_cd_on_computer))

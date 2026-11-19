@@ -34,7 +34,7 @@ WD_TTL = 30 * 86400    # Wikidata details are refreshed after a month
 WD_BATCH = 40
 SPARQL = "https://query.wikidata.org/sparql"
 CAST_MAX = 12
-ITEM_V = 2             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
+ITEM_V = 3             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
 SKIP_TAGS = {"muzyka", "inne"}
 LANG2 = {"pol": "pl", "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es",
          "ita": "it", "rus": "ru", "por": "pt", "dut": "nl", "nld": "nl", "cze": "cs", "ces": "cs", "chi": "zh",
@@ -193,7 +193,11 @@ class Catalog:
     def _item(self, r, rel, fs, is_dir, size, old):
         base = r["path"]
         eps = mp_ident.content(fs).get("episodes", 0) if is_dir else 0
-        main = sorted(fs)[0][0] if eps >= 2 else max(fs, key=lambda x: x[1])[0]  # a series starts at its first episode
+        if eps >= 2:  # a series starts at its first episode (not at an extra that sorts first)
+            order = mp_ident.episodes(fs)[0]
+            main = order[0]["path"] if order else sorted(fs)[0][0]
+        else:
+            main = max(fs, key=lambda x: x[1])[0]
         name = rel.rsplit("/", 1)[-1]
         nfo = None
         if is_dir:

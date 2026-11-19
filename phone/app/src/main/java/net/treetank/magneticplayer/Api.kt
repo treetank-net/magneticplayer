@@ -62,6 +62,11 @@ class Settings(ctx: Context) {
 
 
     fun position(key: String): Long = p.getLong("pos:$key", 0)
+    /** When the position was last saved (epoch ms, 0 = never). */
+    fun positionAt(key: String): Long = p.getLong("pt:$key", 0)
+    /** When the video was last watched to the end (epoch ms, 0 = never): series continue after it. */
+    fun watchedAt(key: String): Long = p.getLong("wd:$key", 0)
+    fun markWatched(key: String) = p.edit().putLong("wd:$key", System.currentTimeMillis()).apply()
     /** Also stamps when it was saved ("pt:"), so "Continue watching" in the catalog can order videos by recency. */
     fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).putLong("pt:$key", System.currentTimeMillis()).apply()
 
@@ -83,6 +88,16 @@ class Settings(ctx: Context) {
     fun forgetCache(key: String) = p.edit().remove("cw:$key").remove("cu:$key").apply()
 
 }
+
+/** One video of a series folder: [path] relative to the library folder, [season]/[episode] from the name (null = none). */
+data class Episode(val path: String, val name: String, val season: Int?, val episode: Int?, val size: Long) {
+    /** "S1 E3" (or "E3", or "") */
+    val label get() = listOfNotNull(season?.let { "S$it" }, episode?.let { "E$it" }).joinToString(" ")
+    /** the file name without the extension, dots and underscores as spaces */
+    val shortName get() = name.substringBeforeLast('.').replace('_', ' ').replace(Regex("(?<=\\w)\\.(?=\\w)"), " ")
+}
+
+data class Episodes(val episodes: List<Episode>, val extras: List<Episode>)
 
 data class Torrent(
     val id: String, val name: String, val progress: Double, val state: String,
@@ -515,6 +530,17 @@ class Api(val s: Settings, val srv: Server) {
     fun libraryRemove(index: Int): List<LibRoot> =
         roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "remove").put("index", index))))
 
+    /** A series folder's videos in watching order and its extras (agent 1.10+, `Server.libraryEpisodes`). */
+    fun episodes(root: Int, path: String): Episodes {
+        val o = JSONObject(call("GET", "/api/library/episodes?root=$root&path=${Uri.encode(path)}"))
+        fun list(a: JSONArray?) = if (a == null) emptyList() else List(a.length()) { i ->
+            val x = a.getJSONObject(i)
+            Episode(x.getString("path"), x.optString("name"), x.optInt("season", -1).takeIf { !x.isNull("season") && it >= 0 },
+                x.optInt("episode", -1).takeIf { !x.isNull("episode") && it >= 0 }, x.optLong("size"))
+        }
+        return Episodes(list(o.optJSONArray("episodes")), list(o.optJSONArray("extras")))
+    }
+
     fun browse(root: Int, path: String, all: Boolean = false): LibDir {
         val o = JSONObject(call("GET", "/api/library/browse?root=$root&path=${Uri.encode(path)}&all=${if (all) 1 else 0}"))
         val d = o.getJSONArray("dirs")
@@ -586,9 +612,13 @@ class Api(val s: Settings, val srv: Server) {
     fun trashEmpty(): Long = JSONObject(call("POST", "/api/library/trash/empty", JSONObject(), 60000)).optLong("freed")
 
     /** Cover of a folder or a video (agent 1.6+, also for guests), null when there is none. */
-    fun cover(root: Int, path: String): ByteArray? {
+    /** A cover's bytes and whether it is a frame the agent took from the video (agent 1.10+ says so; older: false). */
+    class CoverBytes(val bytes: ByteArray, val frame: Boolean)
+
+    fun cover(root: Int, path: String, wide: Boolean = false): CoverBytes? {
         if (!configured) return null
-        val c = URL("$base/api/library/cover?root=$root&path=${Uri.encode(path)}").openConnection() as HttpURLConnection
+        val c = URL("$base/api/library/cover?root=$root&path=${Uri.encode(path)}" + (if (wide) "&w=720" else ""))
+            .openConnection() as HttpURLConnection
         try {
             c.connectTimeout = 8000
             c.readTimeout = 15000
@@ -596,7 +626,7 @@ class Api(val s: Settings, val srv: Server) {
             val code = c.responseCode
             if (code == 404) return null
             if (code >= 400) throw ApiException("HTTP $code", code)
-            return c.inputStream.use { it.readBytes() }
+            return CoverBytes(c.inputStream.use { it.readBytes() }, c.getHeaderField("X-Cover-Kind") == "frame")
         } catch (e: IOException) {
             throw ApiException(e.javaClass.simpleName)
         } finally {

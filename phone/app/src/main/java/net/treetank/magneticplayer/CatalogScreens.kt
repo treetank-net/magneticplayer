@@ -1,5 +1,9 @@
 package net.treetank.magneticplayer
 
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material3.LinearProgressIndicator
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -136,9 +140,20 @@ class CatCtx(
  * The Library on a server with a catalog: Discover / Browse / Folders on top, catalog screens on a stack.
  * [folders] is today's folder view (unchanged).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CatalogArea(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, mode: String, onMode: (String) -> Unit,
+                stack: String, onStack: (String) -> Unit, onOpenFolder: (Int, String) -> Unit, folders: @Composable () -> Unit) {
+    // covers: the server's own posters or frames from the films (agent 1.6+), drawn ones otherwise
+    val ctx = LocalContext.current
+    val coverApi = remember(api.srv.key) { (Servers.get(ctx, api.srv.key) ?: api.srv).let { if (it.libraryCovers) Api(api.s, it) else null } }
+    androidx.compose.runtime.CompositionLocalProvider(LocalCoverApi provides coverApi) {
+        CatalogAreaBody(api, snack, onPlayingOnPc, mode, onMode, stack, onStack, onOpenFolder, folders)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, mode: String, onMode: (String) -> Unit,
                 stack: String, onStack: (String) -> Unit, onOpenFolder: (Int, String) -> Unit, folders: @Composable () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -225,7 +240,8 @@ fun CatalogArea(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, m
 @Composable
 private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
     val ctx = LocalContext.current
-    val resumes = remember(cat) { resumes(ctx, c.srv, cat) }
+    val back = rememberResumedTick()
+    val resumes = remember(cat, back) { resumes(ctx, c.srv, cat) }
     val movies = cat.items.count { !it.series }
     val series = cat.items.size - movies
     val now = System.currentTimeMillis() / 1000.0
@@ -271,7 +287,8 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
                 val total = (r.item.minutes ?: 0) * 60_000L
                 CoverCard(r.item, if (total > 0 && !r.item.series) stringResource(R.string.cat_left_min, ((total - r.posMs) / 60_000).coerceAtLeast(1))
                     else cardMeta(r.item), progress = if (total > 0 && !r.item.series) r.posMs.toFloat() / total else null) {
-                    playOnPhone(ctx, MediaRef.InLibrary(r.item.root, r.path, c.srv), r.item.imdb, r.item.kind)
+                    if (r.item.series) playItem(ctx, r.item, c.srv)  // the episode being watched, the next ones queued
+                    else playOnPhone(ctx, MediaRef.InLibrary(r.item.root, r.path, c.srv), r.item.imdb, r.item.kind)
                 }
             }
         }
@@ -310,7 +327,7 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
 private fun Hero(c: CatCtx, x: CatItem, isNew: Boolean) {
     val ctx = LocalContext.current
     Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp)).clickable { c.open(x) }) {
-        SyntheticCover("", null, x.genres, Modifier.fillMaxSize(), corner = 18.dp)
+        SyntheticCover("", null, x.genres, Modifier.fillMaxSize(), corner = 18.dp, art = x.art(), wide = true)
         Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
             Text(stringResource(if (isNew) R.string.cat_hero_new else R.string.cat_hero_top).uppercase(Locale.getDefault()),
                 color = Color(0xFFFFDAD6), fontSize = 12.sp, letterSpacing = 1.5.sp)
@@ -321,7 +338,7 @@ private fun Hero(c: CatCtx, x: CatItem, isNew: Boolean) {
                 plBadge(x.audio, x.subs)).joinToString(" · "),
                 color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button({ playOnPhone(ctx, x.ref(c.srv), x.imdb, x.kind) }) {
+                Button({ playItem(ctx, x, c.srv) }) {
                     Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.cat_play))
                 }
                 OutlinedButton({ c.open(x) }) { Text(stringResource(R.string.cat_details), color = Color.White) }
@@ -530,7 +547,7 @@ private fun CoverGrid(c: CatCtx, list: List<CatItem>) {
         items(list.size, key = { list[it].id }) { i ->
             val x = list[i]
             Column(Modifier.clickable { c.open(x) }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SyntheticCover(x.title, null, x.genres, Modifier.fillMaxWidth().aspectRatio(2f / 3f), badge = plBadge(x.audio, x.subs),
+                SyntheticCover(x.title, null, x.genres, Modifier.fillMaxWidth().aspectRatio(2f / 3f), badge = plBadge(x.audio, x.subs), art = x.art(),
                     titleSize = 13.sp, padding = 7.dp)
                 Text(listOfNotNull(yearMinutes(x.year, x.minutes).ifEmpty { null }, x.rating?.let { ratingText(it) }).joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
@@ -548,10 +565,18 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
     val cat = c.cat ?: return
     val ctx = LocalContext.current
     val similar = remember(cat, x) { similar(ctx, cat, x) }
+    // a series: its episodes in order (agent 1.10+), where this phone left off, extras apart
+    val canEps = x.series && x.dir != null && (Servers.get(ctx, c.srv) ?: c.api.srv).libraryEpisodes
+    var eps by remember(x.id) { mutableStateOf<Episodes?>(null) }
+    if (canEps) LaunchedEffect(x.id) { eps = withContext(Dispatchers.IO) { runCatching { c.api.episodes(x.root, x.dir!!) }.getOrNull() } }
+    val back = rememberResumedTick()
+    val settings = remember { Settings(ctx) }
+    val list = eps?.episodes.orEmpty()
+    val cont = remember(eps, back) { if (list.isEmpty()) -1 else continueIndex(settings, c.srv, x.root, list) }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Box(Modifier.fillMaxWidth().height(300.dp)) {
-                SyntheticCover(x.title, null, x.genres, Modifier.fillMaxSize(), titleSize = 34.sp, corner = 0.dp, padding = 20.dp)
+                SyntheticCover(x.title, null, x.genres, Modifier.fillMaxSize(), titleSize = 34.sp, corner = 0.dp, padding = 20.dp, art = x.art(), wide = true)
                 BackOnCover(c.pop)
             }
         }
@@ -567,7 +592,14 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                     if (x.series && x.episodes > 0) InfoBadge(pluralStringResource(R.plurals.cat_episodes, x.episodes, x.episodes))
                 }
                 Spacer(Modifier.height(4.dp))
-                MediaActions(c.api, x.ref(c.srv), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
+                if (cont >= 0) {
+                    val e = list[cont]
+                    val started = settings.position(MediaRef.InLibrary(x.root, e.path, c.srv).key()) > 0
+                    MediaActions(c.api, MediaRef.InLibrary(x.root, e.path, c.srv), c.snack, c.onPlayingOnPc, big = true,
+                        onPlay = { playEpisode(ctx, c.srv, x.root, list, cont) },
+                        playLabel = stringResource(if (started) R.string.cat_play_resume_ep else R.string.cat_play_ep,
+                            e.label.ifEmpty { (cont + 1).toString() }))
+                } else MediaActions(c.api, x.ref(c.srv), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     x.genres.forEach { g -> AssistChip({ c.push(Nav.results(listOf("genre:$g"))) }, { Text(genreLabel(g)) }) }
                     x.topics.forEach { q -> cat.topics[q]?.let { t -> AssistChip({ c.push(Nav.results(listOf("topic:$q"))) }, { Text(t) }) } }
@@ -585,6 +617,7 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 }
             }
         }
+        if (list.isNotEmpty()) item { EpisodeList(c, x, list, eps?.extras.orEmpty(), cont, settings, back) }
         if (x.cast.isNotEmpty()) item {
             SectionTitle(stringResource(R.string.cat_cast))
             Spacer(Modifier.height(8.dp))
@@ -631,6 +664,69 @@ private fun ratingLine(year: Int?, minutes: Int?, rating: Double?, votes: Int?) 
 private fun BackOnCover(onBack: () -> Unit) {
     IconButton(onBack, Modifier.padding(8.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.35f))) {
         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up), tint = Color.White)
+    }
+}
+
+/**
+ * A series' episodes: season chips when there are several seasons, each row "E3 · name" with this phone's progress (a bar)
+ * or ✓ when watched to the end; the episode it continues at is highlighted. Extras (making-of, deleted scenes, samples…)
+ * fold away under their own row and play alone.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List<Episode>, cont: Int, settings: Settings, back: Int) {
+    val ctx = LocalContext.current
+    val seasons = remember(list) { list.map { it.season }.distinct() }
+    var season by rememberSaveable(x.id) { mutableStateOf<Int?>(null) }
+    val shown = season ?: list.getOrNull(cont.coerceAtLeast(0))?.season ?: seasons.first()
+    var showExtras by rememberSaveable(x.id) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        SectionTitle(stringResource(R.string.cat_episodes_title))
+        if (seasons.size > 1) LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(seasons, key = { it ?: -1 }) { s ->
+                FilterChip(s == shown, { season = s }, { Text(s?.let { stringResource(R.string.cat_season_n, it) } ?: stringResource(R.string.cat_season_other)) })
+            }
+        }
+        list.forEachIndexed { i, e ->
+            if (e.season != shown) return@forEachIndexed
+            val k = MediaRef.InLibrary(x.root, e.path, c.srv).key()
+            val pos = remember(k, back) { settings.position(k) }
+            val watched = remember(k, back) { settings.watchedAt(k) > 0 && pos <= 0 }
+            val total = remember(k, back) { OfflineStore.get(ctx, k)?.durationMs ?: 0L }
+            Row(Modifier.fillMaxWidth().clickable { playEpisode(ctx, c.srv, x.root, list, i) }
+                .background(if (i == cont) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else Color.Transparent)
+                .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.PlayArrow, null, Modifier.size(20.dp),
+                    tint = if (i == cont) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(listOf(e.episode?.let { "E$it" } ?: e.label, e.shortName).filter { it.isNotEmpty() }.joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        color = if (watched) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified)
+                    if (pos > 0 && total > 0) LinearProgressIndicator(progress = { (pos.toFloat() / total).coerceIn(0f, 1f) },
+                        Modifier.padding(top = 4.dp).fillMaxWidth().height(3.dp))
+                    else if (pos > 0) Text(stringResource(R.string.cat_ep_at, pos / 60_000), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+                if (watched) Text("✓", Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        if (extras.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().clickable { showExtras = !showExtras }.padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.cat_extras_n, extras.size), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                Icon(if (showExtras) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
+            }
+            if (showExtras) extras.forEach { e ->
+                Row(Modifier.fillMaxWidth().clickable { playEpisode(ctx, c.srv, x.root, listOf(e), 0) }
+                    .padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Movie, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(12.dp))
+                    Text(e.path.substringAfter((x.dir ?: "") + "/").substringBeforeLast('.'), style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 }
 
@@ -890,7 +986,7 @@ private fun NextScreen(c: CatCtx, imdb: String, ended: Boolean) {
                 val whyText = src?.let { s -> ctx.getString(R.string.cat_why_after, s.title, m.why) } ?: m.why
                 FilmRow(m.titlePl?.let { "${m.title} · $it" } ?: m.title, m.year, m.genres, !m.have, yearMinutes(m.year, m.minutes), m.why,
                     onClick = { if (m.have && m.id != null) c.push(Nav.title(m.id)) else c.push(Nav.missing(m.imdb, whyText)) }) {
-                    if (m.have && item != null) FilledTonalButton({ playOnPhone(ctx, item.ref(c.srv), item.imdb, item.kind) }) {
+                    if (m.have && item != null) FilledTonalButton({ playItem(ctx, item, c.srv) }) {
                         Text(stringResource(R.string.cat_play))
                     } else if (!m.have) OutlinedButton({ c.toggleWish(ctx, m.imdb, m.title, m.year, m.genres, whyText) }) {
                         Text(stringResource(if (c.listed(m.imdb)) R.string.cat_listed_short else R.string.cat_list_add_short))

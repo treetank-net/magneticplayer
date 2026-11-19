@@ -52,7 +52,7 @@ from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt
 import mp_subsync
 
-VERSION = "1.9.0"
+VERSION = "1.10.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -130,7 +130,7 @@ def save_config(cfg):
 # stay closed to guests until someone deliberately adds them here.
 GUEST_ALLOWED = {
     "GET": ("/api/info", "/api/announce", "/api/app/version", "/app/MagneticPlayer.apk", "/api/library",
-            "/api/library/browse", "/api/library/search", "/api/library/cover", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
+            "/api/library/browse", "/api/library/episodes", "/api/library/search", "/api/library/cover", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
             "/api/media/converts", "/api/jobs", "/api/player/status", "/api/cast/status", "/api/cast/devices",
             "/api/renderers", "/api/torrents"),
     "POST": ("/api/media/ticket", "/api/player/open", "/api/player/cmd", "/api/cast/play", "/api/cast/cmd",
@@ -993,7 +993,7 @@ class App:
                 "library_tasks": True,
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
-                "library_covers": True,  # GET /api/library/cover (agent 1.6+)
+                "library_episodes": True, "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
                 "library_modernize": True,  # POST /api/library/plan {"kind": "modernize"} (agent 1.8.2+)
@@ -1628,15 +1628,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.tasks.cancel(m.group(1)))
             if p == "/api/library/cover" and method in ("GET", "HEAD"):
                 # a folder or a video: poster.jpg/folder.jpg/<name>.jpg next to it, otherwise a frame (mp_media.cover)
-                pic = mp_media.cover(a.library.resolve(int(qd.get("root", 0)), qd.get("path", "")))
+                pic = mp_media.cover(a.library.resolve(int(qd.get("root", 0)), qd.get("path", "")),
+                                     720 if qd.get("w") == "720" else 360)
                 if not pic:
                     raise ApiError(T("no cover", "brak okładki"), 404)
                 return self.send_static(pic, "image/png" if pic.endswith(".png") else "image/webp" if pic.endswith(".webp")
-                                        else "image/jpeg", method == "HEAD", "private, max-age=86400")
+                                        else "image/jpeg", method == "HEAD", "private, max-age=86400",
+                                        {"X-Cover-Kind": "frame" if mp_media.is_frame(pic) else "picture"})
             if p == "/api/library/search" and method == "GET":
                 return self.send_json(a.library.search(qd.get("q", "")))
             if p == "/api/library/browse" and method == "GET":
                 return self.send_json(a.library.browse(int(qd.get("root", 0)), qd.get("path", ""), qd.get("all") == "1"))
+            if p == "/api/library/episodes" and method == "GET":
+                return self.send_json(a.library.episodes(int(qd.get("root", 0)), qd.get("path", "")))
             if p == "/api/fs" and method == "GET":
                 return self.send_json(a.library.fs_dirs(qd.get("path", "")))
             m = re.fullmatch(r"/lib/(\d+)/(.+)", p)
@@ -1830,7 +1834,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_static(self, path, ctype, head_only=False, cache="no-cache"):
+    def send_static(self, path, ctype, head_only=False, cache="no-cache", headers=None):
         try:
             with open(path, "rb") as f:
                 body = f.read()
@@ -1840,6 +1844,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache)
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         if not head_only:
             self.wfile.write(body)

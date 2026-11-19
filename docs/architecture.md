@@ -301,15 +301,20 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    watches from the same disk, since the whole file is read for its sound.
 
 ### Covers
-`mp_media.cover()`: a picture next to the video or in the folder first (Jellyfin/Kodi names), otherwise one frame
-from ~10% into the video (the biggest video of a folder, samples skipped) via ffmpeg, cached by path, size and mtime.
-No network or accounts; TMDB posters remain an option for later.
+`mp_media.cover()`: a picture next to the video or in the folder first (Jellyfin/Kodi names), otherwise a frame of
+the video (the biggest video of a folder, extras and samples skipped) via ffmpeg, cached by path, size, mtime and
+width (360 px, 720 for full-width pictures). The frame (agent 1.10+): a fifth into the video, past the opening
+credits; `cropdetect` on 3 s finds the black bars above and below (threshold as a fraction, so 10-bit video works) and
+they are cut off, since a portrait card would show them; `thumbnail` picks the most typical of ~3 s of frames, not a
+black or half-faded one. The answer says `X-Cover-Kind: frame` or `picture`: the app puts the title over a frame
+(darkened at the bottom) and shows a poster as it is. No network or accounts; TMDB posters remain an option for later.
 
 ### Catalog (agent 1.8+)
 `mp_catalog.py`, the API in [api.md](api.md#catalog-films-instead-of-folders-agent-18-featurescatalog).
 1. A scan (at start, every 30 min and after `mp_library.invalidate()`) walks the library folders. Every top-level
    entry is one title; a folder with several big videos and no episodes is split into one title per file. Series
-   are one title with an episode count.
+   are one title with an episode count; their main video is the first episode (agent 1.10+, `mp_ident.episodes`), not
+   whatever sorts first (an "Extras" folder did).
 2. Each new or changed title: `mp_ident` guess (with `.nfo`), ffprobe for audio languages (cached by size and
    mtime), subtitle languages from the sidecar names. Only known 2-letter codes are kept, the rest is `?`.
 3. Wikidata in batches of 40 by IMDb id (SPARQL for the QID, `wbgetentities` for claims), refreshed every 30 days;
@@ -322,6 +327,19 @@ No network or accounts; TMDB posters remain an option for later.
 
 Results are in `catalog.json` next to the configuration; `GET /api/catalog?since=<version>` returns only `same`
 when nothing changed.
+
+### Series (agent 1.10+)
+`GET /api/library/episodes` walks a series folder (3 levels) and `mp_ident.episodes()` orders it:
+- the number: `S01E02`, `1x02`, `Season 1 Episode 2`, `1.2` between dashes, otherwise the season from the name or a
+  folder (`Season 4`, `Sezon 4`, `S04`) and the episode from `E07`/`Episode 7`, a leading number (`1-Title`) or a lone
+  one (`Show_01_Title`); `(?<![A-Za-z0-9])` instead of `\b`, since `_` counts as a word character;
+- extras: folders like Extras, Featurettes, Deleted Scenes, Dodatki…, names with sample/trailer/featurette/gag reel,
+  and small files without a number (under 15% of the biggest video);
+- order: season, episode, then natural name order; files with no number at all (specials, films of the series) last.
+
+The phone keeps its own history (`pos:`, `pt:` and, new, `wd:` = watched to the end). "Play" on a series continues:
+the episode with the latest activity if it has a position, else the one after it, else the first. The player gets
+the rest of the list.
 
 "Similar in your collection" on the title screen is computed by the app from the catalog: shared actors and
 directors, then topics, then genres. Genres alone need two specific ones in common ("Drama" doesn't count), and
@@ -419,12 +437,12 @@ agent errors come back in the same language.
 | `LibraryTab.kt` | the library (folders of every server, tag filter, search, covers), folder settings (tags, visibility, storage profile, "Also copy to") and picking a folder on the computer |
 | `LibraryTasks.kt` | agent 1.6+: "Disks and tidy-up" (disks with the library vs other files, trash, tasks with progress and cancel), the plan preview with checkboxes (free up space, move, tidy, shrink, duplicates, delete), profile choice, covers (`Covers`, `CoverThumb`) |
 | `Catalog.kt` | agent 1.8+: catalog models and requests (`/api/catalog*`, wishlist, search engines, `/api/uploads`), `CatalogCache` (per server, in memory, refreshed with `?since=<version>`), "continue watching" from local positions, filter conditions (`Cond`) |
-| `CatalogUi.kt` | synthetic covers (gradient by first genre, title in heavy type, greyscale when not on the disks; catalog screens never fetch frame covers), cover cards and rows, people, genre names, badges |
+| `CatalogUi.kt` | covers: the agent's picture (a poster as it is, a frame with the title over a dark fade; agent 1.6+), a drawn one while it loads and when there is none (gradient by first genre, title in heavy type, greyscale when not on the disks); cover cards and rows, people, genre names, badges; series: `continueIndex` (where this phone left off), `playEpisode`, `playItem` |
 | `CatalogScreens.kt` | the Library on a server with a catalog: Discover / Browse / Folders switch (Folders is the folder view above), results with combinable filters, title, missing title (want to watch, the user's own search engines, paste magnet), person, "What next?" (also opened by the player after a film ends), want-to-watch list, the search engines dialog; screens are a saveable stack inside the Library tab |
 | `UploadsUi.kt` | "Sent from phones" in the Downloading tab: files waiting to be put away (Move, Other folder…, Keep here), moving progress, "Put away this week", the badge on the tab |
 | `Tasks.kt` | one notification per finished file task (checked with `Access` while the app is on screen) |
 | `MediaUi.kt` | Phone, screen and VLC buttons, subtitle dialog |
-| `PlayerActivity.kt` | the player on the phone |
+| `PlayerActivity.kt` | the player on the phone; a series played from the catalog carries the following episodes ("Next episode" in the top bar, a 10 s countdown with Play now / Cancel at the end; each episode opens a new player) |
 | `MagnetActivity.kt` | handling magnets |
 | `Updater.kt` | updates from the computer, sharing its own APK |
 | `Access.kt` | access requests: checking on connect (loop in `MainActivity`), a notification with Guest/Member/Decline buttons, `AccessReceiver` |

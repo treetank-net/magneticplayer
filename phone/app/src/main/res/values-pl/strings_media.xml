@@ -13,6 +13,10 @@
     <string name="media_opening">Otwieram…</string>
     <string name="media_play">Odtwórz</string>
     <string name="media_to_screen">Na ekran</string>
+    <string name="media_next_episode">Następny odcinek</string>
+    <string name="media_next_in">Następny odcinek za %1$d s</string>
+    <string name="media_next_now">Odtwórz teraz</string>
+    <string name="media_next_cancel">Anuluj</string>
     <string name="media_server_cap">Serwer</string>
     <string name="media_server_lower">serwer</string>
     <string name="media_after_none">nic (seeduje dalej)</string>

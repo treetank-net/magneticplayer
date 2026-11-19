@@ -21,6 +21,13 @@
         <item quantity="other">%1$d episodes</item>
     </plurals>
     <string name="cat_play">Play</string>
+    <string name="cat_play_ep">Play %1$s</string>
+    <string name="cat_play_resume_ep">Resume %1$s</string>
+    <string name="cat_episodes_title">Episodes</string>
+    <string name="cat_season_n">Season %1$d</string>
+    <string name="cat_season_other">Other</string>
+    <string name="cat_ep_at">stopped at %1$d min</string>
+    <string name="cat_extras_n">Extras (%1$d)</string>
     <string name="cat_details">Details</string>
     <string name="cat_cd_on_computer">On the computer</string>
     <string name="cat_badge_pl_audio">PL audio</string>

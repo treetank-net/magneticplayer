@@ -77,26 +77,32 @@ import org.json.JSONObject
 
 /** Folder and video covers from the agent (`/api/library/cover`), decoded small and kept in memory. */
 object Covers {
-    private val cache = object : LruCache<String, Bitmap>(24 shl 20) {
+    private val cache = object : LruCache<String, Bitmap>(32 shl 20) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private val missing = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val frames = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
-    fun key(api: Api, root: Int, path: String) = "${api.srv.key}|$root|$path"
+    fun key(api: Api, root: Int, path: String, wide: Boolean = false) = "${api.srv.key}|$root|$path" + if (wide) "|w" else ""
     fun cached(k: String): Bitmap? = cache.get(k)
     fun isMissing(k: String) = k in missing
+    /** The cover under [k] is a frame from the video (no title on it), not a poster. */
+    fun isFrame(k: String) = k in frames
 
-    /** Downloads and decodes a cover to about [px] on the shorter side; null = none (remembered until the app dies). */
-    fun load(api: Api, root: Int, path: String, px: Int): Bitmap? {
-        val k = key(api, root, path)
+    /** Downloads and decodes a cover to about [px] on the shorter side; null = none (remembered until the app dies).
+     *  [wide]: the agent's bigger frame (720 px), for full-width pictures. */
+    fun load(api: Api, root: Int, path: String, px: Int, wide: Boolean = false): Bitmap? {
+        val k = key(api, root, path, wide)
         cache.get(k)?.let { return it }
-        val bytes = api.cover(root, path) ?: run { missing += k; return null }
+        val got = api.cover(root, path, wide) ?: run { missing += k; return null }
+        val bytes = got.bytes
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         var sample = 1
         while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= px) sample *= 2
         val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
             ?: run { missing += k; return null }
+        if (got.frame) frames += k
         cache.put(k, bmp)
         return bmp
     }
