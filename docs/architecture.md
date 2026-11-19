@@ -272,7 +272,7 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    smaller profiles keep Polish, English, undefined and default audio tracks; subtitles and chapters are copied.
    Only files outside the torrent client; HEVC/AV1 already small enough and estimates saving under 15% are
    skipped. Old picture formats that phones, TVs and Chromecasts no longer decode (`OLD_VIDEO`: DivX 3, WMV,
-   RealVideo, Flash, Theora, Cinepak, Indeo, MPEG-1…) are the exception: they are re-encoded even when that saves
+   RealVideo, Flash, Theora, Cinepak, Indeo, MPEG-1, and since 1.10.1 MPEG-4 Part 2 = XviD/DivX 4+, whose B-frames phones get wrong from AVI…) are the exception: they are re-encoded even when that saves
    little (the result may be up to 25% bigger), and `tidy` encodes them as `good`, since a copied old picture stays
    unplayable. "Old formats" (`kind: modernize`) finds them in every library folder except backups, whatever the
    folder's profile. Odd frame sizes are rounded to even ones. The encoder is chosen per task (agent 1.7+): `cpu` = x265 `-preset fast` at `nice 19` and `ionice -c3`,

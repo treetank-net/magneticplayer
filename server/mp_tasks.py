@@ -66,7 +66,10 @@ MIN_SAVING = 0.15
 # such files are re-encoded even when it saves little, so the collection keeps playing everywhere
 OLD_VIDEO = {"msmpeg4v1", "msmpeg4v2", "msmpeg4v3", "wmv1", "wmv2", "wmv3", "vc1", "rv10", "rv20", "rv30", "rv40",
              "flv1", "vp6", "vp6f", "vp6a", "theora", "cinepak", "indeo2", "indeo3", "indeo4", "indeo5", "svq1", "svq3",
-             "mpeg1video", "h261"}
+             "mpeg1video", "h261",
+             # MPEG-4 Part 2 (XviD, DivX 4+): Chromecasts don't take it, and phones play it badly (in AVI the B-frames carry
+             # no presentation time: the Pixel's hardware decoder drops them, its software one shows them out of order)
+             "mpeg4"}
 OLD_GROWTH = 1.25  # an old-format file may come out up to this much bigger (it then plays, which is the point)
 MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
@@ -1301,7 +1304,8 @@ class Tasks:
         except Exception as e:  # noqa: BLE001
             _rm(part)
             raise TaskError(T(f"the result can't be read: {e}", f"wyniku nie da się odczytać: {e}"))
-        if abs((ninfo.get("duration") or 0) - dur) > max(2.0, dur * 0.005):
+        got = ninfo.get("duration") or 0
+        if abs(got - dur) > max(2.0, dur * 0.005) and abs(got - _readable_length(full)) > max(2.0, got * 0.005):
             _rm(part)
             raise TaskError(T("the result has a different length, the original was kept", "wynik ma inną długość, oryginał został"))
         if new > st.st_size * (OLD_GROWTH if i.get("old_format") else 1 - pr.get("min_saving", MIN_SAVING) / 2):
@@ -1537,6 +1541,18 @@ def _nice(cmd):
         if shutil.which("nice"):
             cmd = ["nice", "-n", "19", *cmd]
     return cmd
+
+
+def _readable_length(full):
+    """Seconds of picture that can really be read from a file. An interrupted download keeps its full length in the
+    header (AVI) but ends early; the encode then has only what is there, and that is all right."""
+    try:
+        r = subprocess.run(_nice(["ffmpeg", "-hide_banner", "-nostdin", "-i", full, "-map", "0:v:0", "-c", "copy",
+                                  "-f", "null", "-"]), capture_output=True, timeout=600)
+    except (OSError, subprocess.SubprocessError):
+        return 0.0
+    t = re.findall(r"time=(\d+):(\d\d):(\d\d(?:\.\d+)?)", r.stderr.decode("utf-8", "replace"))
+    return int(t[-1][0]) * 3600 + int(t[-1][1]) * 60 + float(t[-1][2]) if t else 0.0
 
 
 def _rm(path):
