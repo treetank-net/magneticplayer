@@ -275,6 +275,12 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
         cat.items.flatMap { it.cast.take(5) }.groupingBy { it }.eachCount().filter { it.value >= 2 }.maxByOrNull { it.value }?.key
     }
     val kids = remember(cat) { cat.items.filter { it.fitsAge(7) } }
+    // "Because you watched": the title watched last (also a film finished) and what is like it, minus what was watched
+    val because = remember(cat, back) {
+        val seen = resumes(ctx, c.srv, cat, withDone = true)
+        val ids = seen.map { it.item.id }.toSet()
+        seen.firstOrNull()?.item?.let { x -> x to similar(ctx, cat, x).filter { it.first.id !in ids } }?.takeIf { it.second.size >= 3 }
+    }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item {
             Text(listOfNotNull(pluralStringResource(R.plurals.cat_films, movies, movies),
@@ -308,6 +314,12 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
                     if (r.item.series) c.open(r.item)  // the series' screen: "Resume S1 E3" on top, any other episode below
                     else playOnPhone(ctx, MediaRef.InLibrary(r.item.root, r.path, c.srv), r.item.imdb, r.item.kind)
                 }
+            }
+        }
+        if (because != null) item {
+            val (x, list) = because
+            CoverRow(stringResource(R.string.cat_row_because, x.title), null, list, null, { it.first.id }) { (y, why) ->
+                CoverCard(y, why) { c.open(y) }
             }
         }
         if (kids.isNotEmpty()) item {

@@ -220,7 +220,7 @@ object CatalogCache {
 data class Resume(val item: CatItem, val path: String, val posMs: Long, val at: Long)
 
 /** Positions saved on this phone that belong to items of this server, most recent first. */
-fun resumes(ctx: Context, srv: String, cat: CatalogData): List<Resume> {
+fun resumes(ctx: Context, srv: String, cat: CatalogData, withDone: Boolean = false): List<Resume> {
     val prefix = Servers.prefixOf(srv) + "lib"
     val byRoot = cat.items.groupBy { it.root }
     val s = Settings(ctx)
@@ -237,7 +237,7 @@ fun resumes(ctx: Context, srv: String, cat: CatalogData): List<Resume> {
             // re-encoded on the server: same name, another extension (Settings.follow moves the position on first read)
             ?: items.firstOrNull { stem != null && it.dir == null && Settings.stemOf(it.path) == stem }
             ?: items.firstOrNull { it.dir != null && path.startsWith(it.dir + "/") } ?: return@mapNotNull null
-        if (v.first <= 0 && item.dir == null) return@mapNotNull null  // a film watched to the end is done
+        if (v.first <= 0 && item.dir == null && !withDone) return@mapNotNull null  // a film watched to the end is done
         Resume(item, if (item.path != path && item.dir == null) item.path else path, v.first, v.second)
     }.sortedByDescending { it.at }.distinctBy { it.item.id }
 }

@@ -52,6 +52,7 @@
     <string name="cat_row_continue">Oglądaj dalej</string>
     <string name="cat_left_min">zostało %1$d min</string>
     <string name="cat_row_kids">Dla dzieci</string>
+    <string name="cat_row_because">Podobne do „%1$s”</string>
     <string name="cat_row_with">Z udziałem: %1$s</string>
     <string name="cat_row_added">Ostatnio dodane</string>
     <string name="cat_row_from_list">Z twojej listy</string>

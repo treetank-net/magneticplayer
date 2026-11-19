@@ -46,6 +46,7 @@
     <string name="cat_row_continue">Continue watching</string>
     <string name="cat_left_min">%1$d min left</string>
     <string name="cat_row_kids">For kids</string>
+    <string name="cat_row_because">Because you watched %1$s</string>
     <string name="cat_row_with">With %1$s</string>
     <string name="cat_row_added">Recently added</string>
     <string name="cat_row_from_list">From your list</string>

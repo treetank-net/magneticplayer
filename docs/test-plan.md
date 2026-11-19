@@ -104,6 +104,10 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       opens the same sheet as the phone's player (tracks by language, kind, channels, codec) and the pick there is
       remembered too (the next episode on the phone or the screen starts with it).
 
+- [ ] Catalog, Discover: a row "Because you watched <title>" after "Continue watching", from the title watched last
+      (a film finished too), with titles like it on the disks (the same match as "Similar" on a title's screen) minus
+      what was watched; hidden with fewer than 3.
+
 ## Magnets
 
 - [ ] A magnet without `dn=` (agent 1.13.1): the card says it waits for the name; once the client has the metadata
@@ -140,8 +144,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   "Wake all" for moving files between computers and browsing every library at once.
   Screen-only servers stay out of that (the switcher already shows them greyed out as "screen only").
 
-- [idea] The catalog's "New on your disks" row: sometimes something else, e.g. a carousel "Because you watched <title>"
-  (from the disks) or suggestions that are not on the disks (to download by magnet).
+- [~] The catalog's "New on your disks" row: sometimes something else, e.g. a carousel "Because you watched <title>"
+  (from the disks: done, see "Catalog and Remote") or suggestions that are not on the disks (to download by magnet).
 - [idea] A library usable without the computer: the catalog cached on the phone (maybe without covers), with what is
   downloaded marked and playable. Moments when the phone reaches a server again are sync points: refresh the cached
   catalog, send positions and watched marks made offline, refresh downloaded copies' subtitles. Incremental, like

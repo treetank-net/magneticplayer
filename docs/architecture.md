@@ -379,7 +379,8 @@ the credits; its countdown starts at the credits when they are known, otherwise 
 
 "Similar in your collection" on the title screen is computed by the app from the catalog: shared actors and
 directors, then topics, then genres. Genres alone need two specific ones in common ("Drama" doesn't count), and
-kids' titles are matched only with kids' titles. The shared want-to-watch list is re-read every 30 s and on every
+kids' titles are matched only with kids' titles. The same match makes Discover's "Because you watched <title>" row
+from the title watched last on this phone (finished films too), minus what was watched. The shared want-to-watch list is re-read every 30 s and on every
 screen change, so a title added on another phone shows up without a restart.
 
 ### MCP for an AI assistant
