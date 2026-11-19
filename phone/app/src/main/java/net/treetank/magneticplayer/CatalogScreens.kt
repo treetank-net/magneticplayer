@@ -287,7 +287,7 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
                 val total = (r.item.minutes ?: 0) * 60_000L
                 CoverCard(r.item, if (total > 0 && !r.item.series) stringResource(R.string.cat_left_min, ((total - r.posMs) / 60_000).coerceAtLeast(1))
                     else cardMeta(r.item), progress = if (total > 0 && !r.item.series) r.posMs.toFloat() / total else null) {
-                    if (r.item.series) playItem(ctx, r.item, c.srv)  // the episode being watched, the next ones queued
+                    if (r.item.series) c.open(r.item)  // the series' screen: "Resume S1 E3" on top, any other episode below
                     else playOnPhone(ctx, MediaRef.InLibrary(r.item.root, r.path, c.srv), r.item.imdb, r.item.kind)
                 }
             }
