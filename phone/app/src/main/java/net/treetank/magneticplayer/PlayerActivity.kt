@@ -177,6 +177,13 @@ class PlayerActivity : ComponentActivity() {
         // phone decoders first, FFmpeg when the phone cannot (AC3/E-AC3/DTS…)
         val renderers = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            // MPEG-4 Part 2 (XviD/DivX): the software decoder first. The Pixel's hardware one (c2.exynos.mpeg4) falls
+            // behind on Advanced Simple Profile with B-frames: about 16 of 24 frames a second reached the screen and the
+            // picture drifted away from the sound. These videos are small enough for the CPU.
+            .setMediaCodecSelector { mime, secure, tunneling ->
+                val all = androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(mime, secure, tunneling)
+                if (mime == androidx.media3.common.MimeTypes.VIDEO_MP4V) all.sortedBy { if (it.softwareOnly) 0 else 1 } else all
+            }
         // memory keeps the default ~50 s; the further reserve is on disk (prefetch). The player reads from the disk buffer,
         // and what is not there, it takes from the network, but does not write to it itself.
         val source = CacheDataSource.Factory().setCache(MediaCache.get(this))
