@@ -134,6 +134,7 @@ class PlayerActivity : ComponentActivity() {
         }
         playerView = view
         installSubtitleButton(view)
+        pauseWhileInSettings(view)
         // our actions as icons in ExoPlayer's bottom bar, before CC (the top bar keeps only the title and the reserve)
         barButton(view, R.drawable.ic_player_screen, R.string.media_to_screen) { handOffToPc() }
         barButton(view, R.drawable.ic_player_open_in, R.string.media_open_vlc) {
@@ -642,6 +643,29 @@ class PlayerActivity : ComponentActivity() {
     private var subtitleButton: android.widget.ImageButton? = null
 
     /** Our CC button where ExoPlayer's was (same look): the subtitle menu with "Download: <language>" entries. */
+    /** Playing before a track menu opened: it plays again when the menu closes. */
+    private var resumeAfterMenu = false
+
+    /** ExoPlayer's gear (audio track, speed, quality) pauses while its menu is open: the menu is a focusable popup, so
+     * the window gets the focus back when it closes. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun pauseWhileInSettings(view: PlayerView) {
+        view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_settings)?.setOnTouchListener { _, e ->
+            if (e.action == android.view.MotionEvent.ACTION_UP) player?.let { p ->
+                if (p.isPlaying) { resumeAfterMenu = true; p.pause() }
+            }
+            false  // ExoPlayer opens its menu as usual
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && resumeAfterMenu) {
+            resumeAfterMenu = false
+            player?.play()
+        }
+    }
+
     private fun installSubtitleButton(view: PlayerView) {
         val orig = view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_subtitle) ?: return
         val parent = orig.parent as? android.view.ViewGroup ?: return
@@ -688,7 +712,13 @@ class PlayerActivity : ComponentActivity() {
                 sdh = f.roleFlags and (C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND or C.ROLE_FLAG_CAPTION) != 0)
         }
         val host = androidx.compose.ui.platform.ComposeView(this)
-        fun close() { root.removeView(host) }
+        // choosing subtitles pauses the film; it plays on when the sheet closes (if it played before)
+        val wasPlaying = p.isPlaying
+        if (wasPlaying) p.pause()
+        fun close() {
+            root.removeView(host)
+            if (wasPlaying) player?.play()
+        }
         host.setContent {
             AppTheme {
                 SubtitlesSheet(api, ref, onDismiss = ::close, embedded = embedded, selectedFile = selectedFile,
