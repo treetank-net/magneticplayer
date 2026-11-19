@@ -53,7 +53,7 @@ data class TitleInfo(
 )
 
 data class PersonFilm(val item: CatItem, val role: String?, val asDirector: Boolean)
-data class PersonInfo(val id: String, val name: String, val films: List<PersonFilm>, val missing: List<CatCard>)
+data class PersonInfo(val id: String, val name: String, val role: String?, val films: List<PersonFilm>, val missing: List<CatCard>)
 
 /** One entry of the shared "want to watch" list. */
 data class WishItem(
@@ -143,7 +143,7 @@ fun Api.catalogTitle(imdb: String): TitleInfo {
 
 fun Api.catalogPerson(qid: String): PersonInfo {
     val o = JSONObject(request("GET", "/api/catalog/person?id=" + Uri.encode(qid), timeout = 45000))
-    return PersonInfo(o.optString("id", qid), o.optString("name", qid),
+    return PersonInfo(o.optString("id", qid), o.optString("name", qid), o.optStr("role"),
         objects(o.optJSONArray("films")).map { PersonFilm(catItem(it), it.optStr("role"), it.optBoolean("as_director")) },
         objects(o.optJSONArray("missing")).map(::card))
 }

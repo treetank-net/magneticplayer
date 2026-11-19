@@ -771,7 +771,8 @@ private fun PersonScreen(c: CatCtx, q: String) {
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    val role = stringResource(if (films.isNotEmpty() && films.all { it.asDirector }) R.string.cat_director else R.string.cat_actor)
+                    val director = info?.role?.let { it == "director" } ?: (films.isNotEmpty() && films.all { it.asDirector })
+                    val role = stringResource(if (director) R.string.cat_director else R.string.cat_actor)
                     Text(role + " · " + pluralStringResource(R.plurals.cat_in_collection, films.size, films.size),
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val top = films.flatMap { it.item.genres }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(2)

@@ -51,7 +51,7 @@ import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)

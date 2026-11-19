@@ -324,6 +324,10 @@ class Catalog:
         lb = self.labels.get(q) or {}
         return lb.get(lang) or lb.get("en") or lb.get("pl") or q
 
+    def _topics(self, d):
+        """Topics that have a label: an unlabelled Wikidata item is usually a wrong statement."""
+        return [q for q in d.get("topics") or [] if self.labels.get(q)]
+
     # ---- API
 
     def _visible(self):
@@ -363,7 +367,7 @@ class Catalog:
                  "size": it["size"], "added": it["added"], "kids": it.get("kids", False), "episodes": it.get("episodes", 0),
                  "age": d.get("age") if d.get("age") is not None else (0 if it.get("kids") else None),
                  "cast": [c[0] for c in d.get("cast") or []], "roles": [self._role(c[1], lang) for c in d.get("cast") or []],
-                 "directors": d.get("dir") or [], "topics": d.get("topics") or []}
+                 "directors": d.get("dir") or [], "topics": self._topics(d)}
             if d.get("pl") and ("pl" in x["audio"] or "pl" in x["subs"]) and d["pl"] != title:
                 x["title_pl"] = d["pl"]
             for q in x["cast"] + x["directors"]:
@@ -381,21 +385,25 @@ class Catalog:
             return None
         return self.label(role[1:], lang) if role.startswith("@") else role
 
-    def _ext_query(self, kind, key, query):
+    def _ext_query(self, kind, key, query, pick=lambda b: _val(b, "imdb")):
         hit = self._ext.get((kind, key))
         if hit and time.time() - hit[0] < 86400:
             return hit[1]
         try:
-            res = [_val(b, "imdb") for b in _sparql(query)]
+            res = [pick(b) for b in _sparql(query)]
         except Exception as e:  # noqa: BLE001
             self.log("catalog: Wikidata query failed:", e)
-            res = []
+            self._ext[(kind, key)] = (time.time() - 86400 + 300, [])  # a failure is retried after 5 minutes
+            return []
         self._ext[(kind, key)] = (time.time(), res)
         return res
 
     def _person_films(self, q):
-        return self._ext_query("person", q, "SELECT DISTINCT ?imdb WHERE { { ?f wdt:P161 wd:%s } UNION { ?f wdt:P57 wd:%s } "
-                                            "?f wdt:P345 ?imdb } LIMIT 300" % (q, q))
+        """IMDb ids of films with this person; ids of the films they directed are marked with a leading "d:"."""
+        # VALUES, not UNION + BIND: the latter makes the query service time out
+        return self._ext_query("person", q, "SELECT DISTINCT ?imdb ?p WHERE { VALUES ?p { wdt:P161 wdt:P57 } "
+                                            "?f ?p wd:%s . ?f wdt:P345 ?imdb } LIMIT 400" % q,
+                               lambda b: ("d:" if (_val(b, "p") or "").endswith("P57") else "") + _val(b, "imdb"))
 
     def _topic_films(self, q):
         return self._ext_query("topic", q, "SELECT DISTINCT ?imdb WHERE { ?f wdt:P921 wd:%s ; wdt:P345 ?imdb } LIMIT 300" % q)
@@ -426,7 +434,7 @@ class Catalog:
         out = dict(row or {"imdb": imdb, "title": d.get("pl") or imdb}, have=bool(have), copies=have,
                    cast=[[q, self.label(q), self._role(r, lang)] for q, r in d.get("cast") or []],
                    directors=[[q, self.label(q)] for q in d.get("dir") or []],
-                   topics=[[q, self.label(q, lang)] for q in d.get("topics") or []], age=d.get("age"))
+                   topics=[[q, self.label(q, lang)] for q in self._topics(d)], age=d.get("age"))
         return out
 
     def person(self, qid, lang="en"):
@@ -441,11 +449,16 @@ class Catalog:
                 mine.append(dict(x, role=x["roles"][x["cast"].index(qid)], as_director=False))
             elif qid in x["directors"]:
                 mine.append(dict(x, role=None, as_director=True))
-        ids = self._person_films(qid)
+        found = self._person_films(qid)
+        directed = {i[2:] for i in found if i.startswith("d:")}
+        ids = list(dict.fromkeys(i[2:] if i.startswith("d:") else i for i in found))
+        acted = len(set(ids) - directed)
         have = {x["imdb"] for x in items}
         rows = self.ident.index.many(ids) if self.ident.index.db else {}
         other = sorted((r for r in rows.values() if r["imdb"] not in have and r["kind"] == "movie"), key=lambda r: -(r["votes"] or 0))[:20]
-        return {"id": qid, "name": self.label(qid), "films": mine,
+        mine_dir = sum(1 for x in mine if x["as_director"])
+        role = "director" if (len(directed) > acted if found else mine and mine_dir == len(mine)) else "actor"
+        return {"id": qid, "name": self.label(qid), "role": role, "films": mine,
                 "missing": [self._card(r, None, "", "", lang) for r in other]}
 
     def next(self, imdb, lang="en", limit=24):
@@ -483,7 +496,7 @@ class Catalog:
             for x in items:
                 if q in x["cast"] and x["imdb"]:
                     add(x, f"also {name}", f"też {name}", "actor")
-            ids = self._person_films(q)
+            ids = [i[2:] if i.startswith("d:") else i for i in self._person_films(q)]
             rows = sorted((index.many(ids) if index else {}).values(), key=lambda r: -(r["votes"] or 0))
             for r in [r for r in rows if r["kind"] == "movie"][:4]:
                 add(r, f"also {name}", f"też {name}", "actor")
