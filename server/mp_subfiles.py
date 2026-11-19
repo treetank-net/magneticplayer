@@ -180,6 +180,27 @@ def place(full, target, src, sources, owned, moved):
     """For mp_subs.download: frees `target` (the default name) by moving the current default to Subtitles/, and
     returns where the new file goes: `target`, or Subtitles/<name>.<source>.<lang>.srt when the current default
     belongs to a seeding torrent and must stay."""
+    def same(path):
+        r = sources.get(path)
+        return bool(r) and r["provider"] == src["provider"] and str(r["id"]) == str(src["id"])
+
+    if os.path.exists(target) and same(target):
+        return target  # the same subtitles again: rewritten in place
+    stem = os.path.splitext(os.path.basename(full))[0]
+    lang, ext = _lang_ext(full, target)
+    ad = alt_dir(full)
+    try:
+        alts = [n for n in os.listdir(ad) if n.startswith(stem + ".") and same(os.path.join(ad, n))]
+    except OSError:
+        alts = []
+    if alts:  # already waiting in Subtitles/: swap that version in rather than keep two copies
+        try:
+            promote(full, os.path.relpath(os.path.join(ad, alts[0]), os.path.dirname(full)), sources, owned, moved,
+                    lang=lang)
+            if os.path.exists(target):
+                return target
+        except FileError:
+            pass
     if not os.path.exists(target) or demote(full, target, sources, owned, moved):
         return target
     stem = os.path.splitext(os.path.basename(full))[0]

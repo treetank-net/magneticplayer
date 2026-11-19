@@ -96,7 +96,13 @@ def readable_srt(path, video=None):
     ({frame}{frame}text, from NapiProjekt and old OpenSubtitles uploads), MPL2 ([ds][ds]text) or TMPlayer (h:mm:ss:text),
     often in cp1250. mpv reads them all, the phone (SubRip) and browsers show nothing. The file itself is not changed."""
     with open(path, "rb") as f:
-        raw = f.read()
+        return to_srt(f.read(), video)
+
+
+def to_srt(raw, video=None):
+    """Bytes or text of subtitles in any of those formats → SubRip text (unchanged when no format was recognised)."""
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8")
     for enc in ("utf-8-sig", "cp1250", "latin-1"):
         try:
             text = raw.decode(enc)
@@ -393,24 +399,23 @@ class Subtitles:
         if _broken(s):
             raise SubsError(T("these subtitles are empty (a broken upload at the provider) — pick others",
                               "te napisy są puste (zepsuty plik u dostawcy) — wybierz inne"), 422)
-        before = time.time() - 1
         d = os.path.dirname(full)
         try:
             target = s.get_path(v)
+            # NapiProjekt gives MPL2 (subliminal names it .mpl), others MicroDVD or TMPlayer: the phone, browsers and
+            # TVs read only SubRip, so such subtitles are saved as a real .srt
+            text = to_srt(s.content or s.text.encode("utf-8"), full)
+            if re.search(r"\d+:\d\d:\d\d,\d+ -->", text):
+                target = os.path.splitext(target)[0] + ".srt"
+            else:
+                text = s.text
+            where = target
             if place is not None:
                 where = place(target, {"provider": provider, "id": str(sub_id), "release": str(s.info or "")})
-                if where != target:
-                    os.makedirs(os.path.dirname(where), exist_ok=True)
-                    with open(where, "w", encoding="utf-8") as f:
-                        f.write(s.text)
-                    return {"name": os.path.relpath(where, d), "provider": provider, "path": where, "release": str(s.info or "")}
-            sl.save_subtitles(v, [s], encoding="utf-8")
+            os.makedirs(os.path.dirname(where), exist_ok=True)
+            with open(where, "w", encoding="utf-8") as f:
+                f.write(text)
+            return {"name": os.path.relpath(where, d), "provider": provider, "path": where, "release": str(s.info or "")}
         except OSError as e:
             raise SubsError(T(f"can't save subtitles next to the video: {e.strerror}",
                               f"nie da się zapisać napisów obok filmu: {e.strerror}"), 500)
-        stem = os.path.splitext(os.path.basename(full))[0]
-        saved = sorted((n for n in os.listdir(d) if n.startswith(stem) and n != os.path.basename(full)
-                        and os.path.getmtime(os.path.join(d, n)) >= before),
-                       key=lambda n: os.path.getmtime(os.path.join(d, n)))
-        return {"name": saved[-1] if saved else None, "provider": provider,
-                "path": os.path.join(d, saved[-1]) if saved else None, "release": str(s.info or "")}
