@@ -895,6 +895,7 @@ class App:
                                     lambda: self.backend, self.watched,
                                     self.renderers, log)
         self.tasks.subsync = self.subsync
+        self.tasks.fetch_subs = self.fetch_best_subs
         self.agent_updates = mp_selfupdate.AgentUpdates(cfg, lambda: save_config(cfg), os.path.dirname(os.path.abspath(__file__)),
                                                         VERSION, cfg["port"], self.busy, log)
         self.agent_updates.start()
@@ -996,6 +997,35 @@ class App:
             res["fit"] = {"verdict": "pending"}
         return res
 
+    def fetch_best_subs(self, full, lang, prefer=None):
+        """As the app's "Download: <language>": search one language, try the best results (`prefer`'s provider first,
+        then a hash match, then the score) until one fits this copy (at most 3); results already here are skipped.
+        The download result, or None when nothing was found (task "download missing subtitles")."""
+        d = os.path.dirname(full)
+        have = set()
+        for x in sidecar_subs(full):
+            src = self.subsources.get(os.path.join(d, x["name"]))
+            if src:
+                have.add(f"{src['provider']}:{src['id']}")
+        try:
+            found = self.subs.search(full, [lang])
+        except Exception as e:  # noqa: BLE001  (providers down, an unrecognised title)
+            log("subtitles: search failed for", os.path.basename(full), e)
+            return None
+        cands = [r for r in found.get("results") or [] if r.get("lang") == lang and f"{r['provider']}:{r['id']}" not in have]
+        cands.sort(key=lambda r: (r["provider"] != prefer, not r.get("hash_match"), -(r.get("score") or 0)))
+        got = None
+        for r in cands[:3]:
+            try:
+                res = self.download_subs(full, {"id": r["id"], "provider": r["provider"], "languages": lang, "fit": "wait"})
+            except Exception as e:  # noqa: BLE001  (a provider's limit, an empty file): try the next one
+                log("subtitles: download failed", r["provider"], e)
+                continue
+            got = res
+            if (res.get("fit") or {}).get("verdict") != "bad":
+                break
+        return got
+
     def shift_subs(self, full, name, by):
         """Moves a subtitle file next to `full` by `by` seconds; mpv playing this video loads it again."""
         path = os.path.join(os.path.dirname(full), name)
@@ -1085,7 +1115,7 @@ class App:
                 "library_tasks": True,
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
-                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True, "subs_download_job": True, "player_sub_lang": True, "task_remove": True,  # intro / credits (agent 1.11+)
+                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True, "subs_download_job": True, "player_sub_lang": True, "task_remove": True, "subs_get_task": True,  # intro / credits (agent 1.11+)
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
@@ -1719,6 +1749,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(a.tasks.plan_tidy(a.ident))
                 if kind == "dupes":
                     return self.send_json(a.tasks.plan_dupes())
+                if kind == "subs_get":  # missing subtitles downloaded (agent 1.12.1+): library, a folder or a film
+                    langs = str(b.get("languages") or "").split(",")
+                    return self.send_json(a.tasks.plan_subs_get(langs, b.get("root"), b.get("path")))
                 if kind == "subs":  # subtitles fitted to the films (agent 1.9+)
                     return self.send_json(a.tasks.plan_subs(bool(b.get("every"))))
                 if kind == "trash":

@@ -74,11 +74,14 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
-                 imdb: String? = null, big: Boolean = false, onPlay: (() -> Unit)? = null, playLabel: String? = null) {
+                 imdb: String? = null, big: Boolean = false, onPlay: (() -> Unit)? = null, playLabel: String? = null,
+                 /** "Download missing subtitles" for this folder (a series) instead of the one file */
+                 subsFolder: String? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
     var subsDialog by remember { mutableStateOf(false) }
+    var subsGet by remember { mutableStateOf(false) }
     var chooser by remember { mutableStateOf(false) }
     var opening by remember { mutableStateOf<String?>(null) }
     val screens = remember { Servers.screens(ctx) }
@@ -124,6 +127,9 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
             }, leadingIcon = { Icon(Icons.Filled.OndemandVideo, null) })
             DropdownMenuItem({ Text(stringResource(R.string.media_subs_menu)) }, { menu = false; subsDialog = true },
                 leadingIcon = { Icon(Icons.Filled.Subtitles, null) })
+            if (ref is MediaRef.InLibrary && api.srv.hasSubsGetTask && !api.srv.isGuest) DropdownMenuItem(
+                { Text(stringResource(if (subsFolder != null) R.string.subs_get_series else R.string.subs_get_title)) },
+                { menu = false; subsGet = true }, leadingIcon = { Icon(Icons.Filled.Subtitles, null) })
             if (withDownload) DropdownMenuItem({ Text(stringResource(R.string.media_download_to_phone)) }, {
                 menu = false; download()
             }, leadingIcon = { Icon(Icons.Filled.DownloadForOffline, null) })
@@ -158,6 +164,13 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
         moreMenu(withDownload = true)
     }
     if (subsDialog) SubtitlesSheet(api, ref, onDismiss = { subsDialog = false })
+    if (subsGet && ref is MediaRef.InLibrary) SubsGetDialog(api, onDismiss = { subsGet = false }) { langs ->
+        subsGet = false
+        scope.launch {
+            snack.showSnackbar(ctx.getString(R.string.subs_get_looking))
+            snack.showSnackbar(startSubsGet(ctx, api, ref.root, subsFolder ?: ref.path, langs))
+        }
+    }
     if (chooser) ScreenChooser(ref, onPhone = null, onPick = { chooser = false; playOn(it) },
         onCast = { chooser = false; playOn(null, it) }, onDlna = { chooser = false; playOn(null, tv = it) }) { chooser = false }
     opening?.let { msg ->

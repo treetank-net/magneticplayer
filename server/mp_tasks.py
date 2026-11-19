@@ -167,6 +167,7 @@ class Tasks:
         self.backend, self.watching, self.renderers, self.log = backend, watching, renderers, log
         self.lock = threading.Lock()
         self.plans = {}  # id → {state, progress, result | error}; in memory, an hour
+        self.fetch_subs = None  # (full, lang, prefer_provider) → download result or None; set by the agent
         self.proc = None
         self.replicating = False
         self.cancel_ev = threading.Event()
@@ -724,6 +725,80 @@ class Tasks:
                     "minutes": -(-len(items) // 2)}
         return self._plan("subs", run)
 
+    def plan_subs_get(self, languages, root=None, path=None):
+        """Videos without subtitles in `languages` (no file next to them, no track in the video) in the whole library
+        (except backups), or in one library folder or file (`root` + `path`: a series, a season, a film). Agent 1.12.1+."""
+        langs = [l.strip().lower() for l in languages if l.strip()]
+        if not langs:
+            raise TaskError(T("give languages, e.g. pl,en", "podaj języki, np. pl,en"))
+
+        def run(p):
+            files = []
+            if root is not None:
+                roots = self.library.roots()  # `root` is the folder's index, as in /lib/<index>/ and the app's refs
+                r = roots[int(root)] if 0 <= int(root) < len(roots) else None
+                if not r:
+                    raise TaskError(T("no such library folder", "nie ma takiego folderu biblioteki"), 404)
+                base = os.path.realpath(os.path.join(r["path"], path or ""))
+                if not (base + os.sep).startswith(os.path.realpath(r["path"]) + os.sep) and base != os.path.realpath(r["path"]):
+                    raise TaskError(T("path outside the library", "ścieżka poza biblioteką"))
+                scope = [(r, base)]
+            else:
+                scope = [(r, r["path"]) for r in self.library.roots() if r["exists"] and not set(r["tags"]) & HIDDEN_TAGS]
+            for r, base in scope:
+                if os.path.isfile(base):
+                    files.append((r, base))
+                    continue
+                for dp, dirs, fs in os.walk(base):
+                    dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d.lower() not in ("subs", "sub", "subtitles"))
+                    files += [(r, os.path.join(dp, f)) for f in sorted(fs)
+                              if os.path.splitext(f)[1].lower() in VIDEO_EXT and not f.startswith(".")]
+            items, have = [], 0
+            for k, (r, full) in enumerate(files):
+                p["progress"] = int(100 * k / max(len(files), 1))
+                got = {_lang2(x.get("lang")) for x in mp_library.sidecar_subs(full)}
+                try:
+                    import mp_media
+                    got |= {_lang2(s.get("lang")) for s in (mp_media.probe(full).get("subs") or [])}
+                except Exception:  # noqa: BLE001  (no ffprobe, an unreadable file: the files next to it decide)
+                    pass
+                missing = [l for l in langs if l not in got]
+                if not missing:
+                    have += 1
+                    continue
+                items.append({"op": "subs_get", "root_id": r["id"], "root": r["index"], "root_name": r["name"],
+                              "path": os.path.relpath(full, r["path"]), "name": os.path.basename(full),
+                              "size": 1, "langs": missing})
+            p["progress"] = 100
+            return {"kind": "subs_get", **_title("Download missing subtitles", "Pobierz brakujące napisy"),
+                    "items": items, "skipped": [], "checked": have, "bytes": 0, "languages": langs,
+                    "minutes": len(items)}
+        return self._plan("subs_get", run)
+
+    def _subs_get(self, i, t):
+        """Downloads the missing languages of one video (the best result that fits, see the agent's
+        fetch_best_subs); in a folder the provider that worked for the previous episode goes first."""
+        if not self.fetch_subs:
+            raise TaskError(T("subtitle downloading is not available", "pobieranie napisów jest niedostępne"))
+        full = os.path.join(self._root_path(i["root_id"]), i["path"])
+        if not os.path.exists(full):
+            raise TaskError(T("the video no longer exists", "filmu już nie ma"))
+        prefer = t.setdefault("prefer", {})
+        out, missing = [], []
+        for lang in i["langs"]:
+            self._check_cancel()
+            key = f"{os.path.dirname(full)}|{lang}"
+            r = self.fetch_subs(full, lang, prefer.get(key))
+            if not r:
+                missing.append(lang)
+                continue
+            prefer[key] = r.get("provider")
+            v = (r.get("fit") or {}).get("verdict")
+            out.append(f"{lang}: {r.get('release') or r.get('provider')}" + (f" ({v})" if v and v != "good" else ""))
+        i["note"] = "; ".join(out + [T(f"{l}: none found", f"{l}: nie znaleziono") for l in missing])
+        if missing and not out:
+            raise TaskError(i["note"])
+
     def _subs(self, i, t):
         """Fits every subtitle file of one video; a file inside a seeded torrent is only assessed."""
         root = self._root_path(i["root_id"])
@@ -1056,6 +1131,8 @@ class Tasks:
                     self._move(i, progress)
                 elif i["op"] == "subs":
                     self._subs(i, t)
+                elif i["op"] == "subs_get":
+                    self._subs_get(i, t)
                 elif i["op"] == "trash":
                     self._trash(i)
                 else:
@@ -1613,6 +1690,18 @@ def _copy(src, dst, tick):
         shutil.copystat(src, dst)
     except OSError:
         pass
+
+
+def _lang2(code):
+    """"pl" of "pl", "pol", "napiprojekt.pl", "pl-PL"; "" when none."""
+    c = (code or "").rsplit(".", 1)[-1].split("-")[0].lower()
+    if len(c) == 3:
+        try:
+            from babelfish import Language
+            c = Language.fromcode(c, "alpha3b").alpha2
+        except Exception:  # noqa: BLE001
+            pass
+    return "" if c in ("und", "mul", "zxx") else c
 
 
 def _audio_keep(info, mode):

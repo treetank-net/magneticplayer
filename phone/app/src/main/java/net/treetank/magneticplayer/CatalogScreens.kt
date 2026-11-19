@@ -595,7 +595,7 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 if (cont >= 0) {
                     val e = list[cont]
                     val started = settings.position(MediaRef.InLibrary(x.root, e.path, c.srv).key()) > 0
-                    MediaActions(c.api, MediaRef.InLibrary(x.root, e.path, c.srv), c.snack, c.onPlayingOnPc, big = true,
+                    MediaActions(c.api, MediaRef.InLibrary(x.root, e.path, c.srv), c.snack, c.onPlayingOnPc, big = true, subsFolder = x.dir,
                         onPlay = { playEpisode(ctx, c.srv, x.root, list, cont) },
                         playLabel = stringResource(if (started) R.string.cat_play_resume_ep else R.string.cat_play_ep,
                             e.label.ifEmpty { (cont + 1).toString() }))

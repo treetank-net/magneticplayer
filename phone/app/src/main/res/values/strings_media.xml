@@ -321,4 +321,18 @@
         <item quantity="other">Delete %1$d videos from the phone?</item>
     </plurals>
     <string name="media_sel_delete_text">That frees %1$s. The videos stay on the computer.</string>
+    <!-- missing subtitles for a film, a series, a folder, the library (task subs_get) -->
+    <string name="subs_get_title">Download missing subtitles</string>
+    <string name="subs_get_series">Missing subtitles for the series</string>
+    <string name="subs_get_short">Get subtitles</string>
+    <string name="subs_get_text">Videos without subtitles in these languages (no file, no track in the video) get the best ones that fit, one by one in the background.</string>
+    <string name="subs_get_go">Download</string>
+    <string name="subs_get_hint">Each video is searched, downloaded and fitted to its sound. OpenSubtitles without an account allows a limited number of downloads a day: a long list may need a few days.</string>
+    <string name="subs_get_missing">Missing: %1$s</string>
+    <string name="subs_get_looking">Looking for videos without these subtitles…</string>
+    <string name="subs_get_none">Everything here already has subtitles in these languages.</string>
+    <plurals name="subs_get_started">
+        <item quantity="one">Downloading subtitles for %1$d video in the background (Library → Disks → Tasks).</item>
+        <item quantity="other">Downloading subtitles for %1$d videos in the background (Library → Disks → Tasks).</item>
+    </plurals>
 </resources>

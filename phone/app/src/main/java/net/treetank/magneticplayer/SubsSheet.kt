@@ -745,3 +745,59 @@ private fun SubRow(r: SubResult, busy: String?, have: Boolean, status: String? =
         if (r.hi) Text(stringResource(R.string.media_subs_hi), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+// ---------------------------------------------------------------- missing subtitles for a film, a series, the library
+
+/**
+ * "Download missing subtitles": which languages (the user's ones, the one picked last ticked). The agent then finds the
+ * videos without them (no file, no track in the video) in the scope and downloads the best fitting ones as a task.
+ */
+@Composable
+fun SubsGetDialog(api: Api, onDismiss: () -> Unit, onGo: (String) -> Unit) {
+    val mine = remember {
+        (listOfNotNull(api.s.subChoice?.takeIf { it != "off" }) + api.s.subLanguages.split(','))
+            .map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
+    }
+    var picked by remember { mutableStateOf(setOf(mine.firstOrNull() ?: "en")) }
+    val ui = java.util.Locale.getDefault()
+    androidx.compose.material3.AlertDialog(onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.subs_get_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.subs_get_text), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                mine.forEach { l ->
+                    Row(Modifier.fillMaxWidth().clickable { picked = if (l in picked) picked - l else picked + l },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(l in picked, { picked = if (it) picked + l else picked - l })
+                        Text(langName(l, ui))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton({ onGo(mine.filter { it in picked }.joinToString(",")) }, enabled = picked.isNotEmpty()) {
+                Text(stringResource(R.string.subs_get_go))
+            }
+        },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.media_cancel)) } })
+}
+
+/**
+ * From a film's or a series' screen, without the preview: the agent finds what is missing in `path` (a file or a
+ * folder) and the task starts with all of it. Returns the message for a snackbar.
+ */
+suspend fun startSubsGet(ctx: android.content.Context, api: Api, root: Int, path: String, langs: String): String =
+    withContext(Dispatchers.IO) {
+        try {
+            var p = api.planStart(org.json.JSONObject(PlanBody.subsGet(langs, root, path)))
+            while (p.state == "running") { delay(1000); p = api.planGet(p.id) }
+            p.error?.let { return@withContext it }
+            val n = p.result?.optJSONArray("items")?.length() ?: 0
+            if (n == 0) return@withContext ctx.getString(R.string.subs_get_none)
+            api.taskStart(p.id, (0 until n).toList())
+            ctx.resources.getQuantityString(R.plurals.subs_get_started, n, n)
+        } catch (e: ApiException) {
+            e.message ?: ctx.getString(R.string.media_error)
+        }
+    }

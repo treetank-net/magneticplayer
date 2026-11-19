@@ -337,4 +337,20 @@
         <item quantity="other">Usunąć %1$d filmu z telefonu?</item>
     </plurals>
     <string name="media_sel_delete_text">Zwolni się %1$s. Na komputerze filmy zostają.</string>
+    <!-- brakujące napisy dla filmu, serialu, folderu, biblioteki (zadanie subs_get) -->
+    <string name="subs_get_title">Pobierz brakujące napisy</string>
+    <string name="subs_get_series">Brakujące napisy do serialu</string>
+    <string name="subs_get_short">Pobierz napisy</string>
+    <string name="subs_get_text">Filmy bez napisów w tych językach (bez pliku i bez ścieżki w filmie) dostaną najlepsze pasujące, po kolei w tle.</string>
+    <string name="subs_get_go">Pobierz</string>
+    <string name="subs_get_hint">Każdy film jest wyszukiwany, pobierany i dopasowywany do dźwięku. OpenSubtitles bez konta pozwala na ograniczoną liczbę pobrań dziennie: długa lista może zająć kilka dni.</string>
+    <string name="subs_get_missing">Brak: %1$s</string>
+    <string name="subs_get_looking">Szukam filmów bez tych napisów…</string>
+    <string name="subs_get_none">Wszystko tutaj ma już napisy w tych językach.</string>
+    <plurals name="subs_get_started">
+        <item quantity="one">Pobieram napisy do %1$d filmu w tle (Biblioteka → Dyski → Zadania).</item>
+        <item quantity="few">Pobieram napisy do %1$d filmów w tle (Biblioteka → Dyski → Zadania).</item>
+        <item quantity="many">Pobieram napisy do %1$d filmów w tle (Biblioteka → Dyski → Zadania).</item>
+        <item quantity="other">Pobieram napisy do %1$d filmu w tle (Biblioteka → Dyski → Zadania).</item>
+    </plurals>
 </resources>

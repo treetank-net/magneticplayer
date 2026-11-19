@@ -70,11 +70,19 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Finished and cancelled tasks have "Remove from list"; a running one does not.
 - [ ] The refresh icon on the disks screen re-reads free space, the trash and the tasks.
 
-## Noted wishes
+- [ ] "Download missing subtitles": in a film's ⋮ menu (library, catalog), "Missing subtitles for the series" on a
+      series' episode, the subtitles icon in a folder, "Get subtitles" on the disks screen. Languages to pick, a preview
+      of what lacks them (a folder/library) or a snackbar with the count (a film/series); the task in Tasks downloads
+      and fits one by one, `note` per video; videos that already have the language (file or track) are left out.
 
-- [idea] Subtitles for a title: from a film's or series' screen (library and catalog) "Download missing subtitles"
-  for that film, season or series; the library-wide task gets a "download missing" mode next to fitting
-  (languages, scope, preview first; OpenSubtitles' daily limit without an account).
+## Noted wishes
+- [idea] Downloading to the phone from a title: a whole season, the extras or the whole series from the series'
+  screen, without going to "On the phone".
+- [idea] "On the phone" with many episodes (e.g. 100 five-minute ones): a compact list view, groups collapsible.
+- [idea] Bottom bar order by what the server offers: Library first, then Downloads, On the phone, Remote, Settings.
+- [idea] Library and servers: show which server a title is on (with several file servers), maybe one shared library
+  over all servers, independent of the top server picker.
+
 - [idea] The catalog's "New on your disks" row: sometimes something else, e.g. a carousel "Because you watched <title>"
   (from the disks) or suggestions that are not on the disks (to download by magnet).
 - [idea] A library usable without the computer: the catalog cached on the phone (maybe without covers), with what is

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
@@ -598,6 +599,8 @@ private fun DirScreen(
     val srv = remember { Servers.get(ctx, api.srv.key) ?: api.srv }
     val covers = srv.libraryCovers
     var shrinking by remember { mutableStateOf(false) }
+    var subsGet by remember { mutableStateOf(false) }
+    if (subsGet) SubsGetDialog(api, onDismiss = { subsGet = false }) { langs -> subsGet = false; onPlan(PlanBody.subsGet(langs, root, path)) }
     var dir by remember(root, path) { mutableStateOf<LibDir?>(null) }
     LaunchedEffect(root, path) {
         dir = try { withContext(Dispatchers.IO) { api.browse(root, path) } } catch (e: ApiException) {
@@ -609,6 +612,9 @@ private fun DirScreen(
             IconButton(onUp) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up)) }
             Text(if (path.isEmpty()) "/" else path, style = MaterialTheme.typography.titleSmall, maxLines = 2,
                 overflow = TextOverflow.StartEllipsis, modifier = Modifier.weight(1f))
+            if (srv.hasSubsGetTask && !srv.isGuest) IconButton({ subsGet = true }) {
+                Icon(Icons.Filled.Subtitles, stringResource(R.string.subs_get_title))
+            }
             if (srv.libraryTasks && !srv.isGuest) IconButton({ shrinking = true }) {
                 Icon(Icons.Filled.Compress, stringResource(R.string.lib_shrink_folder))
             }

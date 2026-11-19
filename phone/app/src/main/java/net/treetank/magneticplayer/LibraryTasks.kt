@@ -208,6 +208,9 @@ object PlanBody {
     fun shrink(root: Int, path: String, profile: String?) =
         JSONObject().put("kind", "shrink").put("root", root).put("path", path).apply { if (profile != null) put("profile", profile) }.toString()
     fun simple(kind: String) = JSONObject().put("kind", kind).toString()
+    /** missing subtitles in `langs` ("pl,en"): the whole library (root null) or one folder or file */
+    fun subsGet(langs: String, root: Int? = null, path: String? = null) = JSONObject().put("kind", "subs_get").put("languages", langs)
+        .apply { if (root != null) put("root", root).put("path", path ?: "") }.toString()
     fun trash(items: List<Pair<Int, String>>) = JSONObject().put("kind", "trash").put("items",
         JSONArray(items.map { (r, p) -> JSONObject().put("root", r).put("path", p) })).toString()
 }
@@ -240,6 +243,8 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
     var freeFor by remember { mutableStateOf<Int?>(null) }
     var confirmEmpty by remember { mutableStateOf(false) }
     var addOn by remember { mutableStateOf<Disk?>(null) }
+    var subsGet by remember { mutableStateOf(false) }
+    if (subsGet) SubsGetDialog(api, onDismiss = { subsGet = false }) { langs -> subsGet = false; onPlan(PlanBody.subsGet(langs)) }
     LaunchedEffect(reload) {
         try {
             disks = withContext(Dispatchers.IO) { api.disks() }
@@ -277,6 +282,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
                     // old picture formats (DivX 3, WMV…) that phones and TVs no longer play (agent 1.8.2+)
                     if (api.srv.hasModernize) OutlinedButton({ onPlan(PlanBody.simple("modernize")) }) { Text(stringResource(R.string.lib_modernize)) }
                     if (api.srv.hasSubsFit) OutlinedButton({ onPlan(PlanBody.simple("subs")) }) { Text(stringResource(R.string.lib_subs)) }
+                    if (api.srv.hasSubsGetTask) OutlinedButton({ subsGet = true }) { Text(stringResource(R.string.subs_get_short)) }
                 }
                 Text(stringResource(R.string.lib_tools_hint), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
@@ -573,6 +579,7 @@ private fun planKindTitle(kind: String) = when (kind) {
     "dupes" -> stringResource(R.string.lib_dupes)
     "modernize" -> stringResource(R.string.lib_modernize)
     "subs" -> stringResource(R.string.lib_subs)
+    "subs_get" -> stringResource(R.string.subs_get_title)
     "trash" -> stringResource(R.string.lib_delete)
     else -> stringResource(R.string.lib_move)
 }
@@ -628,7 +635,8 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
         if (items.isNotEmpty()) Surface(tonalElevation = 3.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val bytes = picked.sumOf { items[it].optLong("size") }
-                Text(pluralStringResource(R.plurals.lib_picked, picked.size, picked.size, humanBytes(bytes)),
+                Text(if (kind == "subs_get") pluralStringResource(R.plurals.lib_items, picked.size, picked.size)
+                    else pluralStringResource(R.plurals.lib_picked, picked.size, picked.size, humanBytes(bytes)),
                     Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Button({
                     starting = true
@@ -645,6 +653,7 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
                     Text(when (kind) {
                         "shrink" -> stringResource(R.string.lib_shrink)
                         "subs" -> stringResource(R.string.lib_subs_go)
+                        "subs_get" -> stringResource(R.string.subs_get_go)
                         "trash" -> stringResource(R.string.lib_delete)
                         else -> stringResource(R.string.lib_move)
                     })
@@ -658,7 +667,7 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
 private fun PlanSummary(r: JSONObject, count: Int) {
     val lines = mutableListOf<String>()
     val kind = r.optString("kind")
-    lines += pluralStringResource(R.plurals.lib_items, count, count) + " · " + humanBytes(r.optLong("bytes"))
+    lines += pluralStringResource(R.plurals.lib_items, count, count) + if (kind == "subs_get") "" else " · " + humanBytes(r.optLong("bytes"))
     if (r.has("free_before")) lines += stringResource(R.string.lib_sum_free, humanBytes(r.optLong("free_before")),
         humanBytes(r.optLong("free_after")), humanBytes(r.optLong("total")))
     if (r.has("checked")) r.optInt("checked").let { lines += pluralStringResource(R.plurals.lib_sum_checked, it, it) }
@@ -671,6 +680,10 @@ private fun PlanSummary(r: JSONObject, count: Int) {
     if (kind == "subs") {
         lines += stringResource(R.string.lib_sum_subs_time, r.optInt("minutes"))
         lines += stringResource(R.string.lib_sum_subs_hint)
+    }
+    if (kind == "subs_get") {
+        lines += stringResource(R.string.lib_sum_subs_time, r.optInt("minutes"))
+        lines += stringResource(R.string.subs_get_hint)
     }
     if (r.has("trash_days")) r.optInt("trash_days").let {
         lines += pluralStringResource(if (kind == "shrink") R.plurals.lib_sum_originals_kept else R.plurals.lib_sum_trash_kept, it, it)
@@ -751,6 +764,13 @@ private fun PlanItem(kind: String, it: JSONObject) {
                 Text(x.optString("name") + (if (x.optBoolean("locked")) " · $locked" else ""), style = small, color = dim,
                     maxLines = 2, overflow = TextOverflow.MiddleEllipsis)
             }
+        }
+        "subs_get" -> {
+            val ui = java.util.Locale.getDefault()
+            val langs = it.optJSONArray("langs")?.let { a -> List(a.length()) { k -> langName(a.optString(k), ui) } }.orEmpty()
+            Text(stringResource(R.string.subs_get_missing, langs.joinToString()) + " · " +
+                it.optString("path").substringBeforeLast('/', it.optString("root_name")),
+                style = small, color = dim, maxLines = 2, overflow = TextOverflow.StartEllipsis)
         }
         "trash" -> Text(listOf(it.optString("root_name"), it.optString("path").substringBeforeLast('/', "")).filter { s -> s.isNotEmpty() }
             .joinToString(" / ") + " · " + humanBytes(it.optLong("size")), style = small, color = dim, maxLines = 2, overflow = TextOverflow.StartEllipsis)

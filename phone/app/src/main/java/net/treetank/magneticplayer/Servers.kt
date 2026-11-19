@@ -70,6 +70,8 @@ data class Server(
     val hasPlayerSubLang get() = features?.optBoolean("player_sub_lang", false) ?: false
     /** POST /api/tasks/<id>/remove (agent 1.12.1+) */
     val hasTaskRemove get() = features?.optBoolean("task_remove", false) ?: false
+    /** library plan "subs_get": missing subtitles downloaded for the library, a folder or a film (agent 1.12.1+) */
+    val hasSubsGetTask get() = features?.optBoolean("subs_get_task", false) ?: false
     /** How many search engines the user set on the server (`/api/config/search`); 0 = no "Search" button. */
     val searchEngines get() = features?.optInt("search_engines", 0) ?: 0
     /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */
