@@ -252,8 +252,7 @@
         <item quantity="other">%1$d hidden subfolders</item>
     </plurals>
     <!-- "Subtitles" in the player: fetch subtitles without leaving the video -->
-    <string name="media_psubs_button">Subtitles</string>
-    <string name="media_psubs_pick_lang">Find subtitles in</string>
+    <string name="media_psubs_pick_lang">Subtitle language</string>
     <string name="media_psubs_title">Subtitles</string>
     <string name="media_psubs_searching">Searching for subtitles: %1$s…</string>
     <string name="media_psubs_trying">Checking %1$d of %2$d: %3$s</string>
@@ -261,4 +260,7 @@
     <string name="media_psubs_on">Subtitles on: %1$s</string>
     <string name="media_psubs_on_good">Subtitles on, they fit your copy: %1$s</string>
     <string name="media_psubs_on_bad">None of the found subtitles fit your copy well; on anyway: %1$s</string>
+    <string name="media_psubs_off">Off</string>
+    <string name="media_psubs_download">⬇ Download: %1$s</string>
+    <string name="media_psubs_download_other">⬇ Download in another language…</string>
 </resources>

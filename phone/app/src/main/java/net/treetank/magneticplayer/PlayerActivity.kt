@@ -127,12 +127,13 @@ class PlayerActivity : ComponentActivity() {
         }
 
         val view = PlayerView(this).apply {
-            setShowSubtitleButton(true)
+            setShowSubtitleButton(false)  // ours in its place (subtitleButton): ExoPlayer's is disabled when a video has none
             setShowNextButton(false)
             setShowPreviousButton(false)
             keepScreenOn = true
         }
         playerView = view
+        installSubtitleButton(view)
         val dp = resources.displayMetrics.density
         // top: title and how much can be watched without a network; visible together with the controls
         val top = LinearLayout(this).apply {
@@ -158,8 +159,6 @@ class PlayerActivity : ComponentActivity() {
         top.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
         val buttons = top.apply {
             if (nextEps.isNotEmpty()) addView(smallButton(getString(R.string.media_next_episode)) { playNext() })
-            if (Api.of(this@PlayerActivity, ref.srv) != null)  // searching needs the computer
-                addView(smallButton(getString(R.string.media_psubs_button)) { pickSubtitles() })
             addView(smallButton(getString(R.string.media_to_screen)) { handOffToPc() })
             addView(smallButton("VLC") {
                 player?.pause()
@@ -223,6 +222,7 @@ class PlayerActivity : ComponentActivity() {
             }
 
             override fun onTracksChanged(tracks: Tracks) {
+                updateSubtitleIcon(tracks)
                 // a picture the phone cannot decode (old DivX 3, WMV…): ExoPlayer plays the sound alone and may then hang on
                 // seeking, so we say so and offer the computer's version
                 val video = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
@@ -627,6 +627,61 @@ class PlayerActivity : ComponentActivity() {
             .setMediaMetadata(MediaMetadata.Builder().setTitle(ref.title).build())
             .setSubtitleConfigurations(subConfigs)
             .build()
+    }
+
+    private var subtitleButton: android.widget.ImageButton? = null
+
+    /** Our CC button where ExoPlayer's was (same look): the subtitle menu with "Download: <language>" entries. */
+    private fun installSubtitleButton(view: PlayerView) {
+        val orig = view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_subtitle) ?: return
+        val parent = orig.parent as? android.view.ViewGroup ?: return
+        val b = android.widget.ImageButton(this, null, 0, androidx.media3.ui.R.style.ExoStyledControls_Button_Bottom_CC)
+        b.setOnClickListener { subtitleMenu() }
+        parent.addView(b, parent.indexOfChild(orig), orig.layoutParams)
+        subtitleButton = b
+    }
+
+    private fun updateSubtitleIcon(tracks: Tracks) {
+        val on = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && it.isSelected }
+        subtitleButton?.setImageResource(if (on) androidx.media3.ui.R.drawable.exo_styled_controls_subtitle_on
+            else androidx.media3.ui.R.drawable.exo_styled_controls_subtitle_off)
+    }
+
+    /** The subtitle menu: off, the tracks the video has (✓ = on), then fetching new ones (needs the computer). */
+    private fun subtitleMenu() {
+        val p = player ?: return
+        val ui = resources.configuration.locales[0]
+        fun langName(c: String) = java.util.Locale(c).getDisplayLanguage(ui).replaceFirstChar { it.titlecase(ui) }
+        val groups = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
+        val off = groups.none { it.isSelected }
+        val labels = mutableListOf<String>()
+        val actions = mutableListOf<() -> Unit>()
+        val mark = { on: Boolean -> if (on) "● " else "○ " }  // the file labels already carry ✓ for "fits"
+        labels += mark(off) + getString(R.string.media_psubs_off)
+        actions += {
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+        }
+        for (g in groups) {
+            val f = g.getTrackFormat(0)
+            labels += mark(g.isSelected) + (f.label ?: f.language?.let { langName(it) } ?: "?")
+            actions += {
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0))
+                    .build()
+            }
+        }
+        if (Api.of(this, ref.srv) != null) {  // searching needs the computer
+            for (c in subLanguageChoices().take(settings.subLanguages.split(',').count { it.isNotBlank() }.coerceIn(1, 3))) {
+                labels += getString(R.string.media_psubs_download, langName(c))
+                actions += { fetchSubtitles(c, langName(c)) }
+            }
+            labels += getString(R.string.media_psubs_download_other)
+            actions += { pickSubtitles() }
+        }
+        android.app.AlertDialog.Builder(this).setTitle(R.string.media_psubs_title)
+            .setItems(labels.toTypedArray()) { _, i -> actions[i]() }
+            .show()
     }
 
     /** Languages offered by "Subtitles": the user's own (settings) first, then common ones. */
