@@ -213,7 +213,19 @@ data class SubResult(
     val key get() = "$provider:$id"
 }
 /** `fit` (agent 1.9+): good / unsure / bad = how these subtitles fit this copy of the film (speech detection), null = not checked */
-data class SubFile(val name: String, val lang: String, val ext: String, val fit: String? = null)
+data class SubFile(
+    val name: String, val lang: String, val ext: String, val fit: String? = null,
+    /** agent 1.12+: true = next to the video, the version of its language in use; false = another version (Subtitles/…) */
+    val default: Boolean = true,
+    /** agent 1.12+: where the agent downloaded it from */
+    val source: SubSource? = null,
+) {
+    /** "pl" of "pl", "pl-PL", "" when unknown */
+    val langKey get() = lang.takeWhile { it.isLetter() }.lowercase()
+}
+data class SubSource(val provider: String, val id: String, val release: String) {
+    val key get() = "$provider:$id"
+}
 /** A downloaded subtitle file and, with agent 1.9+, how it fits the film (`fit` as in [SubFile]; `changed` = shifted to fit). */
 data class SubsDownloaded(val name: String, val fit: String?, val changed: Boolean)
 
@@ -685,9 +697,15 @@ class Api(val s: Settings, val srv: Server) {
         val a = JSONArray(call("GET", "/api/subs/list?${ref.query()}"))
         return List(a.length()) { i ->
             val o = a.getJSONObject(i)
-            SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"), o.optJSONObject("fit")?.optStr("verdict"))
+            SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"), o.optJSONObject("fit")?.optStr("verdict"),
+                o.optBoolean("default", '/' !in o.getString("name")),
+                o.optJSONObject("source")?.let { SubSource(it.optString("provider"), it.optString("id"), it.optString("release")) })
         }
     }
+
+    /** Agent 1.12+: this version becomes its language's default (the current one moves to Subtitles/); the new name. */
+    fun subsDefault(ref: MediaRef, name: String): String =
+        JSONObject(call("POST", "/api/subs/default", ref.json().put("name", name))).getString("name")
 
     fun subUrl(ref: MediaRef, name: String) = "$base/sub?${ref.query()}&name=${Uri.encode(name)}&token=${Uri.encode(srv.token)}"
 

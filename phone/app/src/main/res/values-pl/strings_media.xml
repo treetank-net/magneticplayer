@@ -275,4 +275,19 @@
     <string name="media_psubs_download_other">⬇ Pobierz w innym języku…</string>
     <string name="media_psubs_embedded">(wbudowane)</string>
     <string name="media_psubs_unknown_lang">Nieznany język</string>
+    <string name="media_psubs_back">Wstecz</string>
+    <string name="media_psubs_versions_cd">Wersje i szukanie</string>
+    <string name="media_psubs_fit_good">pasują do Twojej kopii</string>
+    <string name="media_psubs_fit_bad">nie pasują do Twojej kopii</string>
+    <string name="media_psubs_on_disk">Na komputerze</string>
+    <string name="media_psubs_online">W internecie</string>
+    <string name="media_psubs_default">używane</string>
+    <string name="media_psubs_have">masz już</string>
+    <string name="media_psubs_embedded_track">Wbudowana ścieżka %1$d</string>
+    <plurals name="media_psubs_versions">
+        <item quantity="one">%1$d wersja</item>
+        <item quantity="few">%1$d wersje</item>
+        <item quantity="many">%1$d wersji</item>
+        <item quantity="other">%1$d wersji</item>
+    </plurals>
 </resources>

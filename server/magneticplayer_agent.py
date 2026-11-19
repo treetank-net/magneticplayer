@@ -1743,7 +1743,11 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(str(e), e.status)
                 except OSError as e:
                     raise ApiError(e.strerror or str(e), 500)
-                mp_library.forget_names()
+                if a.mpv.running() and a.mpv.prop("path") == full:  # the Remote: this video plays in mpv, turn it on
+                    try:
+                        a.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), name), "select")
+                    except ApiError:
+                        pass
                 return self.send_json({"name": name})
             if p == "/api/subs/fit" and method == "POST":  # one subtitle file next to the video (agent 1.9+)
                 b = self.body()

@@ -996,7 +996,7 @@ private fun ColumnScope.MpvExtras(api: Api, remote: MpvRemote, st: RemoteState, 
         TextButton({ cmd("sub_delay", 0.1) }) { Text(stringResource(R.string.main_sub_delay_plus)) }
     }
     OutlinedButton({ subsDialog = true }) { Icon(Icons.Filled.Subtitles, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_search_subtitles)) }
-    if (subsDialog) SubsDialog(api, MediaRef.Playing(st.title, api.srv.key)) { subsDialog = false }
+    if (subsDialog) SubtitlesSheet(api, MediaRef.Playing(st.title, api.srv.key), onDismiss = { subsDialog = false })
 }
 
 /** Track picker in mpv: a list with language, title, codec; for subtitles also "off". */

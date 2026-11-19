@@ -613,7 +613,8 @@ class PlayerActivity : ComponentActivity() {
      * 1.9+), never one that doesn't fit; [prefer] (a file just fetched from the player) alone when given.
      */
     private fun buildItem(prefer: String? = null): MediaItem {
-        val rank = { s: SubFile -> when (s.fit) { "good" -> 0; null, "unsure" -> 1; else -> 2 } }
+        // the version in use (next to the video, agent 1.12+) first, then by fit
+        val rank = { s: SubFile -> (if (s.default) 0 else 10) + when (s.fit) { "good" -> 0; null, "unsure" -> 1; else -> 2 } }
         val defaults = subs.firstOrNull { it.name == prefer }?.let { setOf(it) } ?: subs.groupBy { it.lang.takeWhile { c -> c.isLetter() } }.values
             .mapNotNull { g -> g.minByOrNull(rank)?.takeIf { it.fit != "bad" } }.toSet()
             .ifEmpty { setOfNotNull(subs.firstOrNull()) }
@@ -668,140 +669,62 @@ class PlayerActivity : ComponentActivity() {
             else androidx.media3.ui.R.drawable.exo_styled_controls_subtitle_off)
     }
 
-    /** The subtitle menu: off, the tracks the video has (✓ = on), then fetching new ones (needs the computer). */
+    /**
+     * The subtitle sheet (SubtitlesSheet, the same as on the title card and in the Remote) over the player: off, the
+     * languages (files on the computer + the video's own tracks), versions and searching. What the user picks is turned
+     * on in place, at the same position.
+     */
     private fun subtitleMenu() {
         val p = player ?: return
-        val ui = resources.configuration.locales[0]
-        fun langName(c: String) = java.util.Locale(c).getDisplayLanguage(ui).replaceFirstChar { it.titlecase(ui) }
+        val root = root ?: return
         val groups = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
-        val off = groups.none { it.isSelected }
-        val labels = mutableListOf<String>()
-        val actions = mutableListOf<() -> Unit>()
-        val mark = { on: Boolean -> if (on) "● " else "○ " }  // the file labels already carry ✓ for "fits"
-        labels += mark(off) + getString(R.string.media_psubs_off)
-        actions += {
-            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+        // a file's track carries its name in the label (buildItem); the rest is inside the video
+        val fileOf = { g: Tracks.Group -> subs.firstOrNull { g.getTrackFormat(0).label?.startsWith(it.name) == true } }
+        val selectedFile = groups.firstOrNull { it.isSelected }?.let(fileOf)?.name
+        val embedded = groups.mapIndexedNotNull { i, g ->
+            if (fileOf(g) != null) null else EmbeddedSub(i, g.getTrackFormat(0).language, g.isSelected)
         }
-        // the language first; our files: their fit mark, numbered when one language has several; built-in tracks: their
-        // own title is often the release group's ad ("Encoded by…"), so "(built in)" instead
-        val names = groups.map { g ->
-            val f = g.getTrackFormat(0)
-            val file = subs.firstOrNull { f.label?.startsWith(it.name) == true }
-            val lang = f.language?.let { langName(it) } ?: file?.let { getString(R.string.media_psubs_unknown_lang) }
-                ?: f.label?.take(40) ?: getString(R.string.media_psubs_unknown_lang)
-            lang to when {
-                file == null -> " " + getString(R.string.media_psubs_embedded)
-                file.fit == "good" -> " ✓"
-                file.fit == "bad" -> getString(R.string.media_subs_bad_mark)
-                else -> ""
+        val host = androidx.compose.ui.platform.ComposeView(this)
+        fun close() { root.removeView(host) }
+        host.setContent {
+            AppTheme {
+                SubtitlesSheet(api, ref, onDismiss = ::close, embedded = embedded, selectedFile = selectedFile,
+                    offSelected = groups.none { it.isSelected }) { pick, msg ->
+                    when (pick) {
+                        SubPick.Off -> p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                        is SubPick.Track -> groups.getOrNull(pick.index)?.let { g ->
+                            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0))
+                                .build()
+                        }
+                        is SubPick.File -> applySubFile(pick.name, pick.lang)
+                    }
+                    msg?.let { Toast.makeText(this@PlayerActivity, it, Toast.LENGTH_LONG).show() }
+                }
             }
         }
-        val dup = names.groupingBy { it.first }.eachCount()
-        val seen = mutableMapOf<String, Int>()
-        for ((g, n) in groups.zip(names)) {
-            val k = seen.merge(n.first, 1, Int::plus)!!
-            labels += mark(g.isSelected) + n.first + (if ((dup[n.first] ?: 0) > 1) " $k" else "") + n.second
-            actions += {
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0))
-                    .build()
-            }
-        }
-        if (Api.of(this, ref.srv) != null) {  // searching needs the computer
-            for (c in subLanguageChoices().take(settings.subLanguages.split(',').count { it.isNotBlank() }.coerceIn(1, 3))) {
-                labels += getString(R.string.media_psubs_download, langName(c))
-                actions += { fetchSubtitles(c, langName(c)) }
-            }
-            labels += getString(R.string.media_psubs_download_other)
-            actions += { pickSubtitles() }
-        }
-        android.app.AlertDialog.Builder(this).setTitle(R.string.media_psubs_title)
-            .setItems(labels.toTypedArray()) { _, i -> actions[i]() }
-            .show()
+        root.addView(host, FrameLayout.LayoutParams(-1, -1))
     }
 
-    /** Languages offered by "Subtitles": the user's own (settings) first, then common ones. */
-    private fun subLanguageChoices(): List<String> =
-        (settings.subLanguages.split(',') + listOf("pl", "en", "de", "fr", "es", "it", "pt", "nl", "cs", "sk", "uk", "ru",
-            "sv", "no", "da", "fi", "hu", "ro", "hr", "tr", "el", "he", "ar", "ja", "ko", "zh"))
-            .map { it.trim().lowercase() }.filter { it.length in 2..3 }.distinct()
-
-    /** "Subtitles" in the player: a language, then the best fitting file found on the internet, turned on in place. */
-    private fun pickSubtitles() {
-        val codes = subLanguageChoices()
-        val ui = resources.configuration.locales[0]
-        val names = codes.map { c -> java.util.Locale(c).getDisplayLanguage(ui).replaceFirstChar { it.titlecase(ui) } }
-        android.app.AlertDialog.Builder(this).setTitle(R.string.media_psubs_pick_lang)
-            .setItems(names.toTypedArray()) { _, i -> fetchSubtitles(codes[i], names[i]) }
-            .show()
-    }
-
-    /**
-     * Searches (agent: OpenSubtitles & co.), then downloads the candidates best first until one fits this copy of the
-     * film (agent 1.9+ fits it to the speech; at most 3 tries), and reloads the video with it at the same position.
-     */
-    private fun fetchSubtitles(lang: String, langName: String) {
+    /** A subtitle file (just picked or downloaded) on: the list again, local copies, the video reloaded where it was. */
+    private fun applySubFile(name: String, lang: String) {
         val p = player ?: return
-        val status = android.widget.TextView(this).apply {
-            val dp = resources.displayMetrics.density
-            setPadding((24 * dp).toInt(), (16 * dp).toInt(), (24 * dp).toInt(), 0)
-            text = getString(R.string.media_psubs_searching, langName)
-        }
-        var job: String? = null
-        val dlg = android.app.AlertDialog.Builder(this).setTitle(R.string.media_psubs_title).setView(status)
-            .setNegativeButton(R.string.media_next_cancel, null).show()
-        val work = lifecycleScope.launch {
-            try {
-                val id = withContext(Dispatchers.IO) { api.subsSearchStart(ref, langs = lang) }
-                job = id
-                var found: SubsFound? = null
-                for (n in 0 until 120) {  // up to ~2 minutes; BSPlayer can think for 45 s
-                    val pr = withContext(Dispatchers.IO) { api.subsJob(id) }
-                    if (pr.error != null) throw ApiException(pr.error)
-                    if (pr.done) { found = pr.found; break }
-                    delay(1_000)
-                }
-                val results = found?.results.orEmpty()
-                    .sortedWith(compareByDescending<SubResult> { it.hashMatch }.thenByDescending { it.score })
-                if (results.isEmpty()) {
-                    status.text = getString(R.string.media_psubs_none, langName)
-                    return@launch
-                }
-                var got: SubsDownloaded? = null
-                for ((k, r) in results.take(3).withIndex()) {
-                    status.text = getString(R.string.media_psubs_trying, k + 1, minOf(3, results.size), r.release.ifEmpty { r.provider })
-                    val d = withContext(Dispatchers.IO) { runCatching { api.subsDownload(ref, r, langs = lang) }.getOrNull() } ?: continue
-                    got = d
-                    if (d.fit != "bad") break
-                }
-                val d = got ?: run { status.text = getString(R.string.media_psubs_none, langName); return@launch }
-                subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(subs) }
-                localSubUris = withContext(Dispatchers.IO) { localSubs(subs) }
-                val pos = p.currentPosition
-                val playing = p.playWhenReady
-                // the new file on, even when subtitles were switched off or another language was picked by hand
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .setPreferredTextLanguage(lang)
-                    .build()
-                p.setMediaItem(buildItem(prefer = d.name), pos)
-                p.prepare()
-                p.playWhenReady = playing
-                dlg.dismiss()
-                Toast.makeText(this@PlayerActivity, getString(when (d.fit) {
-                    "bad" -> R.string.media_psubs_on_bad; "good" -> R.string.media_psubs_on_good; else -> R.string.media_psubs_on
-                }, d.name), Toast.LENGTH_LONG).show()
-            } catch (e: ApiException) {
-                status.text = e.message
-            }
-        }
-        dlg.setOnDismissListener {
-            if (work.isActive) {
-                work.cancel()
-                job?.let { j -> Thread { runCatching { api.subsStop(j) } }.start() }
-            }
+        lifecycleScope.launch {
+            subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(subs) }
+            localSubUris = withContext(Dispatchers.IO) { localSubs(subs) }
+            val pos = p.currentPosition
+            val playing = p.playWhenReady
+            // the file on, even when subtitles were switched off or another track was picked by hand
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .apply { if (lang.isNotEmpty()) setPreferredTextLanguage(lang) }
+                .build()
+            p.setMediaItem(buildItem(prefer = name), pos)
+            p.prepare()
+            p.playWhenReady = playing
         }
     }
 

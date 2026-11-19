@@ -265,4 +265,17 @@
     <string name="media_psubs_download_other">⬇ Download in another language…</string>
     <string name="media_psubs_embedded">(built in)</string>
     <string name="media_psubs_unknown_lang">Unknown language</string>
+    <string name="media_psubs_back">Back</string>
+    <string name="media_psubs_versions_cd">Versions and search</string>
+    <string name="media_psubs_fit_good">fit your copy</string>
+    <string name="media_psubs_fit_bad">don\'t fit your copy</string>
+    <string name="media_psubs_on_disk">On the computer</string>
+    <string name="media_psubs_online">On the internet</string>
+    <string name="media_psubs_default">in use</string>
+    <string name="media_psubs_have">you have these</string>
+    <string name="media_psubs_embedded_track">Built-in track %1$d</string>
+    <plurals name="media_psubs_versions">
+        <item quantity="one">%1$d version</item>
+        <item quantity="other">%1$d versions</item>
+    </plurals>
 </resources>
