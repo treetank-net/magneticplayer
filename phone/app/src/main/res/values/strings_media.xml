@@ -16,6 +16,7 @@
     <string name="media_next_episode">Next episode</string>
     <string name="media_next_in">Next episode in %1$d s</string>
     <string name="media_next_now">Play now</string>
+    <string name="media_skip_intro">Skip intro</string>
     <string name="media_next_cancel">Cancel</string>
     <string name="media_server_cap">Server</string>
     <string name="media_server_lower">server</string>

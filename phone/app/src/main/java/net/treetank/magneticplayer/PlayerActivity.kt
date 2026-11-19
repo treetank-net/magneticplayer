@@ -62,9 +62,10 @@ class PlayerActivity : ComponentActivity() {
     companion object {
         /** [imdb]: a film from the catalog; after it is watched to the end the app offers "What next".
          *  [next]: the following episodes of a series (same library folder): "Next episode" and a countdown at the end. */
-        fun intent(ctx: Context, ref: MediaRef, imdb: String? = null, next: List<Episode> = emptyList()) =
+        fun intent(ctx: Context, ref: MediaRef, imdb: String? = null, next: List<Episode> = emptyList(), series: Boolean = next.isNotEmpty()) =
             Intent(ctx, PlayerActivity::class.java).putExtra("ref", ref.encode()).apply {
                 if (imdb != null) putExtra("imdb", imdb)
+                if (series) putExtra("series", true)
                 if (next.isNotEmpty()) putExtra("next", org.json.JSONArray(next.map { e ->
                     org.json.JSONObject().put("path", e.path).put("name", e.name).put("season", e.season ?: -1).put("episode", e.episode ?: -1)
                 }).toString())
@@ -91,6 +92,10 @@ class PlayerActivity : ComponentActivity() {
     private var nextCancelled = false
     /** where the credits start (ms), when known; the countdown starts there instead of at the very end */
     private var creditsAtMs = -1L
+    /** the intro (ms from, to) when the agent found one: "Skip intro" while it plays */
+    private var intro: Pair<Long, Long>? = null
+    private var skipIntro: android.view.View? = null
+    private val series get() = intent.getBooleanExtra("series", false)
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     private var root: FrameLayout? = null
     private lateinit var settings: Settings
@@ -301,6 +306,7 @@ class PlayerActivity : ComponentActivity() {
             prefetchJob = prefetch(p)
             showDiskAhead(p)
         }
+        loadSegments()
         settings.touchCache(key, settings.cacheWatched(key))
         Thread { OfflineStore.ensure(this, ref); MediaCache.sweep(this, keep = key) }.start()
     }
@@ -398,7 +404,7 @@ class PlayerActivity : ComponentActivity() {
         super.onStart()
         stopDiscovery = Cast.discover(this) { casts = it }
         Thread { Dlna.discover() }.start()  // for the "To screen" list (Dlna.found)
-        if (nextEps.isNotEmpty()) { ui.removeCallbacks(nextTick); ui.post(nextTick) }
+        if (nextEps.isNotEmpty() || series) { ui.removeCallbacks(nextTick); ui.post(nextTick) }
     }
 
     /** "To screen": a single screen (no Chromecasts) immediately, otherwise a picker (last used marked). */
@@ -566,7 +572,7 @@ class PlayerActivity : ComponentActivity() {
         val n = nextEps.firstOrNull() ?: return
         ui.removeCallbacks(nextTick)
         player?.pause()
-        startActivity(PlayerActivity.intent(this, MediaRef.InLibrary(r.root, n.path, r.srv), null, nextEps.drop(1)))
+        startActivity(PlayerActivity.intent(this, MediaRef.InLibrary(r.root, n.path, r.srv), null, nextEps.drop(1), series = true))
         finish()
     }
 
@@ -587,6 +593,9 @@ class PlayerActivity : ComponentActivity() {
             if (dur <= 0 || dur == C.TIME_UNSET) return
             val pos = p.currentPosition
             val ended = p.playbackState == Player.STATE_ENDED || pos >= dur - 1_500
+            val iv = intro
+            if (iv != null && pos >= iv.first && pos < iv.second - 1_000 && !ended) showSkipIntro(iv.second) else hideSkipIntro()
+            if (nextEps.isEmpty()) return
             val credits = creditsAtMs.takeIf { it in 1 until dur }
             if (!ended && pos < minOf(credits ?: dur, dur - NEXT_SHOW_MS)) {
                 hideNextCard(); nextCancelled = false; nextLeft = -1
@@ -606,6 +615,48 @@ class PlayerActivity : ComponentActivity() {
             nextLine?.text = getString(R.string.media_next_in, nextLeft)
             nextCancel?.visibility = android.view.View.VISIBLE
         }
+    }
+
+    /**
+     * Intro and credits of a series episode from the agent (agent 1.11+). The agent compares the sound with the
+     * neighbouring episodes on the first request (5–10 s), so "pending" is asked again a few times.
+     */
+    private fun loadSegments() {
+        val r = ref as? MediaRef.InLibrary ?: return
+        if (!series || !api.srv.segments) return
+        lifecycleScope.launch {
+            repeat(8) {
+                val s = withContext(Dispatchers.IO) { runCatching { api.segments(r.root, r.path) }.getOrNull() } ?: return@launch
+                if (!s.pending) {
+                    if (s.introStart != null && s.introEnd != null && s.introEnd > s.introStart) intro = s.introStart to s.introEnd
+                    creditsAtMs = s.creditsAt ?: -1L
+                    return@launch
+                }
+                delay(15_000)
+            }
+        }
+    }
+
+    private fun showSkipIntro(to: Long) {
+        if (skipIntro != null) return
+        val dp = resources.displayMetrics.density
+        val b = smallButton(getString(R.string.media_skip_intro)) {
+            player?.seekTo(to)
+            hideSkipIntro()
+        }.apply {
+            textSize = 16f
+            setPadding((20 * dp).toInt(), (8 * dp).toInt(), (20 * dp).toInt(), (8 * dp).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 24 * dp; setColor(0xE0202124.toInt()); setStroke((1 * dp).toInt(), 0x66FFFFFF) }
+        }
+        skipIntro = b
+        root?.addView(b, FrameLayout.LayoutParams(-2, (48 * dp).toInt(), Gravity.BOTTOM or Gravity.END).apply {
+            setMargins(0, 0, (16 * dp).toInt(), (96 * dp).toInt())
+        })
+    }
+
+    private fun hideSkipIntro() {
+        skipIntro?.let { root?.removeView(it) }
+        skipIntro = null
     }
 
     private fun hideNextCard() {

@@ -70,6 +70,18 @@ OLD_VIDEO = {"msmpeg4v1", "msmpeg4v2", "msmpeg4v3", "wmv1", "wmv2", "wmv3", "vc1
              # MPEG-4 Part 2 (XviD, DivX 4+): Chromecasts don't take it, and phones play it badly (in AVI the B-frames carry
              # no presentation time: the Pixel's hardware decoder drops them, its software one shows them out of order)
              "mpeg4"}
+# audio the phone's player takes as it is (media3 + its FFmpeg extension); anything else (WMA, Cook, AMR…) is
+# re-encoded even by the profiles that keep audio, or the video would play silent
+PLAYABLE_AUDIO = {"aac", "mp3", "mp2", "mp1", "ac3", "eac3", "dts", "opus", "vorbis"}
+
+
+def is_old(v):
+    """A picture phones, TVs and Chromecasts don't decode (or decode wrong): an OLD_VIDEO codec, or H.264 with more than
+    8 bits or chroma other than 4:2:0 (anime "Hi10P": no phone has a hardware decoder for it)."""
+    c, pix = v.get("codec"), v.get("pix_fmt") or ""
+    return c in OLD_VIDEO or (c == "h264" and (v.get("bits", 8) > 8 or "422" in pix or "444" in pix))
+
+
 OLD_GROWTH = 1.25  # an old-format file may come out up to this much bigger (it then plays, which is the point)
 MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
@@ -915,7 +927,7 @@ class Tasks:
                     skipped.append(dict(item, reason=str(e)[:120]))
                     continue
                 v, dur = info.get("video") or {}, info.get("duration") or 0
-                old = v.get("codec") in OLD_VIDEO
+                old = is_old(v)
                 if modernize and not old:
                     continue
                 if not v or not dur:
@@ -1600,7 +1612,7 @@ def _audio_keep(info, mode):
 def _audio_codec(a, mode):
     c, ch = a.get("codec") or "", a.get("channels") or 2
     if mode in ("keep", "lean"):
-        if c in LOSSLESS_AUDIO or c.startswith("pcm_"):
+        if c in LOSSLESS_AUDIO or c.startswith("pcm_") or c not in PLAYABLE_AUDIO:
             return ["eac3", "-b:a", "640k"] if ch > 2 else ["aac", "-b:a", "192k"]
         return ["copy"]
     if mode == "stereo":

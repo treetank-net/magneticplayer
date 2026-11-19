@@ -16,6 +16,7 @@
     <string name="media_next_episode">Następny odcinek</string>
     <string name="media_next_in">Następny odcinek za %1$d s</string>
     <string name="media_next_now">Odtwórz teraz</string>
+    <string name="media_skip_intro">Pomiń czołówkę</string>
     <string name="media_next_cancel">Anuluj</string>
     <string name="media_server_cap">Serwer</string>
     <string name="media_server_lower">serwer</string>

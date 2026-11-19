@@ -117,6 +117,9 @@ class Settings(ctx: Context) {
 }
 
 /** One video of a series folder: [path] relative to the library folder, [season]/[episode] from the name (null = none). */
+/** Where an episode's intro is and where its end credits start (ms); null = not found. */
+data class Segments(val pending: Boolean, val introStart: Long?, val introEnd: Long?, val creditsAt: Long?)
+
 data class Episode(val path: String, val name: String, val season: Int?, val episode: Int?, val size: Long) {
     /** "S1 E3" (or "E3", or "") */
     val label get() = listOfNotNull(season?.let { "S$it" }, episode?.let { "E$it" }).joinToString(" ")
@@ -556,6 +559,15 @@ class Api(val s: Settings, val srv: Server) {
         roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "add").put("path", path))))
     fun libraryRemove(index: Int): List<LibRoot> =
         roots(JSONArray(call("POST", "/api/library", JSONObject().put("op", "remove").put("index", index))))
+
+    /** Intro and end credits of an episode (agent 1.11+, `Server.segments`); `pending` while the agent still listens. */
+    fun segments(root: Int, path: String): Segments {
+        val o = JSONObject(call("GET", "/api/library/segments?root=$root&path=${Uri.encode(path)}"))
+        val i = o.optJSONArray("intro")
+        return Segments(o.optString("state") == "pending",
+            i?.let { (it.optDouble(0) * 1000).toLong() }, i?.let { (it.optDouble(1) * 1000).toLong() },
+            if (o.isNull("credits") || !o.has("credits")) null else (o.optDouble("credits") * 1000).toLong())
+    }
 
     /** A series folder's videos in watching order and its extras (agent 1.10+, `Server.libraryEpisodes`). */
     fun episodes(root: Int, path: String): Episodes {

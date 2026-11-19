@@ -269,10 +269,10 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
 4. Shrinking (storage profiles, decision 16 in plan-library.md): `original` (default, always for `kopia`),
    `tidy` (lossless: the picture is copied, audio tracks other than Polish/English/undefined/default dropped,
    DTS/TrueHD/PCM → E-AC3 640k or AAC; at least 3% saved), `good` (HEVC ≤1080p, x265 CRF 24), `compact` (≤720p, CRF 25, stereo), `tiny` (≤480p, CRF 26, small stereo AAC);
-   smaller profiles keep Polish, English, undefined and default audio tracks; subtitles and chapters are copied.
+   smaller profiles keep Polish, English, undefined and default audio tracks; subtitles and chapters are copied. Audio the phone cannot play (WMA, Cook…: not in `PLAYABLE_AUDIO`) is re-encoded by every profile (1.11+).
    Only files outside the torrent client; HEVC/AV1 already small enough and estimates saving under 15% are
    skipped. Old picture formats that phones, TVs and Chromecasts no longer decode (`OLD_VIDEO`: DivX 3, WMV,
-   RealVideo, Flash, Theora, Cinepak, Indeo, MPEG-1, and since 1.10.1 MPEG-4 Part 2 = XviD/DivX 4+, whose B-frames phones get wrong from AVI…) are the exception: they are re-encoded even when that saves
+   RealVideo, Flash, Theora, Cinepak, Indeo, MPEG-1, since 1.10.1 MPEG-4 Part 2 = XviD/DivX 4+, whose B-frames phones get wrong from AVI, and since 1.11 H.264 with 10 bits or 4:2:2/4:4:4 = anime "Hi10P", which no phone decodes: `mp_tasks.is_old`) are the exception: they are re-encoded even when that saves
    little (the result may be up to 25% bigger), and `tidy` encodes them as `good`, since a copied old picture stays
    unplayable. "Old formats" (`kind: modernize`) finds them in every library folder except backups, whatever the
    folder's profile. Odd frame sizes are rounded to even ones. The encoder is chosen per task (agent 1.7+): `cpu` = x265 `-preset fast` at `nice 19` and `ionice -c3`,
@@ -339,7 +339,26 @@ when nothing changed.
 
 The phone keeps its own history (`pos:`, `pt:` and, new, `wd:` = watched to the end). "Play" on a series continues:
 the episode with the latest activity if it has a position, else the one after it, else the first. The player gets
-the rest of the list.
+the rest of the list. History keys carry the file name: when re-encoding changes only the extension (.avi → .mkv),
+the app moves the saved position and "watched" to the new name on the first read (`Settings.follow`).
+
+### Intro and end credits (agent 1.11+)
+`mp_segments.py`, `GET /api/library/segments`, asked by the player for a series episode (started from the catalog or
+by Next episode). Idea of Jellyfin's Intro Skipper, no network and no model:
+- intro: a chromaprint fingerprint (ffmpeg's `chromaprint` muxer, a 32-bit point every ~0.124 s) of the first 10
+  minutes (at most 30% of the video) against the episodes before and after it in the same folder; candidate shifts
+  from equal points, then the longest run of similar points (≤ 6 differing bits, gaps < 3.5 s) of 10–180 s. Two
+  neighbours that point to different places (a "previously on" recap) give nothing; one that finds nothing (a pilot)
+  leaves the decision to the other;
+- credits: the same comparison of the last 8 minutes, the run must reach the last minute; otherwise `blackdetect` on
+  keyframes only (about a second): a black stretch of ≥ 15 s reaching the last 30 s (credits on black);
+- about 5–10 s per episode on jmpc, nice'd, one at a time; the first answer is `pending` (the app asks again every
+  15 s), the next episode is computed right after; results in `<cache>/segments.json` (path, size, mtime),
+  fingerprints in `<cache>/prints/`. Measured on 9 series: intros of 30–90 s found wherever the show has one (not
+  in a reality show without a theme), credits by sound or black in most episodes.
+
+The player shows "Skip intro" bottom right while the intro plays, and the Next episode card in the last 90 s or from
+the credits; its countdown starts at the credits when they are known, otherwise at the end of the file.
 
 "Similar in your collection" on the title screen is computed by the app from the catalog: shared actors and
 directors, then topics, then genres. Genres alone need two specific ones in common ("Drama" doesn't count), and

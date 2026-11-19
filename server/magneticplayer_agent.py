@@ -48,11 +48,12 @@ from mp_jobs import AFTER, Jobs, magnet_name
 import mp_catalog
 import mp_ident
 import mp_library
-from mp_library import Library, LibError, sidecar_subs
+from mp_library import Library, LibError, media_kind, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt
 import mp_subsync
+import mp_segments
 
-VERSION = "1.10.2"
+VERSION = "1.11.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -130,7 +131,7 @@ def save_config(cfg):
 # stay closed to guests until someone deliberately adds them here.
 GUEST_ALLOWED = {
     "GET": ("/api/info", "/api/announce", "/api/app/version", "/app/MagneticPlayer.apk", "/api/library",
-            "/api/library/browse", "/api/library/episodes", "/api/library/search", "/api/library/cover", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
+            "/api/library/browse", "/api/library/episodes", "/api/library/segments", "/api/library/search", "/api/library/cover", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
             "/api/media/converts", "/api/jobs", "/api/player/status", "/api/cast/status", "/api/cast/devices",
             "/api/renderers", "/api/torrents"),
     "POST": ("/api/media/ticket", "/api/player/open", "/api/player/cmd", "/api/cast/play", "/api/cast/cmd",
@@ -831,6 +832,7 @@ class App:
         self.library = Library(cfg, lambda: save_config(cfg), self._default_dirs)
         self.subs = Subtitles(cfg, lambda: save_config(cfg))
         self.subsync = mp_subsync.Store(CONFIG_DIR, log)
+        self.segments = mp_segments.Segments(log)
         self.jobs = Jobs(os.path.join(CONFIG_DIR, "jobs.json"), log)
         self.devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
         self._subs_ok = None
@@ -993,7 +995,8 @@ class App:
                 "library_tasks": True,
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
-                "library_episodes": True, "library_covers": True,  # GET /api/library/cover (agent 1.6+)
+                "library_episodes": True, "segments": mp_segments.available(),  # intro / credits (agent 1.11+)
+                "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
                 "library_modernize": True,  # POST /api/library/plan {"kind": "modernize"} (agent 1.8.2+)
@@ -1641,6 +1644,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.library.browse(int(qd.get("root", 0)), qd.get("path", ""), qd.get("all") == "1"))
             if p == "/api/library/episodes" and method == "GET":
                 return self.send_json(a.library.episodes(int(qd.get("root", 0)), qd.get("path", "")))
+            if p == "/api/library/segments" and method == "GET":
+                full = a.library.resolve(int(qd.get("root", 0)), qd.get("path", ""))
+                d = os.path.dirname(full)
+                try:
+                    names = [n for n in os.listdir(d) if not n.startswith(".") and media_kind(n) == "video"
+                             and os.path.isfile(os.path.join(d, n))]
+                except OSError:
+                    names = []
+                eps = [os.path.join(d, x["path"]) for x in mp_ident.episodes([(n, 0) for n in names])[0]]
+                return self.send_json(a.segments.request(full, eps))
             if p == "/api/fs" and method == "GET":
                 return self.send_json(a.library.fs_dirs(qd.get("path", "")))
             m = re.fullmatch(r"/lib/(\d+)/(.+)", p)

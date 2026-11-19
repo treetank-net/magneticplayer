@@ -50,6 +50,8 @@ data class Server(
     val libraryCovers get() = features?.optBoolean("library_covers", false) ?: false
     /** Agent 1.10+: a series folder's episodes in order, extras apart (`/api/library/episodes`). */
     val libraryEpisodes get() = features?.optBoolean("library_episodes", false) ?: false
+    /** intro and end credits of series episodes (agent 1.11+, GET /api/library/segments) */
+    val segments get() = features?.optBoolean("segments", false) ?: false
     /**
      * Agent 1.8+: the library as films (`/api/catalog`, person, what next), the shared wishlist, search engines in
      * the settings and the history of files sent from phones (`/api/uploads`).

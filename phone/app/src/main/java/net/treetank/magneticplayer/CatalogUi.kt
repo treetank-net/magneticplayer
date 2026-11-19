@@ -308,7 +308,7 @@ fun continueIndex(s: Settings, srv: String, root: Int, eps: List<Episode>): Int 
 
 /** Episode [i] in the phone's player, the following ones queued ("Next episode", a countdown at the end). */
 fun playEpisode(ctx: android.content.Context, srv: String, root: Int, eps: List<Episode>, i: Int) {
-    ctx.startActivity(PlayerActivity.intent(ctx, MediaRef.InLibrary(root, eps[i].path, srv), null, eps.drop(i + 1)))
+    ctx.startActivity(PlayerActivity.intent(ctx, MediaRef.InLibrary(root, eps[i].path, srv), null, eps.drop(i + 1), series = true))
 }
 
 /** "Play" on a catalog card: a film from its main file; a series where this phone left off, without its extras. */
