@@ -53,7 +53,7 @@ from mp_subs import Subtitles, SubsError, readable_srt
 import mp_subsync
 import mp_segments
 
-VERSION = "1.11.0"
+VERSION = "1.11.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
