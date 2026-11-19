@@ -55,7 +55,7 @@ public-domain films as examples). Code and documentation change together.
 
 ## Emulator (when the phone is busy)
 
-Test the app on the user's phone by default; the emulator only when the user needs the phone. The timeprotect SDK
+Test the app on the user's phone by default; the emulator only when the user needs the phone. jmpc has VT-x off in the BIOS (no KVM), so the emulator runs on the laptop only, against the real jmpc agent. The timeprotect SDK
 `~/.cache/tp-emu-sdk` (read-only, android-33), own AVD `~/.cache/mp-emu-avd/mp.avd`, timeprotect's script:
 
 ```bash
