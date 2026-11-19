@@ -354,8 +354,16 @@ object Wol {
     }
 }
 
-/** API of one server. `srv` is a snapshot from [Servers]; changes (MAC, info) are written back. */
-class Api(val s: Settings, val srv: Server) {
+/**
+ * API of one server. `srv` is a snapshot from [Servers]; changes (MAC, info) are written back, and [info] also refreshes
+ * the snapshot, so screens holding this object see the agent's current capabilities.
+ */
+class Api(val s: Settings, srv: Server) {
+    @Volatile var srv: Server = srv
+        private set
+    /** The agent's version from the last answered [ping] (null before one): a change means fresh capabilities ([info]). */
+    @Volatile var pingVersion: String? = null
+        private set
     val base get() = "http://${srv.host}:${srv.port}"
     val configured get() = srv.host.isNotBlank() && srv.token.isNotBlank()
     private val ctx get() = s.ctx
@@ -416,6 +424,7 @@ class Api(val s: Settings, val srv: Server) {
             val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
             val id = j.optString("id")
             wrongServer = srv.uid != null && id.isNotEmpty() && id != srv.uid
+            if (!wrongServer) j.optString("version").takeIf { it.isNotEmpty() }?.let { pingVersion = it }
             j.optBoolean("ok") && !wrongServer
         } catch (e: Exception) {
             false
@@ -444,6 +453,7 @@ class Api(val s: Settings, val srv: Server) {
             it.copy(info = j, mac = mac ?: it.mac, uid = it.uid ?: uid,
                 name = if ((it.name.isBlank() || it.name == it.host) && name.isNotEmpty()) name else it.name)
         }
+        Servers.get(ctx, srv.key)?.let { srv = it }
         return j
     }
 

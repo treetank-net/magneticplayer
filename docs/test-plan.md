@@ -64,11 +64,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 
 ## "On the phone": selection
 
-- [ ] A long press on a card starts selecting (checkbox, buttons hidden); a tap (de)selects; Back ends it.
+- [x] A long press on a card starts selecting (checkbox, buttons hidden); a tap (de)selects; Back ends it. (2026-11-19, Pixel, v1.261119.2158)
 - [ ] The bar: "N selected · size", "Watched" adds the watched ones, select all / none, delete with
       "Delete N videos from the phone? That frees X. The videos stay on the computer."
-- [ ] Two or more videos of one folder are grouped under the folder's name in episode order; the header's
-      checkbox selects the whole group.
+- [x] Two or more videos of one folder are grouped under the folder's name in episode order; the header's
+      checkbox selects the whole group. (2026-11-19, Pixel, v1.261119.2158)
 - [ ] Group headers show the size and how many are watched; a tap folds/unfolds, groups over 6 start folded.
 - [ ] The list/cards icon at the top switches to one line per video (tap plays, long press selects) and is remembered.
 
@@ -93,8 +93,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 
 ## Library screens
 
-- [ ] The bottom bar starts with Library, then Downloads, On the phone, Remote, Settings; the app opens on Library;
-      a server without a library (downloads only) opens on Downloads.
+- [x] The bottom bar starts with Library, then Downloads, On the phone, Remote, Settings; the app opens on Library (2026-11-19, Pixel, v1.261119.2158);
+      [ ] a server without a library (downloads only) opens on Downloads.
 
 - [ ] "Empty trash": the disks and the trash refresh right away (no 501 after it).
 - [ ] Finished and cancelled tasks have "Remove from list"; a running one does not.
@@ -104,6 +104,9 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       series' episode, the subtitles icon in a folder, "Get subtitles" on the disks screen. Languages to pick, a preview
       of what lacks them (a folder/library) or a snackbar with the count (a film/series); the task in Tasks downloads
       and fits one by one, `note` per video; videos that already have the language (file or track) are left out.
+      Found 2026-11-19: "Get subtitles" missing on the disks screen although the agent had `subs_get_task` — the app
+      read capabilities once per process, and screens kept the older copy. Fixed: capabilities are re-read when the
+      agent's version (from ping) changes, and `Api.srv` is refreshed by `info()`. Check again after an agent update.
 
 ## Noted wishes
 - [idea] Library and servers (stage 2 of docs/plan-multi-server.md, "a shared library from all servers: later"):

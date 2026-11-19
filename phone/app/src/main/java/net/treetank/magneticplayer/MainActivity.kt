@@ -275,8 +275,9 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             fails = if (ok) 0 else fails + 1
             if (ok || fails >= 2) online = ok
             wrong = api.wrongServer
-            // server capabilities (buttons, wake-up) refreshed once after connecting
-            if (ok && first) {
+            // server capabilities (buttons, wake-up) refreshed after connecting and whenever the agent's version changes
+            // (it updates itself): until then new buttons would stay hidden
+            if (ok && (first || api.pingVersion.let { it != null && it != api.srv.info?.optString("version") })) {
                 first = false
                 withContext(Dispatchers.IO) { runCatching { api.info() } }
                 infoVer++
