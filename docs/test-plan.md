@@ -66,6 +66,9 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 
 ## Library screens
 
+- [ ] The bottom bar starts with Library, then Downloads, On the phone, Remote, Settings; the app opens on Library;
+      a server without a library (downloads only) opens on Downloads.
+
 - [ ] "Empty trash": the disks and the trash refresh right away (no 501 after it).
 - [ ] Finished and cancelled tasks have "Remove from list"; a running one does not.
 - [ ] The refresh icon on the disks screen re-reads free space, the trash and the tasks.
@@ -79,9 +82,12 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [idea] Downloading to the phone from a title: a whole season, the extras or the whole series from the series'
   screen, without going to "On the phone".
 - [idea] "On the phone" with many episodes (e.g. 100 five-minute ones): a compact list view, groups collapsible.
-- [idea] Bottom bar order by what the server offers: Library first, then Downloads, On the phone, Remote, Settings.
-- [idea] Library and servers: show which server a title is on (with several file servers), maybe one shared library
-  over all servers, independent of the top server picker.
+- [idea] Library and servers (stage 2 of docs/plan-multi-server.md, "a shared library from all servers: later"):
+  the top switcher gets "All" next to each server; with "All" Library and Downloads merge every reachable server
+  (titles marked with their server, e.g. "jmpc · Series (TOSHIBA)"), with one server picked they filter to it.
+  "Wake all" for moving files between computers and browsing every library at once.
+  Screen-only servers stay out of that (the switcher already shows them greyed out as "screen only"); they live in
+  the Remote's screen list, asleep ones included, with Wake.
 
 - [idea] The catalog's "New on your disks" row: sometimes something else, e.g. a carousel "Because you watched <title>"
   (from the disks) or suggestions that are not on the disks (to download by magnet).

@@ -142,7 +142,7 @@ const val TAB_SETTINGS = 3
 const val TAB_OFFLINE = 4
 
 class MainActivity : ComponentActivity() {
-    private val tab = mutableIntStateOf(0)
+    private val tab = mutableIntStateOf(TAB_LIBRARY)
     private val settingsVersion = mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -197,7 +197,7 @@ class MainActivity : ComponentActivity() {
                     bad.takeIf { it.isNotEmpty() }?.let { getString(R.string.main_failed, it.joinToString("; ")) }).joinToString("\n")
             }
             settingsVersion.intValue++
-            if (Servers.all(this@MainActivity).isNotEmpty()) tab.intValue = TAB_TORRENTS
+            if (Servers.all(this@MainActivity).isNotEmpty()) tab.intValue = TAB_LIBRARY
             Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
         }
     }
@@ -348,11 +348,11 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         },
         bottomBar = {
             NavigationBar {
+                NavigationBarItem(tab.intValue == TAB_LIBRARY, { tab.intValue = TAB_LIBRARY }, { Icon(Icons.Filled.VideoLibrary, null) }, label = { NavLabel(stringResource(R.string.main_tab_library)) })
                 NavigationBarItem(tab.intValue == TAB_TORRENTS, { tab.intValue = TAB_TORRENTS }, {
                     val n = UploadsBadge.count.intValue
                     if (n > 0) BadgedBox({ Badge { Text(n.toString()) } }) { Icon(Icons.Filled.Download, null) } else Icon(Icons.Filled.Download, null)
                 }, label = { NavLabel(stringResource(R.string.main_tab_torrents)) })
-                NavigationBarItem(tab.intValue == TAB_LIBRARY, { tab.intValue = TAB_LIBRARY }, { Icon(Icons.Filled.VideoLibrary, null) }, label = { NavLabel(stringResource(R.string.main_tab_library)) })
                 NavigationBarItem(tab.intValue == TAB_OFFLINE, { tab.intValue = TAB_OFFLINE }, { Icon(Icons.Filled.DownloadForOffline, null) }, label = { NavLabel(stringResource(R.string.main_tab_offline)) })
                 NavigationBarItem(tab.intValue == TAB_REMOTE, { tab.intValue = TAB_REMOTE }, { Icon(Icons.Filled.SmartDisplay, null) }, label = { NavLabel(stringResource(R.string.main_tab_remote)) })
                 NavigationBarItem(tab.intValue == TAB_SETTINGS, { tab.intValue = TAB_SETTINGS }, { Icon(Icons.Filled.Settings, null) }, label = { NavLabel(stringResource(R.string.main_tab_settings)) })
@@ -381,6 +381,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 }
             }
           }
+          // Library comes first; a server known to have no library (only downloads) opens on Downloads instead
+          LaunchedEffect(srv.key, srv.hasLibrary) { if (tab.intValue == TAB_LIBRARY && !srv.hasLibrary) tab.intValue = TAB_TORRENTS }
           Box(Modifier.weight(1f).fillMaxWidth()) {
             val t = tab.intValue
             when {
