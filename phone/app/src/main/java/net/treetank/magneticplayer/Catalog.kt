@@ -213,14 +213,20 @@ object CatalogCache {
     }
 }
 
-/** A video watched part of the way on this phone, matched to a catalog item (Continue watching). */
+/**
+ * A video watched part of the way on this phone, matched to a catalog item (Continue watching). `posMs` 0: a series
+ * whose episode at `path` was watched to the end; the row shows the next one (or drops the series after its last).
+ */
 data class Resume(val item: CatItem, val path: String, val posMs: Long, val at: Long)
 
 /** Positions saved on this phone that belong to items of this server, most recent first. */
 fun resumes(ctx: Context, srv: String, cat: CatalogData): List<Resume> {
     val prefix = Servers.prefixOf(srv) + "lib"
     val byRoot = cat.items.groupBy { it.root }
-    return Settings(ctx).positions().mapNotNull { (key, v) ->
+    val s = Settings(ctx)
+    // a series episode watched to the end keeps the series in the row (its next episode), like an interrupted one
+    val finished = s.watchedAll().filterKeys { it.startsWith(prefix) }.mapValues { 0L to it.value }
+    return (finished + s.positions()).mapNotNull { (key, v) ->
         if (!key.startsWith(prefix)) return@mapNotNull null
         val rest = key.removePrefix(prefix)
         val root = rest.substringBefore('/').toIntOrNull() ?: return@mapNotNull null
@@ -231,6 +237,7 @@ fun resumes(ctx: Context, srv: String, cat: CatalogData): List<Resume> {
             // re-encoded on the server: same name, another extension (Settings.follow moves the position on first read)
             ?: items.firstOrNull { stem != null && it.dir == null && Settings.stemOf(it.path) == stem }
             ?: items.firstOrNull { it.dir != null && path.startsWith(it.dir + "/") } ?: return@mapNotNull null
+        if (v.first <= 0 && item.dir == null) return@mapNotNull null  // a film watched to the end is done
         Resume(item, if (item.path != path && item.dir == null) item.path else path, v.first, v.second)
     }.sortedByDescending { it.at }.distinctBy { it.item.id }
 }

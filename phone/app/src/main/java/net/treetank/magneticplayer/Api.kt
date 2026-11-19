@@ -112,6 +112,10 @@ class Settings(ctx: Context) {
             return if (dot <= 0) null else key.dropLast(name.length - dot)
         }
     }
+    /** Videos watched to the end: key → when (epoch ms). */
+    fun watchedAll(): Map<String, Long> = p.all.mapNotNull { (k, v) ->
+        if (k.startsWith("wd:") && v is Long && v > 0) k.removePrefix("wd:") to v else null
+    }.toMap()
     fun markWatched(key: String) = p.edit().putLong("wd:$key", System.currentTimeMillis()).apply()
     /** Also stamps when it was saved ("pt:"), so "Continue watching" in the catalog can order videos by recency. */
     fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).putLong("pt:$key", System.currentTimeMillis()).apply()

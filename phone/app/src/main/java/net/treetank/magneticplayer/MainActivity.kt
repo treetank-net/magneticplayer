@@ -110,6 +110,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -411,7 +412,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
 
     if (sheet) ServerSheet(api.srv.key,
         onPick = { sheet = false; Servers.setActive(ctx, it); changed() },
-        onWake = { sheet = false; Servers.setActive(ctx, it); changed(); wake(it) },
+        // waking a screen-only server does not make it the file server (it has no library or downloads)
+        onWake = { sheet = false; if (Servers.get(ctx, it)?.hasFiles != false) { Servers.setActive(ctx, it); changed() }; wake(it) },
         onAdd = { sheet = false; addServer = true; tab.intValue = TAB_SETTINGS },
         onManage = { sheet = false; tab.intValue = TAB_SETTINGS },
     ) { sheet = false }
@@ -764,8 +766,25 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
                     if (target == "screen" && screens.size > 1) menu = true else Pilot.focus.value = "screen"
                 }, { Text(screenApi.srv.name + if (screens.size > 1) " ▾" else "") },
                     leadingIcon = { Icon(Icons.Filled.Computer, null, Modifier.size(18.dp)) })
+                // every screen with its state; an asleep one can be woken from here
+                val up = remember { mutableStateMapOf<String, Boolean>() }
+                if (menu) LaunchedEffect(Unit) {
+                    screens.forEach { s -> launch(Dispatchers.IO) { up[s.key] = Api(Settings(ctx), s).ping(1500) } }
+                }
                 DropdownMenu(menu, { menu = false }) {
-                    screens.forEach { s -> DropdownMenuItem({ Text(s.name) }, { menu = false; Pilot.focus.value = "screen"; onPickScreen(s.key) }) }
+                    screens.forEach { s ->
+                        val on = up[s.key]
+                        DropdownMenuItem({
+                            Column {
+                                Text(s.name)
+                                Text(when (on) { true -> stringResource(R.string.srv_status_online); false -> stringResource(R.string.srv_status_asleep); null -> "…" },
+                                    style = MaterialTheme.typography.labelSmall, color = if (on == true) OK_GREEN else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }, { menu = false; Pilot.focus.value = "screen"; onPickScreen(s.key) },
+                            trailingIcon = if (on == false && s.mac.isNotBlank()) ({
+                                TextButton({ menu = false; Pilot.focus.value = "screen"; onPickScreen(s.key); onWake(s.key) }) { Text(stringResource(R.string.srv_wake)) }
+                            }) else null)
+                    }
                 }
             }
             if ("cast" in avail) FilterChip(target == "cast", { Pilot.focus.value = "cast" },

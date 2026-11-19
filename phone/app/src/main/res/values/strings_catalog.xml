@@ -191,4 +191,25 @@
     <string name="up_moved_to">moved to %1$s</string>
     <string name="up_empty_all">Nothing is downloading and no files from phones are waiting. Paste a magnet link to start.</string>
     <string name="up_empty_no_torrent">No files from phones are waiting. This server has no torrent client, so magnet links go to another one.</string>
+    <string name="cat_next_ep">Next: %1$s</string>
+    <!-- many episodes to the phone from a series' screen -->
+    <string name="ser_dl_title">Download to phone</string>
+    <string name="ser_dl_rest">From %1$s to the end</string>
+    <string name="ser_dl_all">The whole series</string>
+    <string name="ser_dl_extras">Extras</string>
+    <string name="ser_dl_all_there">Already on the phone</string>
+    <string name="ser_dl_some_there">%1$d already there</string>
+    <plurals name="ser_dl_count">
+        <item quantity="one">%1$d episode, %2$s</item>
+        <item quantity="other">%1$d episodes, %2$s</item>
+    </plurals>
+    <string name="ser_dl_delete">Delete from the phone</string>
+    <string name="ser_dl_free">Free on the phone: %1$s</string>
+    <string name="ser_dl_go">Download</string>
+    <plurals name="ser_dl_started">
+        <item quantity="one">Downloading %1$d video to the phone</item>
+        <item quantity="other">Downloading %1$d videos to the phone</item>
+    </plurals>
+    <string name="ser_dl_on_phone">On the phone</string>
+    <string name="ser_dl_downloading">Downloading to the phone</string>
 </resources>

@@ -64,6 +64,18 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Two or more videos of one folder are grouped under the folder's name in episode order; the header's
       checkbox selects the whole group.
 
+## Catalog and Remote
+
+- [ ] "Continue watching": a series whose episode was watched to the end stays, labelled "Next: S1 E5"; after its
+      last episode it leaves the row; a film watched to the end leaves it.
+- [ ] Remote, the screen pill's menu (two or more screens): each screen with "online"/"asleep", "Wake" on an asleep
+      one with a known MAC picks it and wakes it.
+- [ ] The top switcher's Wake on a screen-only server no longer makes it the file server.
+- [ ] Series screen, the download icon by "Episodes": this season / from the next episode to the end / the whole
+      series / extras, counts and sizes without what is already on the phone, the deletion rule for the batch
+      (default "manually only"), free space on the phone (Download greyed out when it does not fit); the episodes get a
+      "downloading" / "on the phone" icon.
+
 ## Library screens
 
 - [ ] The bottom bar starts with Library, then Downloads, On the phone, Remote, Settings; the app opens on Library;
@@ -79,17 +91,12 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       and fits one by one, `note` per video; videos that already have the language (file or track) are left out.
 
 ## Noted wishes
-- [idea] Downloading to the phone from a title: a whole season, the extras or the whole series from the series'
-  screen, without going to "On the phone".
 - [idea] "On the phone" with many episodes (e.g. 100 five-minute ones): a compact list view, groups collapsible.
 - [idea] Library and servers (stage 2 of docs/plan-multi-server.md, "a shared library from all servers: later"):
   the top switcher gets "All" next to each server; with "All" Library and Downloads merge every reachable server
   (titles marked with their server, e.g. "jmpc · Series (TOSHIBA)"), with one server picked they filter to it.
   "Wake all" for moving files between computers and browsing every library at once.
   Screen-only servers stay out of that (the switcher already shows them greyed out as "screen only").
-- [idea] Remote's screen picker: every screen with its state (on / asleep) and "Wake" right in the list. Today Wake
-  shows only after picking a screen that does not answer, and only when its MAC is known; the top switcher's Wake
-  on a screen-only server also makes it the active file server (check).
 
 - [idea] The catalog's "New on your disks" row: sometimes something else, e.g. a carousel "Because you watched <title>"
   (from the disks) or suggestions that are not on the disks (to download by magnet).
@@ -98,8 +105,6 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   catalog, send positions and watched marks made offline, refresh downloaded copies' subtitles. Incremental, like
   commit hashes: the agent keeps a change counter (or hash) per library and per item, the phone sends the last one it
   saw and gets only what changed since (the whole catalog only the first time or when it is small).
-- [todo] "Continue watching": a series whose last watched episode was finished disappears (the row knows only
-  interrupted files). It should stay with the next episode ("Next: S01E05") until the series ends.
 - [todo] Two season 2 extras of one re-encoded series failed: their AVI originals are truncated (the header promises
   more than is there). The check was fixed in agent 1.10.1; the two files only need a new shrink run on that folder.
 - [later] The folder browser plays a single file (no next-episode card, no queue); the catalog's series screen is the
@@ -114,5 +119,3 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   (or move it on its own when the folder is certain).
 - [idea] The folder browser as the place for jobs on its files: shrink, missing subtitles (both there), and more as
   they come. Zip archiving gives videos almost nothing (already compressed), so no.
-- [idea] Retention of downloads per batch: a whole season or folder downloaded "keep until I delete" instead of
-  deleting each episode after watching; picked when downloading.

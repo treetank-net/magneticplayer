@@ -201,4 +201,29 @@
     <string name="up_moved_to">przeniesione do: %1$s</string>
     <string name="up_empty_all">Nic się nie pobiera i nie czekają żadne pliki z telefonów. Wklej link magnet, żeby zacząć.</string>
     <string name="up_empty_no_torrent">Nie czekają żadne pliki z telefonów. Ten serwer nie ma klienta torrentów, więc linki magnet trafiają na inny.</string>
+    <string name="cat_next_ep">Dalej: %1$s</string>
+    <!-- wiele odcinków na telefon z ekranu serialu -->
+    <string name="ser_dl_title">Pobierz na telefon</string>
+    <string name="ser_dl_rest">Od %1$s do końca</string>
+    <string name="ser_dl_all">Cały serial</string>
+    <string name="ser_dl_extras">Dodatki</string>
+    <string name="ser_dl_all_there">Już są na telefonie</string>
+    <string name="ser_dl_some_there">%1$d już jest</string>
+    <plurals name="ser_dl_count">
+        <item quantity="one">%1$d odcinek, %2$s</item>
+        <item quantity="few">%1$d odcinki, %2$s</item>
+        <item quantity="many">%1$d odcinków, %2$s</item>
+        <item quantity="other">%1$d odcinka, %2$s</item>
+    </plurals>
+    <string name="ser_dl_delete">Usuń z telefonu</string>
+    <string name="ser_dl_free">Wolne na telefonie: %1$s</string>
+    <string name="ser_dl_go">Pobierz</string>
+    <plurals name="ser_dl_started">
+        <item quantity="one">Pobieram %1$d film na telefon</item>
+        <item quantity="few">Pobieram %1$d filmy na telefon</item>
+        <item quantity="many">Pobieram %1$d filmów na telefon</item>
+        <item quantity="other">Pobieram %1$d filmu na telefon</item>
+    </plurals>
+    <string name="ser_dl_on_phone">Na telefonie</string>
+    <string name="ser_dl_downloading">Pobiera się na telefon</string>
 </resources>

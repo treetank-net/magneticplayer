@@ -1,5 +1,8 @@
 package net.treetank.magneticplayer
 
+import androidx.compose.material.icons.filled.Downloading
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
@@ -68,6 +71,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -241,7 +245,20 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
 private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
     val ctx = LocalContext.current
     val back = rememberResumedTick()
-    val resumes = remember(cat, back) { resumes(ctx, c.srv, cat) }
+    val resumesAll = remember(cat, back) { resumes(ctx, c.srv, cat) }
+    // series: the episode they continue at ("Next: S1 E5"); a series finished to its last episode leaves the row
+    val nextEp by produceState<Map<String, Episode?>>(emptyMap(), resumesAll) {
+        value = withContext(Dispatchers.IO) {
+            resumesAll.filter { it.item.series && it.item.dir != null && c.api.srv.libraryEpisodes }.associate { r ->
+                r.item.id to runCatching { c.api.episodes(r.item.root, r.item.dir!!).episodes }.getOrNull()?.let { eps ->
+                    val i = continueIndex(Settings(ctx), c.srv, r.item.root, eps)
+                    val last = eps.indexOfFirst { it.path == r.path }
+                    if (r.posMs <= 0 && last == eps.size - 1) null else eps.getOrNull(i)
+                }
+            }
+        }
+    }
+    val resumes = resumesAll.filter { !(it.item.series && it.item.id in nextEp && nextEp[it.item.id] == null) }
     val movies = cat.items.count { !it.series }
     val series = cat.items.size - movies
     val now = System.currentTimeMillis() / 1000.0
@@ -286,7 +303,8 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
             CoverRow(stringResource(R.string.cat_row_continue), null, resumes, null, { it.item.id }) { r ->
                 val total = (r.item.minutes ?: 0) * 60_000L
                 CoverCard(r.item, if (total > 0 && !r.item.series) stringResource(R.string.cat_left_min, ((total - r.posMs) / 60_000).coerceAtLeast(1))
-                    else cardMeta(r.item), progress = if (total > 0 && !r.item.series) r.posMs.toFloat() / total else null) {
+                    else nextEp[r.item.id]?.label?.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.cat_next_ep, it) }
+                    ?: cardMeta(r.item), progress = if (total > 0 && !r.item.series) r.posMs.toFloat() / total else null) {
                     if (r.item.series) c.open(r.item)  // the series' screen: "Resume S1 E3" on top, any other episode below
                     else playOnPhone(ctx, MediaRef.InLibrary(r.item.root, r.path, c.srv), r.item.imdb, r.item.kind)
                 }
@@ -680,8 +698,20 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
     var season by rememberSaveable(x.id) { mutableStateOf<Int?>(null) }
     val shown = season ?: list.getOrNull(cont.coerceAtLeast(0))?.season ?: seasons.first()
     var showExtras by rememberSaveable(x.id) { mutableStateOf(false) }
+    var download by remember { mutableStateOf(false) }
+    var dlTick by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
+    if (download) SeriesDownloadDialog(c.srv, x.root, list, extras, cont, shown, onDismiss = { download = false }) { n ->
+        download = false; dlTick++
+        scope.launch { c.snack.showSnackbar(ctx.resources.getQuantityString(R.plurals.ser_dl_started, n, n)) }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        SectionTitle(stringResource(R.string.cat_episodes_title))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { SectionTitle(stringResource(R.string.cat_episodes_title)) }
+            IconButton({ download = true }, Modifier.padding(end = 4.dp)) {
+                Icon(Icons.Filled.DownloadForOffline, stringResource(R.string.ser_dl_title))
+            }
+        }
         if (seasons.size > 1) LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(seasons, key = { it ?: -1 }) { s ->
                 FilterChip(s == shown, { season = s }, { Text(s?.let { stringResource(R.string.cat_season_n, it) } ?: stringResource(R.string.cat_season_other)) })
@@ -708,6 +738,10 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
                     else if (pos > 0) Text(stringResource(R.string.cat_ep_at, pos / 60_000), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary)
                 }
+                val mark = remember(k, back, dlTick) { offlineMark(ctx, MediaRef.InLibrary(x.root, e.path, c.srv)) }
+                if (mark != null) Icon(if (mark == "complete") Icons.Filled.DownloadDone else Icons.Filled.Downloading,
+                    stringResource(if (mark == "complete") R.string.ser_dl_on_phone else R.string.ser_dl_downloading),
+                    Modifier.padding(start = 8.dp).size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (watched) Text("✓", Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.primary)
             }
         }
