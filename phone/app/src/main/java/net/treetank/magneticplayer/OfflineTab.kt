@@ -17,6 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SelectAll
@@ -114,6 +119,12 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     val keys = list.map { it.item.key }.toSet()
     if (selected.any { it !in keys }) selected = selected.intersect(keys)
     val groups = remember(list) { offlineGroups(list) }
+    // compact rows instead of cards (many short episodes), remembered; groups fold (big ones start folded)
+    val ui = remember { ctx.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE) }
+    var compact by remember { mutableStateOf(ui.getBoolean("offline_compact", false)) }
+    var unfolded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(setOf<String>()) }
+    var folded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(setOf<String>()) }
+    fun isFolded(f: String, n: Int) = if (n > FOLD_OVER) f !in unfolded else f in folded
     Column(Modifier.fillMaxSize()) {
     if (selecting) SelectionBar(
         count = selected.size, bytes = list.filter { it.item.key in selected }.sumOf { it.cached },
@@ -124,15 +135,33 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
             selected = selected + list.filter { s.watchedAt(it.item.key) > 0 }.map { it.item.key }
         },
         onDelete = { confirmMany = true })
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (!selecting) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(androidx.compose.ui.res.pluralStringResource(R.plurals.media_offline_total, list.size, list.size, humanBytes(list.sumOf { it.cached })),
+            Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        IconButton({ compact = !compact; ui.edit().putBoolean("offline_compact", compact).apply() }) {
+            Icon(if (compact) Icons.Filled.ViewAgenda else Icons.AutoMirrored.Filled.ViewList,
+                stringResource(if (compact) R.string.media_view_cards else R.string.media_view_list))
+        }
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 8.dp)) {
       groups.forEach { (folder, rowsIn) ->
         // several episodes of one folder (a series, a season): a header, which selects them all in selection mode
+        val fold = folder != null && isFolded(folder, rowsIn.size)
         if (folder != null) item(key = "group/$folder") {
             val gk = rowsIn.map { it.item.key }
+            val s = remember(rowsIn) { Settings(ctx) }
             GroupHeader(folder.substringAfterLast('/').ifEmpty { folder }, rowsIn.size, selecting,
-                checked = gk.all { it in selected }) { toggle(gk) }
+                checked = gk.all { it in selected }, bytes = rowsIn.sumOf { it.cached },
+                watched = rowsIn.count { s.watchedAt(it.item.key) > 0 }, folded = fold,
+                onFold = {
+                    if (rowsIn.size > FOLD_OVER) unfolded = if (folder in unfolded) unfolded - folder else unfolded + folder
+                    else folded = if (folder in folded) folded - folder else folded + folder
+                }) { toggle(gk) }
         }
-        items(rowsIn, key = { it.item.key }) { r ->
+        if (!fold) items(rowsIn, key = { it.item.key }) { r ->
+          if (compact) OfflineLine(r, dl[r.item.key], selecting = selecting, checked = r.item.key in selected,
+              onToggle = { toggle(listOf(r.item.key)) }, onPlay = { ctx.startActivity(PlayerActivity.intent(ctx, r.item.ref)) })
+          else
             OfflineCard(r, dl[r.item.key], selecting = selecting, checked = r.item.key in selected,
                 onToggle = { toggle(listOf(r.item.key)) },
                 onPlay = { ctx.startActivity(PlayerActivity.intent(ctx, r.item.ref)) },
@@ -225,14 +254,53 @@ private fun SelectionBar(count: Int, bytes: Long, onClose: () -> Unit, onAll: ()
     }
 }
 
+/** Groups bigger than this start folded. */
+private const val FOLD_OVER = 6
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun GroupHeader(name: String, n: Int, selecting: Boolean, checked: Boolean, onToggle: () -> Unit) {
-    Row(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) onToggle() }, onLongClick = onToggle)
-        .padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun GroupHeader(name: String, n: Int, selecting: Boolean, checked: Boolean, bytes: Long, watched: Int, folded: Boolean,
+                        onFold: () -> Unit, onToggle: () -> Unit) {
+    // a tap folds or unfolds (selects the group while selecting), a long press selects it
+    Row(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) onToggle() else onFold() }, onLongClick = onToggle)
+        .padding(top = 8.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         if (selecting) androidx.compose.material3.Checkbox(checked, { onToggle() })
-        Text("$name ($n)", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f)) {
+            Text("$name ($n)", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(humanBytes(bytes) + if (watched > 0) " · " + stringResource(R.string.media_group_watched, watched) else "",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (!selecting) IconButton(onFold) {
+            Icon(if (folded) Icons.Filled.ExpandMore else Icons.Filled.ExpandLess,
+                stringResource(if (folded) R.string.media_group_unfold else R.string.media_group_fold))
+        }
+    }
+}
+
+/** The compact view: one line per video, a tap plays it (selects while selecting), a long press selects. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun OfflineLine(r: OfflineRow, dlStatus: String?, selecting: Boolean, checked: Boolean, onToggle: () -> Unit, onPlay: () -> Unit) {
+    val i = r.item
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val watched = remember(i.key) { Settings(ctx).watchedAt(i.key) > 0 }
+    val done = i.size > 0 && r.cached >= i.size
+    Row(Modifier.fillMaxWidth()
+        .background(if (checked) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+        .combinedClickable(onClick = { if (selecting) onToggle() else onPlay() }, onLongClick = onToggle)
+        .padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (selecting) androidx.compose.material3.Checkbox(checked, { onToggle() })
+        else Icon(Icons.Filled.PlayArrow, null, Modifier.padding(end = 8.dp).size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(i.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = if (watched) MaterialTheme.colorScheme.onSurfaceVariant else androidx.compose.ui.graphics.Color.Unspecified)
+        Text(when {
+            dlStatus != null -> dlStatus.substringAfterLast(' ')
+            done -> humanBytes(i.size)
+            i.size > 0 -> "${(100 * r.cached / i.size).toInt()}%"
+            else -> humanBytes(r.cached)
+        }, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (watched) Text("✓", Modifier.padding(start = 6.dp), color = MaterialTheme.colorScheme.primary)
     }
 }
 

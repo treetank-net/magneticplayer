@@ -63,6 +63,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       "Delete N videos from the phone? That frees X. The videos stay on the computer."
 - [ ] Two or more videos of one folder are grouped under the folder's name in episode order; the header's
       checkbox selects the whole group.
+- [ ] Group headers show the size and how many are watched; a tap folds/unfolds, groups over 6 start folded.
+- [ ] The list/cards icon at the top switches to one line per video (tap plays, long press selects) and is remembered.
 
 ## Catalog and Remote
 
@@ -91,7 +93,6 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       and fits one by one, `note` per video; videos that already have the language (file or track) are left out.
 
 ## Noted wishes
-- [idea] "On the phone" with many episodes (e.g. 100 five-minute ones): a compact list view, groups collapsible.
 - [idea] Library and servers (stage 2 of docs/plan-multi-server.md, "a shared library from all servers: later"):
   the top switcher gets "All" next to each server; with "All" Library and Downloads merge every reachable server
   (titles marked with their server, e.g. "jmpc · Series (TOSHIBA)"), with one server picked they filter to it.

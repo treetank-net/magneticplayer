@@ -335,4 +335,13 @@
         <item quantity="one">Downloading subtitles for %1$d video in the background (Library → Disks → Tasks).</item>
         <item quantity="other">Downloading subtitles for %1$d videos in the background (Library → Disks → Tasks).</item>
     </plurals>
+    <plurals name="media_offline_total">
+        <item quantity="one">%1$d video · %2$s</item>
+        <item quantity="other">%1$d videos · %2$s</item>
+    </plurals>
+    <string name="media_view_list">Compact list</string>
+    <string name="media_view_cards">Cards</string>
+    <string name="media_group_watched">%1$d watched</string>
+    <string name="media_group_fold">Fold</string>
+    <string name="media_group_unfold">Unfold</string>
 </resources>

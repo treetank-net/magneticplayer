@@ -353,4 +353,15 @@
         <item quantity="many">Pobieram napisy do %1$d filmów w tle (Biblioteka → Dyski → Zadania).</item>
         <item quantity="other">Pobieram napisy do %1$d filmu w tle (Biblioteka → Dyski → Zadania).</item>
     </plurals>
+    <plurals name="media_offline_total">
+        <item quantity="one">%1$d film · %2$s</item>
+        <item quantity="few">%1$d filmy · %2$s</item>
+        <item quantity="many">%1$d filmów · %2$s</item>
+        <item quantity="other">%1$d filmu · %2$s</item>
+    </plurals>
+    <string name="media_view_list">Zwarta lista</string>
+    <string name="media_view_cards">Karty</string>
+    <string name="media_group_watched">obejrzane: %1$d</string>
+    <string name="media_group_fold">Zwiń</string>
+    <string name="media_group_unfold">Rozwiń</string>
 </resources>
