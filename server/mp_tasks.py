@@ -911,7 +911,10 @@ class Tasks:
                 prof = effective_profile(r, relf)
                 if modernize and (prof == "original" or PROFILES[prof].get("copy")):
                     prof = "good"
-                size = os.stat(full).st_size
+                try:
+                    size = os.stat(full).st_size
+                except OSError:
+                    continue  # gone meanwhile (a running task has just replaced it)
                 item = {"op": "shrink", "root_id": r["id"], "root": r["index"], "root_name": r["name"],
                         "path": relf, "name": os.path.basename(full), "size": size, "profile": prof}
                 if prof == "original" and not modernize:
