@@ -390,7 +390,9 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             when {
                 (t == TAB_TORRENTS || t == TAB_LIBRARY) && servers.isEmpty() ->
                     Hint(stringResource(R.string.main_hint_no_server))
-                (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) ->
+                // Library without the server: the catalog from the last sync when the phone has one (Wake stays at the top)
+                (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) &&
+                    !(t == TAB_LIBRARY && waking == null && srv.hasCatalog && CatalogCache.hasCopy(ctx, srv.key)) ->
                     AsleepPane(srv, waking, wrong) { wake() }
                 t == TAB_TORRENTS && !srv.hasTorrent && !srv.hasCatalog ->
                     Hint(stringResource(R.string.main_hint_no_torrent, srv.name))
