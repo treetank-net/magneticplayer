@@ -40,6 +40,7 @@
     <string name="lib_plan_again">Make the preview again</string>
     <string name="lib_plan_empty">Nothing to do.</string>
     <string name="lib_move">Move</string>
+    <string name="lib_modernize">Old formats</string>
     <string name="lib_shrink">Shrink</string>
     <string name="lib_delete">Delete</string>
     <string name="lib_delete_selected">Delete selected</string>

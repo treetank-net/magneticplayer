@@ -97,6 +97,8 @@ yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. Stage 8 
       when it does HEVC B-frames (RTX 20xx and newer); on jmpc a GTX 970 (no B-frames, 8-bit only) stays on the CPU
       by default. Encoding goes on while somebody watches; see architecture.md for how it yields to the stream.
       AV1 (SVT-AV1) where the household's players handle it.
+    - Old formats (agent 1.8.2): DivX 3, WMV, RealVideo and the like are re-encoded even when it saves nothing, so a
+      collection does not rot as players drop old decoders; "Old formats" in Disks finds them across the library.
     - Compatibility: the agent knows the household's players (Chromecast profiles, the DLNA TV, phones). If one of
       them can't play the target codec (e.g. Chromecast gen 1–3 and HEVC), the preview says so and offers H.264 at
       a lower resolution instead, or relies on "Prepare" when watching.

@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -216,6 +218,7 @@ private fun ScreenHeader(title: String, onBack: () -> Unit) {
 }
 
 /** Disks with library folders, tidy-up tools, the trash and background tasks (household members, agent 1.6+). */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: (String) -> Unit) {
     val ctx = LocalContext.current
@@ -254,9 +257,11 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
         val d = disks ?: return Hint(stringResource(R.string.media_loading))
         LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton({ onPlan(PlanBody.simple("tidy")) }) { Text(stringResource(R.string.lib_tidy)) }
                     OutlinedButton({ onPlan(PlanBody.simple("dupes")) }) { Text(stringResource(R.string.lib_dupes)) }
+                    // old picture formats (DivX 3, WMV…) that phones and TVs no longer play (agent 1.8.2+)
+                    if (api.srv.hasModernize) OutlinedButton({ onPlan(PlanBody.simple("modernize")) }) { Text(stringResource(R.string.lib_modernize)) }
                 }
                 Text(stringResource(R.string.lib_tools_hint), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
@@ -538,6 +543,7 @@ private fun planKindTitle(kind: String) = when (kind) {
     "shrink" -> stringResource(R.string.lib_shrink)
     "tidy" -> stringResource(R.string.lib_tidy)
     "dupes" -> stringResource(R.string.lib_dupes)
+    "modernize" -> stringResource(R.string.lib_modernize)
     "trash" -> stringResource(R.string.lib_delete)
     else -> stringResource(R.string.lib_move)
 }

@@ -59,6 +59,12 @@ PROFILES = {  # target height, x265 CRF, NVENC CQ, estimated video kb/s at that 
 PROFILE_NAMES = ("original", *PROFILES)
 LOSSLESS_AUDIO = {"truehd", "dts", "flac", "mlp"} | {f"pcm_{x}" for x in ("s16le", "s24le", "s32le", "s16be", "s24be")}
 MIN_SAVING = 0.15
+# picture formats today's phones, TVs and Chromecasts no longer decode (Android has no DivX 3/WMV/RealVideo decoder):
+# such files are re-encoded even when it saves little, so the collection keeps playing everywhere
+OLD_VIDEO = {"msmpeg4v1", "msmpeg4v2", "msmpeg4v3", "wmv1", "wmv2", "wmv3", "vc1", "rv10", "rv20", "rv30", "rv40",
+             "flv1", "vp6", "vp6f", "vp6a", "theora", "cinepak", "indeo2", "indeo3", "indeo4", "indeo5", "svq1", "svq3",
+             "mpeg1video", "h261"}
+OLD_GROWTH = 1.25  # an old-format file may come out up to this much bigger (it then plays, which is the point)
 MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
 ENCODERS = ("auto", "cpu", "gpu")
@@ -710,7 +716,9 @@ class Tasks:
                              f"{c.get('name')} ({label(prof)}) nie odtwarza HEVC: przed oglądaniem trzeba będzie użyć \"Przygotuj\""))
         return out
 
-    def plan_shrink(self, root_index, rel="", encoder=None):
+    def plan_shrink(self, root_index, rel="", encoder=None, modernize=False):
+        """Re-encoding by storage profiles of one folder; `modernize`: only old picture formats (OLD_VIDEO), in every
+        library folder except backups, whatever the folder's profile ("original" and lossless "tidy" → "good")."""
         if encoder is not None and encoder not in ENCODERS:
             raise TaskError(T("encoder must be auto, cpu or gpu", "koder to auto, cpu albo gpu"))
 
@@ -721,29 +729,33 @@ class Tasks:
             est_by = {e: 0 for e in choices}
             work_by = {e: 0.0 for e in choices}
             roots = self.library.roots()
-            if not 0 <= root_index < len(roots):
-                raise TaskError(T("no such library folder", "nie ma takiego katalogu biblioteki"), 404)
-            r = roots[root_index]
-            base = self.library.resolve(root_index, rel or "")
+            if modernize:
+                bases = [(x, x["path"]) for x in roots if x["exists"] and not set(x["tags"]) & HIDDEN_TAGS]
+            else:
+                if not 0 <= root_index < len(roots):
+                    raise TaskError(T("no such library folder", "nie ma takiego katalogu biblioteki"), 404)
+                bases = [(roots[root_index], self.library.resolve(root_index, rel or ""))]
             torrents = self._torrents()
             files = []
-            if os.path.isfile(base):
-                files = [base]
-            else:
+            for r, base in bases:
+                if os.path.isfile(base):
+                    files.append((r, base))
+                    continue
                 for dp, dirs, fs in os.walk(base):
                     dirs[:] = sorted(d for d in dirs if not d.startswith("."))
-                    files += [os.path.join(dp, f) for f in sorted(fs)
+                    files += [(r, os.path.join(dp, f)) for f in sorted(fs)
                               if os.path.splitext(f)[1].lower() in VIDEO_EXT and not f.startswith(".")]
-            root_real = os.path.realpath(r["path"])
             items, skipped = [], []
-            for k, full in enumerate(files):
+            for k, (r, full) in enumerate(files):
                 p["progress"] = int(100 * k / max(len(files), 1))
-                relf = os.path.relpath(os.path.realpath(full), root_real)
+                relf = os.path.relpath(os.path.realpath(full), os.path.realpath(r["path"]))
                 prof = effective_profile(r, relf)
+                if modernize and (prof == "original" or PROFILES[prof].get("copy")):
+                    prof = "good"
                 size = os.stat(full).st_size
                 item = {"op": "shrink", "root_id": r["id"], "root": r["index"], "root_name": r["name"],
                         "path": relf, "name": os.path.basename(full), "size": size, "profile": prof}
-                if prof == "original":
+                if prof == "original" and not modernize:
                     continue
                 if self._inside(full, torrents):
                     skipped.append(dict(item, reason=T("still seeding in the torrent client", "jeszcze seeduje w kliencie torrentów")))
@@ -756,9 +768,14 @@ class Tasks:
                     skipped.append(dict(item, reason=str(e)[:120]))
                     continue
                 v, dur = info.get("video") or {}, info.get("duration") or 0
+                old = v.get("codec") in OLD_VIDEO
+                if modernize and not old:
+                    continue
                 if not v or not dur:
                     skipped.append(dict(item, reason=T("no video stream or length", "brak obrazu albo długości")))
                     continue
+                if old and PROFILES[prof].get("copy"):  # copying an old picture would keep it unplayable
+                    prof = item["profile"] = "good"
                 pr = PROFILES[prof]
                 if pr.get("copy"):  # tidy: the size minus what the audio changes save
                     h = v.get("height")
@@ -777,12 +794,12 @@ class Tasks:
                     ests = {e: int(dur * (vkbps * (GPU_SIZE[g.get("bframes", False)] if e == "gpu" else 1) + akbps)
                                    * 1000 / 8 * 1.02) for e in choices}
                     est = ests[enc]
-                if est > size * (1 - pr.get("min_saving", MIN_SAVING)):
+                if est > size * (OLD_GROWTH if old else 1 - pr.get("min_saving", MIN_SAVING)):
                     skipped.append(dict(item, reason=T("already small, little to gain", "już mały, niewiele do zyskania"),
                                         est=est))
                     continue
                 items.append(dict(item, est=est, codec=v.get("codec"), height=v.get("height"), to_height=h,
-                                  duration=dur, bitrate=int(size * 8 / dur / 1000)))
+                                  duration=dur, bitrate=int(size * 8 / dur / 1000), **({"old_format": True} if old else {})))
                 for e in choices:
                     if pr.get("copy"):
                         est_by[e] += est
@@ -793,8 +810,12 @@ class Tasks:
                         work_by[e] = work_by[e] + dur * h * h * 16 / 9 / sp if sp and work_by[e] is not None else None
             saved = sum(i["size"] - i["est"] for i in items)
             hours = sum(i["duration"] for i in items) / 3600
-            return {"kind": "shrink", **_title(f"Shrink {r['name']}" + (f"/{rel}" if rel else ""),
-                                                 f"Zmniejsz {r['name']}" + (f"/{rel}" if rel else "")),
+            if modernize:
+                title = _title("Update old formats", "Unowocześnij stare formaty")
+            else:
+                r = bases[0][0]
+                title = _title(f"Shrink {r['name']}" + (f"/{rel}" if rel else ""), f"Zmniejsz {r['name']}" + (f"/{rel}" if rel else ""))
+            return {"kind": "shrink", **title, "modernize": modernize,
                     "items": items, "bytes": sum(i["size"] for i in items), "est": sum(i["est"] for i in items),
                     "saved": saved, "hours": round(hours, 1), "encoder": self.encoder_label(enc), "encoder_id": enc,
                     "encoders": [dict(e, est=est_by[e["id"]], saved=sum(i["size"] for i in items) - est_by[e["id"]],
@@ -1119,7 +1140,7 @@ class Tasks:
         if abs((ninfo.get("duration") or 0) - dur) > max(2.0, dur * 0.005):
             _rm(part)
             raise TaskError(T("the result has a different length, the original was kept", "wynik ma inną długość, oryginał został"))
-        if new > st.st_size * (1 - pr.get("min_saving", MIN_SAVING) / 2):
+        if new > st.st_size * (OLD_GROWTH if i.get("old_format") else 1 - pr.get("min_saving", MIN_SAVING) / 2):
             _rm(part)
             i["state"] = "skipped"
             i["error"] = T("the result wasn't much smaller, the original was kept", "wynik nie był wyraźnie mniejszy, oryginał został")
@@ -1206,7 +1227,8 @@ class Tasks:
     def _shrink_cmd(self, full, out, info, pr, enc="cpu"):
         v = info["video"]
         h = min(v.get("height") or pr.get("height", 0), pr.get("height", 1 << 16))
-        vf = f"scale=-2:{h}" if (v.get("height") or 0) > h else "null"
+        # even dimensions: old AVIs can be 351 px wide, and 4:2:0 HEVC/H.264 needs both even
+        vf = f"scale=-2:{h}" if (v.get("height") or 0) > h else "scale=trunc(iw/2)*2:trunc(ih/2)*2"
         cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", full, "-map", "0:v:0"]
         keep = _audio_keep(info, pr["audio"])
         for a in keep:

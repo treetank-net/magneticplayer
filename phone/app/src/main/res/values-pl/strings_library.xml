@@ -40,6 +40,7 @@
     <string name="lib_plan_again">Zrób podgląd jeszcze raz</string>
     <string name="lib_plan_empty">Nie ma nic do zrobienia.</string>
     <string name="lib_move">Przenieś</string>
+    <string name="lib_modernize">Stare formaty</string>
     <string name="lib_shrink">Zmniejsz</string>
     <string name="lib_delete">Usuń</string>
     <string name="lib_delete_selected">Usuń zaznaczone</string>

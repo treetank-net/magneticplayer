@@ -51,7 +51,7 @@ import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError
 
-VERSION = "1.8.1"
+VERSION = "1.8.2"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -972,6 +972,7 @@ class App:
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
+                "library_modernize": True,  # POST /api/library/plan {"kind": "modernize"} (agent 1.8.2+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
                 "library_profiles": list(mp_tasks.PROFILE_NAMES),
                 "player": self.is_screen(),
@@ -1568,6 +1569,8 @@ class Handler(BaseHTTPRequestHandler):
                     if b.get("profile"):  # choosing a profile for this folder/file is remembered (new files follow it)
                         a.tasks.set_profile(int(b["root"]), b.get("path", ""), b["profile"])
                     return self.send_json(a.tasks.plan_shrink(int(b["root"]), b.get("path", ""), b.get("encoder")))
+                if kind == "modernize":  # old picture formats in the whole library (agent 1.8.2+)
+                    return self.send_json(a.tasks.plan_shrink(-1, "", b.get("encoder"), modernize=True))
                 if kind == "move":
                     return self.send_json(a.tasks.plan_move(b.get("items") or []))
                 if kind == "tidy":
@@ -1576,7 +1579,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(a.tasks.plan_dupes())
                 if kind == "trash":
                     return self.send_json(a.tasks.plan_trash(b.get("items") or []))
-                raise ApiError(T("kind must be free, shrink, move, tidy, dupes or trash", "kind to free, shrink, move, tidy, dupes albo trash"), 400)
+                raise ApiError(T("kind must be free, shrink, modernize, move, tidy, dupes or trash",
+                                 "kind to free, shrink, modernize, move, tidy, dupes albo trash"), 400)
             if (m := re.fullmatch(r"/api/library/plan/([0-9a-f]{8})", p)) and method == "GET":
                 return self.send_json(a.tasks.plan_status(m.group(1)))
             if p == "/api/library/profile" and method == "POST":
