@@ -95,11 +95,24 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   (from the disks) or suggestions that are not on the disks (to download by magnet).
 - [idea] A library usable without the computer: the catalog cached on the phone (maybe without covers), with what is
   downloaded marked and playable. Moments when the phone reaches a server again are sync points: refresh the cached
-  catalog, send positions and watched marks made offline, refresh downloaded copies' subtitles.
+  catalog, send positions and watched marks made offline, refresh downloaded copies' subtitles. Incremental, like
+  commit hashes: the agent keeps a change counter (or hash) per library and per item, the phone sends the last one it
+  saw and gets only what changed since (the whole catalog only the first time or when it is small).
 - [todo] "Continue watching": a series whose last watched episode was finished disappears (the row knows only
   interrupted files). It should stay with the next episode ("Next: S01E05") until the series ends.
 - [todo] Two season 2 extras of one re-encoded series failed: their AVI originals are truncated (the header promises
   more than is there). The check was fixed in agent 1.10.1; the two files only need a new shrink run on that folder.
 - [later] The folder browser plays a single file (no next-episode card, no queue); the catalog's series screen is the
   way to watch a series. An episode picker inside the player will cover the rest.
-- [idea] Own audio track sheet (original / dubbing / lector) with a remembered preference.
+- [todo] Own audio track sheet, agreed: a button next to CC, tracks grouped by language with the file's title
+  (lector, dubbing, audio description, commentary), channels (5.1, stereo) and codec; the video pauses while open.
+  The choice is remembered as a kind ("original", "Polish lector", "dubbing"), not a track number: per folder in a
+  series, otherwise a general preference ("original with subtitles", "lector when there is one"). The kind comes from
+  the track title; "original" is the film's language from recognition (TMDB); a track without a title counts only
+  by language. mpv and Chromecast get the same choice; DLNA cannot switch tracks (the file's default plays).
+- [todo] A magnet without a name (`dn=`): once the client knows the name, recognize it again and offer the folder
+  (or move it on its own when the folder is certain).
+- [idea] The folder browser as the place for jobs on its files: shrink, missing subtitles (both there), and more as
+  they come. Zip archiving gives videos almost nothing (already compressed), so no.
+- [idea] Retention of downloads per batch: a whole season or folder downloaded "keep until I delete" instead of
+  deleting each episode after watching; picked when downloading.
