@@ -320,4 +320,21 @@
     <string name="tvq_subs_ask_title">Brak napisów: %1$s</string>
     <string name="tvq_subs_ask_text">Telewizor nie dociągnie ich, gdy film już leci. Pobrać teraz? To potrwa do minuty.</string>
     <string name="tvq_subs_ask_no">Bez napisów</string>
+    <!-- "Na telefonie": tryb zaznaczania -->
+    <plurals name="media_sel_count">
+        <item quantity="one">%1$d zaznaczony · %2$s</item>
+        <item quantity="few">%1$d zaznaczone · %2$s</item>
+        <item quantity="many">%1$d zaznaczonych · %2$s</item>
+        <item quantity="other">%1$d zaznaczonego · %2$s</item>
+    </plurals>
+    <string name="media_sel_close">Zakończ zaznaczanie</string>
+    <string name="media_sel_all">Zaznacz wszystko</string>
+    <string name="media_sel_watched">Obejrzane</string>
+    <plurals name="media_sel_delete_title">
+        <item quantity="one">Usunąć %1$d film z telefonu?</item>
+        <item quantity="few">Usunąć %1$d filmy z telefonu?</item>
+        <item quantity="many">Usunąć %1$d filmów z telefonu?</item>
+        <item quantity="other">Usunąć %1$d filmu z telefonu?</item>
+    </plurals>
+    <string name="media_sel_delete_text">Zwolni się %1$s. Na komputerze filmy zostają.</string>
 </resources>

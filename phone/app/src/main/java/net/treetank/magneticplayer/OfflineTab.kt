@@ -1,5 +1,6 @@
 package net.treetank.magneticplayer
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
@@ -67,6 +70,14 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     var confirmDelete by remember { mutableStateOf<OfflineItem?>(null) }
     var chooser by remember { mutableStateOf<OfflineItem?>(null) }
     var opening by remember { mutableStateOf<String?>(null) }
+    // selection mode (long press on a card): delete several at once
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var confirmMany by remember { mutableStateOf(false) }
+    val selecting = selected.isNotEmpty()
+    androidx.activity.compose.BackHandler(selecting) { selected = emptySet() }
+    fun toggle(keys: Collection<String>) {
+        selected = if (keys.all { it in selected }) selected - keys.toSet() else selected + keys
+    }
     val canScreen = true  // mpv screens, Chromecasts, DLNA TVs: the picker shows what is on the network
     val subsAsk = remember { SubsAsk() }
     SubsAskDialog(subsAsk)
@@ -99,9 +110,31 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     }
     val list = rows ?: return
     if (list.isEmpty()) return Hint(stringResource(R.string.media_offline_empty))
+    // a selected video that disappeared meanwhile (deleted after watching) is no longer selected
+    val keys = list.map { it.item.key }.toSet()
+    if (selected.any { it !in keys }) selected = selected.intersect(keys)
+    val groups = remember(list) { offlineGroups(list) }
+    Column(Modifier.fillMaxSize()) {
+    if (selecting) SelectionBar(
+        count = selected.size, bytes = list.filter { it.item.key in selected }.sumOf { it.cached },
+        onClose = { selected = emptySet() },
+        onAll = { selected = if (selected.size == list.size) emptySet() else keys },
+        onWatched = {
+            val s = Settings(ctx)
+            selected = selected + list.filter { s.watchedAt(it.item.key) > 0 }.map { it.item.key }
+        },
+        onDelete = { confirmMany = true })
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(list, key = { it.item.key }) { r ->
-            OfflineCard(r, dl[r.item.key],
+      groups.forEach { (folder, rowsIn) ->
+        // several episodes of one folder (a series, a season): a header, which selects them all in selection mode
+        if (folder != null) item(key = "group/$folder") {
+            val gk = rowsIn.map { it.item.key }
+            GroupHeader(folder.substringAfterLast('/').ifEmpty { folder }, rowsIn.size, selecting,
+                checked = gk.all { it in selected }) { toggle(gk) }
+        }
+        items(rowsIn, key = { it.item.key }) { r ->
+            OfflineCard(r, dl[r.item.key], selecting = selecting, checked = r.item.key in selected,
+                onToggle = { toggle(listOf(r.item.key)) },
                 onPlay = { ctx.startActivity(PlayerActivity.intent(ctx, r.item.ref)) },
                 onScreen = if (canScreen) ({ chooser = r.item }) else null,
                 onDownload = { DownloadService.start(ctx, r.item.ref); refresh++ },
@@ -111,6 +144,25 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
                 },
                 onDelete = { confirmDelete = r.item })
         }
+      }
+    }
+    }
+    if (confirmMany) {
+        val chosen = list.filter { it.item.key in selected }
+        AlertDialog(
+            onDismissRequest = { confirmMany = false },
+            title = { Text(androidx.compose.ui.res.pluralStringResource(R.plurals.media_sel_delete_title, chosen.size, chosen.size)) },
+            text = { Text(stringResource(R.string.media_sel_delete_text, humanBytes(chosen.sumOf { it.cached }))) },
+            confirmButton = {
+                TextButton({
+                    confirmMany = false
+                    val gone = chosen.map { it.item.key }
+                    selected = emptySet()
+                    scope.launch { withContext(Dispatchers.IO) { gone.forEach { MediaCache.remove(ctx, it) } }; refresh++ }
+                }) { Text(stringResource(R.string.media_delete)) }
+            },
+            dismissButton = { TextButton({ confirmMany = false }) { Text(stringResource(R.string.media_cancel)) } },
+        )
     }
     chooser?.let { item ->
         ScreenChooser(item.ref, onPhone = null, onPick = { chooser = null; playOn(item, it, null) },
@@ -139,17 +191,68 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * The list in groups: videos of one library folder (two or more: a series, a season) together under its name, at the
+ * place of its newest one; the rest one by one (folder null). The order otherwise stays the newest first.
+ */
+private fun offlineGroups(list: List<OfflineRow>): List<Pair<String?, List<OfflineRow>>> {
+    fun folder(r: OfflineRow) = (r.item.ref as? MediaRef.InLibrary)?.let { "${it.srv}:${it.root}:${it.path.substringBeforeLast('/', "")}" }
+    val counts = list.groupingBy { folder(it) }.eachCount()
+    val out = mutableListOf<Pair<String?, List<OfflineRow>>>()
+    val done = mutableSetOf<String>()
+    for (r in list) {
+        val f = folder(r)?.takeIf { (counts[it] ?: 0) > 1 }
+        if (f == null) { out += null to listOf(r); continue }
+        if (!done.add(f)) continue
+        // episodes in their order (by path), not by download time
+        out += f.substringAfter(':').substringAfter(':') to list.filter { folder(it) == f }.sortedBy { (it.item.ref as MediaRef.InLibrary).path }
+    }
+    return out
+}
+
+/** Selection mode: how many and how much, close, select all, select watched, delete. */
+@Composable
+private fun SelectionBar(count: Int, bytes: Long, onClose: () -> Unit, onAll: () -> Unit, onWatched: () -> Unit, onDelete: () -> Unit) {
+    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClose) { Icon(androidx.compose.material.icons.Icons.Filled.Close, stringResource(R.string.media_sel_close)) }
+            Text(androidx.compose.ui.res.pluralStringResource(R.plurals.media_sel_count, count, count, humanBytes(bytes)),
+                Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TextButton(onWatched) { Text(stringResource(R.string.media_sel_watched)) }
+            IconButton(onAll) { Icon(androidx.compose.material.icons.Icons.Filled.SelectAll, stringResource(R.string.media_sel_all)) }
+            IconButton(onDelete) { Icon(Icons.Filled.Delete, stringResource(R.string.media_delete)) }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun GroupHeader(name: String, n: Int, selecting: Boolean, checked: Boolean, onToggle: () -> Unit) {
+    Row(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) onToggle() }, onLongClick = onToggle)
+        .padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (selecting) androidx.compose.material3.Checkbox(checked, { onToggle() })
+        Text("$name ($n)", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun OfflineCard(
-    r: OfflineRow, dlStatus: String?,
+    r: OfflineRow, dlStatus: String?, selecting: Boolean, checked: Boolean, onToggle: () -> Unit,
     onPlay: () -> Unit, onScreen: (() -> Unit)?, onDownload: () -> Unit, onPolicy: (String) -> Unit, onDelete: () -> Unit,
 ) {
     val i = r.item
     var menu by remember { mutableStateOf(false) }
-    Card(Modifier.fillMaxWidth()) {
+    // a long press starts selecting; while selecting a tap (de)selects and the buttons are hidden
+    Card(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) onToggle() }, onLongClick = onToggle),
+        colors = if (checked) androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            else androidx.compose.material3.CardDefaults.cardColors()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(i.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selecting) androidx.compose.material3.Checkbox(checked, { onToggle() })
+                Text(i.title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
             val frac = if (i.size > 0) (r.cached.toDouble() / i.size).coerceIn(0.0, 1.0) else 0.0
             val done = i.size > 0 && r.cached >= i.size
             val line = when {
@@ -172,6 +275,7 @@ private fun OfflineCard(
                 Text(stringResource(R.string.media_offline_from_start, clock(i.durationMs / 1000.0 * r.fromStart / i.size), clock(i.durationMs / 1000.0)),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (selecting) return@Column
             // buttons wrap onto the next line (large system font, narrow screen), the trash can is always on the right
             Row(verticalAlignment = Alignment.CenterVertically) {
               FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -308,4 +308,17 @@
     <string name="tvq_subs_ask_title">No subtitles in %1$s</string>
     <string name="tvq_subs_ask_text">The TV can\'t fetch them once the video is playing. Download them now? It takes up to a minute.</string>
     <string name="tvq_subs_ask_no">Without subtitles</string>
+    <!-- "On the phone": selection mode -->
+    <plurals name="media_sel_count">
+        <item quantity="one">%1$d selected · %2$s</item>
+        <item quantity="other">%1$d selected · %2$s</item>
+    </plurals>
+    <string name="media_sel_close">Stop selecting</string>
+    <string name="media_sel_all">Select all</string>
+    <string name="media_sel_watched">Watched</string>
+    <plurals name="media_sel_delete_title">
+        <item quantity="one">Delete %1$d video from the phone?</item>
+        <item quantity="other">Delete %1$d videos from the phone?</item>
+    </plurals>
+    <string name="media_sel_delete_text">That frees %1$s. The videos stay on the computer.</string>
 </resources>

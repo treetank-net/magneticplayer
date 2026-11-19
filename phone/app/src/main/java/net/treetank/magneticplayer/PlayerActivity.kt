@@ -887,7 +887,11 @@ class PlayerActivity : ComponentActivity() {
         val r = ref as? MediaRef.InLibrary ?: return
         if (subs.any { it.langKey == lang }) return
         if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && langKey(it.getTrackFormat(0).language) == lang }) return
-        if (folderKey(r) == settings.subChoiceFolder) fetchChosenSubs(r, lang) else offerSubs(r, lang)
+        // without the computer (outside, a downloaded copy) there is nothing to offer
+        lifecycleScope.launch {
+            if (!withContext(Dispatchers.IO) { api.configured && api.ping(1500) }) return@launch
+            if (folderKey(r) == settings.subChoiceFolder) fetchChosenSubs(r, lang) else offerSubs(r, lang)
+        }
     }
 
     /** "No Polish subtitles. Download?" over the picture for a while; playback is not paused. */
