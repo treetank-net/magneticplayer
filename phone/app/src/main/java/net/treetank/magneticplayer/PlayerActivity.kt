@@ -190,7 +190,8 @@ class PlayerActivity : ComponentActivity() {
                 val video = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
                 if (video.isNotEmpty() && video.none { it.isSupported } && !noVideoHandled) {
                     noVideoHandled = true
-                    onNoVideo(p, video.first().getTrackFormat(0))
+                    val f = video.first().getTrackFormat(0)
+                    onNoVideo(p, f.codecs ?: f.sampleMimeType?.substringAfter('/'))
                 }
             }
 
@@ -205,6 +206,13 @@ class PlayerActivity : ComponentActivity() {
                         p.seekTo(pos)
                         p.prepare()
                     }
+                    return
+                }
+                // any other error (a decoder that chokes, e.g. DivX 3 that the AVI extractor passes off as MPEG-4,
+                // ends as "stuck buffering"): the computer's version may still play, so we offer it once
+                if (!noVideoHandled && !altSource && Api.of(this@PlayerActivity, ref.srv) != null) {
+                    noVideoHandled = true
+                    onNoVideo(p, null, error.errorCodeName)
                     return
                 }
                 Toast.makeText(this@PlayerActivity,
@@ -265,17 +273,26 @@ class PlayerActivity : ComponentActivity() {
     private var playerView: PlayerView? = null
 
     /** The phone has no decoder for the picture: play the computer's version (made for Chromecasts, H.264 MP4) instead. */
-    private fun onNoVideo(p: ExoPlayer, f: androidx.media3.common.Format) {
-        val codec = (f.codecs ?: f.sampleMimeType?.substringAfter('/') ?: "?").uppercase()
+    private fun onNoVideo(p: ExoPlayer, trackCodec: String?, errorName: String? = null) {
         val server = Api.of(this, ref.srv)
         lifecycleScope.launch {
             val probe = server?.let { withContext(Dispatchers.IO) { runCatching { it.mediaProbe(ref) }.getOrNull() } }
             if (isFinishing) return@launch
             if (probe?.optJSONObject("variant") != null) return@launch switchToVariant(p, server)
             val canPrepare = probe?.optBoolean("ffmpeg") == true
+            val codec = (probe?.optJSONObject("file")?.optJSONObject("video")?.optString("codec")?.ifEmpty { null }
+                ?: trackCodec ?: errorName ?: "?").uppercase()
+            if (errorName != null && !canPrepare) {  // nothing better to offer than the usual error
+                Toast.makeText(this@PlayerActivity, getString(R.string.media_player_error, errorName), Toast.LENGTH_LONG).show()
+                return@launch
+            }
             val b = android.app.AlertDialog.Builder(this@PlayerActivity)
                 .setTitle(R.string.media_player_no_video_title)
-                .setMessage(getString(if (canPrepare) R.string.media_player_no_video_prepare else R.string.media_player_no_video, codec))
+                .setMessage(getString(when {
+                    errorName != null -> R.string.media_player_cant_play_prepare
+                    canPrepare -> R.string.media_player_no_video_prepare
+                    else -> R.string.media_player_no_video
+                }, codec))
                 .setNeutralButton(R.string.media_player_sound_only, null)
                 .setNegativeButton("VLC") { _, _ ->
                     p.pause()

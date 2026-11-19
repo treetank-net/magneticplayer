@@ -151,6 +151,7 @@
     <string name="media_player_no_video_title">Telefon nie pokaże tego obrazu</string>
     <string name="media_player_no_video">Obraz jest w starym formacie (%1$s), którego telefon nie dekoduje, więc słychać tylko dźwięk. Otwórz w VLC albo odtwórz na ekranie.</string>
     <string name="media_player_no_video_prepare">Obraz jest w starym formacie (%1$s), którego telefon nie dekoduje, więc słychać tylko dźwięk. Komputer może przygotować wersję, którą telefon odtworzy (zwykle kilka minut; przyda się też dla Chromecasta).</string>
+    <string name="media_player_cant_play_prepare">Telefon nie umie odtworzyć tego pliku (obraz: %1$s). Komputer może przygotować wersję, którą telefon odtworzy (zwykle kilka minut; przyda się też dla Chromecasta).</string>
     <string name="media_player_prepare">Przygotuj</string>
     <string name="media_player_sound_only">Tylko dźwięk</string>
     <string name="media_player_preparing">Komputer przygotowuje wersję dla telefonu: %1$d%%</string>

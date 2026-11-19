@@ -174,7 +174,8 @@ cached. These give `ready_sec`, i.e. how many seconds can be watched.
     to 20 s for Deluge, then drops the connection, and ExoPlayer retries (up to 60 times). Nobody gets zeros from
     an undownloaded file.
   - A picture the phone has no decoder for (old DivX 3 / `msmpeg4v3`, WMV…): ExoPlayer would play the sound alone
-    and could hang after a seek ("stuck buffering"). The player notices it in `onTracksChanged` and switches to the
+    and could hang ("stuck buffering"). The player notices it in `onTracksChanged`, or on any non-network playback
+    error (media3's AVI extractor passes DivX 3 off as MPEG-4, so the track looks supported), and switches to the
     agent's "for Chromecast" version (H.264 MP4, `POST /api/media/convert`, ticket with `variant: "cast"`) when
     there is one; otherwise it asks: Prepare (progress in the top line, then the switch at the same position),
     VLC, or sound only. The prepared version isn't put in the disk buffer.
