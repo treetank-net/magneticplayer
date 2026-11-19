@@ -1344,6 +1344,11 @@ class Tasks:
         mp_media.remove_variant(full)
         i.update(saved=st.st_size - new, new_size=new, new_path=os.path.relpath(out_final, root))
         self.log(f"shrink done: {os.path.basename(full)} {st.st_size >> 20} → {new >> 20} MB")
+        # the new name (.avi → .mkv) shows in search at once; the catalog walks again at most every 10 minutes
+        mp_library.forget_names()
+        if time.time() - getattr(self, "_walked", 0) > 600:
+            self._walked = time.time()
+            self.library.invalidate()
 
     def _hold(self, full_dev):
         """Why an encode should not run at full speed now: None, watching / conversion (stop), same_disk (slower)."""

@@ -128,6 +128,12 @@ def safe_join(base, rel):
     return full
 
 
+def forget_names():
+    """The search walks the folders again on the next query (cheap; the catalog is not touched)."""
+    with _search_lock:
+        _search_cache.clear()
+
+
 class Library:
     def __init__(self, cfg, save_cfg, default_dirs):
         self.cfg = cfg

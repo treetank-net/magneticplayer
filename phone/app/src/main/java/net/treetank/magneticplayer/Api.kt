@@ -61,11 +61,38 @@ class Settings(ctx: Context) {
         set(v) = p.edit().putString("upload_server", v).apply()
 
 
-    fun position(key: String): Long = p.getLong("pos:$key", 0)
+    fun position(key: String): Long = p.getLong("pos:${follow(key)}", 0)
     /** When the position was last saved (epoch ms, 0 = never). */
-    fun positionAt(key: String): Long = p.getLong("pt:$key", 0)
+    fun positionAt(key: String): Long = p.getLong("pt:${follow(key)}", 0)
     /** When the video was last watched to the end (epoch ms, 0 = never): series continue after it. */
-    fun watchedAt(key: String): Long = p.getLong("wd:$key", 0)
+    fun watchedAt(key: String): Long = p.getLong("wd:${follow(key)}", 0)
+
+    /**
+     * A library file re-encoded on the server ("Old formats", shrinking) keeps its name but may change its extension
+     * (.avi → .mkv). When nothing is saved under [key], what this phone saved under the same name with another
+     * extension (position, its time, "watched") moves over. The disk buffer stays with the old key: it holds the old file.
+     */
+    private fun follow(key: String): String {
+        if (p.contains("pos:$key") || p.contains("wd:$key")) return key
+        val stem = stemOf(key) ?: return key
+        val old = p.all.keys.asSequence().filter { it.startsWith("pos:") || it.startsWith("wd:") }
+            .map { it.substringAfter(':') }.firstOrNull { it != key && stemOf(it) == stem } ?: return key
+        val e = p.edit()
+        for (pre in arrayOf("pos:", "pt:", "wd:")) {
+            if (p.contains(pre + old)) e.putLong(pre + key, p.getLong(pre + old, 0)).remove(pre + old)
+        }
+        e.apply()
+        return key
+    }
+
+    companion object {
+        /** The key or path without the file's extension, null when the name has none. */
+        fun stemOf(key: String): String? {
+            val name = key.substringAfterLast('/')
+            val dot = name.lastIndexOf('.')
+            return if (dot <= 0) null else key.dropLast(name.length - dot)
+        }
+    }
     fun markWatched(key: String) = p.edit().putLong("wd:$key", System.currentTimeMillis()).apply()
     /** Also stamps when it was saved ("pt:"), so "Continue watching" in the catalog can order videos by recency. */
     fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).putLong("pt:$key", System.currentTimeMillis()).apply()

@@ -226,9 +226,12 @@ fun resumes(ctx: Context, srv: String, cat: CatalogData): List<Resume> {
         val root = rest.substringBefore('/').toIntOrNull() ?: return@mapNotNull null
         val path = rest.substringAfter('/', "")
         val items = byRoot[root] ?: return@mapNotNull null
+        val stem = Settings.stemOf(path)
         val item = items.firstOrNull { it.path == path }
+            // re-encoded on the server: same name, another extension (Settings.follow moves the position on first read)
+            ?: items.firstOrNull { stem != null && it.dir == null && Settings.stemOf(it.path) == stem }
             ?: items.firstOrNull { it.dir != null && path.startsWith(it.dir + "/") } ?: return@mapNotNull null
-        Resume(item, path, v.first, v.second)
+        Resume(item, if (item.path != path && item.dir == null) item.path else path, v.first, v.second)
     }.sortedByDescending { it.at }.distinctBy { it.item.id }
 }
 
