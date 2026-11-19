@@ -77,7 +77,7 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Group headers show the size and how many are watched; a tap folds/unfolds, groups over 6 start folded.
 - [x] The list/cards icon at the top switches to one line per video (2026-11-19, Pixel, v1.261119.2229); [ ] tap plays,
       long press selects, remembered after a restart.
-- [ ] (fixed after v1.261119.2229) single videos sit under "Other videos" when there are groups (before, under a
+- [x] (fixed after v1.261119.2229; seen 2026-11-19, Pixel, v1.261119.2306) single videos sit under "Other videos" when there are groups (before, under a
       group they looked like its part); a group of videos lying directly in a library folder carries that folder's
       name (was an empty "(2)"); "Season 1" gets the series' folder before it ("Breaking Bad · Season 1").
 
@@ -95,7 +95,9 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       "downloading" / "on the phone" icon.
       2026-11-19, Pixel, v1.261119.2229: the dialog, its options, counts, rule chips and free space [x] (not started).
       Found: complete watching buffers counted as missing and had no icon; fixed after it (a buffer holding the whole
-      video counts as on the phone and is pinned with the batch's rule without downloading). Check again.
+      video counts as on the phone and is pinned with the batch's rule without downloading).
+      [x] 2026-11-19, Pixel, v1.261119.2306: buffered E1/E2 show the "on the phone" icon, the dialog says "4 episodes,
+      5.9 GB · 2 already there" for the season (not started).
 
 ## Magnets
 
