@@ -108,7 +108,9 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     LaunchedEffect(pendingNext) {
         if (pendingNext != null && pendingNext.first == api.srv.key) { root = null; path = ""; disks = false; plan = null }
     }
-    if (!online) return Hint(stringResource(R.string.media_lib_offline))
+    // without the server: the catalog from its last sync (downloaded videos play), nothing else
+    val offlineCatalog = !online && srv.hasCatalog && CatalogCache.hasCopy(ctx, api.srv.key)
+    if (!online && !(offlineCatalog && root == null && plan == null && !disks)) return Hint(stringResource(R.string.media_lib_offline))
     val r = root
     val p = plan
     when {
@@ -124,8 +126,8 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
             DisksScreen(api, snack, onBack = { disks = false }) { plan = it }
         }
         r == null && srv.hasCatalog -> CatalogArea(api, snack, onPlayingOnPc, mode, { mode = it }, stack, { stack = it },
-            onOpenFolder = { r0, p0 -> root = r0; path = p0 }) {
-            RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
+            onOpenFolder = { r0, p0 -> if (online) { root = r0; path = p0 } }, offline = !online) {
+            if (!online) Hint(stringResource(R.string.media_lib_offline)) else RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
                 root = r0; path = p0
             }
         }

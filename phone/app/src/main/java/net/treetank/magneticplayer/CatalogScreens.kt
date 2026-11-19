@@ -146,29 +146,34 @@ class CatCtx(
  */
 @Composable
 fun CatalogArea(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, mode: String, onMode: (String) -> Unit,
-                stack: String, onStack: (String) -> Unit, onOpenFolder: (Int, String) -> Unit, folders: @Composable () -> Unit) {
+                stack: String, onStack: (String) -> Unit, onOpenFolder: (Int, String) -> Unit, offline: Boolean = false,
+                folders: @Composable () -> Unit) {
     // covers: the server's own posters or frames from the films (agent 1.6+), drawn ones otherwise
     val ctx = LocalContext.current
     val coverApi = remember(api.srv.key) { (Servers.get(ctx, api.srv.key) ?: api.srv).let { if (it.libraryCovers) Api(api.s, it) else null } }
     androidx.compose.runtime.CompositionLocalProvider(LocalCoverApi provides coverApi) {
-        CatalogAreaBody(api, snack, onPlayingOnPc, mode, onMode, stack, onStack, onOpenFolder, folders)
+        CatalogAreaBody(api, snack, onPlayingOnPc, mode, onMode, stack, onStack, onOpenFolder, offline, folders)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, mode: String, onMode: (String) -> Unit,
-                stack: String, onStack: (String) -> Unit, onOpenFolder: (Int, String) -> Unit, folders: @Composable () -> Unit) {
+                stack: String, onStack: (String) -> Unit, onOpenFolder: (Int, String) -> Unit, offline: Boolean,
+                folders: @Composable () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val srvKey = api.srv.key
     val ver by CatalogCache.version
-    val cat = remember(srvKey, ver) { CatalogCache.cached(srvKey) }
+    val catState = produceState(CatalogCache.peek(srvKey), srvKey, ver) {
+        value = withContext(Dispatchers.IO) { CatalogCache.cached(ctx, srvKey) }
+    }
+    val cat = catState.value
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(srvKey) {
         while (true) {
             val c = try {
-                withContext(Dispatchers.IO) { CatalogCache.refresh(api) }.also { error = null }
+                withContext(Dispatchers.IO) { CatalogCache.refresh(ctx, api) }.also { error = null }
             } catch (e: ApiException) {
                 error = e.message; null
             }
@@ -218,6 +223,12 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
         return
     }
     Column(Modifier.fillMaxSize()) {
+        if (offline) {
+            val at = CatalogCache.syncedAt(srvKey)
+            Text(if (at > 0) stringResource(R.string.cat_offline_from, agoText(at / 1000.0)) else stringResource(R.string.cat_offline),
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 16.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
         val modes = listOf("discover" to R.string.cat_mode_discover, "browse" to R.string.cat_mode_browse, "folders" to R.string.cat_mode_folders)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
             modes.forEachIndexed { i, (m, label) ->

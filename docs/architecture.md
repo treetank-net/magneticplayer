@@ -377,6 +377,10 @@ by Next episode). Idea of Jellyfin's Intro Skipper, no network and no model:
 The player shows "Skip intro" bottom right while the intro plays, and the Next episode card in the last 90 s or from
 the credits; its countdown starts at the credits when they are known, otherwise at the end of the file.
 
+The catalog is kept on the phone too (`files/catalog/<server>.json`, the agent's last answer, ~0.5 MB for a few
+thousand titles): Library opens on it when the server is unreachable (a bar says since when), and every refresh asks
+`?since=<version>`, so an unchanged catalog costs one tiny answer. Per-item changes aren't worth it at this size.
+
 "Similar in your collection" on the title screen is computed by the app from the catalog: shared actors and
 directors, then topics, then genres. Genres alone need two specific ones in common ("Drama" doesn't count), and
 kids' titles are matched only with kids' titles. The same match makes Discover's "Because you watched <title>" row

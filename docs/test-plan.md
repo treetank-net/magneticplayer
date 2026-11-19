@@ -137,6 +137,12 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       read capabilities once per process, and screens kept the older copy. Fixed: capabilities are re-read when the
       agent's version (from ping) changes, and `Api.srv` is refreshed by `info()`. Check again after an agent update.
 
+- [ ] Catalog without the server: after one visit the catalog is kept on the phone (`files/catalog/<server>.json`);
+      with the server off (or the phone away) Library still opens on Discover/Browse with a bar "Server unreachable ·
+      the catalog as synced <when>", a downloaded film plays from it; Folders and the disks say the server is
+      unreachable. Back online the bar goes and `?since=` refreshes it (an unchanged catalog: one small answer).
+      Not yet: series episode lists offline, downloaded marks on covers, sending offline positions back.
+
 ## Noted wishes
 - [idea] Library and servers (stage 2 of docs/plan-multi-server.md, "a shared library from all servers: later"):
   the top switcher gets "All" next to each server; with "All" Library and Downloads merge every reachable server
@@ -146,7 +152,7 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 
 - [~] The catalog's "New on your disks" row: sometimes something else, e.g. a carousel "Because you watched <title>"
   (from the disks: done, see "Catalog and Remote") or suggestions that are not on the disks (to download by magnet).
-- [idea] A library usable without the computer: the catalog cached on the phone (maybe without covers), with what is
+- [~] (step 1 done: the catalog on disk, see "Library screens") A library usable without the computer: the catalog cached on the phone (maybe without covers), with what is
   downloaded marked and playable. Moments when the phone reaches a server again are sync points: refresh the cached
   catalog, send positions and watched marks made offline, refresh downloaded copies' subtitles. Incremental, like
   commit hashes: the agent keeps a change counter (or hash) per library and per item, the phone sends the last one it

@@ -123,12 +123,16 @@ private fun objects(a: JSONArray?) = a?.let { List(it.length()) { i -> it.getJSO
 
 // ---------------------------------------------------------------- API (agent 1.8+)
 
-fun Api.catalog(since: String?): CatalogData? {
-    val o = JSONObject(request("GET", "/api/catalog" + (since?.let { "?since=" + Uri.encode(it) } ?: ""), timeout = 30000))
+/** The catalog when it changed since [since] (with the answer's text, for the copy on disk), null when it is the same. */
+fun Api.catalog(since: String?): Pair<CatalogData, String>? {
+    val raw = request("GET", "/api/catalog" + (since?.let { "?since=" + Uri.encode(it) } ?: ""), timeout = 30000)
+    val o = JSONObject(raw)
     if (o.optBoolean("same")) return null
-    return CatalogData(o.optString("version"), o.optBoolean("scanning"), o.optInt("done"), o.optInt("total"),
-        objects(o.optJSONArray("items")).map(::catItem), o.map("people"), o.map("topics"))
+    return parseCatalog(o) to raw
 }
+
+private fun parseCatalog(o: JSONObject) = CatalogData(o.optString("version"), o.optBoolean("scanning"), o.optInt("done"),
+    o.optInt("total"), objects(o.optJSONArray("items")).map(::catItem), o.map("people"), o.map("topics"))
 
 fun Api.catalogTitle(imdb: String): TitleInfo {
     val o = JSONObject(request("GET", "/api/catalog/title?imdb=" + Uri.encode(imdb), timeout = 30000))
@@ -189,19 +193,55 @@ fun Api.uploadKeep(id: String) { request("POST", "/api/uploads/keep", JSONObject
 
 // ---------------------------------------------------------------- cache
 
-/** The catalog in memory per server, refreshed with `?since=<version>` (an unchanged catalog costs one tiny answer). */
+/**
+ * The catalog per server, in memory and on disk (`files/catalog/<server>.json`, the agent's last answer, ~0.5 MB), so
+ * the library opens without the computer: the phone's last sync point. Refreshed with `?since=<version>`: an unchanged
+ * catalog costs one tiny answer, a changed one comes whole (small enough that per-item changes aren't worth it).
+ */
 object CatalogCache {
     private val data = java.util.concurrent.ConcurrentHashMap<String, CatalogData>()
+    /** When the copy was last confirmed by its server (epoch ms) */
+    private val synced = java.util.concurrent.ConcurrentHashMap<String, Long>()
     /** Bumped on every change, so screens can recompute. */
     val version = mutableStateOf(0)
 
-    fun cached(srv: String): CatalogData? = data[srv]
+    private fun file(ctx: Context, srv: String) = java.io.File(ctx.filesDir, "catalog/" + srv.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".json")
+
+    /** A catalog of [srv] is known (in memory or on disk), so the library can open without the server. */
+    fun hasCopy(ctx: Context, srv: String): Boolean = data.containsKey(srv) || file(ctx, srv).exists()
+
+    /** In memory only (no disk read: safe on the main thread). */
+    fun peek(srv: String): CatalogData? = data[srv]
+
+    /** In memory, else the copy on disk (blocking: read once per server and process). */
+    fun cached(ctx: Context, srv: String): CatalogData? = data[srv] ?: runCatching {
+        val f = file(ctx, srv)
+        parseCatalog(JSONObject(f.readText())).also { data.putIfAbsent(srv, it); synced.putIfAbsent(srv, f.lastModified()) }
+    }.getOrNull()
+
+    /** When the catalog of [srv] was last confirmed by the server (epoch ms, 0 = never). */
+    fun syncedAt(srv: String): Long = synced[srv] ?: 0
 
     /** Fetches what changed (blocking, call off the main thread). */
-    fun refresh(api: Api): CatalogData {
-        val old = data[api.srv.key]
-        val fresh = api.catalog(old?.version) ?: return old!!
-        data[api.srv.key] = fresh
+    fun refresh(ctx: Context, api: Api): CatalogData {
+        val key = api.srv.key
+        val old = cached(ctx, key)
+        val got = api.catalog(old?.version)
+        val f = file(ctx, key)
+        if (got == null) {
+            synced[key] = System.currentTimeMillis()
+            runCatching { f.setLastModified(synced[key]!!) }
+            return old!!
+        }
+        val (fresh, raw) = got
+        data[key] = fresh
+        synced[key] = System.currentTimeMillis()
+        runCatching {
+            f.parentFile?.mkdirs()
+            val tmp = java.io.File(f.path + ".tmp")
+            tmp.writeText(raw)
+            tmp.renameTo(f)
+        }
         version.value++
         return fresh
     }
