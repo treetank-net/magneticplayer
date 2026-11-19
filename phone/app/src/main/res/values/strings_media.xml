@@ -344,6 +344,8 @@
     <string name="media_group_watched">%1$d watched</string>
     <string name="media_group_fold">Fold</string>
     <string name="media_group_unfold">Unfold</string>
+    <string name="media_group_other">Other videos</string>
+    <string name="media_group_root">Library folder</string>
     <!-- the player's audio sheet -->
     <string name="audio_title">Audio</string>
     <string name="audio_lang_unknown">Language not given</string>

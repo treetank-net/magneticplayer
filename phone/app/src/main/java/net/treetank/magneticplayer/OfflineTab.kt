@@ -1,5 +1,6 @@
 package net.treetank.magneticplayer
 
+import org.json.JSONObject
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -124,7 +125,22 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     var compact by remember { mutableStateOf(ui.getBoolean("offline_compact", false)) }
     var unfolded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(setOf<String>()) }
     var folded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(setOf<String>()) }
-    fun isFolded(f: String, n: Int) = if (n > FOLD_OVER) f !in unfolded else f in folded
+    fun isFolded(f: String, n: Int) = if (n > FOLD_OVER && f != OTHER) f !in unfolded else f in folded
+    // names of the library folders ("srv:root" → name) for videos lying directly in one, remembered for offline use
+    val rootNames = remember { mutableStateOf(runCatching { JSONObject(ui.getString("root_names", "{}")!!) }.getOrDefault(JSONObject())) }
+    val needRoots = groups.mapNotNull { (f, _) -> f?.split(":", limit = 3)?.takeIf { it.size == 3 && it[2].isEmpty() }?.let { "${it[0]}:${it[1]}" } }.toSet()
+    LaunchedEffect(needRoots) {
+        val missing = needRoots.filter { !rootNames.value.has(it) }
+        if (missing.isEmpty()) return@LaunchedEffect
+        val j = JSONObject(rootNames.value.toString())
+        withContext(Dispatchers.IO) {
+            missing.map { it.substringBeforeLast(':') }.distinct().forEach { srv ->
+                runCatching { Api.of(ctx, srv)?.libraryRoots() }.getOrNull()?.forEach { r -> j.put("$srv:${r.index}", r.name) }
+            }
+        }
+        ui.edit().putString("root_names", j.toString()).apply()
+        rootNames.value = j
+    }
     Column(Modifier.fillMaxSize()) {
     if (selecting) SelectionBar(
         count = selected.size, bytes = list.filter { it.item.key in selected }.sumOf { it.cached },
@@ -150,7 +166,7 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
         if (folder != null) item(key = "group/$folder") {
             val gk = rowsIn.map { it.item.key }
             val s = remember(rowsIn) { Settings(ctx) }
-            GroupHeader(folder.substringAfterLast('/').ifEmpty { folder }, rowsIn.size, selecting,
+            GroupHeader(groupLabel(folder, rootNames.value), rowsIn.size, selecting,
                 checked = gk.all { it in selected }, bytes = rowsIn.sumOf { it.cached },
                 watched = rowsIn.count { s.watchedAt(it.item.key) > 0 }, folded = fold,
                 onFold = {
@@ -228,16 +244,39 @@ private fun offlineGroups(list: List<OfflineRow>): List<Pair<String?, List<Offli
     fun folder(r: OfflineRow) = (r.item.ref as? MediaRef.InLibrary)?.let { "${it.srv}:${it.root}:${it.path.substringBeforeLast('/', "")}" }
     val counts = list.groupingBy { folder(it) }.eachCount()
     val out = mutableListOf<Pair<String?, List<OfflineRow>>>()
+    val singles = mutableListOf<OfflineRow>()
     val done = mutableSetOf<String>()
     for (r in list) {
         val f = folder(r)?.takeIf { (counts[it] ?: 0) > 1 }
-        if (f == null) { out += null to listOf(r); continue }
+        if (f == null) { singles += r; continue }
         if (!done.add(f)) continue
         // episodes in their order (by path), not by download time
-        out += f.substringAfter(':').substringAfter(':') to list.filter { folder(it) == f }.sortedBy { (it.item.ref as MediaRef.InLibrary).path }
+        out += f to list.filter { folder(it) == f }.sortedBy { (it.item.ref as MediaRef.InLibrary).path }
     }
+    // with groups on the list, the single videos get their own header: right under a group they looked like its part
+    if (singles.isNotEmpty()) out += (if (out.isEmpty()) null else OTHER) to singles
     return out
 }
+
+/** The group of single videos (not a folder). */
+private const val OTHER = "~other"
+
+/**
+ * A group's name: its folder; "Season 1" and the like with the series' folder before it; videos lying directly in a
+ * library folder under that folder's name ([roots]: "srv:root" → name).
+ */
+@Composable
+private fun groupLabel(folder: String, roots: JSONObject): String {
+    if (folder == OTHER) return stringResource(R.string.media_group_other)
+    val (srv, root, path) = folder.split(":", limit = 3).let { if (it.size == 3) it else listOf("", "", folder) }
+    val srvRoot = "$srv:$root"
+    if (path.isEmpty()) return roots.optString(srvRoot).ifEmpty { stringResource(R.string.media_group_root) }
+    val last = path.substringAfterLast('/')
+    val parent = path.substringBeforeLast('/', "").substringAfterLast('/')
+    return if (parent.isNotEmpty() && SEASON_DIR.matches(last)) "$parent · $last" else last
+}
+
+private val SEASON_DIR = Regex("(?i)(season|sezon|series|seria|staffel|saison|temporada|s)[ ._-]*\\d+|specials|extras|dodatki")
 
 /** Selection mode: how many and how much, close, select all, select watched, delete. */
 @Composable

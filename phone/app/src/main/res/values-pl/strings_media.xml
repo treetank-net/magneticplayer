@@ -364,6 +364,8 @@
     <string name="media_group_watched">obejrzane: %1$d</string>
     <string name="media_group_fold">Zwiń</string>
     <string name="media_group_unfold">Rozwiń</string>
+    <string name="media_group_other">Pozostałe</string>
+    <string name="media_group_root">Folder biblioteki</string>
     <!-- panel dźwięku w odtwarzaczu -->
     <string name="audio_title">Dźwięk</string>
     <string name="audio_lang_unknown">Język nie podany</string>

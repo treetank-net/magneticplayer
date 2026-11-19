@@ -24,11 +24,12 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       the next episode starts with them on.
 - [ ] Embedded tracks: titles like "Spanish (Latin America)", "for the hard of hearing", "forced".
 
-- [ ] Audio: the note icon next to CC appears only with two or more audio tracks; the sheet groups tracks by language
+- [x] Audio: the note icon next to CC appears only with two or more audio tracks; the sheet groups tracks by language
       with the kind (lector, dubbing, audio description, commentary, original), title, channels and codec; the video
-      pauses while it is open; a pick switches the track at once.
+      pauses while it is open; a pick switches the track at once. (2026-11-19, emulator, v1.261119.2229, a 3-track anime file: EN 5.1, EN commentary, JA). Not yet: a file with PL lector.
 - [ ] The next episode (same folder) and other videos start with the same kind of track (e.g. "original" on a file
       with PL lector + EN); a file with one track is left alone.
+      Same folder: [x] JA picked in E03, E02 started with JA (2026-11-19, emulator, v1.261119.2229, a 3-track anime file: EN 5.1, EN commentary, JA). Other folders and lector files: not yet.
 
 ## Screen, TV, Chromecast
 
@@ -70,11 +71,16 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [x] Two or more videos of one folder are grouped under the folder's name in episode order; the header's
       checkbox selects the whole group. (2026-11-19, Pixel, v1.261119.2158)
 - [ ] Group headers show the size and how many are watched; a tap folds/unfolds, groups over 6 start folded.
-- [ ] The list/cards icon at the top switches to one line per video (tap plays, long press selects) and is remembered.
+- [x] The list/cards icon at the top switches to one line per video (2026-11-19, Pixel, v1.261119.2229); [ ] tap plays,
+      long press selects, remembered after a restart.
+- [ ] (fixed after v1.261119.2229) single videos sit under "Other videos" when there are groups (before, under a
+      group they looked like its part); a group of videos lying directly in a library folder carries that folder's
+      name (was an empty "(2)"); "Season 1" gets the series' folder before it ("Breaking Bad · Season 1").
 
 ## Catalog and Remote
 
-- [ ] "Continue watching": a series whose episode was watched to the end stays, labelled "Next: S1 E5"; after its
+- [~] "Continue watching": a series whose episode was watched to the end stays, labelled "Next: S1 E5" (label seen
+      2026-11-19 on the Pixel, v1.261119.2229: "Next: S1 E3"); after its
       last episode it leaves the row; a film watched to the end leaves it.
 - [ ] Remote, the screen pill's menu (two or more screens): each screen with "online"/"asleep", "Wake" on an asleep
       one with a known MAC picks it and wakes it.
@@ -83,6 +89,9 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       series / extras, counts and sizes without what is already on the phone, the deletion rule for the batch
       (default "manually only"), free space on the phone (Download greyed out when it does not fit); the episodes get a
       "downloading" / "on the phone" icon.
+      2026-11-19, Pixel, v1.261119.2229: the dialog, its options, counts, rule chips and free space [x] (not started).
+      Found: complete watching buffers counted as missing and had no icon; fixed after it (a buffer holding the whole
+      video counts as on the phone and is pinned with the batch's rule without downloading). Check again.
 
 ## Magnets
 

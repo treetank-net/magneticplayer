@@ -37,9 +37,8 @@ import androidx.compose.ui.unit.dp
 fun SeriesDownloadDialog(srv: String, root: Int, list: List<Episode>, extras: List<Episode>, cont: Int, season: Int?,
                          onDismiss: () -> Unit, onStarted: (Int) -> Unit) {
     val ctx = LocalContext.current
-    fun missing(eps: List<Episode>) = eps.filter { e ->
-        OfflineStore.get(ctx, MediaRef.InLibrary(root, e.path, srv).key())?.let { it.pinned && (it.complete || it.want) } != true
-    }
+    // already there: whole on the phone (also a watching buffer that reached the end) or being downloaded
+    fun missing(eps: List<Episode>) = eps.filter { e -> offlineMark(ctx, MediaRef.InLibrary(root, e.path, srv), e.size) == null }
     val seasonLabel = season?.let { stringResource(R.string.cat_season_n, it) } ?: stringResource(R.string.cat_season_other)
     val options = remember(list, extras, cont, season) {
         listOfNotNull(
@@ -53,6 +52,13 @@ fun SeriesDownloadDialog(srv: String, root: Int, list: List<Episode>, extras: Li
     var policy by remember { mutableStateOf("manual") }
     val free = remember { runCatching { ctx.noBackupFilesDir.usableSpace }.getOrDefault(0L) }
     val chosen = options.firstOrNull { it.first == pick }?.third.orEmpty()
+    // complete watching buffers of the batch: pinned with the batch's rule, nothing to download
+    val buffers = remember(pick) {
+        options.firstOrNull { it.first == pick }?.second.orEmpty().filter { e ->
+            OfflineStore.get(ctx, MediaRef.InLibrary(root, e.path, srv).key())?.pinned == false &&
+                offlineMark(ctx, MediaRef.InLibrary(root, e.path, srv), e.size) == "complete"
+        }
+    }
     val bytes = chosen.sumOf { it.size }
     AlertDialog(onDismiss, title = { Text(stringResource(R.string.ser_dl_title)) },
         text = {
@@ -88,14 +94,21 @@ fun SeriesDownloadDialog(srv: String, root: Int, list: List<Episode>, extras: Li
         },
         confirmButton = {
             TextButton({
-                chosen.forEach { DownloadService.start(ctx, MediaRef.InLibrary(root, it.path, srv), policy) }
+                (chosen + buffers).forEach { DownloadService.start(ctx, MediaRef.InLibrary(root, it.path, srv), policy) }
                 onStarted(chosen.size)
             }, enabled = chosen.isNotEmpty() && bytes <= free) { Text(stringResource(R.string.ser_dl_go)) }
         },
         dismissButton = { TextButton(onDismiss) { Text(stringResource(android.R.string.cancel)) } })
 }
 
-/** The phone's copy of an episode: "on the phone" ✓ or downloading (for the episode list). */
-fun offlineMark(ctx: android.content.Context, ref: MediaRef): String? = OfflineStore.get(ctx, ref.key())?.takeIf { it.pinned }?.let {
-    if (it.complete) "complete" else if (it.want) "downloading" else null
+/**
+ * The phone's copy of an episode: "complete" (downloaded, or a watching buffer that holds the whole video, [size] in
+ * bytes) or "downloading" (for the episode list and the series download).
+ */
+fun offlineMark(ctx: android.content.Context, ref: MediaRef, size: Long = 0): String? {
+    val it = OfflineStore.get(ctx, ref.key()) ?: return null
+    if (it.complete) return "complete"
+    val len = size.takeIf { s -> s > 0 } ?: it.size
+    if (len > 0 && runCatching { MediaCache.get(ctx).getCachedBytes(it.key, 0, len) }.getOrDefault(0) >= len) return "complete"
+    return if (it.pinned && it.want) "downloading" else null
 }

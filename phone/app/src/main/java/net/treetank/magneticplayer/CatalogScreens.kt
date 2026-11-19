@@ -738,7 +738,7 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
                     else if (pos > 0) Text(stringResource(R.string.cat_ep_at, pos / 60_000), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary)
                 }
-                val mark = remember(k, back, dlTick) { offlineMark(ctx, MediaRef.InLibrary(x.root, e.path, c.srv)) }
+                val mark = remember(k, back, dlTick) { offlineMark(ctx, MediaRef.InLibrary(x.root, e.path, c.srv), e.size) }
                 if (mark != null) Icon(if (mark == "complete") Icons.Filled.DownloadDone else Icons.Filled.Downloading,
                     stringResource(if (mark == "complete") R.string.ser_dl_on_phone else R.string.ser_dl_downloading),
                     Modifier.padding(start = 8.dp).size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
