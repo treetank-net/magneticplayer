@@ -682,7 +682,10 @@ class PlayerActivity : ComponentActivity() {
         val fileOf = { g: Tracks.Group -> subs.firstOrNull { g.getTrackFormat(0).label?.startsWith(it.name) == true } }
         val selectedFile = groups.firstOrNull { it.isSelected }?.let(fileOf)?.name
         val embedded = groups.mapIndexedNotNull { i, g ->
-            if (fileOf(g) != null) null else EmbeddedSub(i, g.getTrackFormat(0).language, g.isSelected)
+            val f = g.getTrackFormat(0)
+            if (fileOf(g) != null) null else EmbeddedSub(i, f.language, g.isSelected, f.label,
+                forced = f.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+                sdh = f.roleFlags and (C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND or C.ROLE_FLAG_CAPTION) != 0)
         }
         val host = androidx.compose.ui.platform.ComposeView(this)
         fun close() { root.removeView(host) }

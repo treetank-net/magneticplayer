@@ -275,6 +275,8 @@
     <string name="media_psubs_online">On the internet</string>
     <string name="media_psubs_default">in use</string>
     <string name="media_psubs_have">you have these</string>
+    <string name="media_psubs_sdh">for the hard of hearing</string>
+    <string name="media_psubs_forced">forced (signs and foreign speech)</string>
     <string name="media_psubs_embedded_track">Built-in track %1$d</string>
     <plurals name="media_psubs_versions">
         <item quantity="one">%1$d version</item>

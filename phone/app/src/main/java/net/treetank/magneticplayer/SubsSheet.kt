@@ -81,7 +81,11 @@ fun langName(code: String, ui: java.util.Locale = java.util.Locale.getDefault())
     java.util.Locale(code).getDisplayLanguage(ui).replaceFirstChar { it.titlecase(ui) }.ifEmpty { code }
 
 /** A subtitle track inside the video (the phone's player only). */
-data class EmbeddedSub(val index: Int, val lang: String?, val selected: Boolean) {
+data class EmbeddedSub(
+    val index: Int, val lang: String?, val selected: Boolean,
+    /** the track's title from the file ("SDH", "Spanish (Latin America)", "Forced"…) */
+    val label: String? = null, val forced: Boolean = false, val sdh: Boolean = false,
+) {
     /** the language code, "" when unknown ("und", "mul", "zxx" or none) */
     val langKey: String get() = (lang ?: "").takeWhile { it.isLetter() }.lowercase().let { if (it in setOf("und", "mul", "zxx")) "" else it }
 }
@@ -323,9 +327,31 @@ private fun Languages(
 }
 
 /** A file's label: the release it came from, else its name without the video's name and the language. */
+private data class TrackFlags(val sdh: Boolean, val forced: Boolean)
+
+/** An embedded track's title, unless it only repeats the language ("English", "Polski", "pol"), and its flags (from the
+ * file's flags or words in the title: rips name SDH and forced tracks only in the title). */
+private fun embeddedLabel(e: EmbeddedSub, ui: java.util.Locale): Pair<String?, TrackFlags> {
+    val t = e.label?.trim().orEmpty()
+    val sdh = e.sdh || Regex("""\b(SDH|CC|HI)\b""").containsMatchIn(t)
+    val forced = e.forced || Regex("""\b(forced|wymuszone)\b""", RegexOption.IGNORE_CASE).containsMatchIn(t)
+    // the title without the flag words, e.g. "Spanish (Latin America) (SDH)" -> "Spanish (Latin America)"
+    var rest = t.replace(Regex("""[\[(]?\b(SDH|CC|HI|forced|full)\b[\])]?""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""\s+"""), " ").trim(' ', '-', ',', '.', '|')
+    val code = e.langKey
+    val names = if (code.isEmpty()) emptySet() else
+        setOf(code, java.util.Locale(code).isO3Language, java.util.Locale(code).getDisplayLanguage(java.util.Locale.ENGLISH),
+            java.util.Locale(code).getDisplayLanguage(ui), java.util.Locale(code).getDisplayLanguage(java.util.Locale(code)))
+            .map { it.lowercase() }.toSet()
+    if (rest.lowercase() in names || rest.lowercase() in setOf("und", "unknown", "subtitles", "napisy")) rest = ""
+    return rest.ifEmpty { null } to TrackFlags(sdh, forced)
+}
+
 @Composable
 private fun versionLabel(f: SubFile, videoStem: String?): String {
-    f.source?.release?.takeIf { it.isNotBlank() }?.let { return it }
+    // NapiProjekt's "release" is the file hash: say where the subtitles came from instead
+    f.source?.release?.takeIf { it.isNotBlank() && !Regex("[0-9a-f]{32}").matches(it) }?.let { return it }
+    f.source?.provider?.let { p -> PROVIDER_NAMES[p] ?: p }?.takeIf { f.source.release.isNotBlank() }?.let { return it }
     var n = f.name.substringAfterLast('/')
     n = n.substringBeforeLast('.')  // .srt
     if (videoStem != null && n.startsWith(videoStem)) n = n.removePrefix(videoStem).trim('.', ' ')
@@ -362,8 +388,13 @@ private fun LanguagePage(
             leading = { RadioButton(on, { onChoose(f) }) },
             subtitleColor = if (f.fit == "bad") MaterialTheme.colorScheme.error else if (f.fit == "good") GREEN else null)
     }
-    embedded.orEmpty().filter { it.langKey == lang }.forEach { e ->
-        SheetRow(stringResource(R.string.media_psubs_embedded_track, e.index + 1), onClick = { onTrack(e.index) },
+    embedded.orEmpty().filter { it.langKey == lang }.forEachIndexed { n, e ->
+        val (title, flags) = embeddedLabel(e, ui)
+        SheetRow(title ?: stringResource(R.string.media_psubs_embedded_track, n + 1), listOfNotNull(
+            stringResource(R.string.media_psubs_embedded).trim('(', ')'),
+            if (flags.sdh) stringResource(R.string.media_psubs_sdh) else null,
+            if (flags.forced) stringResource(R.string.media_psubs_forced) else null,
+        ).joinToString(" · "), onClick = { onTrack(e.index) },
             leading = { RadioButton(e.selected, { onTrack(e.index) }) })
     }
     if (lang.isEmpty()) return
