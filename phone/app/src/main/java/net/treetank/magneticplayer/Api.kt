@@ -41,6 +41,25 @@ class Settings(ctx: Context) {
         get() = p.getString("sub_langs", "en,pl")!!
         set(v) = p.edit().putString("sub_langs", v.replace(" ", "").lowercase()).apply()
 
+    /** The subtitles last picked in the player: a language code, "off", or null (never): the next video starts with it,
+     * ahead of the order in [subLanguages]. */
+    var subChoice: String?
+        get() = p.getString("sub_choice", null)
+        set(v) = p.edit().putString("sub_choice", v).apply()
+
+    /** The folder (a season) where [subChoice] was last picked: missing subtitles there are downloaded without asking;
+     * elsewhere the player only offers to. */
+    var subChoiceFolder: String?
+        get() = p.getString("sub_choice_folder", null)
+        set(v) = p.edit().putString("sub_choice_folder", v).apply()
+
+    /** A shift by hand (s) of subtitles from `provider` in a folder (a season): the next episode's subtitles from the
+     * same provider get it too. */
+    fun folderSubShift(folder: String): Pair<String, Double>? =
+        p.getString("subshift:$folder", null)?.split('|')?.takeIf { it.size == 2 }?.let { (pr, s) -> s.toDoubleOrNull()?.let { pr to it } }
+    fun setFolderSubShift(folder: String, provider: String, seconds: Double) =
+        p.edit().putString("subshift:$folder", "$provider|$seconds").apply()
+
     /** how many minutes of video the app downloads ahead onto the phone's disk (MediaCache) */
     var bufferMinutes: Int
         get() = p.getInt("buffer_min", 5)
@@ -229,7 +248,7 @@ data class SubSource(val provider: String, val id: String, val release: String) 
     val key get() = "$provider:$id"
 }
 /** A downloaded subtitle file and, with agent 1.9+, how it fits the film (`fit` as in [SubFile]; `changed` = shifted to fit). */
-data class SubsDownloaded(val name: String, val fit: String?, val changed: Boolean)
+data class SubsDownloaded(val name: String, val fit: String?, val changed: Boolean, val provider: String = "")
 
 /** Labels of after-download actions in the phone's language (resources media_after_*). */
 fun afterLabels(ctx: Context): Map<String, String> = linkedMapOf(
@@ -752,12 +771,29 @@ class Api(val s: Settings, val srv: Server) {
     }
 
     /** Downloads subtitles; agent 1.9+ then fits them to the film's speech while we wait (~30 s the first time). */
-    fun subsDownload(ref: MediaRef, r: SubResult, title: String? = null, year: Int? = null, langs: String? = null): SubsDownloaded {
+    fun subsDownload(ref: MediaRef, r: SubResult, title: String? = null, year: Int? = null, langs: String? = null,
+                     onPhase: (String) -> Unit = {}): SubsDownloaded {
         val fit = srv.hasSubsFit
         val body = subsBody(ref, title, year, langs).put("id", r.id).put("provider", r.provider).apply { if (fit) put("fit", "wait") }
-        val o = JSONObject(call("POST", "/api/subs/download", body, if (fit) 240000 else 90000))
+        val o = if (srv.hasSubsDownloadJob) {
+            // agent 1.12.1+: a job, so the app can say "downloading" and then "fitting" (that can take a minute)
+            val id = JSONObject(call("POST", "/api/subs/download", body.put("async", true))).getString("job")
+            var res: JSONObject? = null
+            val until = System.currentTimeMillis() + 300_000
+            while (res == null) {
+                val j = JSONObject(call("GET", "/api/subs/job?id=$id"))
+                j.optStr("error")?.let { throw ApiException(it) }
+                if (j.optBoolean("done")) res = j.optJSONObject("result") ?: throw ApiException("no result")
+                else {
+                    onPhase(j.optString("phase"))
+                    if (System.currentTimeMillis() > until) throw ApiException("timeout")
+                    Thread.sleep(700)
+                }
+            }
+            res
+        } else JSONObject(call("POST", "/api/subs/download", body, if (fit) 240000 else 90000))
         val f = o.optJSONObject("fit")
-        return SubsDownloaded(o.optString("name"), f?.optStr("verdict"), f?.optBoolean("changed") ?: false)
+        return SubsDownloaded(o.optString("name"), f?.optStr("verdict"), f?.optBoolean("changed") ?: false, o.optString("provider"))
     }
 
     fun openSubsConfig(): JSONObject = JSONObject(call("GET", "/api/config/opensubtitles"))

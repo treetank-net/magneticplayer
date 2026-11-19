@@ -44,6 +44,7 @@ GOOD_Z, BAD_Z = 6.0, 4.5
 MIN_SHIFT = 0.4  # seconds: smaller corrections are within the jitter of speech detection, not worth a rewrite
 _vad_lock = threading.Semaphore(1)  # one sound analysis at a time (CPU)
 _rec_lock = threading.Lock()
+_emb_lock = threading.Lock()
 
 
 class SyncError(Exception):
@@ -126,11 +127,16 @@ def embedded(video):
     """[(start, end)] display times of the video's own subtitle track with the most lines (a forced track has only a
     few), or [] when there is none with enough lines. Cached per video."""
     path = os.path.join(cache_dir(), _key(video) + ".subs.json")
-    try:
-        with open(path) as f:
-            return [tuple(x) for x in json.load(f)]
-    except (OSError, ValueError):
-        pass
+    with _emb_lock:  # the warm-up at a search and a fit right after it: one ffprobe, the other waits for its cache
+        try:
+            with open(path) as f:
+                return [tuple(x) for x in json.load(f)]
+        except (OSError, ValueError):
+            pass
+        return _embedded(video, path)
+
+
+def _embedded(video, path):
     extra = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
     try:
         out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "s", "-show_entries",

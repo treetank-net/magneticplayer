@@ -118,7 +118,9 @@ def alt_name(full, path, sources):
     lang, ext = _lang_ext(full, path)
     r = sources.get(path)
     if r:
-        tag = _clean(f"{r['provider']}-{r.get('release') or r['id']}")
+        # NapiProjekt has no release and its id is a file hash: the provider alone (+ -2, -3 for more)
+        rel = r.get("release") or ("" if re.fullmatch(r"[0-9a-fA-F]{32,40}", str(r["id"])) else r["id"])
+        tag = _clean(f"{r['provider']}-{rel}" if rel else r["provider"])
     else:
         tag = "earlier-" + time.strftime("%Y%m%d-%H%M", time.localtime(os.path.getmtime(path)))
     return _unique(os.path.join(alt_dir(full), f"{stem}.{tag}" + (f".{lang}" if lang else "") + ext))
@@ -205,5 +207,6 @@ def place(full, target, src, sources, owned, moved):
         return target
     stem = os.path.splitext(os.path.basename(full))[0]
     lang, ext = _lang_ext(full, target)
-    tag = _clean(f"{src['provider']}-{src.get('release') or src['id']}")
+    rel = src.get("release") or ("" if re.fullmatch(r"[0-9a-fA-F]{32,40}", str(src["id"])) else src["id"])
+    tag = _clean(f"{src['provider']}-{rel}" if rel else src["provider"])
     return _unique(os.path.join(alt_dir(full), f"{stem}.{tag}" + (f".{lang}" if lang else "") + ext))

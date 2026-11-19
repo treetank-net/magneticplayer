@@ -905,24 +905,68 @@ class App:
         out += [{"path": j["path"], "kind": "convert"} for j in self.convert.all() if j["state"] in ("queued", "running")]
         return out
 
-    def fit_subs(self, full, name):
+    def fit_subs(self, full, name, path=None):
         """Fits a subtitle file next to `full` to the film's speech (mp_subsync). A file of a seeded torrent is only
-        assessed. If mpv plays this video, a changed file is loaded again."""
-        path = os.path.join(os.path.dirname(full), name)
-        locked = self.tasks.torrent_owned(path)
+        assessed. If mpv plays this video, a changed file is loaded again. `path`: a file elsewhere (a fresh download
+        in a temporary folder, before it goes next to the video)."""
+        elsewhere = path is not None
+        path = path or os.path.join(os.path.dirname(full), name)
+        locked = not elsewhere and self.tasks.torrent_owned(path)
         try:
             res = self.subsync.fit(full, path, change=not locked)
         except (mp_subsync.SyncError, OSError, ValueError) as e:
             log("subtitle fitting:", name, e)
             return {"verdict": "error", "error": str(e), "name": name}
         res["locked"] = locked
-        if res.get("changed"):
+        if res.get("changed") and not elsewhere:
             try:
                 if self.mpv.running() and self.mpv.prop("path") == full:
                     new = os.path.join(os.path.dirname(full), res["name"])
                     self.mpv.cmd("sub-add", new, "select")
             except ApiError:
                 pass
+        return res
+
+    def download_subs(self, full, b, job=None):
+        """POST /api/subs/download: one search result becomes the default subtitles of its language (the current default
+        moves to Subtitles/). `job` (async): its "phase" goes "download" → "fit" → done."""
+        langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
+        # fitted to this copy of the film (agent 1.9+): "fit": "wait" (the app waits, ~30 s the first time for a film)
+        # returns the outcome in "fit"; otherwise it happens in the background. Agent 1.12.1+: waiting, the file is
+        # fitted in a temporary folder and only then put next to the video, so a player that lists the subtitles
+        # meanwhile doesn't load the unfitted file
+        wait = b.get("fit") == "wait" and mp_subsync.available()
+
+        def prepare(tmp):
+            if job is not None:
+                job["phase"] = "fit"
+            return a_fit(tmp)
+
+        def a_fit(tmp):
+            return self.fit_subs(full, os.path.basename(tmp), tmp)
+
+        def moved(old, new):  # in place: the fitting assessment and the source follow it (under mp_subs' place lock)
+            self.subsync.move(old, new)
+            self.subsources.put(new, b["provider"], b["id"], release.get("r", ""))
+
+        release = {}
+        res = self.subs.download(full, str(b["id"]), b["provider"], langs, (b.get("title") or "").strip() or None,
+                                 b.get("year") or None, place=lambda target, src: (release.update(r=src["release"]), mp_subfiles.place(
+                                     full, target, src, self.subsources, self.tasks.torrent_owned, self.subsync.move))[1],
+                                 prepare=prepare if wait else None, moved=moved)
+        res.pop("path", None)
+        fit = res.get("name") and mp_subsync.available()
+        prepared = res.pop("prepared", None)
+        if wait and prepared is not None:
+            res["fit"] = prepared
+        if res.get("name") and self.mpv.running() and self.mpv.prop("path") == full:  # this very video is playing: on
+            try:
+                self.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), res["name"]), "select")
+            except ApiError:
+                pass
+        if fit and not wait:
+            threading.Thread(target=bind(self.fit_subs), args=(full, res["name"]), daemon=True).start()
+            res["fit"] = {"verdict": "pending"}
         return res
 
     def shift_subs(self, full, name, by):
@@ -1014,7 +1058,7 @@ class App:
                 "library_tasks": True,
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
-                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True,  # intro / credits (agent 1.11+)
+                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True, "subs_download_job": True,  # intro / credits (agent 1.11+)
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
@@ -1715,6 +1759,9 @@ class Handler(BaseHTTPRequestHandler):
                 b = self.body()
                 langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
                 args = (a.resolve_ref(b), langs, (b.get("title") or "").strip() or None, b.get("year") or None)
+                if mp_subsync.available():  # while the user looks at the results: the embedded track's times for fitting
+                    threading.Thread(target=bind(lambda f: (mp_subsync.embedded(f) if os.path.exists(f) else None)),
+                                     args=(args[0],), daemon=True).start()
                 if b.get("async"):  # the app shows progress by polling /api/subs/job
                     return self.send_json({"job": a.subs.start_search(*args)})
                 return self.send_json(a.subs.search(*args))
@@ -1726,29 +1773,9 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/subs/download" and method == "POST":
                 b = self.body()
                 full = a.resolve_ref(b)
-                langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
-                # the new file becomes the default of its language; the current default moves to Subtitles/
-                res = a.subs.download(full, str(b["id"]), b["provider"], langs, (b.get("title") or "").strip() or None,
-                                      b.get("year") or None, place=lambda target, src: mp_subfiles.place(
-                                          full, target, src, a.subsources, a.tasks.torrent_owned, a.subsync.move))
-                if res.get("path"):
-                    a.subsources.put(res["path"], b["provider"], b["id"], res.get("release"))
-                res.pop("path", None)
-                # fitted to this copy of the film (agent 1.9+): "fit": "wait" (the app waits, ~30 s the first time for a
-                # film) returns the outcome in "fit"; otherwise it happens in the background
-                fit = res.get("name") and mp_subsync.available()
-                if fit and b.get("fit") == "wait":
-                    res["fit"] = a.fit_subs(full, res["name"])
-                    res["name"] = res["fit"].get("name") or res["name"]
-                if res.get("name") and a.mpv.running() and a.mpv.prop("path") == full:  # this very video is playing: enable the subtitles right away
-                    try:
-                        a.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), res["name"]), "select")
-                    except ApiError:
-                        pass
-                if fit and b.get("fit") != "wait":
-                    threading.Thread(target=bind(a.fit_subs), args=(full, res["name"]), daemon=True).start()
-                    res["fit"] = {"verdict": "pending"}
-                return self.send_json(res)
+                if b.get("async"):  # agent 1.12.1+: {"job"} right away; /api/subs/job says "download", then "fit"
+                    return self.send_json({"job": a.subs.start_job(lambda job: a.download_subs(full, b, job), "download")})
+                return self.send_json(a.download_subs(full, b))
             if p == "/api/subs/default" and method == "POST":  # this version becomes its language's default (1.12+)
                 b = self.body()
                 full = a.resolve_ref(b)

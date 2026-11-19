@@ -94,6 +94,8 @@
     <string name="media_subs_title">Napisy</string>
     <string name="media_subs_have">Już są: %1$s</string>
     <string name="media_subs_done">Pobrano: %1$s — gra na komputerze? Włączyły się same. W telefonie: otwórz film jeszcze raz.</string>
+    <string name="media_subs_phase_download">Pobieram napisy…</string>
+    <string name="media_subs_phase_fit">Pobrane. Dopasowuję do Twojej kopii filmu (za pierwszym razem do minuty)…</string>
     <string name="media_subs_fitting">Dopasowuję do Twojej wersji filmu…</string>
     <string name="media_subs_fit_fixed">Przesunięte, żeby pasowały do Twojej wersji filmu.</string>
     <string name="media_subs_fit_good">Pasują do Twojej wersji filmu.</string>
@@ -290,6 +292,18 @@
     <string name="media_psubs_sync">Synchronizacja</string>
     <string name="media_psubs_sync_total">%1$s s ręcznie</string>
     <string name="media_psubs_sync_hint">Napisy za późno: minus. Za wcześnie: plus. Zapisuje się w pliku na komputerze.</string>
+    <string name="media_psubs_sync_live">Synchronizuj podczas oglądania</string>
+    <string name="media_psubs_sync_live_hint">Przyciski nad filmem, napisy przesuwają się od razu</string>
+    <string name="media_psubs_sync_bar">Napisy: %1$s s</string>
+    <string name="media_psubs_sync_reset">Reset</string>
+    <string name="media_psubs_sync_done">Gotowe</string>
+    <string name="media_psubs_sync_saved">Zapisano przesunięcie napisów: %1$s s</string>
+    <string name="media_psubs_sync_failed">Nie udało się zmienić napisów</string>
+    <string name="media_psubs_auto_fetching">Brak napisów (%1$s): pobieram…</string>
+    <string name="media_psubs_offer">Brak napisów: %1$s</string>
+    <string name="media_psubs_offer_yes">Pobierz</string>
+    <string name="media_psubs_offer_no">Nie</string>
+    <string name="media_psubs_auto_on">Włączono pobrane napisy: %1$s</string>
     <string name="media_psubs_embedded_track">Wbudowana ścieżka %1$d</string>
     <plurals name="media_psubs_versions">
         <item quantity="one">%1$d wersja</item>

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -82,6 +83,54 @@ fun subLanguageChoices(s: Settings): List<String> =
 fun langName(code: String, ui: java.util.Locale = java.util.Locale.getDefault()): String =
     java.util.Locale(code).getDisplayLanguage(ui).replaceFirstChar { it.titlecase(ui) }.ifEmpty { code }
 
+/**
+ * Subtitles in `lang` without the user picking: search that language, try the best results that aren't on disk yet
+ * (`have` = their "provider:id"; `preferProvider` first, then a hash match, then the score) until one fits this copy (at most 3). Used by
+ * "Download: <language>" and by the player when the remembered language is missing (also ahead, for the next episode).
+ * `onStatus` gets a line for the user. Null when nothing was found.
+ */
+suspend fun fetchSubtitles(
+    ctx: android.content.Context, api: Api, ref: MediaRef, lang: String, have: Set<String>, preferProvider: String? = null,
+    onStatus: (String?) -> Unit = {},
+): SubsDownloaded? {
+    val name = langName(lang, java.util.Locale.getDefault())
+    onStatus(ctx.getString(R.string.media_psubs_searching, name))
+    var job: String? = null
+    try {
+        val id = withContext(Dispatchers.IO) { api.subsSearchStart(ref, langs = lang) }
+        job = id
+        var found: SubsFound? = null
+        for (n in 0 until 150) {  // BSPlayer can think for 45 s
+            val pr = withContext(Dispatchers.IO) { api.subsJob(id) }
+            if (pr.error != null) throw ApiException(pr.error)
+            if (pr.done) { found = pr.found; break }
+            delay(800)
+        }
+        job = null
+        // the next episode: the same source as this one's subtitles first (same translator, same timing habits)
+        val results = found?.results.orEmpty().filter { it.key !in have }
+            .sortedWith(compareByDescending<SubResult> { it.provider == preferProvider }.thenByDescending { it.hashMatch }
+                .thenByDescending { it.score })
+        var got: SubsDownloaded? = null
+        for ((k, r) in results.take(3).withIndex()) {
+            val trying = ctx.getString(R.string.media_psubs_trying, k + 1, minOf(3, results.size),
+                r.release.ifEmpty { PROVIDER_NAMES[r.provider] ?: r.provider })
+            onStatus(trying)
+            val d = withContext(Dispatchers.IO) {
+                runCatching {
+                    api.subsDownload(ref, r, langs = lang) { ph -> phaseText(ctx, ph)?.let { onStatus("$trying\n$it") } }
+                }.getOrNull()
+            } ?: continue
+            got = d
+            if (d.fit != "bad") break
+        }
+        return got
+    } finally {
+        onStatus(null)
+        job?.let { j -> Thread { runCatching { api.subsStop(j) } }.start() }
+    }
+}
+
 /** A subtitle track inside the video (the phone's player only). */
 data class EmbeddedSub(
     val index: Int, val lang: String?, val selected: Boolean,
@@ -99,6 +148,8 @@ sealed class SubPick {
     data class File(val name: String, val lang: String) : SubPick()
     /** the file was moved in time (sync buttons): load it again, the sheet stays open */
     data class Shifted(val name: String, val lang: String) : SubPick()
+    /** the player's live timing bar for this file (the sheet closes) */
+    data class Sync(val name: String, val lang: String) : SubPick()
 }
 
 /**
@@ -173,39 +224,16 @@ fun SubtitlesSheet(
     fun autoFetch(lang: String) {
         fetchJob = scope.launch {
             error = null; message = null
-            val name = langName(lang, ui)
-            fetching = ctx.getString(R.string.media_psubs_searching, name)
-            var job: String? = null
             try {
-                val id = withContext(Dispatchers.IO) { api.subsSearchStart(ref, langs = lang) }
-                job = id
-                var found: SubsFound? = null
-                for (n in 0 until 150) {  // BSPlayer can think for 45 s
-                    val pr = withContext(Dispatchers.IO) { api.subsJob(id) }
-                    if (pr.error != null) throw ApiException(pr.error)
-                    if (pr.done) { found = pr.found; break }
-                    delay(800)
-                }
-                job = null
                 val have = files.orEmpty().mapNotNull { it.source?.key }.toSet()
-                val results = found?.results.orEmpty().filter { it.key !in have }
-                    .sortedWith(compareByDescending<SubResult> { it.hashMatch }.thenByDescending { it.score })
-                var got: SubsDownloaded? = null
-                for ((k, r) in results.take(3).withIndex()) {
-                    fetching = ctx.getString(R.string.media_psubs_trying, k + 1, minOf(3, results.size), r.release.ifEmpty { r.provider })
-                    val d = withContext(Dispatchers.IO) { runCatching { api.subsDownload(ref, r, langs = lang) }.getOrNull() } ?: continue
-                    got = d
-                    if (d.fit != "bad") break
-                }
+                val d = fetchSubtitles(ctx, api, ref, lang, have) { fetching = it }
                 fetching = null
-                val d = got ?: run { error = ctx.getString(R.string.media_psubs_none, name); return@launch }
+                if (d == null) { error = ctx.getString(R.string.media_psubs_none, langName(lang, ui)); return@launch }
                 reload()
                 picked(SubPick.File(d.name, lang), fitMessage(d.fit, d.name))
             } catch (e: ApiException) {
                 fetching = null
                 error = e.message
-            } finally {
-                job?.let { j -> Thread { runCatching { api.subsStop(j) } }.start() }
             }
         }
     }
@@ -264,6 +292,7 @@ fun SubtitlesSheet(
                         else -> LanguagePage(api, ref, page!!, list, embedded, selectedFile, ui,
                             onChoose = ::choose,
                             onShift = if (api.srv.hasSubsShift) { f, by -> shift(f, by) } else null, shifting = shifting,
+                            onLiveSync = if (api.srv.hasSubsShift && embedded != null) { f -> picked(SubPick.Sync(f.name, f.langKey), null) } else null,
                             onTrack = { picked(SubPick.Track(it), null) },
                             onDownloaded = { d, lang -> scope.launch { reload(); picked(SubPick.File(d.name, lang), fitMessage(d.fit, d.name)) } },
                             onError = { error = it })
@@ -347,6 +376,48 @@ private fun Languages(
 }
 
 /** A file's label: the release it came from, else its name without the video's name and the language. */
+/**
+ * The player's timing bar over the film: the total shift by hand, ±0.1 / ±0.5 s, back to the fitted timing, done.
+ * The subtitles move as you tap; a pause in tapping saves it.
+ */
+@Composable
+fun LiveSyncBar(total: Double, onShift: (Double) -> Unit, onReset: () -> Unit, onDone: () -> Unit) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Surface(shape = RoundedCornerShape(20.dp), color = Color.Black.copy(alpha = 0.72f), contentColor = Color.White) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(stringResource(R.string.media_psubs_sync_bar, String.format(java.util.Locale.getDefault(), "%+.1f", total)),
+                    style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.media_psubs_sync_hint), style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.7f))
+                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (by in listOf(-0.5, -0.1, 0.1, 0.5)) {
+                        OutlinedButton({ onShift(by) }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                            Text(String.format(java.util.Locale.getDefault(), "%+.1f", by), color = Color.White)
+                        }
+                    }
+                    TextButton(onReset) { Text(stringResource(R.string.media_psubs_sync_reset)) }
+                    TextButton(onDone) { Text(stringResource(R.string.media_psubs_sync_done)) }
+                }
+            }
+        }
+    }
+}
+
+/** Over the picture when the video has no subtitles in the language picked last (another film than that one). */
+@Composable
+fun SubsOfferBar(language: String, onYes: () -> Unit, onNo: () -> Unit) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Surface(shape = RoundedCornerShape(20.dp), color = Color.Black.copy(alpha = 0.72f), contentColor = Color.White) {
+            Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.media_psubs_offer, language), style = MaterialTheme.typography.labelLarge)
+                TextButton(onYes) { Text(stringResource(R.string.media_psubs_offer_yes)) }
+                TextButton(onNo) { Text(stringResource(R.string.media_psubs_offer_no), color = Color.White.copy(alpha = 0.7f)) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SyncRow(f: SubFile, busy: Boolean, onShift: (Double) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
@@ -406,7 +477,7 @@ private fun versionLabel(f: SubFile, videoStem: String?): String {
 private fun LanguagePage(
     api: Api, ref: MediaRef, lang: String, files: List<SubFile>, embedded: List<EmbeddedSub>?, selectedFile: String?,
     ui: java.util.Locale, onChoose: (SubFile) -> Unit, onTrack: (Int) -> Unit,
-    onShift: ((SubFile, Double) -> Unit)?, shifting: Boolean,
+    onShift: ((SubFile, Double) -> Unit)?, shifting: Boolean, onLiveSync: ((SubFile) -> Unit)?,
     onDownloaded: (SubsDownloaded, String) -> Unit, onError: (String?) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -430,7 +501,14 @@ private fun LanguagePage(
     }
     // timing of the version in use: too early / too late, saved in the file (works in mpv and on the TV too)
     val inUse = fs.firstOrNull { if (embedded != null) it.name == selectedFile else it.default }
-    if (onShift != null && inUse != null && inUse.ext == "srt") SyncRow(inUse, shifting) { onShift(inUse, it) }
+    if (inUse != null && inUse.ext == "srt") {
+        // in the player: a timing bar over the film, the subtitles move as you tap; elsewhere: buttons here
+        if (onLiveSync != null) SheetRow(stringResource(R.string.media_psubs_sync_live),
+            stringResource(R.string.media_psubs_sync_live_hint) + if (inUse.manual != 0.0) " · " + stringResource(R.string.media_psubs_sync_total,
+                String.format(java.util.Locale.getDefault(), "%+.1f", inUse.manual)) else "",
+            onClick = { onLiveSync(inUse) }, leading = { Icon(Icons.Filled.Tune, null, Modifier.size(20.dp)) })
+        else if (onShift != null) SyncRow(inUse, shifting) { onShift(inUse, it) }
+    }
     embedded.orEmpty().filter { it.langKey == lang }.forEachIndexed { n, e ->
         val (title, flags) = embeddedLabel(e, ui)
         SheetRow(title ?: stringResource(R.string.media_psubs_embedded_track, n + 1), listOfNotNull(
@@ -446,6 +524,8 @@ private fun LanguagePage(
     var progress by remember { mutableStateOf<SubsProgress?>(null) }
     var found by remember { mutableStateOf<SubsFound?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
+    var phase by remember { mutableStateOf<String?>(null) }  // "downloading…" / "fitting…" of the download in progress
+    val ctx = LocalContext.current
     var title by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
     var override by remember { mutableStateOf<Pair<String?, Int?>>(null to null) }
@@ -496,22 +576,26 @@ private fun LanguagePage(
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (f.results.isEmpty()) Text(stringResource(R.string.media_subs_nothing, f.query, langName(lang, ui)),
                     style = MaterialTheme.typography.bodyMedium)
-                if (busy != null && api.srv.hasSubsFit) Text(stringResource(R.string.media_subs_fitting),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (busy != null && api.srv.hasSubsFit) Text(phase ?: stringResource(R.string.media_subs_fitting),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 f.results.sortedWith(compareByDescending<SubResult> { it.hashMatch }.thenByDescending { it.score }).forEach { r ->
                     val mine = haveByKey[r.key]
-                    SubRow(r, busy, have = mine != null) {
+                    SubRow(r, busy, have = mine != null, status = phase) {
                         if (mine != null) { onChoose(mine); return@SubRow }  // already on disk: switch, no download
                         busy = r.key
+                        phase = null
                         onError(null)
                         scope.launch {
                             try {
-                                val d = withContext(Dispatchers.IO) { api.subsDownload(ref, r, override.first, override.second, langs = lang) }
+                                val d = withContext(Dispatchers.IO) {
+                                    api.subsDownload(ref, r, override.first, override.second, langs = lang) { phase = phaseText(ctx, it) }
+                                }
                                 onDownloaded(d, lang)
                             } catch (e: ApiException) {
                                 onError(e.message)
                             } finally {
                                 busy = null
+                                phase = null
                             }
                         }
                     }
@@ -590,8 +674,15 @@ internal fun SearchProgress(p: SubsProgress?) {
     }
 }
 
+/** What the agent is doing with a download (agent 1.12.1+ jobs). */
+private fun phaseText(ctx: android.content.Context, phase: String): String? = when (phase) {
+    "download" -> ctx.getString(R.string.media_subs_phase_download)
+    "fit" -> ctx.getString(R.string.media_subs_phase_fit)
+    else -> null
+}
+
 @Composable
-private fun SubRow(r: SubResult, busy: String?, have: Boolean, onClick: () -> Unit) {
+private fun SubRow(r: SubResult, busy: String?, have: Boolean, status: String? = null, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(enabled = busy == null, onClick = onClick).padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (r.hashMatch) {
@@ -606,7 +697,8 @@ private fun SubRow(r: SubResult, busy: String?, have: Boolean, onClick: () -> Un
             else Text(PROVIDER_NAMES[r.provider] ?: r.provider, style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(r.release, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (r.release.isNotEmpty()) Text(r.release, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (busy == r.key && status != null) Text(status, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         if (r.hi) Text(stringResource(R.string.media_subs_hi), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

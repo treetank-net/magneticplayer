@@ -94,6 +94,8 @@
     <string name="media_subs_title">Subtitles</string>
     <string name="media_subs_have">Already here: %1$s</string>
     <string name="media_subs_done">Downloaded: %1$s — playing on the computer? They turned on automatically. On the phone: open the video again.</string>
+    <string name="media_subs_phase_download">Downloading the subtitles…</string>
+    <string name="media_subs_phase_fit">Downloaded. Fitting them to your copy of the film (up to a minute the first time)…</string>
     <string name="media_subs_fitting">Fitting them to your copy of the film…</string>
     <string name="media_subs_fit_fixed">Shifted to fit your copy of the film.</string>
     <string name="media_subs_fit_good">They fit your copy of the film.</string>
@@ -280,6 +282,18 @@
     <string name="media_psubs_sync">Timing</string>
     <string name="media_psubs_sync_total">%1$s s by hand</string>
     <string name="media_psubs_sync_hint">Subtitles too late: minus. Too early: plus. Saved in the file on the computer.</string>
+    <string name="media_psubs_sync_live">Timing while watching</string>
+    <string name="media_psubs_sync_live_hint">Buttons over the film, the subtitles move as you tap</string>
+    <string name="media_psubs_sync_bar">Subtitles: %1$s s</string>
+    <string name="media_psubs_sync_reset">Reset</string>
+    <string name="media_psubs_sync_done">Done</string>
+    <string name="media_psubs_sync_saved">Subtitle timing saved: %1$s s</string>
+    <string name="media_psubs_sync_failed">Couldn\'t change the subtitles</string>
+    <string name="media_psubs_auto_fetching">No subtitles in %1$s: downloading them…</string>
+    <string name="media_psubs_offer">No subtitles in %1$s</string>
+    <string name="media_psubs_offer_yes">Download</string>
+    <string name="media_psubs_offer_no">No</string>
+    <string name="media_psubs_auto_on">Downloaded subtitles on: %1$s</string>
     <string name="media_psubs_embedded_track">Built-in track %1$d</string>
     <plurals name="media_psubs_versions">
         <item quantity="one">%1$d version</item>

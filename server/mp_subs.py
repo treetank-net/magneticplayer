@@ -3,7 +3,9 @@ and with an API key also OpenSubtitles. subliminal lives in the venv next to the
 import glob
 import os
 import re
+import shutil
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -97,6 +99,16 @@ def readable_srt(path, video=None):
     often in cp1250. mpv reads them all, the phone (SubRip) and browsers show nothing. The file itself is not changed."""
     with open(path, "rb") as f:
         return to_srt(f.read(), video)
+
+
+_place_lock = threading.Lock()
+
+
+def release_name(s):
+    """The release a subtitle was made for, or "" when the provider only gives a file hash (NapiProjekt): a hash says
+    nothing to people."""
+    r = str(s.info or "").strip()
+    return "" if re.fullmatch(r"[0-9a-fA-F]{32,40}", r) else r
 
 
 def to_srt(raw, video=None):
@@ -267,7 +279,7 @@ class Subtitles:
             matches = s.get_matches(v)
             results.append({
                 "id": str(s.id), "provider": s.provider_name, "lang": s.language.alpha2,
-                "release": str(s.info or ""), "score": sl.compute_score(s, v),
+                "release": release_name(s), "score": sl.compute_score(s, v),
                 "hash_match": "hash" in matches, "hi": bool(s.hearing_impaired),
                 # with no hits OpenSubtitles returns "something similar" (Der Golem → a completely different film) — without
                 # a matching title/series and without a hash these are almost certainly subtitles for another film
@@ -291,6 +303,26 @@ class Subtitles:
                 job["error"] = str(e)
             except Exception as e:  # noqa: BLE001
                 job["error"] = repr(e)
+            job["phase"] = "done"
+            job["done"] = True
+        threading.Thread(target=bind(run), daemon=True).start()
+        return jid
+
+    def start_job(self, fn, phase):
+        """Some work in the background with progress the app polls (/api/subs/job): `fn(job)` returns the result and may
+        set job["phase"]."""
+        jid = uuid.uuid4().hex[:12]
+        job = {"id": jid, "phase": phase, "started": time.time(), "done": False}
+        with self.lock:
+            self.jobs[jid] = job
+
+        def run():
+            try:
+                job["result"] = fn(job)
+            except SubsError as e:
+                job["error"] = str(e)
+            except Exception as e:  # noqa: BLE001 — the app shows it
+                job["error"] = str(e) or repr(e)
             job["phase"] = "done"
             job["done"] = True
         threading.Thread(target=bind(run), daemon=True).start()
@@ -373,10 +405,14 @@ class Subtitles:
         if not s.content:
             raise SubsError(T("OpenSubtitles returned no subtitles", "OpenSubtitles nie oddał napisów"), 502)
 
-    def download(self, full, sub_id, provider, languages=("en",), title=None, year=None, place=None):
+    def download(self, full, sub_id, provider, languages=("en",), title=None, year=None, place=None, prepare=None,
+                 moved=None):
         """Downloads one result and saves it as `<name>.<lang>.srt` next to the video. `place(path)` (agent 1.12+,
         mp_subfiles) may first move the current default away and returns where to write: that path, or another one
-        (Subtitles/…) when the default can't move. Returns {"name" (relative to the video's folder), "provider"}."""
+        (Subtitles/…) when the default can't move. `prepare(path)` (agent 1.12.1+: fitting to the film) runs on the file
+        in a temporary folder first, so a player never sees it next to the video before it is fitted; it returns a dict
+        with the file's "name" (fitting may rename a .sub to .srt), and `moved(old, new)` follows the file to its place.
+        Returns {"name" (relative to the video's folder), "provider", "path", "release", "prepared"}."""
         sl, _ = _subliminal()
         key = f"{provider}:{sub_id}"
         with self.lock:
@@ -409,13 +445,32 @@ class Subtitles:
                 target = os.path.splitext(target)[0] + ".srt"
             else:
                 text = s.text
-            where = target
-            if place is not None:
-                where = place(target, {"provider": provider, "id": str(sub_id), "release": str(s.info or "")})
-            os.makedirs(os.path.dirname(where), exist_ok=True)
-            with open(where, "w", encoding="utf-8") as f:
-                f.write(text)
-            return {"name": os.path.relpath(where, d), "provider": provider, "path": where, "release": str(s.info or "")}
+            release = release_name(s)
+            prepared = None
+            tmp_dir = tempfile.mkdtemp(prefix="mp-subs-")
+            try:
+                tmp = os.path.join(tmp_dir, os.path.basename(target))
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(text)
+                if prepare is not None:
+                    prepared = prepare(tmp)
+                    if (prepared or {}).get("name"):
+                        tmp = os.path.join(tmp_dir, prepared["name"])
+                        target = os.path.join(d, prepared["name"])
+                with _place_lock:  # two downloads at once (two phones): one after the other, each sees the other's file
+                    where = target
+                    if place is not None:
+                        where = place(target, {"provider": provider, "id": str(sub_id), "release": release})
+                    os.makedirs(os.path.dirname(where), exist_ok=True)
+                    shutil.move(tmp, where)
+                    if moved is not None:
+                        moved(tmp, where)
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            if prepared is not None:
+                prepared["name"] = os.path.relpath(where, d)
+            return {"name": os.path.relpath(where, d), "provider": provider, "path": where, "release": release,
+                    "prepared": prepared}
         except OSError as e:
             raise SubsError(T(f"can't save subtitles next to the video: {e.strerror}",
                               f"nie da się zapisać napisów obok filmu: {e.strerror}"), 500)

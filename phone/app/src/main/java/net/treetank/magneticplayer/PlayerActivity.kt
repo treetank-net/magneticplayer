@@ -60,6 +60,10 @@ fun openInVlc(ctx: Context, url: String, title: String, subUrl: String? = null) 
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 class PlayerActivity : ComponentActivity() {
     companion object {
+        /** the timing bar saves the shift after this long without a tap */
+        private const val SYNC_IDLE_MS = 8_000L
+        private const val OFFER_MS = 12_000L
+
         /** [imdb]: a film from the catalog; after it is watched to the end the app offers "What next".
          *  [next]: the following episodes of a series (same library folder): "Next episode" and a countdown at the end. */
         fun intent(ctx: Context, ref: MediaRef, imdb: String? = null, next: List<Episode> = emptyList(), series: Boolean = next.isNotEmpty()) =
@@ -233,6 +237,7 @@ class PlayerActivity : ComponentActivity() {
 
             override fun onTracksChanged(tracks: Tracks) {
                 updateSubtitleIcon(tracks)
+                if (!tracks.isEmpty) ensureChosenSubs(tracks)
                 // a picture the phone cannot decode (old DivX 3, WMV…): ExoPlayer plays the sound alone and may then hang on
                 // seeking, so we say so and offer the computer's version
                 val video = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
@@ -268,9 +273,12 @@ class PlayerActivity : ComponentActivity() {
                     Toast.LENGTH_LONG).show()
             }
         })
-        // preferred subtitle language = order from settings
+        // preferred subtitle language: the one picked last in the player ("off" = none), then the order from settings
+        val choice = settings.subChoice
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-            .setPreferredTextLanguages(*settings.subLanguages.split(',').filter { it.isNotBlank() }.toTypedArray())
+            .setPreferredTextLanguages(*(listOfNotNull(choice?.takeIf { it != "off" }) + settings.subLanguages.split(','))
+                .map { it.trim() }.filter { it.isNotBlank() }.distinct().toTypedArray())
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, choice == "off")
             .build()
         val start = savedInstanceState?.getLong("pos") ?: settings.position(ref.key())
         // downloaded (or buffered) video: size known without a network, for the reserve overlay on the bar
@@ -527,6 +535,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        syncState?.invoke()
         ui.removeCallbacks(nextTick)  // the next episode doesn't start behind a locked screen or another app
         nextLeft = -1
         stopDiscovery?.invoke()
@@ -586,6 +595,7 @@ class PlayerActivity : ComponentActivity() {
             val iv = intro
             if (iv != null && pos >= iv.first && pos < iv.second - 1_000 && !ended) showSkipIntro(iv.second) else hideSkipIntro()
             if (nextEps.isEmpty()) return
+            if (pos > dur / 2) prepareNextSubs(nextEps.first())  // fetching and fitting can take a minute
             val credits = creditsAtMs.takeIf { it in 1 until dur }
             if (!ended && pos < minOf(credits ?: dur, dur - NEXT_SHOW_MS)) {
                 hideNextCard(); nextCancelled = false; nextLeft = -1
@@ -642,7 +652,6 @@ class PlayerActivity : ComponentActivity() {
 
     private var subtitleButton: android.widget.ImageButton? = null
 
-    /** Our CC button where ExoPlayer's was (same look): the subtitle menu with "Download: <language>" entries. */
     /** Playing before a track menu opened: it plays again when the menu closes. */
     private var resumeAfterMenu = false
 
@@ -666,6 +675,7 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
+    /** Our CC button where ExoPlayer's was (same look): the subtitle menu with "Download: <language>" entries. */
     private fun installSubtitleButton(view: PlayerView) {
         val orig = view.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_subtitle) ?: return
         val parent = orig.parent as? android.view.ViewGroup ?: return
@@ -724,16 +734,24 @@ class PlayerActivity : ComponentActivity() {
                 SubtitlesSheet(api, ref, onDismiss = ::close, embedded = embedded, selectedFile = selectedFile,
                     offSelected = groups.none { it.isSelected }) { pick, msg ->
                     when (pick) {
-                        SubPick.Off -> p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                        SubPick.Off -> {
+                            rememberSubChoice("off")
+                            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                        }
                         is SubPick.Track -> groups.getOrNull(pick.index)?.let { g ->
+                            langKey(g.getTrackFormat(0).language).takeIf { it.isNotEmpty() }?.let { rememberSubChoice(it) }
                             p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
                                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                                 .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0))
                                 .build()
                         }
-                        is SubPick.File -> applySubFile(pick.name, pick.lang)
+                        is SubPick.File -> {
+                            if (pick.lang.isNotEmpty()) rememberSubChoice(pick.lang)
+                            applySubFile(pick.name, pick.lang)
+                        }
                         is SubPick.Shifted -> applySubFile(pick.name, pick.lang)
+                        is SubPick.Sync -> startLiveSync(pick.name, pick.lang)
                     }
                     msg?.let { Toast.makeText(this@PlayerActivity, it, Toast.LENGTH_LONG).show() }
                 }
@@ -743,6 +761,201 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /** A subtitle file (just picked or downloaded) on: the list again, local copies, the video reloaded where it was. */
+    // ---- live subtitle timing: a bar over the film, the subtitles drawn here from the file with the shift applied
+    // (ExoPlayer can't move a text track in time), saved in the file on the computer after a pause in tapping
+
+    private class LiveCue(val start: Long, val end: Long, val text: CharSequence)
+
+    private var syncHost: androidx.compose.ui.platform.ComposeView? = null
+    private var syncTick: Runnable? = null
+    private var syncSave: Runnable? = null
+    private var syncState: (() -> Unit)? = null  // ends the timing bar and saves the pending shift (leaving the player)
+
+    private fun parseSrt(text: String): List<LiveCue> {
+        val time = Regex("""(\d+):(\d\d):(\d\d)[,.](\d+)\s*-->\s*(\d+):(\d\d):(\d\d)[,.](\d+)""")
+        fun ms(h: String, m: String, s: String, f: String) =
+            ((h.toLong() * 60 + m.toLong()) * 60 + s.toLong()) * 1000 + f.take(3).padEnd(3, '0').toLong()
+        return text.replace("\r", "").split(Regex("\n\\s*\n")).mapNotNull { block ->
+            val lines = block.trim().lines()
+            val i = lines.indexOfFirst { time.containsMatchIn(it) }.takeIf { it >= 0 } ?: return@mapNotNull null
+            val g = time.find(lines[i])!!.groupValues
+            val body = lines.drop(i + 1).joinToString("<br>").trim().ifEmpty { return@mapNotNull null }
+            LiveCue(ms(g[1], g[2], g[3], g[4]), ms(g[5], g[6], g[7], g[8]),
+                android.text.Html.fromHtml(body, android.text.Html.FROM_HTML_MODE_LEGACY))
+        }
+    }
+
+    private fun startLiveSync(name: String, lang: String) {
+        val p = player ?: return
+        val root = root ?: return
+        val file = subs.firstOrNull { it.name == name } ?: return
+        if (syncHost != null) return
+        lifecycleScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    localSubUris[name]?.path?.let { java.io.File(it).readText() }
+                        ?: java.net.URL(api.subUrl(ref, name)).readText()
+                }.getOrNull()
+            }
+            val cues = text?.let(::parseSrt).orEmpty()
+            if (cues.isEmpty()) {
+                Toast.makeText(this@PlayerActivity, R.string.media_psubs_sync_failed, Toast.LENGTH_LONG).show(); return@launch
+            }
+            // ExoPlayer's text track off: the subtitles come from here now
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+            val view = playerView?.subtitleView
+            val pending = androidx.compose.runtime.mutableDoubleStateOf(0.0)
+            var shown: List<LiveCue> = emptyList()
+            val tick = object : Runnable {
+                override fun run() {
+                    val pos = (player ?: return).currentPosition - (pending.doubleValue * 1000).toLong()
+                    val now = cues.filter { pos >= it.start && pos < it.end }
+                    if (now != shown) {
+                        shown = now
+                        view?.setCues(now.map { androidx.media3.common.text.Cue.Builder().setText(it.text).build() })
+                    }
+                    ui.postDelayed(this, 80)
+                }
+            }
+            syncTick = tick
+            ui.post(tick)
+
+            fun finish(save: Boolean) {
+                syncTick?.let(ui::removeCallbacks); syncTick = null
+                syncSave?.let(ui::removeCallbacks); syncSave = null
+                syncState = null
+                syncHost?.let { root.removeView(it) }; syncHost = null
+                view?.setCues(emptyList())
+                val by = pending.doubleValue
+                if (!save || by == 0.0) { applySubFile(name, lang); return }
+                lifecycleScope.launch {
+                    val total = withContext(Dispatchers.IO) { runCatching { api.subsShift(ref, name, by) }.getOrNull() }
+                    if (total == null) {
+                        Toast.makeText(this@PlayerActivity, R.string.media_psubs_sync_failed, Toast.LENGTH_LONG).show()
+                    } else {
+                        (ref as? MediaRef.InLibrary)?.let { r -> file.source?.provider?.let { settings.setFolderSubShift(folderKey(r), it, total) } }
+                        Toast.makeText(this@PlayerActivity, getString(R.string.media_psubs_sync_saved,
+                            String.format(java.util.Locale.getDefault(), "%+.1f", total)), Toast.LENGTH_SHORT).show()
+                    }
+                    applySubFile(name, lang)
+                }
+            }
+            syncState = { finish(true) }  // leaving the player: what is pending is saved
+            fun touched() {  // a pause in tapping saves (the user is happy with it)
+                syncSave?.let(ui::removeCallbacks)
+                syncSave = Runnable { finish(true) }.also { ui.postDelayed(it, SYNC_IDLE_MS) }
+            }
+            touched()
+            val host = androidx.compose.ui.platform.ComposeView(this@PlayerActivity)
+            host.setContent {
+                AppTheme {
+                    LiveSyncBar(file.manual + pending.doubleValue,
+                        onShift = { pending.doubleValue = Math.round((pending.doubleValue + it) * 10) / 10.0; touched() },
+                        onReset = { pending.doubleValue = -file.manual; touched() },
+                        onDone = { finish(true) })
+                }
+            }
+            syncHost = host
+            root.addView(host, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = (resources.displayMetrics.density * 96).toInt()
+            })
+        }
+    }
+
+    /** "pl" of "pl", "pol", "pl-PL"; "" for none or undetermined. */
+    private fun langKey(code: String?): String {
+        val c = androidx.media3.common.util.Util.normalizeLanguageCode(code ?: "")?.takeWhile { it.isLetter() }?.lowercase() ?: ""
+        return if (c in setOf("und", "mul", "zxx")) "" else c
+    }
+
+    /** The folder of a library video (a season): manual subtitle shifts carry over within it. */
+    private fun folderKey(r: MediaRef.InLibrary) = "${r.srv}:${r.root}:${r.path.substringBeforeLast('/', "")}"
+
+    private fun rememberSubChoice(lang: String) {
+        settings.subChoice = lang
+        settings.subChoiceFolder = (ref as? MediaRef.InLibrary)?.let(::folderKey)
+    }
+
+    private var chosenSubsChecked = false
+
+    /**
+     * Once the tracks are known: when the language picked last ([Settings.subChoice]) has no subtitles here (no file,
+     * no embedded track), get them (best fitting result) and turn them on. Only for the computer's library.
+     * In the folder where that language was picked (the same series, also after skipped episodes) this happens on its
+     * own; elsewhere (another film) a bar over the picture offers it, playback goes on.
+     */
+    private fun ensureChosenSubs(tracks: Tracks) {
+        if (chosenSubsChecked) return
+        chosenSubsChecked = true
+        val lang = settings.subChoice?.takeIf { it != "off" } ?: return
+        val r = ref as? MediaRef.InLibrary ?: return
+        if (subs.any { it.langKey == lang }) return
+        if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && langKey(it.getTrackFormat(0).language) == lang }) return
+        if (folderKey(r) == settings.subChoiceFolder) fetchChosenSubs(r, lang) else offerSubs(r, lang)
+    }
+
+    /** "No Polish subtitles. Download?" over the picture for a while; playback is not paused. */
+    private fun offerSubs(r: MediaRef.InLibrary, lang: String) {
+        val root = findViewById<FrameLayout>(android.R.id.content)
+        val host = androidx.compose.ui.platform.ComposeView(this)
+        val hide = Runnable { root.removeView(host) }
+        host.setContent {
+            AppTheme {
+                SubsOfferBar(langName(lang, java.util.Locale.getDefault()),
+                    onYes = { ui.removeCallbacks(hide); hide.run(); fetchChosenSubs(r, lang); settings.subChoiceFolder = folderKey(r) },
+                    onNo = { ui.removeCallbacks(hide); hide.run() })
+            }
+        }
+        root.addView(host, FrameLayout.LayoutParams(-1, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = (resources.displayMetrics.density * 48).toInt()
+        })
+        ui.postDelayed(hide, OFFER_MS)
+    }
+
+    private fun fetchChosenSubs(r: MediaRef.InLibrary, lang: String) {
+        lifecycleScope.launch {
+            val toast = Toast.makeText(this@PlayerActivity, getString(R.string.media_psubs_auto_fetching, langName(lang, java.util.Locale.getDefault())), Toast.LENGTH_LONG)
+            toast.show()
+            val d = runCatching { fetchSubtitles(this@PlayerActivity, api, ref, lang, subs.mapNotNull { it.source?.key }.toSet()) }.getOrNull()
+                ?: return@launch
+            carryShift(r, d)
+            if (isFinishing) return@launch
+            Toast.makeText(this@PlayerActivity, getString(R.string.media_psubs_auto_on, langName(lang, java.util.Locale.getDefault())), Toast.LENGTH_SHORT).show()
+            applySubFile(d.name, lang)
+        }
+    }
+
+    /** Subtitles downloaded without the user: a shift by hand made for this provider in this folder applies too. */
+    private suspend fun carryShift(r: MediaRef.InLibrary, d: SubsDownloaded) {
+        val (provider, by) = settings.folderSubShift(folderKey(r)) ?: return
+        if (provider != d.provider || by == 0.0 || !api.srv.hasSubsShift) return
+        withContext(Dispatchers.IO) { runCatching { api.subsShift(r, d.name, by) } }
+    }
+
+    private var nextSubsStarted = false
+
+    /** Halfway through an episode (or when the next episode's card shows): get the next one's subtitles in the
+     * remembered language now, preferably from the same source, so it starts with them. */
+    private fun prepareNextSubs(n: Episode) {
+        if (nextSubsStarted) return
+        nextSubsStarted = true
+        val lang = settings.subChoice?.takeIf { it != "off" } ?: return
+        val r = ref as? MediaRef.InLibrary ?: return
+        val next = MediaRef.InLibrary(r.root, n.path, r.srv)
+        val app = applicationContext
+        val provider = subs.firstOrNull { it.langKey == lang && it.default }?.source?.provider
+        lifecycleScope.launch(Dispatchers.IO) {
+            val list = runCatching { api.subsList(next) }.getOrNull() ?: return@launch
+            if (list.any { it.langKey == lang }) return@launch
+            // an embedded track in that language (the agent's probe) is enough
+            val probe = runCatching { api.mediaProbe(next) }.getOrNull()
+            val emb = probe?.optJSONObject("file")?.optJSONArray("subs")
+            if (emb != null && (0 until emb.length()).any { langKey(emb.getJSONObject(it).optString("lang")) == lang }) return@launch
+            val d = runCatching { fetchSubtitles(app, api, next, lang, emptySet(), preferProvider = provider) }.getOrNull() ?: return@launch
+            carryShift(next, d)
+        }
+    }
+
     private fun applySubFile(name: String, lang: String) {
         val p = player ?: return
         lifecycleScope.launch {
@@ -813,6 +1026,7 @@ class PlayerActivity : ComponentActivity() {
     private fun showNextCard() {
         if (nextCard != null) return
         val n = nextEps.firstOrNull() ?: return
+        prepareNextSubs(n)
         val dp = resources.displayMetrics.density
         val label = listOf(n.label, n.shortName).filter { it.isNotEmpty() }.joinToString(" · ")
         val line = android.widget.TextView(this).apply {
