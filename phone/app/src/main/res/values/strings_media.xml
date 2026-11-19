@@ -354,4 +354,8 @@
     <string name="audio_kind_original">Original</string>
     <string name="audio_track_n">Track %1$d</string>
     <string name="audio_remember_note">The choice is remembered: the next episode of this series, and other videos, start with the same kind of track (original, lector, dubbing) when they have one.</string>
+    <string name="media_magnet_waiting_name">Added. The link has no name: waiting for the description from other users to recognize it…</string>
+    <string name="media_magnet_named_moving">Recognized: moving to its folder on %1$s.</string>
+    <string name="media_magnet_named">Recognized, but the folder is unsure: check it below.</string>
+    <string name="media_magnet_name_later">Added. It will be recognized and moved to its folder once the name is known (you can close this).</string>
 </resources>

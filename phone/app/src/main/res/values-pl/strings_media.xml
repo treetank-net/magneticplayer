@@ -374,4 +374,8 @@
     <string name="audio_kind_original">Oryginał</string>
     <string name="audio_track_n">Ścieżka %1$d</string>
     <string name="audio_remember_note">Wybór jest zapamiętywany: kolejny odcinek tego serialu i inne filmy startują z tym samym rodzajem ścieżki (oryginał, lektor, dubbing), jeśli go mają.</string>
+    <string name="media_magnet_waiting_name">Dodane. Link nie ma nazwy: czekam na opis od innych użytkowników, żeby go rozpoznać…</string>
+    <string name="media_magnet_named_moving">Rozpoznane: przenoszę do właściwego katalogu na %1$s.</string>
+    <string name="media_magnet_named">Rozpoznane, ale katalog niepewny: sprawdź poniżej.</string>
+    <string name="media_magnet_name_later">Dodane. Zostanie rozpoznane i przeniesione do katalogu, gdy nazwa będzie znana (możesz zamknąć).</string>
 </resources>

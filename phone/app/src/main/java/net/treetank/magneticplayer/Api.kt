@@ -541,8 +541,10 @@ class Api(val s: Settings, val srv: Server) {
     }
 
     /** Agent 1.5+: recognition (IMDb index, Wikidata for uncertain ones) and a directory suggestion. */
-    fun guess(magnet: String): DlGuess {
-        val j = JSONObject(call("POST", "/api/library/guess", JSONObject().put("magnet", magnet), 30000))
+    /** Recognition of a magnet from its name, or of a torrent already in the client ([torrent], once it has metadata). */
+    fun guess(magnet: String, torrent: String? = null): DlGuess {
+        val body = if (torrent != null) JSONObject().put("torrent", torrent) else JSONObject().put("magnet", magnet)
+        val j = JSONObject(call("POST", "/api/library/guess", body, 30000))
         val g = j.optJSONObject("guess") ?: JSONObject()
         val a = j.optJSONArray("targets") ?: JSONArray()
         val targets = List(a.length()) { i ->

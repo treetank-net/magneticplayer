@@ -129,6 +129,25 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
             tid = api.addMagnetRetrying(magnet, sequential, after, dest, guess?.raw) { status = it }
             phase = Phase.Done
             status = ctx.getString(R.string.media_magnet_added, api.srv.name)
+            // no name in the link: the agent recognizes it once the client has the metadata (and moves it when sure);
+            // while this card is open it shows what came out
+            val id = tid
+            if (id != null && magnetName(magnet) == null && (Servers.get(ctx, api.srv.key) ?: api.srv).libraryGuess) {
+                autoClose = false
+                status = ctx.getString(R.string.media_magnet_waiting_name)
+                repeat(40) {
+                    delay(3000)
+                    val g = withContext(Dispatchers.IO) { runCatching { api.guess(magnet, id) }.getOrNull() }
+                    if (g?.title != null) {
+                        guess = g
+                        dest = g.pick?.let { g.targets.getOrNull(it) }
+                        status = ctx.getString(if (g.confidence == "high" && dest != null) R.string.media_magnet_named_moving
+                            else R.string.media_magnet_named, api.srv.name)
+                        return@LaunchedEffect
+                    }
+                }
+                status = ctx.getString(R.string.media_magnet_name_later)
+            }
         } catch (e: ApiException) {
             phase = Phase.Error
             status = e.message ?: ctx.getString(R.string.media_error)

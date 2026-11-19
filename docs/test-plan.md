@@ -84,6 +84,13 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       (default "manually only"), free space on the phone (Download greyed out when it does not fit); the episodes get a
       "downloading" / "on the phone" icon.
 
+## Magnets
+
+- [ ] A magnet without `dn=` (agent 1.13.1): the card says it waits for the name; once the client has the metadata
+      (≤ ~20 s after it arrives) the agent recognizes it and, when sure, moves it to its folder (journal: "unnamed
+      magnet recognized"); the card shows "Recognized: moving…" or the unsure folder with "Change"; closing the card
+      early still gets it placed.
+
 ## Library screens
 
 - [ ] The bottom bar starts with Library, then Downloads, On the phone, Remote, Settings; the app opens on Library;
@@ -123,7 +130,5 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   series, otherwise a general preference ("original with subtitles", "lector when there is one"). The kind comes from
   the track title; "original" is the film's language from recognition (TMDB); a track without a title counts only
   by language. mpv and Chromecast get the same choice; DLNA cannot switch tracks (the file's default plays).
-- [todo] A magnet without a name (`dn=`): once the client knows the name, recognize it again and offer the folder
-  (or move it on its own when the folder is certain).
 - [idea] The folder browser as the place for jobs on its files: shrink, missing subtitles (both there), and more as
   they come. Zip archiving gives videos almost nothing (already compressed), so no.

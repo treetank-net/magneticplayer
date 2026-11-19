@@ -54,7 +54,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.13.0"
+VERSION = "1.13.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -819,6 +819,7 @@ class SleepGuard(threading.Thread):
                 self.reason = why or ""
                 playing = self.app.mpv.running() and self.app.mpv.prop("pause") is False
                 self.app.jobs.tick(self.app.backend.list(), playing, self.app.machine_action)
+                self.app.place_unnamed()
             except Exception as e:  # noqa: BLE001 — a background thread must not die
                 log("SleepGuard:", e)
             time.sleep(20)
@@ -1200,6 +1201,42 @@ class App:
             self.casts.devices()  # devices that answered later
         except Exception as e:  # noqa: BLE001  (e.g. no pychromecast)
             log("chromecast: discovery failed to start:", e)
+
+    def place_unnamed(self):
+        """A magnet added without a name (no `dn=`) and without a folder: once the client knows the name and the files,
+        it is recognized like any magnet; when the folder is certain (high confidence, a folder with that tag) the client
+        moves it there (seeding goes on), otherwise it stays in the default folder with the guess saved for the app's
+        "Change". Given up after an hour without metadata."""
+        waiting = [j for j in self.jobs.all() if j.get("place_when_named")]
+        if not waiting:
+            return
+        torrents = {t["id"].lower(): t for t in self.backend.list()}
+        for j in waiting:
+            tid = j["id"]
+            t = torrents.get(tid)
+            if t is None or time.time() - j["place_when_named"] > 3600:
+                self.jobs.set_meta(tid, place_when_named=None)
+                continue
+            name = t.get("name") or ""
+            if not name or name.lower() == tid:  # the client shows the hash until the metadata arrives
+                continue
+            files = [(f["path"], f["size"]) for f in self.backend.files(tid)[1]] or None
+            if not files:
+                continue
+            g = self.ident.guess(name, files)
+            kind = g.get("kind") if g.get("tag") in ("seriale", "bajki") else None
+            tg = self.library.targets(g.get("tag"), g.get("title"), kind)
+            pick = tg["pick"]
+            meta = {"place_when_named": None, "guess": g, "name": name}
+            if pick is not None and g.get("confidence") == "high":
+                t2 = tg["targets"][pick]
+                dest = self.library.dest(t2["root"], t2["sub"])
+                self.backend.move(tid, dest)
+                meta["dest"] = dest
+                log("unnamed magnet recognized:", tid, name, "→", dest)
+            else:
+                log("unnamed magnet recognized, folder unsure:", tid, name, g.get("tag"), g.get("confidence"))
+            self.jobs.set_meta(tid, **meta)
 
     def ticket_urls(self, b, base, variant=None):
         """URLs of the video and subtitles with a ticket for another device (screen, Chromecast, DLNA TV)."""
@@ -1621,6 +1658,9 @@ class Handler(BaseHTTPRequestHandler):
                     a.jobs.add(tid.lower(), uri, b.get("after", "none"))
                     if dest:
                         a.jobs.set_meta(tid.lower(), dest=dest, guess=b.get("guess"))
+                    elif not magnet_name(uri) and a.library.roots():
+                        # no name in the link: recognized and placed once the client has the metadata (place_unnamed)
+                        a.jobs.set_meta(tid.lower(), place_when_named=time.time())
                 log("magnet added:", tid, "→", dest or "(client default folder)")
                 return self.send_json({"id": tid, "path": dest})
             m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/move", p)
