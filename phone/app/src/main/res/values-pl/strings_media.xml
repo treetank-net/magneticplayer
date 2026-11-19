@@ -364,4 +364,14 @@
     <string name="media_group_watched">obejrzane: %1$d</string>
     <string name="media_group_fold">Zwiń</string>
     <string name="media_group_unfold">Rozwiń</string>
+    <!-- panel dźwięku w odtwarzaczu -->
+    <string name="audio_title">Dźwięk</string>
+    <string name="audio_lang_unknown">Język nie podany</string>
+    <string name="audio_kind_lector">Lektor</string>
+    <string name="audio_kind_dubbing">Dubbing</string>
+    <string name="audio_kind_description">Audiodeskrypcja</string>
+    <string name="audio_kind_commentary">Komentarz</string>
+    <string name="audio_kind_original">Oryginał</string>
+    <string name="audio_track_n">Ścieżka %1$d</string>
+    <string name="audio_remember_note">Wybór jest zapamiętywany: kolejny odcinek tego serialu i inne filmy startują z tym samym rodzajem ścieżki (oryginał, lektor, dubbing), jeśli go mają.</string>
 </resources>

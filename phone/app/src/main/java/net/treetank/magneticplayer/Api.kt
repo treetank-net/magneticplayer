@@ -47,6 +47,14 @@ class Settings(ctx: Context) {
         get() = p.getString("sub_choice", null)
         set(v) = p.edit().putString("sub_choice", v).apply()
 
+    /** The audio track picked last ([AudioPref.encode]): the next video starts with the matching track. */
+    var audioChoice: String?
+        get() = p.getString("audio_choice", null)
+        set(v) = p.edit().putString("audio_choice", v).apply()
+    /** The audio picked in a folder (a series): it wins over [audioChoice] there. */
+    fun folderAudio(folder: String): String? = p.getString("audio:$folder", null)
+    fun setFolderAudio(folder: String, v: String) = p.edit().putString("audio:$folder", v).apply()
+
     /** The folder (a season) where [subChoice] was last picked: missing subtitles there are downloaded without asking;
      * elsewhere the player only offers to. */
     var subChoiceFolder: String?

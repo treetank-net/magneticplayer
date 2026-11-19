@@ -24,6 +24,12 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       the next episode starts with them on.
 - [ ] Embedded tracks: titles like "Spanish (Latin America)", "for the hard of hearing", "forced".
 
+- [ ] Audio: the note icon next to CC appears only with two or more audio tracks; the sheet groups tracks by language
+      with the kind (lector, dubbing, audio description, commentary, original), title, channels and codec; the video
+      pauses while it is open; a pick switches the track at once.
+- [ ] The next episode (same folder) and other videos start with the same kind of track (e.g. "original" on a file
+      with PL lector + EN); a file with one track is left alone.
+
 ## Screen, TV, Chromecast
 
 - [ ] Chromecast: the subtitles in the language picked last are on; with "Off" none are on (but can be picked).
@@ -110,7 +116,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   more than is there). The check was fixed in agent 1.10.1; the two files only need a new shrink run on that folder.
 - [later] The folder browser plays a single file (no next-episode card, no queue); the catalog's series screen is the
   way to watch a series. An episode picker inside the player will cover the rest.
-- [todo] Own audio track sheet, agreed: a button next to CC, tracks grouped by language with the file's title
+- [todo] Audio choice on screens: mpv and Chromecast get the remembered kind of track (the phone part is done).
+  Agreed sheet, for reference: a button next to CC, tracks grouped by language with the file's title
   (lector, dubbing, audio description, commentary), channels (5.1, stereo) and codec; the video pauses while open.
   The choice is remembered as a kind ("original", "Polish lector", "dubbing"), not a track number: per folder in a
   series, otherwise a general preference ("original with subtitles", "lector when there is one"). The kind comes from

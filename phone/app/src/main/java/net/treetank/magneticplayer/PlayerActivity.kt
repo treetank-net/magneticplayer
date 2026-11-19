@@ -145,6 +145,9 @@ class PlayerActivity : ComponentActivity() {
             player?.pause()
             openInVlc(this, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
         }
+        // the audio sheet next to CC (ExoPlayer's gear has a bare track list without remembering)
+        audioButton = barButton(view, R.drawable.ic_player_audio, R.string.audio_title) { audioMenu() }
+        audioButton?.visibility = android.view.View.GONE  // shown when the video has two or more audio tracks
         val dp = resources.displayMetrics.density
         // top: title and how much can be watched without a network; visible together with the controls
         val top = LinearLayout(this).apply {
@@ -238,6 +241,7 @@ class PlayerActivity : ComponentActivity() {
             override fun onTracksChanged(tracks: Tracks) {
                 updateSubtitleIcon(tracks)
                 if (!tracks.isEmpty) ensureChosenSubs(tracks)
+                if (!tracks.isEmpty) applyAudioChoice(tracks)
                 // a picture the phone cannot decode (old DivX 3, WMV…): ExoPlayer plays the sound alone and may then hang on
                 // seeking, so we say so and offer the computer's version
                 val video = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
@@ -689,8 +693,8 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /** An icon button in ExoPlayer's style, put before the CC button; the description shows on a long press. */
-    private fun barButton(view: PlayerView, icon: Int, desc: Int, onClick: () -> Unit) {
-        val cc = subtitleButton ?: return
+    private fun barButton(view: PlayerView, icon: Int, desc: Int, onClick: () -> Unit): android.widget.ImageButton? {
+        val cc = subtitleButton ?: return null
         val parent = cc.parent as android.view.ViewGroup
         val b = android.widget.ImageButton(this, null, 0, androidx.media3.ui.R.style.ExoStyledControls_Button_Bottom)
         b.setImageResource(icon)
@@ -698,6 +702,64 @@ class PlayerActivity : ComponentActivity() {
         b.tooltipText = getString(desc)
         b.setOnClickListener { onClick() }
         parent.addView(b, parent.indexOfChild(cc), cc.layoutParams)
+        return b
+    }
+
+    private var audioButton: android.widget.ImageButton? = null
+    private var audioApplied = false
+
+    /** The video's audio tracks for the sheet and the remembered choice. */
+    private fun audioOpts(tracks: Tracks): List<AudioOpt> =
+        tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }.mapIndexed { i, g ->
+            val f = g.getTrackFormat(0)
+            AudioOpt(i, f.language, f.label, f.channelCount, f.sampleMimeType, g.isSelected,
+                audioKind(f.label, f.roleFlags and C.ROLE_FLAG_DESCRIBES_VIDEO != 0, f.roleFlags and C.ROLE_FLAG_COMMENTARY != 0))
+        }
+
+    private fun selectAudio(tracks: Tracks, index: Int) {
+        val p = player ?: return
+        val g = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }.getOrNull(index) ?: return
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, 0)).build()
+    }
+
+    /** Once the tracks are known: the button only with a choice, and the track matching the choice remembered for this
+     * folder (a series) or in general. */
+    private fun applyAudioChoice(tracks: Tracks) {
+        val opts = audioOpts(tracks)
+        audioButton?.visibility = if (opts.size > 1) android.view.View.VISIBLE else android.view.View.GONE
+        if (audioApplied || opts.isEmpty()) return
+        audioApplied = true
+        val folder = (ref as? MediaRef.InLibrary)?.let(::folderKey)
+        val pref = AudioPref.decode(folder?.let { settings.folderAudio(it) } ?: settings.audioChoice)
+        pickAudio(opts, pref)?.takeIf { i -> opts.none { it.index == i && it.selected } }?.let { selectAudio(tracks, it) }
+    }
+
+    /** The audio sheet: pauses the video while open; a pick switches the track and is remembered. */
+    private fun audioMenu() {
+        val p = player ?: return
+        val root = root ?: return
+        val tracks = p.currentTracks
+        val opts = audioOpts(tracks)
+        val host = androidx.compose.ui.platform.ComposeView(this)
+        val wasPlaying = p.isPlaying
+        if (wasPlaying) p.pause()
+        fun close() {
+            root.removeView(host)
+            if (wasPlaying) player?.play()
+        }
+        host.setContent {
+            AppTheme {
+                AudioSheet(opts, onDismiss = ::close) { o ->
+                    selectAudio(tracks, o.index)
+                    val pref = AudioPref.of(o, opts).encode()
+                    settings.audioChoice = pref
+                    (ref as? MediaRef.InLibrary)?.let { settings.setFolderAudio(folderKey(it), pref) }
+                    close()
+                }
+            }
+        }
+        root.addView(host, FrameLayout.LayoutParams(-1, -1))
     }
 
     private fun updateSubtitleIcon(tracks: Tracks) {

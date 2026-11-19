@@ -344,4 +344,14 @@
     <string name="media_group_watched">%1$d watched</string>
     <string name="media_group_fold">Fold</string>
     <string name="media_group_unfold">Unfold</string>
+    <!-- the player's audio sheet -->
+    <string name="audio_title">Audio</string>
+    <string name="audio_lang_unknown">Language not given</string>
+    <string name="audio_kind_lector">Lector (voice-over)</string>
+    <string name="audio_kind_dubbing">Dubbing</string>
+    <string name="audio_kind_description">Audio description</string>
+    <string name="audio_kind_commentary">Commentary</string>
+    <string name="audio_kind_original">Original</string>
+    <string name="audio_track_n">Track %1$d</string>
+    <string name="audio_remember_note">The choice is remembered: the next episode of this series, and other videos, start with the same kind of track (original, lector, dubbing) when they have one.</string>
 </resources>
