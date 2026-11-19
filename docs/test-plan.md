@@ -86,8 +86,10 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   the top switcher gets "All" next to each server; with "All" Library and Downloads merge every reachable server
   (titles marked with their server, e.g. "jmpc · Series (TOSHIBA)"), with one server picked they filter to it.
   "Wake all" for moving files between computers and browsing every library at once.
-  Screen-only servers stay out of that (the switcher already shows them greyed out as "screen only"); they live in
-  the Remote's screen list, asleep ones included, with Wake.
+  Screen-only servers stay out of that (the switcher already shows them greyed out as "screen only").
+- [idea] Remote's screen picker: every screen with its state (on / asleep) and "Wake" right in the list. Today Wake
+  shows only after picking a screen that does not answer, and only when its MAC is known; the top switcher's Wake
+  on a screen-only server also makes it the active file server (check).
 
 - [idea] The catalog's "New on your disks" row: sometimes something else, e.g. a carousel "Because you watched <title>"
   (from the disks) or suggestions that are not on the disks (to download by magnet).
