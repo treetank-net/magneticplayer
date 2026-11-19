@@ -128,12 +128,18 @@ class PlayerActivity : ComponentActivity() {
 
         val view = PlayerView(this).apply {
             setShowSubtitleButton(false)  // ours in its place (subtitleButton): ExoPlayer's is disabled when a video has none
-            setShowNextButton(false)
+            setShowNextButton(nextEps.isNotEmpty())  // ⏭ = the next episode (ForwardingPlayer below)
             setShowPreviousButton(false)
             keepScreenOn = true
         }
         playerView = view
         installSubtitleButton(view)
+        // our actions as icons in ExoPlayer's bottom bar, before CC (the top bar keeps only the title and the reserve)
+        barButton(view, R.drawable.ic_player_screen, R.string.media_to_screen) { handOffToPc() }
+        barButton(view, R.drawable.ic_player_open_in, R.string.media_open_vlc) {
+            player?.pause()
+            openInVlc(this, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
+        }
         val dp = resources.displayMetrics.density
         // top: title and how much can be watched without a network; visible together with the controls
         val top = LinearLayout(this).apply {
@@ -158,12 +164,6 @@ class PlayerActivity : ComponentActivity() {
         texts.addView(info)
         top.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
         val buttons = top.apply {
-            if (nextEps.isNotEmpty()) addView(smallButton(getString(R.string.media_next_episode)) { playNext() })
-            addView(smallButton(getString(R.string.media_to_screen)) { handOffToPc() })
-            addView(smallButton("VLC") {
-                player?.pause()
-                openInVlc(this@PlayerActivity, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
-            })
         }
         // subtitles above the controls when they are visible (otherwise they hide under the slider)
         view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v ->
@@ -205,6 +205,15 @@ class PlayerActivity : ComponentActivity() {
             private fun ahead(real: Long) = maxOf(real, minOf(aheadEndMs, p.duration.takeIf { it > 0 } ?: 0))
             override fun getBufferedPosition() = ahead(super.getBufferedPosition())
             override fun getContentBufferedPosition() = ahead(super.getContentBufferedPosition())
+            // a series: ExoPlayer's ⏭ opens the next episode (each episode is its own player)
+            private val next get() = nextEps.isNotEmpty()
+            override fun isCommandAvailable(command: Int) =
+                (next && command in listOf(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) || super.isCommandAvailable(command)
+            override fun getAvailableCommands(): Player.Commands = if (!next) super.getAvailableCommands()
+                else super.getAvailableCommands().buildUpon().addAll(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM).build()
+            override fun hasNextMediaItem() = next || super.hasNextMediaItem()
+            override fun seekToNext() { if (next) playNext() else super.seekToNext() }
+            override fun seekToNextMediaItem() { if (next) playNext() else super.seekToNextMediaItem() }
         }
         p.addListener(object : Player.Listener {
             var retries = 0
@@ -639,6 +648,18 @@ class PlayerActivity : ComponentActivity() {
         b.setOnClickListener { subtitleMenu() }
         parent.addView(b, parent.indexOfChild(orig), orig.layoutParams)
         subtitleButton = b
+    }
+
+    /** An icon button in ExoPlayer's style, put before the CC button; the description shows on a long press. */
+    private fun barButton(view: PlayerView, icon: Int, desc: Int, onClick: () -> Unit) {
+        val cc = subtitleButton ?: return
+        val parent = cc.parent as android.view.ViewGroup
+        val b = android.widget.ImageButton(this, null, 0, androidx.media3.ui.R.style.ExoStyledControls_Button_Bottom)
+        b.setImageResource(icon)
+        b.contentDescription = getString(desc)
+        b.tooltipText = getString(desc)
+        b.setOnClickListener { onClick() }
+        parent.addView(b, parent.indexOfChild(cc), cc.layoutParams)
     }
 
     private fun updateSubtitleIcon(tracks: Tracks) {
