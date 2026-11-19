@@ -14,6 +14,13 @@ How (no network, no model):
   at 7–9, subtitles of another film at 2–3.5 (measured on a library), so: `z` ≥ 6 fits (it is safe to shift it),
   < 4.5 doesn't fit this copy, in between unsure.
 
+Embedded subtitles (agent 1.12.1+): when the video carries its own subtitle tracks (text, PGS or VobSub), their display
+times are the reference instead of the speech: they are exact to the frame, and the speech of an action film is buried
+under music and effects (a film measured: z 5.7 against speech, 9.8 against its embedded subtitles, the same correction).
+Only the times are read (ffprobe packets, ~7 s for an episode), cached like the speech.
+
+`shift()` moves a file by hand (the "too early / too late" buttons), the same way as a fit.
+
 `fit()` shifts/rescales a fitting file in place when that changes anything (≥ 0.25 s or another ratio), turns a text
 `.sub` (MicroDVD/MPL2/TMPlayer) into `.srt`, and keeps the original in `<config>/subs-originals/<date>/`. Assessments
 are remembered per subtitle file (path, size, mtime) in `subsync.json` for the subtitle list (`fit`).
@@ -115,6 +122,64 @@ def speech(video, progress=None):
     return arr
 
 
+def embedded(video):
+    """[(start, end)] display times of the video's own subtitle track with the most lines (a forced track has only a
+    few), or [] when there is none with enough lines. Cached per video."""
+    path = os.path.join(cache_dir(), _key(video) + ".subs.json")
+    try:
+        with open(path) as f:
+            return [tuple(x) for x in json.load(f)]
+    except (OSError, ValueError):
+        pass
+    extra = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "s", "-show_entries",
+                              "packet=stream_index,pts_time,duration_time,size", "-of", "json", video],
+                             capture_output=True, text=True, timeout=600, **extra).stdout
+        packets = json.loads(out or "{}").get("packets") or []
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        packets = []
+    by = {}
+    for p in packets:
+        try:
+            by.setdefault(p["stream_index"], []).append(
+                (float(p["pts_time"]), float(p.get("duration_time") or 0), int(p.get("size") or 0)))
+        except (KeyError, ValueError):
+            continue
+    best = []
+    for ps in by.values():
+        cs, start = [], None
+        if sum(1 for _, d, _ in ps if d > 0) > len(ps) / 2:  # text tracks: start + duration
+            cs = [(t, t + d) for t, d, _ in ps if d > 0]
+        else:  # PGS/VobSub: a picture starts a line, a small "clear" packet ends it
+            for t, _, size in ps:
+                if size > 100:
+                    if start is not None and t - start < 10:
+                        cs.append((start, t))
+                    start = t
+                elif start is not None:
+                    cs.append((start, t))
+                    start = None
+        if len(cs) > len(best):
+            best = cs
+    if len(best) < 100:
+        best = []
+    os.makedirs(cache_dir(), exist_ok=True)
+    with open(path + ".tmp", "w") as f:
+        json.dump(best, f)
+    os.replace(path + ".tmp", path)
+    return best
+
+
+def _signal(cs):
+    np, _ = _libs()
+    n = int(max(b for _, b in cs) * SAMPLE) + 120 * SAMPLE
+    ref = np.zeros(n, dtype=np.uint8)
+    for a, b in cs:
+        ref[int(a * SAMPLE):int(b * SAMPLE)] = 1
+    return ref
+
+
 _TIME = re.compile(r"(\d+):(\d\d):(\d\d)[,.](\d+)\s*-->\s*(\d+):(\d\d):(\d\d)[,.](\d+)")
 
 
@@ -159,7 +224,7 @@ def align(ref, cs):
 def _rewrite(srt_text, ratio, offset):
     def conv(m):
         g = m.groups()
-        a, b = _sec(*g[:4]) * ratio + offset, _sec(*g[4:]) * ratio + offset
+        a, b = max(0.0, _sec(*g[:4]) * ratio + offset), max(0.0, _sec(*g[4:]) * ratio + offset)
         return f"{mp_subs._ts(a)} --> {mp_subs._ts(b)}"
     return _TIME.sub(conv, srt_text)
 
@@ -238,6 +303,27 @@ class Store:
         shutil.copy2(path, dest)
         return dest
 
+    def shift(self, sub_path, by, video=None):
+        """Moves all lines of a subtitle file by `by` seconds (+ later, - earlier), keeping the original the first
+        time. Returns the new total manual shift of this file."""
+        text = mp_subs.readable_srt(sub_path, video)
+        prev = (self.get(sub_path) or {}).get("manual", 0.0)
+        if not prev:
+            self._keep_original(sub_path)
+        tmp = sub_path + ".mp-tmp"
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            f.write(_rewrite(text, 1.0, by))
+        os.replace(tmp, sub_path)
+        r = dict(self.get_any(sub_path) or {}, manual=round(prev + by, 2))
+        r.pop("size", None), r.pop("mtime", None), r.pop("at", None)
+        self._remember(sub_path, r)
+        self.log(f"subtitles shifted by hand: {os.path.basename(sub_path)} {by:+.2f} s (total {r['manual']:+.2f} s)")
+        return r["manual"]
+
+    def get_any(self, sub_path):
+        """The last assessment of this file even when it changed since."""
+        return self.rec.get(os.path.realpath(sub_path))
+
     def fit(self, video, sub_path, change=True, progress=None):
         """Assess `sub_path` against `video` and, when it fits and `change`, correct it in place (a text `.sub` becomes
         `.srt`). Returns {verdict, z, ratio, offset, changed, name}."""
@@ -247,8 +333,16 @@ class Store:
         if ext == ".sub" and not is_text_sub(sub_path):
             raise SyncError("picture subtitles (VobSub) can't be fitted")
         text = mp_subs.readable_srt(sub_path, video)
-        ref = speech(video, progress)
-        res = align(ref, cues(text))
+        res = None
+        emb = embedded(video)
+        if emb:
+            res = align(_signal(emb), cues(text))
+            res["by"] = "embedded"
+            if res["verdict"] != "good":
+                res = None  # another release's embedded track, or these subtitles don't fit: the speech decides
+        if res is None:
+            res = align(speech(video, progress), cues(text))
+            res["by"] = "speech"
         res.update(changed=False, name=os.path.basename(sub_path))
         need = res["verdict"] == "good" and (abs(res["ratio"] - 1) > 1e-4 or abs(res["offset"]) >= MIN_SHIFT)
         convert = ext == ".sub"

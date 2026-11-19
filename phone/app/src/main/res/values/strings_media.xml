@@ -277,6 +277,9 @@
     <string name="media_psubs_have">you have these</string>
     <string name="media_psubs_sdh">for the hard of hearing</string>
     <string name="media_psubs_forced">forced (signs and foreign speech)</string>
+    <string name="media_psubs_sync">Timing</string>
+    <string name="media_psubs_sync_total">%1$s s by hand</string>
+    <string name="media_psubs_sync_hint">Subtitles too late: minus. Too early: plus. Saved in the file on the computer.</string>
     <string name="media_psubs_embedded_track">Built-in track %1$d</string>
     <plurals name="media_psubs_versions">
         <item quantity="one">%1$d version</item>

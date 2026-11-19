@@ -925,6 +925,23 @@ class App:
                 pass
         return res
 
+    def shift_subs(self, full, name, by):
+        """Moves a subtitle file next to `full` by `by` seconds; mpv playing this video loads it again."""
+        path = os.path.join(os.path.dirname(full), name)
+        if self.tasks.torrent_owned(path):
+            raise ApiError(T("these subtitles belong to a torrent that is still seeding: they can't be changed",
+                             "te napisy należą do torrenta, który jeszcze seeduje: nie można ich zmieniać"), 409)
+        try:
+            total = self.subsync.shift(path, by, full)
+        except OSError as e:
+            raise ApiError(T(f"can't change the file: {e.strerror}", f"nie da się zmienić pliku: {e.strerror}"), 500)
+        try:
+            if self.mpv.running() and self.mpv.prop("path") == full:
+                self.mpv.cmd("sub-reload")
+        except ApiError:
+            pass
+        return {"name": name, "manual": total}
+
     def busy(self):
         """Why a restart (self-update) should wait now, or None: a stream or upload in the last 5 minutes, a queued
         conversion, a copy or move. Running encodes are detached (mp_detached) and survive the restart."""
@@ -997,7 +1014,7 @@ class App:
                 "library_tasks": True,
                 "shrink_encoder": self.cfg.get("shrink_encoder") or "auto",
                 "shrink_while_watching": self.cfg.get("shrink_while_watching") or "continue",
-                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True,  # intro / credits (agent 1.11+)
+                "library_episodes": True, "segments": mp_segments.available(), "subs_versions": True, "subs_shift": True,  # intro / credits (agent 1.11+)
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
@@ -1755,6 +1772,18 @@ class Handler(BaseHTTPRequestHandler):
                 if b.get("name") not in {x["name"] for x in sidecar_subs(full)}:
                     raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
                 return self.send_json(a.fit_subs(full, b["name"]))
+            if p == "/api/subs/shift" and method == "POST":  # by hand: {ref, name, by: seconds} (agent 1.12.1+)
+                b = self.body()
+                full = a.resolve_ref(b)
+                if b.get("name") not in {x["name"] for x in sidecar_subs(full)}:
+                    raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
+                try:
+                    by = float(b.get("by"))
+                except (TypeError, ValueError):
+                    raise ApiError(T("by: seconds", "by: sekundy"), 400)
+                if not -600 < by < 600 or not by:
+                    raise ApiError(T("by: seconds", "by: sekundy"), 400)
+                return self.send_json(a.shift_subs(full, b["name"], by))
             if p == "/api/config/app_updates" and method == "GET":
                 return self.send_json(a.app_updates.status())
             if p == "/api/config/app_updates" and method == "POST":

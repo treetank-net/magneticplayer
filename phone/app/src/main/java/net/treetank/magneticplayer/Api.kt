@@ -219,6 +219,8 @@ data class SubFile(
     val default: Boolean = true,
     /** agent 1.12+: where the agent downloaded it from */
     val source: SubSource? = null,
+    /** agent 1.12.1+: seconds the file was moved by hand (the sync buttons) */
+    val manual: Double = 0.0,
 ) {
     /** "pl" of "pl", "pl-PL", "" when unknown */
     val langKey get() = lang.takeWhile { it.isLetter() }.lowercase()
@@ -699,13 +701,18 @@ class Api(val s: Settings, val srv: Server) {
             val o = a.getJSONObject(i)
             SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"), o.optJSONObject("fit")?.optStr("verdict"),
                 o.optBoolean("default", '/' !in o.getString("name")),
-                o.optJSONObject("source")?.let { SubSource(it.optString("provider"), it.optString("id"), it.optString("release")) })
+                o.optJSONObject("source")?.let { SubSource(it.optString("provider"), it.optString("id"), it.optString("release")) },
+                o.optJSONObject("fit")?.optDouble("manual", 0.0)?.takeIf { !it.isNaN() } ?: 0.0)
         }
     }
 
     /** Agent 1.12+: this version becomes its language's default (the current one moves to Subtitles/); the new name. */
     fun subsDefault(ref: MediaRef, name: String): String =
         JSONObject(call("POST", "/api/subs/default", ref.json().put("name", name))).getString("name")
+
+    /** Agent 1.12.1+: moves the subtitle file by `by` seconds (+ later); the total shift by hand. */
+    fun subsShift(ref: MediaRef, name: String, by: Double): Double =
+        JSONObject(call("POST", "/api/subs/shift", ref.json().put("name", name).put("by", by))).optDouble("manual", 0.0)
 
     fun subUrl(ref: MediaRef, name: String) = "$base/sub?${ref.query()}&name=${Uri.encode(name)}&token=${Uri.encode(srv.token)}"
 

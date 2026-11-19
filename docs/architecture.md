@@ -256,6 +256,14 @@ being seeded). It runs after every download (the app waits with `"fit": "wait"`,
 background), on `POST /api/subs/fit`, and for the whole library as the "Subtitles" task (`kind: subs`). The player
 labels tracks (✓ / "don't fit") and picks the best-fitting file of each language as the default.
 
+Agent 1.12.1+: when the video carries its own subtitle track (text, PGS or VobSub, the one with the most lines), its
+display times are the reference instead of the speech (ffprobe packets, ~7 s for an episode, cached next to the
+speech). They are exact to the frame, while the speech of an action film is buried under music: on one episode the same
+correction (×1.001, −3 s) came out at z 5.7 against the speech and 9.8 against the embedded track. When the embedded
+track doesn't give "fits" (another cut, or other subtitles), the speech decides. By hand: `POST /api/subs/shift` moves
+the file (the "Timing" buttons on a language's page of the subtitle sheet: ±0.1 and ±0.5 s), saved in the file so mpv
+and TVs get it too; the player reloads it.
+
 OpenSubtitles without a login: subliminal requires logging in (`@requires_auth`) before downloading, while the API
 allows downloading with just a key. That's why `_oscom_anonymous` calls `download_subtitle.__wrapped__`.
 

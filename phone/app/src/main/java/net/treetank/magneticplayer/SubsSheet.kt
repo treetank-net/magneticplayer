@@ -2,6 +2,7 @@ package net.treetank.magneticplayer
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -95,6 +97,8 @@ sealed class SubPick {
     data class Track(val index: Int) : SubPick()
     /** a file next to the video (its name, after it became the default of its language) */
     data class File(val name: String, val lang: String) : SubPick()
+    /** the file was moved in time (sync buttons): load it again, the sheet stays open */
+    data class Shifted(val name: String, val lang: String) : SubPick()
 }
 
 /**
@@ -136,6 +140,21 @@ fun SubtitlesSheet(
     fun picked(p: SubPick, msg: String?) {
         onPick(p, msg)
         if (closeOnPick) onDismiss() else message = msg
+    }
+
+    var shifting by remember { mutableStateOf(false) }
+    /** Sync buttons: the agent rewrites the file, the player loads it again; the sheet stays open for the next step. */
+    fun shift(f: SubFile, by: Double) = scope.launch {
+        error = null; shifting = true
+        try {
+            withContext(Dispatchers.IO) { api.subsShift(ref, f.name, by) }
+            reload()
+            onPick(SubPick.Shifted(f.name, f.langKey), null)
+        } catch (e: ApiException) {
+            error = e.message
+        } finally {
+            shifting = false
+        }
     }
 
     /** A version on disk: it becomes the default of its language (agent 1.12+), then on. */
@@ -244,6 +263,7 @@ fun SubtitlesSheet(
                         }
                         else -> LanguagePage(api, ref, page!!, list, embedded, selectedFile, ui,
                             onChoose = ::choose,
+                            onShift = if (api.srv.hasSubsShift) { f, by -> shift(f, by) } else null, shifting = shifting,
                             onTrack = { picked(SubPick.Track(it), null) },
                             onDownloaded = { d, lang -> scope.launch { reload(); picked(SubPick.File(d.name, lang), fitMessage(d.fit, d.name)) } },
                             onError = { error = it })
@@ -327,6 +347,25 @@ private fun Languages(
 }
 
 /** A file's label: the release it came from, else its name without the video's name and the language. */
+@Composable
+private fun SyncRow(f: SubFile, busy: Boolean, onShift: (Double) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        val total = if (f.manual == 0.0) "" else " (" + stringResource(R.string.media_psubs_sync_total,
+            String.format(java.util.Locale.getDefault(), "%+.1f", f.manual)) + ")"
+        Text(stringResource(R.string.media_psubs_sync) + total, style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.media_psubs_sync_hint), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (by in listOf(-0.5, -0.1, 0.1, 0.5)) {
+                OutlinedButton({ onShift(by) }, Modifier.weight(1f), enabled = !busy,
+                    contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    Text(String.format(java.util.Locale.getDefault(), "%+.1f s", by))
+                }
+            }
+        }
+    }
+}
+
 private data class TrackFlags(val sdh: Boolean, val forced: Boolean)
 
 /** An embedded track's title, unless it only repeats the language ("English", "Polski", "pol"), and its flags (from the
@@ -367,6 +406,7 @@ private fun versionLabel(f: SubFile, videoStem: String?): String {
 private fun LanguagePage(
     api: Api, ref: MediaRef, lang: String, files: List<SubFile>, embedded: List<EmbeddedSub>?, selectedFile: String?,
     ui: java.util.Locale, onChoose: (SubFile) -> Unit, onTrack: (Int) -> Unit,
+    onShift: ((SubFile, Double) -> Unit)?, shifting: Boolean,
     onDownloaded: (SubsDownloaded, String) -> Unit, onError: (String?) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -388,6 +428,9 @@ private fun LanguagePage(
             leading = { RadioButton(on, { onChoose(f) }) },
             subtitleColor = if (f.fit == "bad") MaterialTheme.colorScheme.error else if (f.fit == "good") GREEN else null)
     }
+    // timing of the version in use: too early / too late, saved in the file (works in mpv and on the TV too)
+    val inUse = fs.firstOrNull { if (embedded != null) it.name == selectedFile else it.default }
+    if (onShift != null && inUse != null && inUse.ext == "srt") SyncRow(inUse, shifting) { onShift(inUse, it) }
     embedded.orEmpty().filter { it.langKey == lang }.forEachIndexed { n, e ->
         val (title, flags) = embeddedLabel(e, ui)
         SheetRow(title ?: stringResource(R.string.media_psubs_embedded_track, n + 1), listOfNotNull(

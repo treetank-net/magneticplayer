@@ -703,6 +703,7 @@ class PlayerActivity : ComponentActivity() {
                                 .build()
                         }
                         is SubPick.File -> applySubFile(pick.name, pick.lang)
+                        is SubPick.Shifted -> applySubFile(pick.name, pick.lang)
                     }
                     msg?.let { Toast.makeText(this@PlayerActivity, it, Toast.LENGTH_LONG).show() }
                 }

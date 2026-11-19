@@ -287,6 +287,9 @@
     <string name="media_psubs_have">masz już</string>
     <string name="media_psubs_sdh">dla niesłyszących</string>
     <string name="media_psubs_forced">wymuszone (napisy na ekranie i obca mowa)</string>
+    <string name="media_psubs_sync">Synchronizacja</string>
+    <string name="media_psubs_sync_total">%1$s s ręcznie</string>
+    <string name="media_psubs_sync_hint">Napisy za późno: minus. Za wcześnie: plus. Zapisuje się w pliku na komputerze.</string>
     <string name="media_psubs_embedded_track">Wbudowana ścieżka %1$d</string>
     <plurals name="media_psubs_versions">
         <item quantity="one">%1$d wersja</item>

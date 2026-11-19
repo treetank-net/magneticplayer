@@ -62,6 +62,8 @@ data class Server(
     /** agent 1.9+: subtitles fitted to the film's speech (after a download, and the "Subtitles" task in Disks) */
     val hasSubsFit get() = features?.optBoolean("subs_fit", false) ?: false
     val hasSubsVersions get() = features?.optBoolean("subs_versions", false) ?: false
+    /** agent 1.12.1+: POST /api/subs/shift (subtitles too early / too late, saved in the file) */
+    val hasSubsShift get() = features?.optBoolean("subs_shift", false) ?: false
     /** How many search engines the user set on the server (`/api/config/search`); 0 = no "Search" button. */
     val searchEngines get() = features?.optInt("search_engines", 0) ?: 0
     /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */
