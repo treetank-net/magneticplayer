@@ -33,7 +33,8 @@ pipe instead of a unix socket.
 | `mp_renderers.py` | who the Chromecasts are (`product_name` from `eureka_info`), codec profiles per model (`CAST_PROFILES`) and the `renderers.json` registry; described in `docs/devices.md` |
 | `mp_access.py` | access requests from the home network: a request without a token, the list and a household member's decision, handing a pairing code to the requester |
 | `mp_install.py` | installing the agent on another computer: join code, the `/i/<code>` script (templates `join.sh`, `join.ps1`, shared with the phone), the bundle, registering the new server with a pairing code for the phone |
-| `mp_upload.py` | receiving videos from the phone (`/api/upload/<id>`): resumable chunks in `.mp-upload/`, free space, name collisions, the `upload_dir` folder or `Z telefonu` ("From phone") in the library |
+| `mp_upload.py` | receiving videos from the phone (`/api/upload/<id>`): resumable chunks in `.mp-upload/`, free space, name collisions, the `upload_dir` folder or `Z telefonu` ("From phone") in the library; history of received files (`uploads.json`) with keep / move to a library folder |
+| `mp_catalog.py` | the library as films (agent 1.8+): `Catalog` groups library files into titles, recognises them (`mp_ident`), reads audio and subtitle languages, adds Wikidata details by IMDb id (cast, directors, topics, age) and answers title, person and "what next"; `Wishlist` is the shared want-to-watch list |
 | `mp_selfupdate.py` | the agent updates itself from signed GitHub releases (ECDSA P-256 verified in pure Python), at a quiet moment, through `self-update.sh` with a rollback |
 | `mp_tasks.py` | background file tasks with a preview: planners (free up a disk, tidy up by recognition, duplicates, shrinking by storage profiles, deleting to the trash) and one worker; moving through the torrent client when the torrent is still in it; `.mp-trash/` per library folder |
 | `mp_mcp.py` | MCP server for an AI assistant in the LAN (Streamable HTTP, tools over the library and tasks) and the OAuth 2.1 endpoints whose approval is an access request on the phone |
@@ -265,6 +266,24 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
 from ~10% into the video (the biggest video of a folder, samples skipped) via ffmpeg, cached by path, size and mtime.
 No network or accounts; TMDB posters remain an option for later.
 
+### Catalog (agent 1.8+)
+`mp_catalog.py`, the API in [api.md](api.md#catalog-films-instead-of-folders-agent-18-featurescatalog).
+1. A scan (at start, every 30 min and after `mp_library.invalidate()`) walks the library folders. Every top-level
+   entry is one title; a folder with several big videos and no episodes is split into one title per file. Series
+   are one title with an episode count.
+2. Each new or changed title: `mp_ident` guess (with `.nfo`), ffprobe for audio languages (cached by size and
+   mtime), subtitle languages from the sidecar names. Only known 2-letter codes are kept, the rest is `?`.
+3. Wikidata in batches of 40 by IMDb id (SPARQL for the QID, `wbgetentities` for claims), refreshed every 30 days;
+   labels of people and topics are cached. Title, rating, votes and runtime come live from the IMDb index, so an
+   index refresh reaches old items without a rescan.
+4. The Polish title is shown only when the film has Polish audio or subtitles.
+5. A person and "what next" also ask Wikidata which films have that person or topic (cached for a day, run in
+   parallel), and the IMDb index ranks the ones that are not on the disks by votes. The agent never searches for
+   them; the user's own search addresses (`search_engines`, none by default) are opened by the phone.
+
+Results are in `catalog.json` next to the configuration; `GET /api/catalog?since=<version>` returns only `same`
+when nothing changed.
+
 ### MCP for an AI assistant
 `mp_mcp.py`: the assistant (e.g. Claude Code on a computer in the LAN) is added with
 `claude mcp add --transport http magneticplayer http://<server>:8765/mcp`. The first call gets `401`, the client
@@ -282,7 +301,8 @@ A setting, off by default (details and decisions: [plan-upload.md](plan-upload.m
 3. `UploadWorker` (Wi-Fi only): when the server doesn't answer `ping`, it waits and retries every 15 min. Then
    `GET /api/upload/<id>` and `PUT` in 64 MB chunks from `received`.
 4. The agent (`mp_upload.py`) assembles the file in `.mp-upload/<id>.part` and moves it to `Z telefonu` in the
-   library.
+   library. The history (`uploads.json`) keeps who sent it; Downloads in the app offers "Keep here" or "Move" to a
+   library folder suggested from recognition (agent 1.8+).
 5. With deletion: "Tap to delete from phone" → the system confirmation `MediaStore.createDeleteRequest`
    (Android 11+).
 
