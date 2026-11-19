@@ -230,8 +230,22 @@ OpenSubtitles, even with a hash match) is refused with 422 instead of being save
 name case-insensitively (`Le film.srt` next to `Le Film.avi`), and so do the companions moved with a video.
 `/sub` serves every `.srt` as UTF-8 SubRip (`mp_subs.readable_srt`): many files named `.srt` are really MicroDVD
 (`{frame}{frame}text`, frame rate from the `{1}{1}25.000` line or the video), MPL2 or TMPlayer, often in cp1250. mpv
-reads those itself, but the phone and browsers showed nothing. The file on disk is not changed. Subtitles timed for a
-different frame rate (23.976 vs 25, drifting minutes by the end) are not detected; they need another download.
+reads those itself, but the phone and browsers showed nothing. The file on disk is not changed. A text `.sub`
+(MicroDVD/MPL2/TMPlayer, not VobSub) is listed as `ext: srt` and served the same way.
+
+**Fitting to the film (agent 1.9+, `mp_subsync.py`, `features.subs_fit`).** Subtitles found online are often made for
+another release: shifted (another intro) or timed for another frame rate (23.976 vs 25 fps: seconds off at the start,
+minutes by the end), even with a hash match. The agent detects speech in the video's sound (ffmpeg → 16 kHz mono →
+webrtcvad, 10 ms frames, cached per video in `~/.cache/magneticplayer/speech/`, ~20–30 s for a film), turns the cues
+into the same kind of signal for each usual frame-rate ratio, and cross-correlates them (FFT, lags up to ±5 min). `z`
+says how far the best match stands above all other lags: subtitles of the film come out at 7–9, subtitles of another
+film at 2–3.5 (measured on the library), so `z` ≥ 6 = fits (shifted/rescaled in place when it changes ≥ 0.4 s or the
+ratio), < 4.5 = doesn't fit this copy, in between = unsure (left alone). A text `.sub` becomes `.srt`. Originals go to
+`<config>/subs-originals/<date>/`, assessments are kept per file (path, size, mtime) in `subsync.json` and shown in
+`/api/subs/list` as `fit`. Files that belong to a torrent in the client are only assessed, never changed (they are
+being seeded). It runs after every download (the app waits with `"fit": "wait"`, older clients get it in the
+background), on `POST /api/subs/fit`, and for the whole library as the "Subtitles" task (`kind: subs`). The player
+labels tracks (✓ / "don't fit") and picks the best-fitting file of each language as the default.
 
 OpenSubtitles without a login: subliminal requires logging in (`@requires_auth`) before downloading, while the API
 allows downloading with just a key. That's why `_oscom_anonymous` calls `download_subtitle.__wrapped__`.
@@ -241,7 +255,13 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
 1. A planner proposes items in a background thread and changes nothing; the phone (or an MCP assistant) shows the
    preview with checkboxes.
 2. The chosen items become one task in `tasks.json`; one worker runs tasks one after another, an interrupted task
-   continues after a restart (a half-done item is redone).
+   continues after a restart (a half-done copy is redone). Encodes (shrinking and "for Chromecast" versions, agent
+   1.9+) run detached from the agent (`mp_detached.py`): a small keeper process outside the agent's process tree (its
+   own systemd scope on Linux, `DETACHED_PROCESS` + `CREATE_BREAKAWAY_FROM_JOB` on Windows) runs ffmpeg, holds a lock on
+   `<config>/encodes/<id>/lock` while it runs and writes the progress, the pid and the exit code there. After a
+   restart or a self-update the agent finds the encode by the id in the task item and attaches to it again; one whose
+   keeper died without an exit code (a reboot) is started over, and encodes no task owns are stopped. That is why a
+   self-update no longer waits for an encode, only for copies, moves, replication and queued conversions.
 3. Moving: a torrent still in the client → `move_storage`/`torrent-set-location` and waiting until the client
    reports the new folder (it keeps seeding); a folder containing torrents is skipped; the same filesystem →
    rename; another disk → copy to `*.mp-part`, compare sizes and file counts, rename, delete the source. Subtitles,
@@ -276,6 +296,9 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    its new or changed top-level items copied there every 30 minutes and after each task, quietly: no notification,
    the state (`pending`, `copied`, `last`, `error`) is in `GET /api/library` as `replica`. Never deletions (a copy,
    not a mirror), never an unfinished torrent, and a round stops when somebody starts streaming or a task is queued.
+7. Subtitles (`kind: subs`, agent 1.9+): every video with SRT or text SUB files next to it, in every library folder
+   except backups, files assessed before left out; each item fits its files (see Subtitles). It waits while somebody
+   watches from the same disk, since the whole file is read for its sound.
 
 ### Covers
 `mp_media.cover()`: a picture next to the video or in the folder first (Jellyfin/Kodi names), otherwise one frame

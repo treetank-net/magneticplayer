@@ -180,7 +180,7 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
     var found by remember { mutableStateOf<SubsFound?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
-    var done by remember { mutableStateOf<String?>(null) }
+    var done by remember { mutableStateOf<SubsDownloaded?>(null) }
     // manual title correction (e.g. a Spanish file, subtitles under the English title)
     var title by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
@@ -222,13 +222,30 @@ fun SubsDialog(api: Api, ref: MediaRef, onDismiss: () -> Unit) {
                 Text(ref.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(4.dp))
                 have?.takeIf { it.isNotEmpty() }?.let { list ->
-                    Text(stringResource(R.string.media_subs_have, list.joinToString { it.name.takeLast(30) }), style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF3FA96B))
+                    val bad = stringResource(R.string.media_subs_bad_mark)
+                    Text(stringResource(R.string.media_subs_have, list.joinToString {
+                        it.name.takeLast(30) + when (it.fit) { "good" -> " ✓"; "bad" -> bad; else -> "" }
+                    }), style = MaterialTheme.typography.bodySmall, color = Color(0xFF3FA96B))
                     Spacer(Modifier.height(4.dp))
                 }
                 done?.let {
-                    Text(stringResource(R.string.media_subs_done, it),
+                    Text(stringResource(R.string.media_subs_done, it.name),
                         style = MaterialTheme.typography.bodySmall, color = Color(0xFF3FA96B))
+                    // agent 1.9+: how they fit this copy of the film (speech detection)
+                    when (it.fit) {
+                        "good" -> stringResource(if (it.changed) R.string.media_subs_fit_fixed else R.string.media_subs_fit_good)
+                        "bad" -> stringResource(R.string.media_subs_fit_bad)
+                        "unsure", "error" -> stringResource(R.string.media_subs_fit_unsure)
+                        else -> null
+                    }?.let { t ->
+                        Text(t, style = MaterialTheme.typography.bodySmall,
+                            color = if (it.fit == "bad") MaterialTheme.colorScheme.error else Color(0xFF3FA96B))
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (busy != null && api.srv.hasSubsFit) {
+                    Text(stringResource(R.string.media_subs_fitting), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(4.dp))
                 }
                 val f = found

@@ -126,7 +126,9 @@ data class TrashDay(val root: Int, val rootName: String, val day: String, val si
 data class Disks(val disks: List<Disk>, val trash: List<TrashDay>, val trashDays: Int)
 /** A plan (preview of a file task): `result` is the agent's JSON (kind-specific fields, see docs/api.md). */
 data class LibPlan(val id: String, val kind: String, val state: String, val progress: Int, val error: String?, val result: JSONObject?)
-data class TaskItem(val name: String, val path: String, val size: Long, val state: String, val error: String?, val saved: Long)
+data class TaskItem(val name: String, val path: String, val size: Long, val state: String, val error: String?, val saved: Long,
+                    /** agent 1.9+: outcome of a subtitle item ("pl: fitted (−0.7 s)…"), localized */
+                    val note: String? = null)
 /** A background file task on the agent (`/api/tasks`); times are epoch seconds. */
 data class LibTask(
     val id: String, val kind: String, val title: String, val state: String, val created: Double, val finished: Double?,
@@ -134,6 +136,8 @@ data class LibTask(
     val paused: Boolean, val items: List<TaskItem>,
     /** agent 1.7+: encoder label of a shrink task and a status note ("Slower: someone is watching…"), both localized */
     val encoder: String? = null, val note: String? = null,
+    /** agent 1.9+, subtitle tasks: files fitted to their film, files that don't fit it */
+    val fixed: Int = 0, val unfit: Int = 0,
 )
 /** An encoder for shrinking (agent 1.7+); label and note come localized from the agent. */
 data class ShrinkEncoder(val id: String, val label: String, val note: String, val bframes: Boolean)
@@ -163,7 +167,10 @@ data class SubResult(
 ) {
     val key get() = "$provider:$id"
 }
-data class SubFile(val name: String, val lang: String, val ext: String)
+/** `fit` (agent 1.9+): good / unsure / bad = how these subtitles fit this copy of the film (speech detection), null = not checked */
+data class SubFile(val name: String, val lang: String, val ext: String, val fit: String? = null)
+/** A downloaded subtitle file and, with agent 1.9+, how it fits the film (`fit` as in [SubFile]; `changed` = shifted to fit). */
+data class SubsDownloaded(val name: String, val fit: String?, val changed: Boolean)
 
 /** Labels of after-download actions in the phone's language (resources media_after_*). */
 fun afterLabels(ctx: Context): Map<String, String> = linkedMapOf(
@@ -567,8 +574,8 @@ class Api(val s: Settings, val srv: Server) {
             o.optInt("errors"), o.optBoolean("paused"), List(arr.length()) { i ->
                 val x = arr.getJSONObject(i)
                 TaskItem(x.optString("name").ifEmpty { x.optString("path").substringAfterLast('/') }, x.optString("path"),
-                    x.optLong("size"), x.optString("state"), x.optStr("error"), x.optLong("saved"))
-            }, o.optStr("encoder"), o.optStr("note"))
+                    x.optLong("size"), x.optString("state"), x.optStr("error"), x.optLong("saved"), x.optStr("note"))
+            }, o.optStr("encoder"), o.optStr("note"), o.optInt("fixed"), o.optInt("unfit"))
     }
 
     /** Saves a storage profile for a folder (`path` "") or a subfolder. */
@@ -609,7 +616,7 @@ class Api(val s: Settings, val srv: Server) {
         val a = JSONArray(call("GET", "/api/subs/list?${ref.query()}"))
         return List(a.length()) { i ->
             val o = a.getJSONObject(i)
-            SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"))
+            SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"), o.optJSONObject("fit")?.optStr("verdict"))
         }
     }
 
@@ -650,10 +657,14 @@ class Api(val s: Settings, val srv: Server) {
             o.optString("error").takeIf { it.isNotEmpty() }, found)
     }
 
-    fun subsDownload(ref: MediaRef, r: SubResult, title: String? = null, year: Int? = null): String =
-        JSONObject(call("POST", "/api/subs/download",
-            subsBody(ref, title, year).put("id", r.id).put("provider", r.provider), 90000))
-            .optString("name")
+    /** Downloads subtitles; agent 1.9+ then fits them to the film's speech while we wait (~30 s the first time). */
+    fun subsDownload(ref: MediaRef, r: SubResult, title: String? = null, year: Int? = null): SubsDownloaded {
+        val fit = srv.hasSubsFit
+        val body = subsBody(ref, title, year).put("id", r.id).put("provider", r.provider).apply { if (fit) put("fit", "wait") }
+        val o = JSONObject(call("POST", "/api/subs/download", body, if (fit) 240000 else 90000))
+        val f = o.optJSONObject("fit")
+        return SubsDownloaded(o.optString("name"), f?.optStr("verdict"), f?.optBoolean("changed") ?: false)
+    }
 
     fun openSubsConfig(): JSONObject = JSONObject(call("GET", "/api/config/opensubtitles"))
     fun setOpenSubsConfig(apiKey: String?, user: String?, password: String?) {

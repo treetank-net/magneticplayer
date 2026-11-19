@@ -89,6 +89,12 @@
     <string name="media_subs_title">Napisy</string>
     <string name="media_subs_have">Już są: %1$s</string>
     <string name="media_subs_done">Pobrano: %1$s — gra na komputerze? Włączyły się same. W telefonie: otwórz film jeszcze raz.</string>
+    <string name="media_subs_fitting">Dopasowuję do Twojej wersji filmu…</string>
+    <string name="media_subs_fit_fixed">Przesunięte, żeby pasowały do Twojej wersji filmu.</string>
+    <string name="media_subs_fit_good">Pasują do Twojej wersji filmu.</string>
+    <string name="media_subs_fit_bad">Nie pasują do Twojej wersji filmu (inne wydanie?). Spróbuj innych.</string>
+    <string name="media_subs_fit_unsure">Nie udało się sprawdzić, czy pasują do tej wersji filmu.</string>
+    <string name="media_subs_bad_mark"> (nie pasują)</string>
     <string name="media_subs_stopping">Kończę…</string>
     <string name="media_subs_enough">Wystarczy — pokaż, co już jest</string>
     <string name="media_subs_nothing">Nic nie znaleziono dla „%1$s” (%2$s). Jeśli plik ma tytuł w innym języku, wpisz niżej tytuł angielski albo oryginalny.</string>

@@ -41,6 +41,12 @@
     <string name="lib_plan_empty">Nothing to do.</string>
     <string name="lib_move">Move</string>
     <string name="lib_modernize">Old formats</string>
+    <string name="lib_subs">Subtitles</string>
+    <string name="lib_subs_go">Fit</string>
+    <string name="lib_subs_locked">part of a seeded torrent: only checked</string>
+    <string name="lib_sum_subs_time">About %1$d min of work for the computer</string>
+    <string name="lib_sum_subs_hint">The computer listens for speech in each film and compares it with the subtitles. Subtitles that fit are shifted to your copy (another intro, another frame rate), text .sub files become .srt, and the ones that don\'t fit are marked. Originals are kept aside.</string>
+    <string name="lib_task_subs">Fitted: %1$d · don\'t fit: %2$d</string>
     <string name="lib_shrink">Shrink</string>
     <string name="lib_delete">Delete</string>
     <string name="lib_delete_selected">Delete selected</string>

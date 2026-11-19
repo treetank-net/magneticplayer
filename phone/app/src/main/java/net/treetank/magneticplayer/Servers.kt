@@ -55,6 +55,8 @@ data class Server(
     val hasCatalog get() = features?.optBoolean("catalog", false) ?: false
     /** Agent 1.8.2+: a plan that re-encodes old picture formats across the library. */
     val hasModernize get() = features?.optBoolean("library_modernize", false) ?: false
+    /** agent 1.9+: subtitles fitted to the film's speech (after a download, and the "Subtitles" task in Disks) */
+    val hasSubsFit get() = features?.optBoolean("subs_fit", false) ?: false
     /** How many search engines the user set on the server (`/api/config/search`); 0 = no "Search" button. */
     val searchEngines get() = features?.optInt("search_engines", 0) ?: 0
     /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */

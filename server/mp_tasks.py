@@ -2,8 +2,10 @@
 
 Flow, always with a preview: a planner (`plan_free`, `plan_shrink`) proposes items without touching anything; the
 owner confirms (all or some items); that becomes one task with progress and one notification at the end.
-Tasks are persisted in `tasks.json`; after an agent restart an interrupted task continues with its remaining items
-(an item half done is redone from scratch: copies go to `*.mp-part`, encodes to `.mp-shrink.part.mkv`).
+Tasks are persisted in `tasks.json`; after an agent restart an interrupted task continues with its remaining items.
+An encode runs detached from the agent (mp_detached: its own systemd scope / a detached process on Windows), so it
+goes on through a restart or a self-update and the new agent attaches to it again (`job` in the item); a half-done
+copy is redone from scratch (`*.mp-part`), and so is an encode whose keeper died (a reboot).
 
 Moving (`op: move`), an item is a top-level entry of a library folder (a movie folder, a series, a single file with
 its subtitles):
@@ -43,6 +45,7 @@ import sys
 import threading
 import time
 
+import mp_detached
 import mp_media
 import mp_i18n
 from mp_i18n import T
@@ -145,6 +148,7 @@ class Tasks:
         probe (HEAD only: a phone playing its own copy), mpv (the computer's screen) or convert (a version for a TV);
         backend(): the torrent client."""
         self.path, self.cfg, self.save_cfg, self.library = path, cfg, save_cfg, library
+        self.encodes = os.path.join(os.path.dirname(path), "encodes")  # detached encodes (mp_detached)
         self.backend, self.watching, self.renderers, self.log = backend, watching, renderers, log
         self.lock = threading.Lock()
         self.plans = {}  # id → {state, progress, result | error}; in memory, an hour
@@ -162,6 +166,19 @@ class Tasks:
             t["paused"] = False
             if t["state"] == "running":
                 t["state"] = "queued"
+        # encodes nobody owns any more (a task cancelled or finished while the agent was down): stop and forget them
+        owned = {i.get("job") for t in self.items for i in t.get("items", []) if t["state"] == "queued"}
+
+        def sweep():
+            for j in mp_detached.Detached.all(self.encodes, "shrink"):
+                if j.id not in owned:
+                    self.log("shrink: stopping an encode no task owns:", j.id)
+                    j.terminate()
+                    self._drop_part(j)
+                    j.remove()
+        threading.Thread(target=sweep, daemon=True).start()
+        if any(t["state"] == "queued" for t in self.items):
+            self.wake.set()  # an interrupted task goes on right away (its encode may have been running all along)
         threading.Thread(target=self._loop, daemon=True).start()
 
     # ---- state
@@ -269,8 +286,27 @@ class Tasks:
             return self.public(t)
 
     def busy(self):
+        """Whether a restart now would lose work: a copy or a move under way, or replication. An encode runs detached
+        and the new agent attaches to it, and a queued task simply starts after the restart."""
         with self.lock:
-            return self.replicating or any(t["state"] in ("queued", "running") for t in self.items)
+            if self.replicating:
+                return True
+            for t in self.items:
+                if t["state"] != "running":
+                    continue
+                cur = next((i for i in t["items"] if i["state"] == "running"), None)
+                if cur is None or cur["op"] != "shrink" or not cur.get("job"):
+                    return True
+            return False
+
+    def _drop_part(self, j):
+        part = (j.meta or {}).get("part")
+        if part and part.endswith(".mp-shrink.part.mkv"):
+            try:
+                j.wait(30)
+            except subprocess.TimeoutExpired:
+                pass
+            _rm(part)
 
     def cancel(self, tid):
         with self.lock:
@@ -594,6 +630,114 @@ class Tasks:
 
     # ---- planner: duplicates (stage 4): size, then the beginning and end of the file, then the whole file
 
+    # ---- subtitles fitted to the films (mp_subsync)
+
+    def torrent_owned(self, path, torrents=None, cache=None):
+        """Whether this file is part of a torrent in the client: changing it would corrupt what is being seeded.
+        When the client can't be asked, assume it is."""
+        try:
+            torrents = self._torrents() if torrents is None else torrents
+        except TaskError:
+            return True
+        rp = os.path.realpath(path)
+        for content, tid in torrents.items():
+            if rp == content:
+                return True
+            if rp.startswith(content + os.sep):
+                cache = {} if cache is None else cache
+                if tid not in cache:
+                    try:
+                        save, files = self.backend().files(tid)
+                        cache[tid] = {os.path.realpath(os.path.join(save, f["path"])) for f in files}
+                    except Exception:  # noqa: BLE001
+                        cache[tid] = None
+                return cache[tid] is None or rp in cache[tid]
+        return False
+
+    def plan_subs(self, every=False):
+        """Videos with subtitle files (SRT, text SUB) next to them, in every library folder except backups. Files assessed
+        before (and unchanged since) are left out unless `every`."""
+        import mp_subsync
+
+        def run(p):
+            if not mp_subsync.available():
+                raise TaskError(T("speech detection is not installed on this computer (numpy, webrtcvad)",
+                                  "na tym komputerze nie ma wykrywania mowy (numpy, webrtcvad)"))
+            torrents, cache = self._torrents(), {}
+            roots = [x for x in self.library.roots() if x["exists"] and not set(x["tags"]) & HIDDEN_TAGS]
+            files = []
+            for r in roots:
+                for dp, dirs, fs in os.walk(r["path"]):
+                    dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+                    files += [(r, os.path.join(dp, f)) for f in sorted(fs)
+                              if os.path.splitext(f)[1].lower() in VIDEO_EXT and not f.startswith(".")]
+            items, checked = [], 0
+            for k, (r, full) in enumerate(files):
+                p["progress"] = int(100 * k / max(len(files), 1))
+                subs = []
+                for x in mp_library.sidecar_subs(full):
+                    sp = os.path.join(os.path.dirname(full), x["name"])
+                    ext = os.path.splitext(sp)[1].lower()
+                    if ext not in (".srt", ".sub") or (ext == ".sub" and not mp_subsync.is_text_sub(sp)):
+                        continue
+                    if not every and self.subsync.get(sp):
+                        checked += 1
+                        continue
+                    subs.append({"name": x["name"], "lang": x["lang"],
+                                 "locked": self.torrent_owned(sp, torrents, cache)})
+                if not subs:
+                    continue
+                size = sum(os.path.getsize(os.path.join(os.path.dirname(full), x["name"])) for x in subs)
+                items.append({"op": "subs", "root_id": r["id"], "root_name": r["name"],
+                              "path": os.path.relpath(full, r["path"]), "name": os.path.basename(full),
+                              "size": size, "subs": subs})
+            p["progress"] = 100
+            return {"kind": "subs", **_title("Fit subtitles to the films", "Dopasuj napisy do filmów"),
+                    "items": items, "skipped": [], "checked": checked, "bytes": sum(i["size"] for i in items),
+                    "minutes": -(-len(items) // 2)}
+        return self._plan("subs", run)
+
+    def _subs(self, i, t):
+        """Fits every subtitle file of one video; a file inside a seeded torrent is only assessed."""
+        root = self._root_path(i["root_id"])
+        full = os.path.join(root, i["path"])
+        if not os.path.exists(full):
+            raise TaskError(T("the video no longer exists", "filmu już nie ma"))
+        try:
+            dev = os.stat(full).st_dev
+        except OSError:
+            dev = None
+        # reading the whole file for its sound: not while somebody watches from the same disk
+        while self._hold(dev) is not None:
+            t["note"] = self.hold_text("same_disk")
+            if self.cancel_ev.wait(10):
+                t.pop("note", None)
+                raise _Cancelled()
+        t.pop("note", None)
+        import mp_subsync
+        out, errors = [], []
+        for x in i["subs"]:
+            path = os.path.join(os.path.dirname(full), x["name"])
+            if not os.path.exists(path):
+                continue
+            try:
+                r = self.subsync.fit(full, path, change=not x.get("locked"))
+            except (mp_subsync.SyncError, OSError, ValueError) as e:
+                errors.append(f"{x['name']}: {e}")
+                continue
+            out.append({"name": r["name"], "lang": x.get("lang"), "verdict": r["verdict"], "z": r["z"],
+                        "changed": r["changed"], "locked": bool(x.get("locked")), "converted": r["name"] != x["name"],
+                        "shift": r.get("fixed_offset", r["offset"]), "ratio": r.get("fixed_ratio", r["ratio"])})
+            t["fixed"] = t.get("fixed", 0) + (1 if r["changed"] else 0)
+            t["unfit"] = t.get("unfit", 0) + (1 if r["verdict"] == "bad" else 0)
+            self._check_cancel()
+        i["result"] = out
+        i["note"] = "; ".join(_fit_text(x) for x in out)
+        if errors and not out:
+            raise TaskError("; ".join(errors)[:300])
+        if errors:
+            i["note"] += "; " + "; ".join(errors)
+
     def plan_dupes(self):
         def run(p):
             import hashlib
@@ -880,6 +1024,8 @@ class Tasks:
             try:
                 if i["op"] == "move":
                     self._move(i, progress)
+                elif i["op"] == "subs":
+                    self._subs(i, t)
                 elif i["op"] == "trash":
                     self._trash(i)
                 else:
@@ -1090,33 +1236,46 @@ class Tasks:
         if enc == "gpu" and not mp_media.detect_hevc().get("gpu"):
             self.log("shrink: the graphics card's encoder is gone, using the processor")
             enc = "cpu"
-        cmd = self._shrink_cmd(full, part, info, pr, enc)
         dur = info["duration"]
-        self.log("shrink:", os.path.basename(full), i["profile"], enc)
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                             start_new_session=True)
+        # an encode started before an agent restart: attach to it (it went on meanwhile) instead of starting over
+        p = mp_detached.Detached.find(self.encodes, i.get("job"))
+        if p and (p.meta.get("part") != part or p.poll() not in (None, 0)):
+            p.terminate()
+            p.remove()
+            p = None
+        if p:
+            self.log("shrink: attached to the running encode of", os.path.basename(full))
+            enc = p.meta.get("enc") or enc
+        else:
+            _rm(part)
+            cmd = self._shrink_cmd(full, part, info, pr, enc)
+            self.log("shrink:", os.path.basename(full), i["profile"], enc)
+            os.makedirs(self.encodes, exist_ok=True)
+            p = mp_detached.Detached.start(self.encodes, cmd, {"part": part, "full": full, "enc": enc}, "shrink")
+            i["job"] = p.id
+            with self.lock:
+                self._save()
         with self.lock:
             self.proc = p
-        err_tail = []
-        threading.Thread(target=lambda: err_tail.extend(p.stderr.read().splitlines()[-5:]), daemon=True).start()
         done = threading.Event()
         work = [0.0]  # seconds the encoder was allowed to run (to learn its speed)
         threading.Thread(target=self._govern, args=(p, t, full, done, work), daemon=True).start()
         try:
-            for line in p.stdout:
-                if line.startswith("out_time_us=") and dur:
-                    try:
-                        progress(int(i["size"] * min(int(line.split("=")[1]) / 1e6 / dur, 1)))
-                    except ValueError:
-                        pass
-                if self.cancel_ev.is_set():
+            while p.poll() is None:
+                us = p.progress().get("out_time_us", "")
+                if us.isdigit() and dur:
+                    progress(int(i["size"] * min(int(us) / 1e6 / dur, 1)))
+                if self.cancel_ev.wait(1):
                     raise _Cancelled()
-            p.wait()
         except _Cancelled:
             done.set()
-            _signal(p, "SIGCONT")
             p.terminate()
-            p.wait()
+            try:
+                p.wait(60)
+            except subprocess.TimeoutExpired:
+                pass
+            p.remove()
+            i.pop("job", None)
             _rm(part)
             raise
         finally:
@@ -1125,11 +1284,16 @@ class Tasks:
             t.update(paused=False, hold=None)
             with self.lock:
                 self.proc = None
+        err_tail = p.err_tail()
+        p.remove()
+        i.pop("job", None)
         if self.cancel_ev.is_set():
             _rm(part)
             raise _Cancelled()
         if p.returncode != 0:
             _rm(part)
+            if p.returncode == -1:
+                raise TaskError(T("the encode was interrupted (the computer restarted?)", "kodowanie zostało przerwane (restart komputera?)"))
             raise TaskError(T("ffmpeg failed: ", "ffmpeg się nie udał: ") + " ".join(err_tail)[-200:])
         new = os.path.getsize(part)
         try:
@@ -1147,7 +1311,9 @@ class Tasks:
             return
         dec = subprocess.run(_nice(["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-i", part, "-map", "0:v:0",
                                     "-f", "null", "-"]), capture_output=True, text=True)
-        if dec.returncode != 0 or dec.stderr.strip():
+        # the null muxer's own complaints (repeated timestamps from AVI sources) are not decoding errors
+        bad = [ln for ln in dec.stderr.splitlines() if ln.strip() and not ln.startswith("[null @")]
+        if dec.returncode != 0 or bad:
             _rm(part)
             raise TaskError(T("the result doesn't decode cleanly, the original was kept", "wynik nie dekoduje się czysto, oryginał został"))
         if not pr.get("copy"):
@@ -1330,6 +1496,28 @@ def _read_bytes(pid):
     except (OSError, ValueError):
         return None
     return None
+
+
+def _fit_text(x):
+    """One subtitle file's outcome, for the task's item list."""
+    who = x.get("lang") or x["name"]
+    if x["verdict"] == "bad":
+        return T(f"{who}: doesn't fit this copy of the film", f"{who}: nie pasuje do tej wersji filmu")
+    if x["verdict"] == "unsure":
+        return T(f"{who}: unsure, left as it was", f"{who}: niepewne, zostawione bez zmian")
+    how = []
+    if abs(x["ratio"] - 1) > 1e-4:
+        how.append(T("other frame rate", "inna liczba klatek"))
+    if abs(x["shift"]) >= 0.4:
+        how.append(f"{x['shift']:+.1f} s")
+    if x["changed"] and not how and x.get("converted"):
+        return T(f"{who}: fits, converted to SRT", f"{who}: pasują, zamienione na SRT")
+    if x["changed"]:
+        return T(f"{who}: fitted", f"{who}: dopasowane") + (f" ({', '.join(how)})" if how else "")
+    if how and x.get("locked"):
+        return T(f"{who}: off ({', '.join(how)}), but part of a seeded torrent, left alone",
+                 f"{who}: przesunięte ({', '.join(how)}), ale należą do seedowanego torrenta, bez zmian")
+    return T(f"{who}: fits", f"{who}: pasują")
 
 
 def _signal(p, name):

@@ -78,6 +78,9 @@ if [ -x "$DEST/venv/bin/pip" ]; then
   # Chromecast controlled from the web client (the phone app has its own Cast SDK)
   "$DEST/venv/bin/pip" install --isolated -q $UPG pychromecast ||
     say "WARNING: pychromecast didn't install — Chromecast from the browser won't work" "UWAGA: pychromecast się nie zainstalował — Chromecast z przeglądarki nie zadziała"
+  # subtitles fitted to the film's speech (mp_subsync): speech detection + FFT
+  "$DEST/venv/bin/pip" install --isolated -q numpy webrtcvad-wheels ||
+    say "WARNING: numpy/webrtcvad didn't install — subtitles won't be fitted to the films" "UWAGA: numpy/webrtcvad się nie zainstalowały — napisy nie będą dopasowywane do filmów"
   # pairing QR in the terminal when qrencode is missing (the lite install doesn't install packages)
   "$DEST/venv/bin/pip" install --isolated -q $UPG qrcode || true
 fi

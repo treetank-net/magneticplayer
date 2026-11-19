@@ -39,7 +39,7 @@ import mp_selfupdate
 import mp_tasks
 import mp_mcp
 import mp_i18n
-from mp_i18n import T
+from mp_i18n import T, bind
 
 # DLNA: byte seeking (OP=01), no conversion, streaming + background (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
@@ -50,8 +50,9 @@ import mp_ident
 import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt
+import mp_subsync
 
-VERSION = "1.8.4"
+VERSION = "1.9.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -829,10 +830,11 @@ class App:
         self.guard = SleepGuard(self)
         self.library = Library(cfg, lambda: save_config(cfg), self._default_dirs)
         self.subs = Subtitles(cfg, lambda: save_config(cfg))
+        self.subsync = mp_subsync.Store(CONFIG_DIR, log)
         self.jobs = Jobs(os.path.join(CONFIG_DIR, "jobs.json"), log)
         self.devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
         self._subs_ok = None
-        self.convert = mp_media.Converter(log)
+        self.convert = mp_media.Converter(log, os.path.join(CONFIG_DIR, "encodes"))
         self.renderers = mp_renderers.Renderers(os.path.join(CONFIG_DIR, "renderers.json"), log)
         self.casts = Casts(log, self.renderers)
         # announcing "what is playing" between remotes (LAN multicast): this server's mpv + a list from others for the page
@@ -861,6 +863,7 @@ class App:
         self.tasks = mp_tasks.Tasks(os.path.join(CONFIG_DIR, "tasks.json"), cfg, lambda: save_config(cfg), self.library,
                                     lambda: self.backend, self.watched,
                                     self.renderers, log)
+        self.tasks.subsync = self.subsync
         self.agent_updates = mp_selfupdate.AgentUpdates(cfg, lambda: save_config(cfg), os.path.dirname(os.path.abspath(__file__)),
                                                         VERSION, cfg["port"], self.busy, log)
         self.agent_updates.start()
@@ -898,12 +901,33 @@ class App:
         out += [{"path": j["path"], "kind": "convert"} for j in self.convert.all() if j["state"] in ("queued", "running")]
         return out
 
+    def fit_subs(self, full, name):
+        """Fits a subtitle file next to `full` to the film's speech (mp_subsync). A file of a seeded torrent is only
+        assessed. If mpv plays this video, a changed file is loaded again."""
+        path = os.path.join(os.path.dirname(full), name)
+        locked = self.tasks.torrent_owned(path)
+        try:
+            res = self.subsync.fit(full, path, change=not locked)
+        except (mp_subsync.SyncError, OSError, ValueError) as e:
+            log("subtitle fitting:", name, e)
+            return {"verdict": "error", "error": str(e), "name": name}
+        res["locked"] = locked
+        if res.get("changed"):
+            try:
+                if self.mpv.running() and self.mpv.prop("path") == full:
+                    new = os.path.join(os.path.dirname(full), res["name"])
+                    self.mpv.cmd("sub-add", new, "select")
+            except ApiError:
+                pass
+        return res
+
     def busy(self):
-        """Why a restart (self-update) should wait now, or None: a stream or upload in the last 5 minutes, a conversion."""
+        """Why a restart (self-update) should wait now, or None: a stream or upload in the last 5 minutes, a queued
+        conversion, a copy or move. Running encodes are detached (mp_detached) and survive the restart."""
         with self.stream_lock:
             if self.streams or time.time() - self.stream_last < 300:
                 return "stream"
-        if any(j["state"] in ("queued", "running") for j in self.convert.all()):
+        if any(j["state"] == "queued" for j in self.convert.all()):
             return "conversion"
         if self.tasks.busy():
             return "task"
@@ -973,6 +997,7 @@ class App:
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
                 "library_modernize": True,  # POST /api/library/plan {"kind": "modernize"} (agent 1.8.2+)
+                "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
                 "library_profiles": list(mp_tasks.PROFILE_NAMES),
                 "player": self.is_screen(),
@@ -1577,10 +1602,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(a.tasks.plan_tidy(a.ident))
                 if kind == "dupes":
                     return self.send_json(a.tasks.plan_dupes())
+                if kind == "subs":  # subtitles fitted to the films (agent 1.9+)
+                    return self.send_json(a.tasks.plan_subs(bool(b.get("every"))))
                 if kind == "trash":
                     return self.send_json(a.tasks.plan_trash(b.get("items") or []))
-                raise ApiError(T("kind must be free, shrink, modernize, move, tidy, dupes or trash",
-                                 "kind to free, shrink, modernize, move, tidy, dupes albo trash"), 400)
+                raise ApiError(T("kind must be free, shrink, modernize, move, tidy, dupes, subs or trash",
+                                 "kind to free, shrink, modernize, move, tidy, dupes, subs albo trash"), 400)
             if (m := re.fullmatch(r"/api/library/plan/([0-9a-f]{8})", p)) and method == "GET":
                 return self.send_json(a.tasks.plan_status(m.group(1)))
             if p == "/api/library/profile" and method == "POST":
@@ -1621,7 +1648,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.stream(full, method == "HEAD", watch=full)
             # ---- subtitles
             if p == "/api/subs/list" and method == "GET":
-                return self.send_json(sidecar_subs(a.resolve_ref(qd)))
+                full = a.resolve_ref(qd)
+                out = []
+                for x in sidecar_subs(full):
+                    sp = os.path.join(os.path.dirname(full), x["name"])
+                    if x["ext"] == "sub" and mp_subsync.is_text_sub(sp):
+                        x["ext"] = "srt"  # served converted (/sub): MicroDVD/MPL2/TMPlayer as SubRip
+                    r = a.subsync.get(sp)
+                    if r:  # fitted or assessed before (agent 1.9+): good / unsure / bad for this copy of the film
+                        x["fit"] = {"verdict": r["verdict"], "z": r["z"]}
+                    out.append(x)
+                return self.send_json(out)
             if p == "/sub" and method in ("GET", "HEAD"):
                 full = a.resolve_ref(qd)
                 names = {s["name"]: s for s in sidecar_subs(full)}
@@ -1629,7 +1666,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
                 if qd.get("vtt") == "1":  # browsers (<track>) understand only WebVTT
                     return self.send_vtt(os.path.join(os.path.dirname(full), qd["name"]), full)
-                if qd["name"].lower().endswith(".srt"):  # MicroDVD/cp1250 named .srt: the phone gets real UTF-8 SubRip
+                sp = os.path.join(os.path.dirname(full), qd["name"])
+                if qd["name"].lower().endswith(".srt") or (qd["name"].lower().endswith(".sub") and mp_subsync.is_text_sub(sp)):
+                    # MicroDVD/cp1250 named .srt, or a text .sub: the phone gets real UTF-8 SubRip
                     return self.send_text(readable_srt(os.path.join(os.path.dirname(full), qd["name"]), full),
                                           "application/x-subrip", method == "HEAD")
                 return self.stream(os.path.join(os.path.dirname(full), qd["name"]), method == "HEAD")
@@ -1651,12 +1690,27 @@ class Handler(BaseHTTPRequestHandler):
                 langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
                 res = a.subs.download(full, str(b["id"]), b["provider"], langs, (b.get("title") or "").strip() or None,
                                       b.get("year") or None)
+                # fitted to this copy of the film (agent 1.9+): "fit": "wait" (the app waits, ~30 s the first time for a
+                # film) returns the outcome in "fit"; otherwise it happens in the background
+                fit = res.get("name") and mp_subsync.available()
+                if fit and b.get("fit") == "wait":
+                    res["fit"] = a.fit_subs(full, res["name"])
+                    res["name"] = res["fit"].get("name") or res["name"]
                 if res.get("name") and a.mpv.running() and a.mpv.prop("path") == full:  # this very video is playing: enable the subtitles right away
                     try:
                         a.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), res["name"]), "select")
                     except ApiError:
                         pass
+                if fit and b.get("fit") != "wait":
+                    threading.Thread(target=bind(a.fit_subs), args=(full, res["name"]), daemon=True).start()
+                    res["fit"] = {"verdict": "pending"}
                 return self.send_json(res)
+            if p == "/api/subs/fit" and method == "POST":  # one subtitle file next to the video (agent 1.9+)
+                b = self.body()
+                full = a.resolve_ref(b)
+                if b.get("name") not in {x["name"] for x in sidecar_subs(full)}:
+                    raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
+                return self.send_json(a.fit_subs(full, b["name"]))
             if p == "/api/config/app_updates" and method == "GET":
                 return self.send_json(a.app_updates.status())
             if p == "/api/config/app_updates" and method == "POST":

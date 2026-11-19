@@ -240,6 +240,12 @@ class PlayerActivity : ComponentActivity() {
                 subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
                 local = withContext(Dispatchers.IO) { localSubs(subs) }
             }
+            // default: per language the file that fits this copy of the film best (agent 1.9+), never one that doesn't fit
+            val rank = { s: SubFile -> when (s.fit) { "good" -> 0; null, "unsure" -> 1; else -> 2 } }
+            val defaults = subs.groupBy { it.lang.takeWhile { c -> c.isLetter() } }.values
+                .mapNotNull { g -> g.minByOrNull(rank)?.takeIf { it.fit != "bad" } }.toSet()
+                .ifEmpty { setOfNotNull(subs.firstOrNull()) }
+            val badMark = getString(R.string.media_subs_bad_mark)
             val subConfigs = subs.mapNotNull { s ->
                 val mime = when (s.ext) {
                     "srt" -> MimeTypes.APPLICATION_SUBRIP
@@ -250,8 +256,8 @@ class PlayerActivity : ComponentActivity() {
                 MediaItem.SubtitleConfiguration.Builder(local[s.name] ?: Uri.parse(api.subUrl(ref, s.name)))
                     .setMimeType(mime)
                     .setLanguage(s.lang.takeWhile { it.isLetter() }.ifEmpty { null })
-                    .setLabel(s.name)
-                    .setSelectionFlags(if (s == subs.first()) C.SELECTION_FLAG_DEFAULT else 0)
+                    .setLabel(s.name + when (s.fit) { "good" -> " ✓"; "bad" -> badMark; else -> "" })
+                    .setSelectionFlags(if (s in defaults) C.SELECTION_FLAG_DEFAULT else 0)
                     .build()
             }
             p.setMediaItem(MediaItem.Builder().setUri(url).setCustomCacheKey(key)

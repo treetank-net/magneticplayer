@@ -89,6 +89,12 @@
     <string name="media_subs_title">Subtitles</string>
     <string name="media_subs_have">Already here: %1$s</string>
     <string name="media_subs_done">Downloaded: %1$s — playing on the computer? They turned on automatically. On the phone: open the video again.</string>
+    <string name="media_subs_fitting">Fitting them to your copy of the film…</string>
+    <string name="media_subs_fit_fixed">Shifted to fit your copy of the film.</string>
+    <string name="media_subs_fit_good">They fit your copy of the film.</string>
+    <string name="media_subs_fit_bad">They don\'t fit your copy of the film (another release?). Try other subtitles.</string>
+    <string name="media_subs_fit_unsure">Couldn\'t tell whether they fit this copy of the film.</string>
+    <string name="media_subs_bad_mark"> (don\'t fit)</string>
     <string name="media_subs_stopping">Finishing…</string>
     <string name="media_subs_enough">That\'s enough — show what\'s found</string>
     <string name="media_subs_nothing">Nothing found for “%1$s” (%2$s). If the file\'s title is in another language, enter the English or original title below.</string>

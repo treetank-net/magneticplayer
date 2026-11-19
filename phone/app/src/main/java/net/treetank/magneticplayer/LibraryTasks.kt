@@ -262,6 +262,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
                     OutlinedButton({ onPlan(PlanBody.simple("dupes")) }) { Text(stringResource(R.string.lib_dupes)) }
                     // old picture formats (DivX 3, WMV…) that phones and TVs no longer play (agent 1.8.2+)
                     if (api.srv.hasModernize) OutlinedButton({ onPlan(PlanBody.simple("modernize")) }) { Text(stringResource(R.string.lib_modernize)) }
+                    if (api.srv.hasSubsFit) OutlinedButton({ onPlan(PlanBody.simple("subs")) }) { Text(stringResource(R.string.lib_subs)) }
                 }
                 Text(stringResource(R.string.lib_tools_hint), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
@@ -459,6 +460,8 @@ private fun TaskCard(t: LibTask, onCancel: () -> Unit) {
             }
             if (t.kind == "shrink" && t.saved > 0) Text(stringResource(R.string.lib_task_saved, humanBytes(t.saved)),
                 style = MaterialTheme.typography.bodySmall)
+            if (t.kind == "subs" && (t.fixed > 0 || t.unfit > 0)) Text(stringResource(R.string.lib_task_subs, t.fixed, t.unfit),
+                style = MaterialTheme.typography.bodySmall)
             if (t.errors > 0) Text(pluralStringResource(R.plurals.lib_errors, t.errors, t.errors), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error)
             if (t.items.isNotEmpty()) {
@@ -476,6 +479,7 @@ private fun TaskCard(t: LibTask, onCancel: () -> Unit) {
                         }
                         Text(extra.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
                             color = if (i.state == "error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        i.note?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         i.error?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
                     }
                 }
@@ -544,6 +548,7 @@ private fun planKindTitle(kind: String) = when (kind) {
     "tidy" -> stringResource(R.string.lib_tidy)
     "dupes" -> stringResource(R.string.lib_dupes)
     "modernize" -> stringResource(R.string.lib_modernize)
+    "subs" -> stringResource(R.string.lib_subs)
     "trash" -> stringResource(R.string.lib_delete)
     else -> stringResource(R.string.lib_move)
 }
@@ -615,6 +620,7 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
                 }, enabled = picked.isNotEmpty() && !starting) {
                     Text(when (kind) {
                         "shrink" -> stringResource(R.string.lib_shrink)
+                        "subs" -> stringResource(R.string.lib_subs_go)
                         "trash" -> stringResource(R.string.lib_delete)
                         else -> stringResource(R.string.lib_move)
                     })
@@ -637,6 +643,10 @@ private fun PlanSummary(r: JSONObject, count: Int) {
             humanBytes(r.optLong("saved")))
         lines += stringResource(R.string.lib_sum_hours, String.format(java.util.Locale.ROOT, "%.1f", r.optDouble("hours", 0.0)))
         r.optStr("encoder")?.let { lines += stringResource(R.string.lib_sum_encoder, it) }
+    }
+    if (kind == "subs") {
+        lines += stringResource(R.string.lib_sum_subs_time, r.optInt("minutes"))
+        lines += stringResource(R.string.lib_sum_subs_hint)
     }
     if (r.has("trash_days")) r.optInt("trash_days").let {
         lines += pluralStringResource(if (kind == "shrink") R.plurals.lib_sum_originals_kept else R.plurals.lib_sum_trash_kept, it, it)
@@ -710,6 +720,13 @@ private fun PlanItem(kind: String, it: JSONObject) {
             val from = listOfNotNull(codec.ifEmpty { null }, h.takeIf { v -> v > 0 }?.let { v -> "${v}p" }).joinToString(" ")
             Text("$from → HEVC" + (if (to > 0) " ${to}p" else "") + " · ${humanBytes(it.optLong("size"))} → ${humanBytes(it.optLong("est"))}",
                 style = small, color = dim)
+        }
+        "subs" -> {
+            val locked = stringResource(R.string.lib_subs_locked)
+            it.objects("subs").forEach { x ->
+                Text(x.optString("name") + (if (x.optBoolean("locked")) " · $locked" else ""), style = small, color = dim,
+                    maxLines = 2, overflow = TextOverflow.MiddleEllipsis)
+            }
         }
         "trash" -> Text(listOf(it.optString("root_name"), it.optString("path").substringBeforeLast('/', "")).filter { s -> s.isNotEmpty() }
             .joinToString(" / ") + " · " + humanBytes(it.optLong("size")), style = small, color = dim, maxLines = 2, overflow = TextOverflow.StartEllipsis)

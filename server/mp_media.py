@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 
+import mp_detached
 from mp_i18n import T, bind
 
 CAST_DIR = ".mp-cast"
@@ -316,15 +317,40 @@ def remove_variant(full):
 
 
 class Converter:
-    """Queue of "for Chromecast" conversions, one at a time. State is in memory (after an agent restart: starts over)."""
+    """Queue of "for Chromecast" conversions, one at a time. The queue is in memory; the running conversion is detached
+    (mp_detached), so after an agent restart it goes on and is picked up again, while the queued ones are forgotten."""
 
-    def __init__(self, log):
+    def __init__(self, log, encodes=None):
         self.log = log
         self.lock = threading.Lock()
         self.jobs = {}  # full path → state
         self.queue = []
         self.proc = None
         self.worker = None
+        self.encodes = encodes
+        if encodes:
+            for p in mp_detached.Detached.all(encodes, "convert"):
+                m = p.meta
+                if not m.get("full"):
+                    p.terminate()
+                    p.remove()
+                    continue
+                j = {"state": "running", "title": m.get("title"), "pct": 0, "speed": None, "error": None,
+                     "started": m.get("started"), "check": m.get("check"), "encoder": m.get("encoder")}
+                self.jobs[m["full"]] = j
+                self.log("conversion: attached to the running one of", os.path.basename(m["full"]))
+                self.worker = threading.Thread(target=bind(self._resume), args=(m["full"], j, p), daemon=True)
+                self.worker.start()
+
+    def _resume(self, full, j, p):
+        try:
+            self._watch(full, j, p)
+        except Exception as e:  # noqa: BLE001
+            with self.lock:
+                if j["state"] != "cancelled":
+                    j.update(state="error", error=str(e)[-300:])
+            self.log("conversion failed:", os.path.basename(full), e)
+        self._loop()  # whatever was queued meanwhile
 
     def status(self, full):
         with self.lock:
@@ -412,26 +438,39 @@ class Converter:
         j["encoder"] = T("no video encoding", "bez kodowania obrazu") if chk["video_copy"] else encoder_label(enc)
         cmd = self._cmd(full, part, info, chk, enc)
         self.log("conversion:", os.path.basename(full), "→", j["encoder"])
-        dur = info["duration"] or 0
+        meta = {"full": full, "part": part, "out": out, "dur": info["duration"] or 0, "title": j["title"],
+                "started": j["started"], "check": chk, "encoder": j["encoder"]}
+        if self.encodes:
+            os.makedirs(self.encodes, exist_ok=True)
+            p = mp_detached.Detached.start(self.encodes, cmd, meta, "convert")
+        else:
+            p = _Inline(cmd, meta)
+        self._watch(full, j, p)
+
+    def _watch(self, full, j, p):
+        m = p.meta
+        part, out, dur = m["part"], m["out"], m.get("dur") or 0
         with self.lock:
-            self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        p = self.proc
-        for line in p.stdout:
-            k, _, v = line.strip().partition("=")
-            if k == "out_time_us" and v.isdigit() and dur:
+            self.proc = p
+        while p.poll() is None:
+            pr = p.progress()
+            v = pr.get("out_time_us", "")
+            if v.isdigit() and dur:
                 j["pct"] = min(99.9, int(v) / 1e6 / dur * 100)
                 # at the end +faststart rewrites the whole file (index moved to the front): on a USB disk that can take a minute at 99%
                 if j["pct"] >= 99.5:
                     j["finishing"] = True
-            elif k == "progress" and v == "end":
+            if pr.get("progress") == "end":
                 j["finishing"] = True
-            elif k == "speed" and v.endswith("x"):
+            sp = pr.get("speed", "")
+            if sp.endswith("x"):
                 try:
-                    j["speed"] = float(v[:-1])
+                    j["speed"] = float(sp[:-1])
                 except ValueError:
                     pass
-        err = p.stderr.read()
-        p.wait()
+            time.sleep(1)
+        err = "\n".join(p.err_tail(5))
+        p.remove()
         with self.lock:
             self.proc = None
         if j["state"] == "cancelled":
@@ -447,7 +486,52 @@ class Converter:
             raise RuntimeError((err or T(f"ffmpeg exited with code {p.returncode}", f"ffmpeg zakończył się kodem {p.returncode}")).strip())
         os.replace(part, out)
         j.update(state="done", pct=100)
-        self.log("conversion done:", os.path.basename(out), f"{time.time() - j['started']:.0f}s")
+        self.log("conversion done:", os.path.basename(out), f"{time.time() - (j['started'] or time.time()):.0f}s")
+
+
+class _Inline:
+    """A conversion as a plain child process (no place for detached runs): the same face as mp_detached.Detached."""
+
+    def __init__(self, cmd, meta):
+        import tempfile
+        self.meta = meta
+        self._out = tempfile.NamedTemporaryFile(prefix="mp-conv-", suffix=".progress", delete=False)
+        self._err = tempfile.NamedTemporaryFile(prefix="mp-conv-", suffix=".err", delete=False)
+        self.p = subprocess.Popen(cmd, stdout=self._out, stderr=self._err)
+        self.pid = self.p.pid
+
+    def poll(self):
+        return self.p.poll()
+
+    @property
+    def returncode(self):
+        return self.p.returncode
+
+    def terminate(self):
+        self.p.terminate()
+
+    def progress(self):
+        out = {}
+        with open(self._out.name, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 4096))
+            for line in f.read().decode("utf-8", "replace").splitlines():
+                k, _, v = line.strip().partition("=")
+                if k and v:
+                    out[k] = v
+        return out
+
+    def err_tail(self, n=5):
+        with open(self._err.name, encoding="utf-8", errors="replace") as f:
+            return f.read().strip().splitlines()[-n:]
+
+    def remove(self):
+        for f in (self._out, self._err):
+            f.close()
+            try:
+                os.remove(f.name)
+            except OSError:
+                pass
 
 
 # ---- covers (plan-library.md, stage 5): a picture next to the video first, otherwise a frame from ~10% in, cached

@@ -41,6 +41,12 @@
     <string name="lib_plan_empty">Nie ma nic do zrobienia.</string>
     <string name="lib_move">Przenieś</string>
     <string name="lib_modernize">Stare formaty</string>
+    <string name="lib_subs">Napisy</string>
+    <string name="lib_subs_go">Dopasuj</string>
+    <string name="lib_subs_locked">część seedowanego torrenta: tylko sprawdzane</string>
+    <string name="lib_sum_subs_time">Około %1$d min pracy komputera</string>
+    <string name="lib_sum_subs_hint">Komputer wykrywa mowę w każdym filmie i porównuje ją z napisami. Pasujące napisy przesuwa do Twojej wersji (inny początek, inna liczba klatek), tekstowe pliki .sub zamienia na .srt, a niepasujące oznacza. Oryginały odkłada na bok.</string>
+    <string name="lib_task_subs">Dopasowane: %1$d · niepasujące: %2$d</string>
     <string name="lib_shrink">Zmniejsz</string>
     <string name="lib_delete">Usuń</string>
     <string name="lib_delete_selected">Usuń zaznaczone</string>

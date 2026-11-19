@@ -78,7 +78,7 @@ Say '== subtitles, Chromecast, QR: venv' '== napisy, Chromecast, QR: venv'
 $venvPy = Join-Path $Dest 'venv\Scripts\python.exe'
 if (-not (Test-Path $venvPy)) { & $py -m venv (Join-Path $Dest 'venv') }
 if (Test-Path $venvPy) {
-  & $venvPy -m pip install -q --disable-pip-version-check --upgrade subliminal pychromecast qrcode 2>&1 | Out-Host
+  & $venvPy -m pip install -q --disable-pip-version-check --upgrade subliminal pychromecast qrcode numpy webrtcvad-wheels 2>&1 | Out-Host
   if ($LASTEXITCODE -ne 0) { Say "WARNING: some packages didn't install (subtitles or Chromecast may not work)" 'UWAGA: część pakietów się nie zainstalowała (napisy albo Chromecast mogą nie działać)' }
 } else {
   Say 'WARNING: venv failed; the agent works without subtitles and Chromecast from the web page' 'UWAGA: venv się nie udał; agent działa bez napisów i Chromecasta ze strony'
