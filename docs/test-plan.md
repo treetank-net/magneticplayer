@@ -400,6 +400,9 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       what happens, ffmpeg stops, the original stays untouched, no leftovers, the progress notification turns into
       "Cancelled". [x] The item of a cancelled task now reads "skipped" instead of "waiting" for ever (agent 1.15.3,
       the same app; its note "not done: the task was stopped" isn't shown by the app).
+- [ ] The subtitle previews say what their number means ("N videos already have them", "N subtitle files fitted
+      before, left out") instead of "Checked N folders", and "Subtitles" no longer shows the size of the subtitle
+      files. Next app; compiled only.
 - [x] "Subtitles" task on a video without speech (same setup): the card shows "1 error" and "no speech found in the
       sound"; the old app's notification said "Moved 0 items, 1 error" (the next app: only "1 error").
 
@@ -528,3 +531,6 @@ Written down as seen, also when unsure whether it is a problem at all.
 - 2026-11-20, "Free up space" with "Up to 15% free" on a disk that is 39% free: the preview says only "Nothing to
   do." and "Skipped (4)", not that the disk already has more than 15% free. Fixed: a warning says so (agent 1.15.3).
 - 2026-11-20, "Subtitles" preview with the videos right in the library folder (no subfolders): "Checked 0 folders".
+  The number isn't folders at all: for "Subtitles" it counts subtitle files fitted before (left out), for "Get
+  subtitles" the videos that already have them ("Checked 664 folders" on jmpc). Fixed in the next app: "N subtitle
+  files fitted before, left out" / "N videos already have them", and no subtitle-file size in the summary.

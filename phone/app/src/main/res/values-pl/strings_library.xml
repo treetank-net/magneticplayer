@@ -157,6 +157,18 @@
         <item quantity="many">Sprawdzono %1$d folderów</item>
         <item quantity="other">Sprawdzono %1$d folderu</item>
     </plurals>
+    <plurals name="lib_sum_subs_done_before">
+        <item quantity="one">%1$d plik napisów dopasowany wcześniej, pominięty</item>
+        <item quantity="few">%1$d pliki napisów dopasowane wcześniej, pominięte</item>
+        <item quantity="many">%1$d plików napisów dopasowanych wcześniej, pominiętych</item>
+        <item quantity="other">%1$d pliku napisów dopasowanego wcześniej, pominiętego</item>
+    </plurals>
+    <plurals name="lib_sum_subs_have">
+        <item quantity="one">%1$d film już je ma</item>
+        <item quantity="few">%1$d filmy już je mają</item>
+        <item quantity="many">%1$d filmów już je ma</item>
+        <item quantity="other">%1$d filmu już je ma</item>
+    </plurals>
     <plurals name="lib_sum_originals_kept">
         <item quantity="one">Oryginały zostają w koszu przez %1$d dzień: zaoszczędzone miejsce wróci dopiero wtedy (albo po opróżnieniu kosza). Gdy na ich dysku zabraknie miejsca, trafią do kosza na innym dysku.</item>
         <item quantity="few">Oryginały zostają w koszu przez %1$d dni: zaoszczędzone miejsce wróci dopiero wtedy (albo po opróżnieniu kosza). Gdy na ich dysku zabraknie miejsca, trafią do kosza na innym dysku.</item>

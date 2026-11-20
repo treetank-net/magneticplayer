@@ -699,7 +699,7 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
         if (items.isNotEmpty()) Surface(tonalElevation = 3.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val bytes = picked.sumOf { items[it].optLong("size") }
-                Text(if (kind == "subs_get") pluralStringResource(R.plurals.lib_items, picked.size, picked.size)
+                Text(if (kind == "subs_get" || kind == "subs") pluralStringResource(R.plurals.lib_items, picked.size, picked.size)
                     else pluralStringResource(R.plurals.lib_picked, picked.size, picked.size, humanBytes(bytes)),
                     Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Button({
@@ -731,10 +731,17 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
 private fun PlanSummary(r: JSONObject, count: Int) {
     val lines = mutableListOf<String>()
     val kind = r.optString("kind")
-    lines += pluralStringResource(R.plurals.lib_items, count, count) + if (kind == "subs_get") "" else " · " + humanBytes(r.optLong("bytes"))
+    lines += pluralStringResource(R.plurals.lib_items, count, count) + if (kind == "subs_get" || kind == "subs") "" else " · " + humanBytes(r.optLong("bytes"))
     if (r.has("free_before")) lines += stringResource(R.string.lib_sum_free, humanBytes(r.optLong("free_before")),
         humanBytes(r.optLong("free_after")), humanBytes(r.optLong("total")))
-    if (r.has("checked")) r.optInt("checked").let { lines += pluralStringResource(R.plurals.lib_sum_checked, it, it) }
+    // "checked" counts folders only for tidy-up; for the subtitle plans it is what was left out ("Checked 664 folders")
+    if (r.has("checked")) r.optInt("checked").let {
+        when (kind) {
+            "subs" -> if (it > 0) lines += pluralStringResource(R.plurals.lib_sum_subs_done_before, it, it)
+            "subs_get" -> if (it > 0) lines += pluralStringResource(R.plurals.lib_sum_subs_have, it, it)
+            else -> lines += pluralStringResource(R.plurals.lib_sum_checked, it, it)
+        }
+    }
     if (kind == "shrink") {
         lines += stringResource(R.string.lib_sum_shrink, humanBytes(r.optLong("bytes")), humanBytes(r.optLong("est")),
             humanBytes(r.optLong("saved")))
