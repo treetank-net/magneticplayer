@@ -327,7 +327,7 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       the video; the file name stays (was "ANIME").
 
 ## Since v1.261120.1424 (agent 1.15.0 + the next app)
-- [ ] Damaged sound (agent 1.15.0): the background check (15 min after start, then daily) decodes the sound of videos
+- [ ] Damaged sound (agent 1.15.0): the background check (5 min after start, then daily; MP3 and small files first) decodes the sound of videos
       with MP3/MP2/AC3 tracks once, `audio-checks.json`; "Stare formaty" then lists them as "Uszkodzony dźwięk MP3 → AAC,
       obraz bez zmian"; running it copies the picture and re-encodes only those tracks; the film then plays on the phone
       with sound to the end. [x] 2026-11-20, laptop throwaway agent: a synthetic H.264 MKV with damaged MP3 frames found

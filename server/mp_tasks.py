@@ -1684,40 +1684,48 @@ class Tasks:
 
     def _audio_scan(self):
         """Once a day: decode the sound of library videos with AUDIO_SUSPECT tracks not checked yet (a modern picture
-        only: old ones are re-encoded whole and checked then). Waits while somebody watches or a task runs."""
-        time.sleep(float(os.environ.get("MP_AUDIO_SCAN_DELAY", 900)))
+        only: old ones are re-encoded whole and checked then). MP3/MP2 first and small files first (old rips, where the
+        damage was found), big AC3 films last. Waits while somebody watches or a task runs."""
+        time.sleep(float(os.environ.get("MP_AUDIO_SCAN_DELAY", 300)))
         while True:
-            n = 0
+            todo = []
             for r in self.library.roots():
                 if not r["exists"] or set(r["tags"]) & HIDDEN_TAGS:
                     continue
                 for dp, dirs, fs in os.walk(r["path"]):
                     dirs[:] = sorted(d for d in dirs if not d.startswith("."))
-                    for f in sorted(fs):
+                    for f in fs:
                         full = os.path.join(dp, f)
                         if os.path.splitext(f)[1].lower() not in VIDEO_EXT or f.startswith("."):
                             continue
                         try:
-                            if os.stat(full).st_size < MIN_SIZE:
+                            size = os.stat(full).st_size
+                            if size < MIN_SIZE:
                                 continue
                             info = mp_media.probe(full)
                         except Exception:  # noqa: BLE001
                             continue
-                        if is_old(info.get("video") or {}) or \
-                                not any(a.get("codec") in AUDIO_SUSPECT for a in info.get("audio") or []):
+                        codecs = {a.get("codec") for a in info.get("audio") or []}
+                        if is_old(info.get("video") or {}) or not codecs & AUDIO_SUSPECT:
                             continue
-                        for _ in range(720):  # an hour at most, then the next file anyway
-                            with self.lock:
-                                running = any(t["state"] == "running" for t in self.items)
-                            if not running and not self.streaming():
-                                break
-                            time.sleep(5)
-                        try:
-                            before = len(self.achecks)
-                            self.audio_check(full, info)
-                            n += len(self.achecks) > before
-                        except Exception as e:  # noqa: BLE001
-                            self.log("audio check:", f, e)
+                        todo.append((not codecs & {"mp3", "mp2", "mp1"}, size, full, info))
+            n = 0
+            for _, _, full, info in sorted(todo, key=lambda x: x[:2]):
+                st = os.stat(full) if os.path.exists(full) else None
+                c = self.achecks.get(os.path.realpath(full))
+                if st is None or (c and c[0] == st.st_size and c[1] == int(st.st_mtime)):
+                    continue
+                for _ in range(720):  # an hour at most, then the next file anyway
+                    with self.lock:
+                        running = any(t["state"] == "running" for t in self.items)
+                    if not running and not self.streaming():
+                        break
+                    time.sleep(5)
+                try:
+                    self.audio_check(full, info)
+                    n += 1
+                except Exception as e:  # noqa: BLE001
+                    self.log("audio check:", os.path.basename(full), e)
             if n:
                 self.log(f"audio check: {n} files decoded")
             time.sleep(24 * 3600)

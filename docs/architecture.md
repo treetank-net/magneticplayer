@@ -294,7 +294,7 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    unplayable. "Old formats" (`kind: modernize`) finds them in every library folder except backups, whatever the
    folder's profile. Since 1.15 it also lists videos with a modern picture whose sound has damaged frames: MP3/MP2/AC3
    tracks (`AUDIO_SUSPECT`) that ffmpeg and VLC play by skipping frames ("Header missing") but that stop a phone's
-   decoder. Finding them takes a full decode of the track, so a background thread (`_audio_scan`, 15 min after start,
+   decoder. Finding them takes a full decode of the track, so a background thread (`_audio_scan`, 5 min after start, MP3 and small files first,
    then daily, `nice`/`ionice -c3`, waiting while somebody watches or a task runs) decodes each such file once and
    remembers the result in `audio-checks.json` (by path, size and mtime); a preview checks files the scan hasn't reached
    for 90 s at most and says how many it left. Such an item (`audio_fix: true`) copies the picture and re-encodes only
