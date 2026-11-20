@@ -106,13 +106,16 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       opens the same sheet as the phone's player (tracks by language, kind, channels, codec) and the pick there is
       remembered too (the next episode on the phone or the screen starts with it).
       [x] 2026-11-20, jmpc, agent 1.13.3 via the API: a dual-audio MKV (English default, Japanese second) opened with
-      `audio: "|ja"` plays the Japanese track, with `"|en"` the English one. [ ] The Remote's sheet and the phone
-      sending its choice: on the Pixel.
+      `audio: "|ja"` plays the Japanese track, with `"|en"` the English one. [x] 2026-11-20, Pixel, v1.261119.2356: the
+      Remote's "Audio" on jmpc shows both tracks under English / Japanese (title, 5.1 / stereo, codec: both AAC in
+      this file, checked with ffprobe), picking Japanese switches mpv to it. [ ] The phone sending the remembered
+      choice when it opens the next video on the screen.
 
-- [ ] Catalog, Discover: a row "Because you watched <title>" after "Continue watching", from the title watched last
+- [x] Catalog, Discover: a row "Because you watched <title>" after "Continue watching", from the title watched last
       (a film finished too), with titles like it on the disks (the same match as "Similar" on a title's screen) minus
       what was watched; hidden with fewer than 3. (Emulator, v1.261119.2356: hidden, its only watched item is an
-      unrecognised folder; to see on the Pixel.)
+      unrecognised folder.) 2026-11-20, Pixel, v1.261119.2356: the row after a watched series shows three titles
+      with their reasons (shared cast).
 
 ## Magnets
 
