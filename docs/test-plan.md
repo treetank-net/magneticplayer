@@ -360,7 +360,10 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       and downloads it again (copies from before: when the file is newer than the download). Covers the broken copy
       above.
 - [ ] Damaged sound fix on jmpc's real files: 9 MP3 files, 0 errors (2026-11-20, agent 1.15.1, API); the files grew by
-      ~386 MB in total (AAC came out larger than the damaged MP3). [ ] Played on the Pixel with sound.
+      ~386 MB in total (AAC came out larger than the damaged MP3). [x] 2026-11-20, jmpc: all 9 have AAC, the audio
+      decodes with 0 errors, lengths as before. [ ] Played on the Pixel with sound.
+- [ ] Damaged sound re-encoded at 128k stereo / 256k multichannel instead of 192k / 384k (agent 1.15.3): the fixed
+      files no longer grow (the sources are MP3s of ~96-128k).
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same

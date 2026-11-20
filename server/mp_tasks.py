@@ -1651,8 +1651,9 @@ class Tasks:
         for n, a in enumerate(keep):
             how = _audio_codec(a, pr["audio"])
             if a["index"] in broken:
-                # re-encoded (AAC plays everywhere); the gaps of the skipped frames are filled so the sound stays in sync
-                how = ["aac", "-b:a", "384k" if (a.get("channels") or 2) > 2 else "192k"]
+                # re-encoded (AAC plays everywhere); the gaps of the skipped frames are filled so the sound stays in sync.
+                # 128k stereo: the damaged tracks are old MP3s of ~96-128k, and 192k grew the files by ~12 % for nothing
+                how = ["aac", "-b:a", "256k" if (a.get("channels") or 2) > 2 else "128k"]
                 cmd += [f"-filter:a:{n}", "aresample=async=1:first_pts=0"]
             cmd += [f"-c:a:{n}", *how]
         cmd += ["-c:s", "copy", "-max_muxing_queue_size", "4096", "-progress", "pipe:1", "-nostats", "-f", "matroska", out]
