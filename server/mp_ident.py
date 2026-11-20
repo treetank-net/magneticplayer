@@ -78,8 +78,22 @@ def episode_no(rel):
             break
     bare = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", name)  # no [group]/(year) numbers
     bare = _SEASON.sub(" ", bare)
-    m = _EP.search(name) or _LEAD.search(bare.strip()) or _BARE.search(bare)
+    # "Show - 07 - Title", and "[Group].Show.07.Title" (dots for spaces)
+    m = _EP.search(name) or _LEAD.search(bare.strip()) or _BARE.search(bare) or _BARE.search(bare.replace(".", " "))
     return season, int(m.group(1)) if m else None
+
+
+def numbered(files):
+    """Distinct episode numbers of a folder's big videos when they read as a numbered run ("Show - 01", "01.mp4",
+    "[Group] Show - 12 [720p]": anime rarely says SxxEyy); 0 unless there are 3+ and 80% of the videos carry one.
+    Only for folders already taken as a series or a group of series: film collections number their films too."""
+    vids = [(p, s) for p, s in files if os.path.splitext(p)[1].lower() in VIDEO and not is_extra(p)]
+    if len(vids) < 3:
+        return 0
+    top = max(s for _, s in vids)
+    nums = [episode_no(p) for p, s in vids if s >= 0.15 * top]
+    have = {x for x in nums if x[1] is not None}
+    return len(have) if len(have) >= 3 and sum(x[1] is not None for x in nums) >= 0.8 * len(nums) else 0
 
 
 def episodes(files):
@@ -345,6 +359,7 @@ def wd_kids(w):
     return True if w["animated"] and w["family"] else None
 
 
+RANGE1 = re.compile(r"(?<=[\s._])(\d)-(\d{2,3})(?=[\s._\[(]|$)")
 COLLECTION = re.compile(r"^(?P<c>.+?\d)\s+-\s+\d{1,3}\s+-\s+(?P<t>.+)$")
 
 
@@ -352,6 +367,8 @@ def _guessit(name):
     # "<Collection 2> - 19 - <Title> (1995)": numbered films of a collection; guessit takes the collection's name for
     # the title (every film got the collection's name). The film's own part counts when it has a year or the collection
     # ends with a number (a series' "Show - 01 - Pilot" has neither and stays as it was).
+    # "Show.1-25 [1080p]": an episode range guessit reads as part of the title ("Show 1", episode 25) unless padded
+    name = RANGE1.sub(r"0\1-\2", name)
     m = COLLECTION.match(name)
     if m:
         g = _guessit_raw(m.group("t"))

@@ -110,9 +110,8 @@ fun SyntheticCover(title: String, year: Int?, genres: List<String>, modifier: Mo
     if (k != null && bmp == null) LaunchedEffect(k) {
         kept = withContext(Dispatchers.IO) { runCatching { CoverStore.read(ctx, api!!.srv.key, art!!.first, art.second) }.getOrNull() }
         if (Covers.isMissing(k)) return@LaunchedEffect
-        bmp = withContext(Dispatchers.IO) {
-            runCatching { Covers.load(api!!, art!!.first, art.second, if (wide) 720 else 300, wide) }.getOrNull()
-        }
+        // without the server (an offline start) the kept cover stays blurred until the server answers, then the real one
+        bmp = Covers.loadRetrying(api!!, art!!.first, art.second, if (wide) 720 else 300, wide)
     }
     val pic = bmp ?: kept?.first
     val blurred = bmp == null && kept?.third == true

@@ -84,6 +84,12 @@ def is_old(v):
     return c in OLD_VIDEO or (c == "h264" and (v.get("bits", 8) > 8 or "422" in pix or "444" in pix))
 
 
+# audio codecs whose damaged frames turned up in old rips ("Header missing"): ffmpeg and VLC skip such frames, a phone's
+# decoder stops on them and the film goes silent or stalls. Files carrying them are decoded once in the background
+# (audio only, at the lowest priority) and "Update old formats" re-encodes just their sound.
+AUDIO_SUSPECT = {"mp3", "mp2", "mp1", "ac3"}
+AUDIO_FIX = {"copy": True, "audio": "keep"}  # the picture copied, the damaged tracks re-encoded, the rest copied
+AUDIO_CHECK_BUDGET = 90  # seconds a preview spends checking files the background scan hasn't reached yet
 OLD_GROWTH = 1.25  # an old-format file may come out up to this much bigger (it then plays, which is the point)
 MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
@@ -168,6 +174,14 @@ class Tasks:
         self.path, self.cfg, self.save_cfg, self.library = path, cfg, save_cfg, library
         self.encodes = os.path.join(os.path.dirname(path), "encodes")  # detached encodes (mp_detached)
         self.moves_path = os.path.join(os.path.dirname(path), "moves.json")  # journal of moved items (phones re-key)
+        # audio decode checks: real path → [size, mtime, [damaged track indexes]]
+        self.achecks_path = os.path.join(os.path.dirname(path), "audio-checks.json")
+        try:
+            with open(self.achecks_path) as f:
+                self.achecks = json.load(f)
+        except (OSError, ValueError):
+            self.achecks = {}
+        self.alock = threading.Lock()
         self.backend, self.watching, self.renderers, self.log = backend, watching, renderers, log
         self.lock = threading.Lock()
         self.plans = {}  # id → {state, progress, result | error}; in memory, an hour
@@ -200,6 +214,7 @@ class Tasks:
         if any(t["state"] == "queued" for t in self.items):
             self.wake.set()  # an interrupted task goes on right away (its encode may have been running all along)
         threading.Thread(target=self._loop, daemon=True).start()
+        threading.Thread(target=self._audio_scan, daemon=True).start()
 
     # ---- state
 
@@ -1015,6 +1030,7 @@ class Tasks:
                     files += [(r, os.path.join(dp, f)) for f in sorted(fs)
                               if os.path.splitext(f)[1].lower() in VIDEO_EXT and not f.startswith(".")]
             items, skipped = [], []
+            unchecked, deadline = 0, time.time() + AUDIO_CHECK_BUDGET
             for k, (r, full) in enumerate(files):
                 p["progress"] = int(100 * k / max(len(files), 1))
                 relf = os.path.relpath(os.path.realpath(full), os.path.realpath(r["path"]))
@@ -1042,6 +1058,19 @@ class Tasks:
                 v, dur = info.get("video") or {}, info.get("duration") or 0
                 old = is_old(v)
                 if modernize and not old:
+                    if not v or not dur or not any(a.get("codec") in AUDIO_SUSPECT for a in info.get("audio") or []):
+                        continue
+                    bad = self.audio_check(full, info, deadline)
+                    if bad is None:
+                        unchecked += 1
+                    elif bad:
+                        names = sorted({(a.get("codec") or "").upper() for a in info["audio"] if a["index"] in bad})
+                        items.append(dict(item, est=size, codec=v.get("codec"), height=v.get("height"), to_height=0,
+                                          duration=dur, bitrate=int(size * 8 / dur / 1000), audio_fix=True,
+                                          broken=bad, audio_codecs=names))
+                        for e in choices:
+                            est_by[e] += size
+                            work_by[e] = None if work_by[e] is None else work_by[e] + size / (40 << 20)
                     continue
                 if not v or not dur:
                     skipped.append(dict(item, reason=T("no video stream or length", "brak obrazu albo długości")))
@@ -1082,8 +1111,14 @@ class Tasks:
                         work_by[e] = work_by[e] + dur * h * h * 16 / 9 / sp if sp and work_by[e] is not None else None
             saved = sum(i["size"] - i["est"] for i in items)
             hours = sum(i["duration"] for i in items) / 3600
+            warnings = self._codec_warnings()
             if modernize:
                 title = _title("Update old formats", "Unowocześnij stare formaty")
+                if unchecked:
+                    warnings.insert(0, T(f"{unchecked} files haven't been checked for damaged sound yet: the server checks "
+                                         f"them in the background, a later preview will include them",
+                                         f"{unchecked} plików nie sprawdzono jeszcze pod kątem uszkodzonego dźwięku: serwer "
+                                         f"sprawdza je w tle, późniejszy podgląd je uwzględni"))
             else:
                 r = bases[0][0]
                 title = _title(f"Shrink {r['name']}" + (f"/{rel}" if rel else ""), f"Zmniejsz {r['name']}" + (f"/{rel}" if rel else ""))
@@ -1093,7 +1128,7 @@ class Tasks:
                     "encoders": [dict(e, est=est_by[e["id"]], saved=sum(i["size"] for i in items) - est_by[e["id"]],
                                       work_hours=None if work_by[e["id"]] is None else round(work_by[e["id"]] / 3600, 1))
                                  for e in self.encoders()],
-                    "warnings": self._codec_warnings(), "skipped": skipped[:100],
+                    "warnings": warnings, "skipped": skipped[:100], "audio_unchecked": unchecked,
                     "trash_days": self.trash_days()}
         return self._plan("shrink", run)
 
@@ -1411,7 +1446,7 @@ class Tasks:
                                   f"dysk zszedłby poniżej rezerwy {int(RESERVE * 100)}%, a żaden inny dysk biblioteki "
                                   f"nie ma miejsca na oryginał w koszu"))
         info = mp_media.probe(full)
-        pr = PROFILES[i["profile"]]
+        pr = AUDIO_FIX if i.get("audio_fix") else PROFILES[i["profile"]]
         stem, ext = os.path.splitext(full)
         out_final = stem + ".mkv"
         part = os.path.join(os.path.dirname(full), f".{os.path.basename(stem)}.mp-shrink.part.mkv")
@@ -1433,12 +1468,15 @@ class Tasks:
             _rm(part)
             # an audio track copied as is must decode cleanly: damaged MP3 frames in an old AVI ("Header missing")
             # are skipped by ffmpeg but stop a phone's decoder, and the copied track kept the whole film silent there
-            broken = {a["index"] for a in _audio_keep(info, pr["audio"])
-                      if _audio_codec(a, pr["audio"]) == ["copy"] and _audio_damaged(full, a)}
+            if i.get("audio_fix"):  # found by the preview (the file is unchanged since: same size)
+                broken = set(i.get("broken") or [])
+            else:
+                broken = {a["index"] for a in _audio_keep(info, pr["audio"])
+                          if _audio_codec(a, pr["audio"]) == ["copy"] and _audio_damaged(full, a)}
             if broken:
                 self.log(f"shrink: {os.path.basename(full)}: audio track(s) {sorted(broken)} don't decode cleanly, re-encoded")
             cmd = self._shrink_cmd(full, part, info, pr, enc, broken)
-            self.log("shrink:", os.path.basename(full), i["profile"], enc)
+            self.log("shrink:", os.path.basename(full), "sound only" if i.get("audio_fix") else i["profile"], enc)
             os.makedirs(self.encodes, exist_ok=True)
             p = mp_detached.Detached.start(self.encodes, cmd, {"part": part, "full": full, "enc": enc}, "shrink")
             i["job"] = p.id
@@ -1494,7 +1532,8 @@ class Tasks:
         if abs(got - dur) > max(2.0, dur * 0.005) and abs(got - _readable_length(full)) > max(2.0, got * 0.005):
             _rm(part)
             raise TaskError(T("the result has a different length, the original was kept", "wynik ma inną długość, oryginał został"))
-        if new > st.st_size * (OLD_GROWTH if i.get("old_format") else 1 - pr.get("min_saving", MIN_SAVING) / 2):
+        if new > st.st_size * (OLD_GROWTH if i.get("old_format") or i.get("audio_fix")
+                               else 1 - pr.get("min_saving", MIN_SAVING) / 2):
             _rm(part)
             i["state"] = "skipped"
             i["error"] = T("the result wasn't much smaller, the original was kept", "wynik nie był wyraźnie mniejszy, oryginał został")
@@ -1506,6 +1545,10 @@ class Tasks:
             _rm(part)
             self.log(f"shrink: {os.path.basename(full)}: decode check: {(bad or [dec.stderr.strip()[-200:]])[0]}")
             raise TaskError(T("the result doesn't decode cleanly, the original was kept", "wynik nie dekoduje się czysto, oryginał został"))
+        if i.get("audio_fix") and any(_audio_damaged(part, a) for a in ninfo.get("audio") or []):
+            _rm(part)
+            raise TaskError(T("the new sound doesn't decode cleanly either, the original was kept",
+                              "nowy dźwięk też nie dekoduje się czysto, oryginał został"))
         if not pr.get("copy"):
             h = (ninfo.get("video") or {}).get("height") or 0
             self._learn_speed(enc, dur * h * h * 16 / 9, work[0])
@@ -1614,6 +1657,70 @@ class Tasks:
             cmd += [f"-c:a:{n}", *how]
         cmd += ["-c:s", "copy", "-max_muxing_queue_size", "4096", "-progress", "pipe:1", "-nostats", "-f", "matroska", out]
         return _nice(cmd)
+
+    # ---- damaged sound
+
+    def audio_check(self, full, info, deadline=None):
+        """Indexes of `full`'s audio tracks (AUDIO_SUSPECT codecs) that don't decode cleanly, from the cache or a decode
+        now; None when it isn't cached and `deadline` has passed."""
+        st = os.stat(full)
+        key = os.path.realpath(full)
+        with self.alock:
+            c = self.achecks.get(key)
+        if c and c[0] == st.st_size and c[1] == int(st.st_mtime):
+            return c[2]
+        if deadline is not None and time.time() > deadline:
+            return None
+        bad = [a["index"] for a in info.get("audio") or [] if a.get("codec") in AUDIO_SUSPECT and _audio_damaged(full, a)]
+        with self.alock:
+            self.achecks[key] = [st.st_size, int(st.st_mtime), bad]
+            tmp = self.achecks_path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(self.achecks, f, ensure_ascii=False)
+            os.replace(tmp, self.achecks_path)
+        if bad:
+            self.log(f"audio check: {os.path.basename(full)}: track(s) {bad} don't decode cleanly")
+        return bad
+
+    def _audio_scan(self):
+        """Once a day: decode the sound of library videos with AUDIO_SUSPECT tracks not checked yet (a modern picture
+        only: old ones are re-encoded whole and checked then). Waits while somebody watches or a task runs."""
+        time.sleep(float(os.environ.get("MP_AUDIO_SCAN_DELAY", 900)))
+        while True:
+            n = 0
+            for r in self.library.roots():
+                if not r["exists"] or set(r["tags"]) & HIDDEN_TAGS:
+                    continue
+                for dp, dirs, fs in os.walk(r["path"]):
+                    dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+                    for f in sorted(fs):
+                        full = os.path.join(dp, f)
+                        if os.path.splitext(f)[1].lower() not in VIDEO_EXT or f.startswith("."):
+                            continue
+                        try:
+                            if os.stat(full).st_size < MIN_SIZE:
+                                continue
+                            info = mp_media.probe(full)
+                        except Exception:  # noqa: BLE001
+                            continue
+                        if is_old(info.get("video") or {}) or \
+                                not any(a.get("codec") in AUDIO_SUSPECT for a in info.get("audio") or []):
+                            continue
+                        for _ in range(720):  # an hour at most, then the next file anyway
+                            with self.lock:
+                                running = any(t["state"] == "running" for t in self.items)
+                            if not running and not self.streaming():
+                                break
+                            time.sleep(5)
+                        try:
+                            before = len(self.achecks)
+                            self.audio_check(full, info)
+                            n += len(self.achecks) > before
+                        except Exception as e:  # noqa: BLE001
+                            self.log("audio check:", f, e)
+            if n:
+                self.log(f"audio check: {n} files decoded")
+            time.sleep(24 * 3600)
 
     # ---- trash
 

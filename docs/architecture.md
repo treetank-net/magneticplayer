@@ -292,7 +292,14 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    RealVideo, Flash, Theora, Cinepak, Indeo, MPEG-1, since 1.10.1 MPEG-4 Part 2 = XviD/DivX 4+, whose B-frames phones get wrong from AVI, and since 1.11 H.264 with 10 bits or 4:2:2/4:4:4 = anime "Hi10P", which no phone decodes: `mp_tasks.is_old`) are the exception: they are re-encoded even when that saves
    little (the result may be up to 25% bigger), and `tidy` encodes them as `good`, since a copied old picture stays
    unplayable. "Old formats" (`kind: modernize`) finds them in every library folder except backups, whatever the
-   folder's profile. Odd frame sizes are rounded to even ones. The encoder is chosen per task (agent 1.7+): `cpu` = x265 `-preset fast` at `nice 19` and `ionice -c3`,
+   folder's profile. Since 1.15 it also lists videos with a modern picture whose sound has damaged frames: MP3/MP2/AC3
+   tracks (`AUDIO_SUSPECT`) that ffmpeg and VLC play by skipping frames ("Header missing") but that stop a phone's
+   decoder. Finding them takes a full decode of the track, so a background thread (`_audio_scan`, 15 min after start,
+   then daily, `nice`/`ionice -c3`, waiting while somebody watches or a task runs) decodes each such file once and
+   remembers the result in `audio-checks.json` (by path, size and mtime); a preview checks files the scan hasn't reached
+   for 90 s at most and says how many it left. Such an item (`audio_fix: true`) copies the picture and re-encodes only
+   the damaged tracks to AAC (`aresample=async=1` keeps the sync), and the result's sound must decode cleanly. Any
+   shrink also re-encodes a damaged track it would otherwise copy (1.14.5+). Odd frame sizes are rounded to even ones. The encoder is chosen per task (agent 1.7+): `cpu` = x265 `-preset fast` at `nice 19` and `ionice -c3`,
    `gpu` = the card's HEVC encoder (NVENC or VAAPI) found by `mp_media.detect_hevc` with trial encodes: the full
    set of options first (B-frames, AQ, lookahead), then fewer, so an old card (GTX 970: no HEVC B-frames) still works
    and is marked as making larger files. `auto` (the default `shrink_encoder`) takes the card only when it can do

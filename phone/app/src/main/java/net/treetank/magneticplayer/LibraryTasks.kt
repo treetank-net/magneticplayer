@@ -111,6 +111,29 @@ object Covers {
         cache.put(k, bmp)
         return bmp
     }
+
+    private val pings = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Boolean>>()
+
+    /** Whether the server answers a ping; one ping per server every 5 s at most, shared by all covers waiting on it. */
+    private fun reachable(api: Api): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        pings[api.srv.key]?.let { (at, ok) -> if (now - at < 5000) return ok }
+        return api.ping().also { pings[api.srv.key] = now to it }
+    }
+
+    /** [load], tried again while the server can't be reached (an offline start, Wi-Fi back later): once a ping answers,
+     *  the cover comes. Null = the server has no cover for it. Ends when the caller's coroutine is cancelled. */
+    suspend fun loadRetrying(api: Api, root: Int, path: String, px: Int, wide: Boolean = false): Bitmap? {
+        var wait = 5_000L
+        while (true) {
+            val r = withContext(Dispatchers.IO) { runCatching { load(api, root, path, px, wide) } }
+            if (r.isSuccess) return r.getOrNull()
+            do {
+                kotlinx.coroutines.delay(wait)
+                wait = minOf(wait * 2, 60_000L)
+            } while (!withContext(Dispatchers.IO) { reachable(api) })
+        }
+    }
 }
 
 /** A small rounded cover of a folder or a video; [fallback] (the usual icon) while loading and when there is none. */
@@ -120,7 +143,7 @@ fun CoverThumb(api: Api, root: Int, path: String, size: Dp = 52.dp, fallback: @C
     var bmp by remember(k) { mutableStateOf(Covers.cached(k)) }
     val px = with(LocalDensity.current) { size.roundToPx() }
     if (bmp == null && !Covers.isMissing(k)) LaunchedEffect(k) {
-        bmp = withContext(Dispatchers.IO) { runCatching { Covers.load(api, root, path, px) }.getOrNull() }
+        bmp = Covers.loadRetrying(api, root, path, px)
     }
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         val b = bmp
@@ -792,7 +815,12 @@ private fun PlanItem(kind: String, it: JSONObject) {
     val name = it.optString("name").ifEmpty { it.optString("path").substringAfterLast('/') }
     Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
     when (kind) {
-        "shrink" -> {
+        "shrink" -> if (it.optBoolean("audio_fix")) {
+            // damaged sound in a modern picture (agent 1.15.0+): only the sound is re-encoded
+            val codecs = it.optJSONArray("audio_codecs")?.let { a -> List(a.length()) { k -> a.optString(k) } }.orEmpty()
+            Text(stringResource(R.string.lib_item_audio_fix, codecs.joinToString().ifEmpty { "?" }) + " · " +
+                humanBytes(it.optLong("size")), style = small, color = dim)
+        } else {
             val h = it.optInt("height"); val to = it.optInt("to_height")
             val codec = it.optString("codec").uppercase()
             val from = listOfNotNull(codec.ifEmpty { null }, h.takeIf { v -> v > 0 }?.let { v -> "${v}p" }).joinToString(" ")

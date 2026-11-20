@@ -210,7 +210,9 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       the audio track picked last (the folder's choice first), not always the Polish/first one; the variant then plays
       on the Chromecast with that language.
       [x] 2026-11-20, jmpc, agent 1.14.1 via the API: a synthetic MKV (English AC3 440 Hz default, Japanese AC3
-      1760 Hz) converted with `audio: "|ja"` gives a variant with one AAC track tagged jpn at 1760 Hz. [ ] From the app.
+      1760 Hz) converted with `audio: "|ja"` gives a variant with one AAC track tagged jpn at 1760 Hz. [~] From the app
+      (2026-11-20, Pixel, v1.261120.1424): "Przygotuj" on an MPEG-4 film with English and Japanese AAC, the folder's
+      last choice Japanese: the variant came with Japanese ("Dźwięk w niej: japoński"). Not cast to the TV; removed.
 
 ## "All servers" (two or more servers with files)
 
@@ -255,7 +257,7 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [x] Resume starts at the keyframe before the saved position (then seeks are exact again): picture and sound start
       together. Check on an x265 episode resumed mid-way (before: sound ran while the picture stood still). (2026-11-20, Pixel, v1.261120.1000) Recording of a resumed x265 episode: the picture moves from the first frames.
 - [x] Episode list: "Na telefonie" / "Na telefonie do 90%" / "Pobiera się na telefon" under the episode's title, in
-      the accent colour (the grey icon at the end read as "watched"). (2026-11-20, Pixel, v1.261120.1000) "Na telefonie" and "Na telefonie do 90%" seen; "Pobiera się" not exercised.
+      the accent colour (the grey icon at the end read as "watched"). (2026-11-20, Pixel, v1.261120.1000) "Na telefonie" and "Na telefonie do 90%" seen; "Pobiera się" not exercised. (2026-11-20, Pixel, v1.261120.1424) "Pobiera się na telefon" under the six episodes of a season being downloaded (removed afterwards).
 - [x] "Move to…": each target folder shows its disk's free space. "On the phone" header shows the phone's free space. (2026-11-20, Pixel, v1.261120.1000) "wolne 706 GB / 321 GB" per target; "wolne na telefonie 45 GB" in the header.
 - [x] Task card: errors once per reason with a count ("457 × brak miejsca na dysku"), ffmpeg's reason without temp
       paths (agent 1.14.2 `error_groups`; older tasks are grouped too). (2026-11-20, Pixel, v1.261120.1000) "457 × brak miejsca na dysku", "2 × wynik nie dekoduje się czysto…".
@@ -267,6 +269,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Chromecast version and audio (agent 1.14.2): for a file with two or more audio tracks the cast sheet says the
       version's sound ("Dźwięk w niej: angielski") and, when the language picked since differs, offers "Przygotuj
       ponownie: japoński" (removes the old version, prepares one with the new track).
+      [~] (2026-11-20, Pixel, v1.261120.1424) "Dźwięk w niej: japoński" shown. "Przygotuj ponownie" not reached: the
+      other film of that folder (to pick English) didn't play on the phone (see the UX notes).
 - [x] "All servers", cover cards: the card's own line first, the server after it ("Dalej: S1 E3 · jmpc"), so a cut
       line loses the server, not the episode. (2026-11-20, Pixel, v1.261120.1000) "Dalej: S1 E1 · jmpc".
 - [x] Audio sheet (player and Remote): a track's title loses the release's codec/channel claims and a bare language
@@ -322,6 +326,20 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Phone player title: an unrecognised catalog item (no IMDb, e.g. a folder that holds many series) no longer names
       the video; the file name stays (was "ANIME").
 
+## Since v1.261120.1424 (agent 1.15.0 + the next app)
+- [ ] Damaged sound (agent 1.15.0): the background check (15 min after start, then daily) decodes the sound of videos
+      with MP3/MP2/AC3 tracks once, `audio-checks.json`; "Stare formaty" then lists them as "Uszkodzony dźwięk MP3 → AAC,
+      obraz bez zmian"; running it copies the picture and re-encodes only those tracks; the film then plays on the phone
+      with sound to the end. [x] 2026-11-20, laptop throwaway agent: a synthetic H.264 MKV with damaged MP3 frames found
+      by the preview and by the background scan, fixed (AAC, no decoder errors, picture copied, original in the trash),
+      a second preview empty. [ ] On jmpc, the real files. [ ] The item line in the app.
+- [ ] Catalog groups (agent 1.15.0): a top folder holding several series (`ANIME/<series>/…`) gives one title per
+      series, each with `group`; "Show - 01" / "Show.01." numbering counts as episodes in series folders; "Show.1-25"
+      folder names lose the range. [x] 2026-11-20, jmpc via the API: 8 series from the anime folder, 7 recognised;
+      no other folder of the library taken for a group. [ ] In the app (Discover/Browse, player title).
+- [ ] Covers: blurred kept thumbnails (and missing ones) load once the server answers again, without restarting the
+      app (one ping per server every 5 s at most, retries 5 s → 60 s). Compiled only.
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a
@@ -364,9 +382,15 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 Written down as seen, also when unsure whether it is a problem at all.
 
 - 2026-11-20, catalog: a library folder's subfolder that holds many series (e.g. `ANIME/<series>/…`) is one unrecognised
-  item named after that subfolder; the series inside don't get their own titles in Discover/Browse.
+  item named after that subfolder; the series inside don't get their own titles in Discover/Browse. (Addressed by agent
+  1.15.0; how to show the group, a category or a tag, is in the prototype `docs/ux-jobs.html`.)
+- 2026-11-20, catalog: an anime series without a year in its names was matched to a 2022 title of the same name (the
+  original is from the 1990s).
+- 2026-11-20, phone player: an MKV with an MPEG-4 ASP picture and two 5.1 AAC tracks played with a black picture and
+  "Dźwięk: Brak" (no audio track offered), with no audio-error dialog. An old format ("Stare formaty" fixes the
+  picture); why no audio track is offered is not known yet.
 - 2026-11-20, covers in "Miniatury" mode: after a start without the server, the blurred thumbnails stay when the server
-  comes back; sharp covers return only after the app is restarted.
+  comes back; sharp covers return only after the app is restarted. (Addressed in the next app.)
 - 2026-11-20, Discover hero carousel: it can turn to the next slide just as "Odtwórz" is tapped, so another title
   starts than the one looked at (seen offline: tapped on one film, the dialog named another).
 - 2026-11-20, Discover hero: the small pink label over a bright cover is hard to read.

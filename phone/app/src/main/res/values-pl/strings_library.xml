@@ -59,6 +59,7 @@
     <string name="lib_conf_medium">raczej</string>
     <string name="lib_conf_low">niepewne</string>
     <string name="lib_sum_free">Wolne miejsce: %1$s → %2$s (z %3$s)</string>
+    <string name="lib_item_audio_fix">Uszkodzony dźwięk %1$s → AAC, obraz bez zmian</string>
     <string name="lib_sum_shrink">Rozmiar %1$s → ok. %2$s (oszczędność %3$s)</string>
     <string name="lib_sum_hours">%1$s h wideo</string>
     <string name="lib_sum_encoder">Koder: %1$s</string>

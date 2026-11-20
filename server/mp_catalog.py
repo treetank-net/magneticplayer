@@ -34,7 +34,7 @@ WD_TTL = 30 * 86400    # Wikidata details are refreshed after a month
 WD_BATCH = 40
 SPARQL = "https://query.wikidata.org/sparql"
 CAST_MAX = 12
-ITEM_V = 4             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
+ITEM_V = 5             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
 SKIP_TAGS = {"muzyka", "inne"}
 LANG2 = {"pol": "pl", "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es",
          "ita": "it", "rus": "ru", "por": "pt", "dut": "nl", "nld": "nl", "cze": "cs", "ces": "cs", "chi": "zh",
@@ -72,6 +72,33 @@ def _sparql(query, timeout=30):
 def _val(b, k):
     v = (b.get(k) or {}).get("value")
     return v.rsplit("/", 1)[-1] if v and v.startswith("http://www.wikidata.org/entity/") else v
+
+
+# subfolder names of one series split into seasons, parts or extras (not separate titles)
+SEASONISH = re.compile(r"(^\d{1,2}$|\bs\d{1,2}\b|season|sezon|seria|series\s*\d|staffel|saison|temporada|\bpart\b|"
+                       r"extras?\b|specials?\b|bonus|featurettes?|\bova\b|movies?\b)", re.I)
+
+
+def _norm(s):
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+def _group_of(top, fs):
+    """A grouping folder: no episodes directly in it, and at least two subfolders that are series of their own (2+
+    episodes each), none named like a season, a part or extras, nor containing the folder's own name ("Show/Show Next"
+    are parts of one show). {subfolder: [(rel file, size)]} or None."""
+    subs, loose = {}, []
+    for p, s in fs:
+        parts = p.split("/")
+        (loose if len(parts) == 2 else subs.setdefault(parts[1], [])).append((p, s))
+    if len(subs) < 2 or (loose and mp_ident.content(loose).get("episodes", 0) >= 2):
+        return None
+    t = _norm(top)
+    if any(SEASONISH.search(n) or (t and t in _norm(n)) for n in subs):
+        return None
+    series = sum(1 for sfs in subs.values()
+                 if mp_ident.content(sfs).get("episodes", 0) >= 2 or mp_ident.numbered(sfs) >= 3)
+    return subs if series >= 2 else None
 
 
 class Catalog:
@@ -127,7 +154,8 @@ class Catalog:
     # ---- walking the library
 
     def _units(self, r):
-        """Titles under a library folder: [(rel of the title, [(rel file, size)], is_dir)]."""
+        """Titles under a library folder: [(rel of the title, [(rel file, size)], is_dir, group)]; `group` is the name of
+        a grouping folder (_group_of) the title sits in, else None."""
         files = {}
         for p, is_dir, size in self.library._names(r):  # cached walk, shared with the search
             if is_dir or os.path.splitext(p)[1].lower() not in VIDEO_EXT or "sample" in p.lower():
@@ -136,7 +164,14 @@ class Catalog:
         out = []
         for top, fs in files.items():
             if len(fs) == 1 and fs[0][0] == top:
-                out.append((top, fs, False))
+                out.append((top, fs, False, None))
+                continue
+            subs = _group_of(top, fs)
+            if subs is not None:
+                # a grouping folder ("Anime/" with a folder per series): every subfolder and every loose video is a title
+                for name, sfs in subs.items():
+                    out.append((f"{top}/{name}", sfs, True, top))
+                out += [(p, [(p, sz)], False, top) for p, sz in fs if p.count("/") == 1]
                 continue
             c = mp_ident.content(fs)
             biggest = max(s for _, s in fs)
@@ -144,9 +179,9 @@ class Catalog:
             if c.get("videos", 0) >= 3 and c.get("episodes", 0) < 2 and "seriale" not in r["tags"]:
                 # a folder of films (a category or a collection): every big video is a title
                 for p, s in big:
-                    out.append((p, [(p, s)], False))
+                    out.append((p, [(p, s)], False, None))
             else:
-                out.append((top, fs, True))
+                out.append((top, fs, True, None))
         return out
 
     def title_for(self, full):
@@ -178,19 +213,21 @@ class Catalog:
         try:
             todo = []
             for r in roots:
-                for rel, fs, is_dir in self._units(r):
+                for rel, fs, is_dir, group in self._units(r):
                     key = f"{r['id']}/{rel}"
                     seen.add(key)
                     size = sum(s for _, s in fs)
                     old = self.items.get(key)
                     if old and old.get("size") == size and old.get("n") == len(fs) and old.get("v") == ITEM_V:
                         continue
-                    todo.append((r, key, rel, fs, is_dir, size, old))
+                    todo.append((r, key, rel, fs, is_dir, size, old, group))
             self.state["total"] = len(todo)
-            for k, (r, key, rel, fs, is_dir, size, old) in enumerate(todo):
+            for k, (r, key, rel, fs, is_dir, size, old, group) in enumerate(todo):
                 self.state["done"] = k
                 try:
-                    it = self._item(r, rel, fs, is_dir, size, old)
+                    it = self._item(r, rel, fs, is_dir, size, old, group)
+                    if group:
+                        it["group"] = group
                 except Exception as e:  # noqa: BLE001 (one odd file must not stop the walk)
                     self.log(f"catalog: skipped {rel[:80]}: {e!r}")
                     continue
@@ -213,9 +250,11 @@ class Catalog:
             self.version += 1
         self._save()
 
-    def _item(self, r, rel, fs, is_dir, size, old):
+    def _item(self, r, rel, fs, is_dir, size, old, group=None):
         base = r["path"]
         eps = mp_ident.content(fs).get("episodes", 0) if is_dir else 0
+        if is_dir and eps < 2 and (group or "seriale" in r["tags"]):
+            eps = mp_ident.numbered(fs)  # "Show - 01" episodes (anime) in a series folder
         if eps >= 2:  # a series starts at its first episode (not at an extra that sorts first)
             order = mp_ident.episodes(fs)[0]
             main = order[0]["path"] if order else sorted(fs)[0][0]
@@ -232,7 +271,7 @@ class Catalog:
             except OSError:
                 pass
         g = self.ident.guess(name, fs if is_dir else None, nfo)
-        if not g.get("imdb") and "/" in rel:  # a film inside a category folder: its own folder name may say more
+        if not g.get("imdb") and "/" in rel and not is_dir:  # a film inside a category folder: its folder may say more
             g2 = self.ident.guess(rel.rsplit("/", 2)[-2], None)
             if g2.get("imdb"):
                 g = g2
@@ -243,7 +282,7 @@ class Catalog:
               "imdb": g.get("imdb"), "title": g.get("title") or os.path.splitext(name)[0], "year": g.get("year"),
               "genres": g.get("genres") or [], "kids": g.get("tag") == "bajki" or "bajki" in r["tags"],
               "episodes": eps}
-        if "seriale" in r["tags"] and it["episodes"] >= 2:
+        if ("seriale" in r["tags"] or group) and it["episodes"] >= 2:
             it["kind"] = "series"
         # languages: tracks of the main video (ffprobe once per file) + subtitle files next to it
         probe = (old or {}).get("probe")
@@ -410,6 +449,8 @@ class Catalog:
                  "age": d.get("age") if d.get("age") is not None else (0 if it.get("kids") else None),
                  "cast": [c[0] for c in d.get("cast") or []], "roles": [self._role(c[1], lang) for c in d.get("cast") or []],
                  "directors": d.get("dir") or [], "topics": self._topics(d)}
+            if it.get("group"):
+                x["group"] = it["group"]  # the grouping folder it sits in ("Anime"), agent 1.15.0+
             if d.get("pl") and ("pl" in x["audio"] or "pl" in x["subs"]) and d["pl"] != title:
                 x["title_pl"] = d["pl"]
             for q in x["cast"] + x["directors"]:
