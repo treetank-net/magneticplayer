@@ -66,6 +66,7 @@
     <string name="lib_sum_move_hint">Niezaznaczone pozycje zostaną na miejscu.</string>
     <string name="lib_dupes_none">Nie znaleziono duplikatów.</string>
     <string name="lib_dupes_hint">Zaznacz kopie do usunięcia. Z każdej grupy zawsze zostaje co najmniej jeden plik.</string>
+    <string name="lib_dupes_torrent">W kliencie torrentów: usuń go tam</string>
 
     <string name="lib_profile">Profil przechowywania</string>
     <string name="lib_profile_hint">Jak mogą być przechowywane filmy w tym folderze. Nic się nie zmienia, dopóki nie potwierdzisz podglądu; pliki, które się jeszcze seedują, są pomijane.</string>

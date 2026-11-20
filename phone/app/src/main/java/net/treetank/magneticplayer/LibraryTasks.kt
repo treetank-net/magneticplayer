@@ -885,7 +885,8 @@ private fun DupesContent(r: JSONObject, onPlan: (String) -> Unit) {
                     files.forEachIndexed { i, f ->
                         val on = (g to i) in sel
                         val othersOn = files.indices.count { k -> k != i && (g to k) in sel }
-                        val canTick = on || othersOn < files.size - 1
+                        val seeding = f.optBoolean("torrent")  // agent 1.15.3+: the trash plan would skip it anyway
+                        val canTick = !seeding && (on || othersOn < files.size - 1)
                         Row(Modifier.fillMaxWidth().clickable(enabled = canTick) { sel = if (on) sel - (g to i) else sel + (g to i) }
                             .padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(on, { sel = if (it) sel + (g to i) else sel - (g to i) }, enabled = canTick)
@@ -895,6 +896,8 @@ private fun DupesContent(r: JSONObject, onPlan: (String) -> Unit) {
                                 Text(f.optString("root_name") + f.optString("path").substringBeforeLast('/', "").let { p -> if (p.isEmpty()) "" else " / $p" },
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2, overflow = TextOverflow.StartEllipsis)
+                                if (seeding) Text(stringResource(R.string.lib_dupes_torrent), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary)
                             }
                         }
                     }

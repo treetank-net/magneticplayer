@@ -374,7 +374,13 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       ("01. Film (2001)", "02. Film 2 (2002)") isn't a series either, "2004 - Title" names keep the title and the
       year, a title that is just a number is a film (guessit read it as season 3, episode 0), and a title match with
       the right year wins over a closer-sounding one. Checked against the whole jmpc
-      library offline (316 items, only the intended ones changed); to see in the app's Tidy up preview.
+      library offline (316 items, only the intended ones changed). [x] The app's Tidy up preview (2026-11-20, emulator,
+      v1.261120.1625, agent 1.15.3): no film goes to the series folder any more, nothing is ticked beforehand.
+- [ ] Duplicates: a copy that is still in the torrent client has no checkbox and says "In the torrent client: remove it
+      there" (agent 1.15.3 + the next app; before, it could be ticked and was only skipped in the delete preview).
+      API checked on jmpc (32 groups, none in the client right now); to see in the app with a seeding copy.
+- [ ] "Get subtitles" leaves out samples, trailers and extras folders (agent 1.15.3): API on jmpc 1252 → 1115 items,
+      no sample/trailer left; to see in the app.
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
@@ -488,3 +494,13 @@ Written down as seen, also when unsure whether it is a problem at all.
   apart from the buffer bar; tapping one that isn't should say "not on the phone, server unreachable" instead.
 - 2026-11-20, offline: the hero offers "Odtwórz" for a film that is only on the server.
 - 2026-11-20, offline: covers are blank on a cold start (not kept on disk).
+- 2026-11-20, "Tidy up" (emulator, jmpc): 31 of 33 items are "unsure" moves between the films and cartoons folders
+  (Filmy ↔ Bajki, Anime → Bajki), shown unticked because the folder the user chose wins. They fill the list and hide
+  the few real suggestions; maybe a collapsed "Unsure" section, or leave Filmy ↔ Bajki out entirely.
+- 2026-11-20, "Tidy up" and "Duplicates" previews take ~50 s to 2 min with no hint of what is being checked.
+- 2026-11-20, "Subtitles" (fit) preview: all 578 items ticked, "about 289 min of work", and "38 MB" (the size of the
+  subtitle files, which says nothing here). Fitting keeps the originals, so less risky than "Old formats", but one
+  tap still queues hours of work.
+- 2026-11-20, "Get subtitles": the language dialog's button says "Download" although it only opens a preview (the
+  preview's button says "Download" too); 1115 items "about 1115 min", which OpenSubtitles' daily limit spreads over
+  days. Maybe start with films that have none at all, or let the user pick a folder first.

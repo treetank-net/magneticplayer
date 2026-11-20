@@ -66,6 +66,7 @@
     <string name="lib_sum_move_hint">Unchecked items stay where they are.</string>
     <string name="lib_dupes_none">No duplicates found.</string>
     <string name="lib_dupes_hint">Tick the copies to delete. At least one file of each group always stays.</string>
+    <string name="lib_dupes_torrent">In the torrent client: remove it there</string>
 
     <string name="lib_profile">Storage profile</string>
     <string name="lib_profile_hint">How videos in this folder may be stored. Nothing changes until you confirm a preview; files still seeding are skipped.</string>

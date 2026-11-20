@@ -50,6 +50,7 @@ import time
 import mp_detached
 import mp_media
 import mp_i18n
+import mp_ident
 from mp_i18n import T
 import mp_library
 from mp_library import HIDDEN_TAGS, SUB_EXT, VIDEO_EXT
@@ -783,8 +784,10 @@ class Tasks:
                     continue
                 for dp, dirs, fs in os.walk(base):
                     dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d.lower() not in ("subs", "sub", "subtitles"))
+                    # samples, trailers, featurettes: nobody watches them with subtitles (each download counts)
                     files += [(r, os.path.join(dp, f)) for f in sorted(fs)
-                              if os.path.splitext(f)[1].lower() in VIDEO_EXT and not f.startswith(".")]
+                              if os.path.splitext(f)[1].lower() in VIDEO_EXT and not f.startswith(".")
+                              and not mp_ident.is_extra(os.path.relpath(os.path.join(dp, f), base))]
             items, have = [], 0
             for k, (r, full) in enumerate(files):
                 p["progress"] = int(100 * k / max(len(files), 1))
@@ -928,6 +931,10 @@ class Tasks:
                         f.seek(int(sz * frac))
                         h.update(f.read(4 << 20))
                 return h.hexdigest()
+            try:  # files of torrents still in the client can't be deleted here (the trash plan skips them): say so now
+                torrents = self._torrents()
+            except TaskError:
+                torrents = {}
             out = []
             for k, g in enumerate(groups):
                 p["progress"] = 30 + int(70 * k / max(len(groups), 1))
@@ -944,7 +951,8 @@ class Tasks:
                         break
                 if len(g) >= 2:
                     out.append({"size": sz, "files": [{"root": r["index"], "root_id": r["id"], "root_name": r["name"],
-                                                       "path": os.path.relpath(fp, os.path.realpath(r["path"]))}
+                                                       "path": os.path.relpath(fp, os.path.realpath(r["path"])),
+                                                       "torrent": bool(self._inside(fp, torrents))}
                                                       for r, fp in g]})
             out.sort(key=lambda g: -g["size"] * (len(g["files"]) - 1))
             return {"kind": "dupes", **_title("Duplicates", "Duplikaty"), "groups": out, "items": [],
