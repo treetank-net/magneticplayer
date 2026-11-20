@@ -25,7 +25,7 @@ Answer the user in Polish.
 | agent on the PC | `~/.local/share/magneticplayer/` (`*.py`, `web/`, `apk/`, `venv/`), service `systemctl --user … magneticplayer`, port 8765 |
 | source copy on the PC | `~/.local/src/MagneticPlayer/server` (`install.sh` runs from it) |
 | config and token | `jmpc:~/.config/magneticplayer/config.json`; token for terminal tests: `cli-token` next to it (device "Testy z terminala (jmpc)"; the old shared token from `config.json` is disabled). **Never print or paste tokens anywhere** |
-| repo | **public** (MIT): `origin` = gitlab.com/treetank/magneticplayer, CI mirrors to github.com/treetank-net/magneticplayer; `ovh` = `ovh-vps:git/MagneticPlayer.git` (private copy). Private notes in `CLAUDE.local.md` (not in git) |
+| repo | **public** (MIT): `origin` = gitlab.com/treetank/magneticplayer, CI mirrors to github.com/treetank-net/magneticplayer. Private notes in `CLAUDE.local.md` (not in git) |
 | signing key backup | `ovh-vps:~/backup/MagneticPlayer/` (+ `README.txt`) |
 | phones | the user's Pixel 8a (adb over Wi-Fi, the port changes every debugging session) and the user's wife's phone (updates only through the agent) |
 
@@ -54,7 +54,7 @@ ssh jmpc 'T=$(cat .config/magneticplayer/cli-token); curl -s -H "Authorization: 
 
 Commands in the graphical session over ssh need `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0`.
 
-The user asks for commit and push after a finished change (`git push origin main && git push ovh main`). The repo is
+The user asks for commit and push after a finished change (`git push origin main`). The repo is
 public: titles of films from the user's disk, tokens and other private details never go into commits (use
 public-domain films as examples). Code and documentation change together.
 

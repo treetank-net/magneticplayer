@@ -233,7 +233,7 @@ scp 'ovh-vps:backup/MagneticPlayer/{magneticplayer.keystore,keystore.properties}
 ```
 
 The code is public (MIT): `origin` = gitlab.com/treetank/magneticplayer, mirror github.com/treetank-net/magneticplayer
-(the `mirror-github` job), a private copy on `ovh-vps` in `~/git/MagneticPlayer.git` (remote `ovh`).
+(the `mirror-github` job).
 
 ### Releases (GitHub)
 
