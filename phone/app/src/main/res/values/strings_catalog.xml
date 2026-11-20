@@ -22,6 +22,7 @@
     </plurals>
     <string name="cat_play">Play</string>
     <string name="cat_play_ep">Play %1$s</string>
+    <string name="cat_resume_from">Resume from %1$s</string>
     <string name="cat_play_resume_ep">Resume %1$s</string>
     <string name="cat_episodes_title">Episodes</string>
     <string name="cat_season_n">Season %1$d</string>

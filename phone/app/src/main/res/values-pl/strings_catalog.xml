@@ -28,6 +28,7 @@
     </plurals>
     <string name="cat_play">Odtwórz</string>
     <string name="cat_play_ep">Odtwórz %1$s</string>
+    <string name="cat_resume_from">Wznów od %1$s</string>
     <string name="cat_play_resume_ep">Wznów %1$s</string>
     <string name="cat_episodes_title">Odcinki</string>
     <string name="cat_season_n">Sezon %1$d</string>

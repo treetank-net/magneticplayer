@@ -679,8 +679,10 @@ on real data, previews only, nothing started or confirmed:
 - found and fixed in the agent: for some anime Wikidata lists the seasons as the "episodes" (4 instead of 89), and
   their titles were laid over IMDb's episodes 1–4: a Wikidata list shorter than the episode files on disk now counts
   as incomplete (IMDb is used) and is matched only by IMDb id.
-- [ ] A2 question for the owner: the board's tree is "Films/, Series/, Kids/, Anime/" at the top; with several library
-  folders per disk the agent lays out inside each library folder ("Kids (disk)/Teens/"). Is that the wanted result?
+- [x] A2 question for the owner, answered 2026-11-20: the current folders are a mess, any consistent layout is fine;
+  the one exception is the Polish cartoons folder, an exclusive category (cartoons in Polish) that must stay as it is.
+- [ ] "Continue watching": a film's tile played at once instead of opening its page (the 2026-11-19 wish covered only
+  series). Now every tile opens the title page; a film watched part-way shows "▶ Resume from 1:02:10" there.
 - [ ] not seen yet: scope entry points (stage 3), pause/resume/reorder of a running task, D2 search buttons with
   engines set, PL wording of the new screens.
 

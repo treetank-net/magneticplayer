@@ -423,8 +423,7 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
                 CoverCard(r.item, if (total > 0 && !r.item.series) stringResource(R.string.cat_left_min, ((total - r.posMs) / 60_000).coerceAtLeast(1))
                     else nextEp[r.item.id]?.label?.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.cat_next_ep, it) }
                     ?: cardMeta(r.item), progress = if (total > 0 && !r.item.series) r.posMs.toFloat() / total else null) {
-                    if (r.item.series) c.open(r.item)  // the series' screen: "Resume S1 E3" on top, any other episode below
-                    else playOnPhone(ctx, MediaRef.InLibrary(r.item.root, r.path, c.srvOf(r.item)), r.item.imdb, r.item.kind)
+                    c.open(r.item)  // the title's page: "Resume … from 1:02:10" on top, every other action below (owner's wish)
                 }
             }
         }
@@ -877,8 +876,13 @@ private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPh
                             onPlay = { playEpisode(ctx, xs, px.root, list, cont) },
                             playLabel = if (pos > 0) stringResource(R.string.st4_play_ep_from, label, clock(pos / 1000.0))
                                 else stringResource(R.string.cat_play_ep, label), oneChooser = fromPhone)
-                    } else MediaActions(xa, px.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true,
-                        oneChooser = fromPhone)
+                    } else {
+                        // a film watched part-way: "▶ Resume from 1:02:10" (the player starts there anyway)
+                        val pos = remember(px, back) { if (x.series) 0L else settings.position(px.ref(xs).key()) }
+                        MediaActions(xa, px.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true,
+                            playLabel = if (pos > 0) stringResource(R.string.cat_resume_from, clock(pos / 1000.0)) else null,
+                            oneChooser = fromPhone)
+                    }
                 }
                 // D6 "On this phone": shown whenever the phone holds copies of this title
                 OnThisPhoneCard(xs, px, list, cont, phoneTick + back) { phoneTick++ }
