@@ -191,6 +191,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       [ ] Check: with the app in the background only the service's minute reads reach the server.
 - [ ] Library offline, continued: a series' episode list opened once online opens offline too (kept per server);
       covers of titles with a complete copy on the phone get a "downloaded" mark (a series: any episode).
+      [x] 2026-11-20, Pixel, v1.261120.0826: Loki opened once online, then Wi-Fi off ("Działa 0 z 2 serwerów"): the
+      title screen and its episode list (Season 1/2, E1–E5…) open from the phone.
+      Found: no mark on Loki / Breaking Bad although whole episodes are on the phone: they are watching buffers, and
+      the mark only counted finished downloads. Fixed after it (a buffer holding the whole video counts, as in the
+      episode list). [ ] Check the marks again.
 - [~] Folders: a folder's ⋮ menu has "Move to another library folder…" (the other library folders, the same tag
       first; it shows the move preview and starts a task) and "Delete to the trash…" (the trash preview).
       [x] 2026-11-20, Pixel, v1.261120.0804: the menu on a film folder, the dialog lists the other folders with tags,
@@ -294,3 +299,7 @@ Written down as seen, also when unsure whether it is a problem at all.
   it is on (the path shows "/").
 - 2026-11-20, task card: "Monitor" sits right next to "Cancel" on a running task; a slip cancels a five-hour move
   (cancel has no confirmation).
+- 2026-11-20, a title's screen: "Na serwerach" (on servers) with one row also shows when the title is on one
+  server only; it says nothing new there.
+- 2026-11-20, "All servers" with every server away: the header button says "Obudź" (wake) and wakes only the active
+  server; "Wake all" lives in the switcher sheet.

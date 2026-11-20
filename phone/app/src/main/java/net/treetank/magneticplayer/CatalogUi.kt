@@ -153,7 +153,12 @@ object OnPhoneMarks {
     fun keys(ctx: android.content.Context): Set<String> {
         val now = System.currentTimeMillis()
         if (now - at > 5000) {
-            keys = runCatching { OfflineStore.all(ctx).filter { it.complete }.map { it.key }.toSet() }.getOrDefault(emptySet())
+            // downloaded, or a watching buffer that holds the whole video (as in the episode list's marks)
+            keys = runCatching {
+                val cache = MediaCache.get(ctx)
+                OfflineStore.all(ctx).filter { it.complete || (it.size > 0 && cache.getCachedBytes(it.key, 0, it.size) >= it.size) }
+                    .map { it.key }.toSet()
+            }.getOrDefault(emptySet())
             at = now
         }
         return keys
