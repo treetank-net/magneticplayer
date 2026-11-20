@@ -74,7 +74,7 @@ private fun JSONObject.strings2(k: String): List<String> =
 
 /** Levels in the order the board shows them; the order of taps is the order of the folders. */
 private val LAYOUT_LEVELS = listOf("kind", "age", "category", "genre", "collection", "decade")
-private val AGE_GROUPS = listOf("0", "7", "12", "16", "18")
+private val LAYOUT_AGE_KEYS = listOf("0", "7", "12", "16", "18")
 private val BUCKETS = listOf("kids", "teens", "films")
 
 @Composable
@@ -127,7 +127,7 @@ internal fun LayoutJob(c: JobCtx) {
     val j = load.info?.jobs?.get("layout")
     val o = j?.options ?: JSONObject()
     val chosen = if (levels.isEmpty()) o.strings2("levels") else levels.split(',').filter { it in LAYOUT_LEVELS }
-    val ages = o.optJSONObject("ages")?.let { a -> AGE_GROUPS.associateWith { g -> a.optString(g, "films") } } ?: emptyMap()
+    val ages = o.optJSONObject("ages")?.let { a -> LAYOUT_AGE_KEYS.associateWith { g -> a.optString(g, "films") } } ?: emptyMap()
     val hand = o.objs2("hand_folders")
     val confirmed = o.optBoolean("confirmed", true)
     var agesOpen by remember { mutableStateOf(false) }
@@ -183,7 +183,7 @@ internal fun LayoutJob(c: JobCtx) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val and = stringResource(R.string.j2_and)
                 BUCKETS.forEach { b ->
-                    val gs = AGE_GROUPS.filter { ages[it] == b }
+                    val gs = LAYOUT_AGE_KEYS.filter { ages[it] == b }
                     if (gs.isNotEmpty()) FilterChip(false, { agesOpen = true }, label = {
                         Text(stringResource(R.string.j2_age_chip, gs.joinToString(" $and ") { "$it+" }, bucketName(b)))
                     })
@@ -238,7 +238,7 @@ private fun AgesDialog(ages: Map<String, String>, onDismiss: () -> Unit, onSave:
         title = { Text(stringResource(R.string.j2_layout_ages)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                AGE_GROUPS.forEach { g ->
+                LAYOUT_AGE_KEYS.forEach { g ->
                     Text("$g+", style = MaterialTheme.typography.titleSmall)
                     Chips(BUCKETS.map { it to bucketName(it) }, m[g] ?: "films") { b -> m = m + (g to b) }
                 }
