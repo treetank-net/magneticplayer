@@ -226,16 +226,16 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
         }
     }
     var tagFilter by rememberSaveable { mutableStateOf<String?>(null) }
-    var query by rememberSaveable { mutableStateOf("") }
+    // D1: inside the catalog's Library the query is shared with Discover and Browse, and "don't have" joins the results
+    val catSearch = LocalCatSearch.current
+    var ownQuery by rememberSaveable { mutableStateOf("") }
+    val query = catSearch?.query?.value ?: ownQuery
+    val setQuery: (String) -> Unit = { q -> if (catSearch != null) catSearch.query.value = q else ownQuery = q }
     val tasks = srv.libraryTasks && !srv.isGuest
     Column(Modifier.fillMaxSize()) {
-    if (srv.librarySearch) Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(query, { query = it }, Modifier.weight(1f),
-            placeholder = { Text(stringResource(R.string.media_lib_search)) }, singleLine = true,
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
-            trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.media_cancel)) } })
-    }
+    if (srv.librarySearch) LibrarySearchField(query, setQuery,
+        placeholder = stringResource(if (catSearch != null) R.string.srch_field else R.string.media_lib_search), hint = catSearch != null,
+        modifier = Modifier.padding(top = 8.dp))
     // the fullest disk, for the "Disks and tidying up" card (the walk over the library can take a few seconds)
     var fullest by remember { mutableStateOf<Disk?>(null) }
     LaunchedEffect(tasks, reload) {
@@ -243,7 +243,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
             ?.disks?.filter { it.total > 0 }?.maxByOrNull { 1.0 - it.free.toDouble() / it.total }
     }
     if (query.trim().length >= 2) {
-        SearchResults(api, others.map { it.first }, query.trim(), snack, onPlayingOnPc, onOpen, onSwitchServer)
+        SearchResults(api, others.map { it.first }, query.trim(), snack, onPlayingOnPc, onOpen, onSwitchServer, catSearch?.c)
         return@Column
     }
     val allTags = ((roots ?: emptyList()) + others.flatMap { it.second }).flatMap { it.tags }.distinct()
@@ -356,7 +356,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
  *  on that server (it becomes the active one). */
 @Composable
 private fun SearchResults(api: Api, others: List<Server>, query: String, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
-                          onOpen: (Int, String) -> Unit, onSwitchServer: (String, Int, String) -> Unit) {
+                          onOpen: (Int, String) -> Unit, onSwitchServer: (String, Int, String) -> Unit, cat: CatCtx? = null) {
     val ctx = LocalContext.current
     var hits by remember { mutableStateOf<List<Pair<Api, LibHit>>?>(null) }
     LaunchedEffect(query, others) {
@@ -374,9 +374,15 @@ private fun SearchResults(api: Api, others: List<Server>, query: String, snack: 
         }
     }
     val list = hits ?: return Hint(stringResource(R.string.media_loading))
-    if (list.isEmpty()) return Hint(stringResource(R.string.media_lib_search_none))
+    if (list.isEmpty() && cat == null) return Hint(stringResource(R.string.media_lib_search_none))
     val several = list.map { it.first.srv.key }.distinct().size > 1
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        // D1: "ON YOUR DISKS · N" (files and folders, as before), "YOU DON'T HAVE IT" from the film database at the end
+        if (cat != null) item(key = "d1/have") { SearchGroupLabel(stringResource(R.string.srch_have, list.size)) }
+        if (cat != null && list.isEmpty()) item(key = "d1/have-none") {
+            Text(stringResource(R.string.srch_have_none), Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         list.groupBy { it.first.srv.key }.forEach { (key, group) ->
         val ha = group.first().first
         val here = key == api.srv.key
@@ -431,6 +437,7 @@ private fun SearchResults(api: Api, others: List<Server>, query: String, snack: 
             HorizontalDivider()
         }
         }
+        if (cat != null) item(key = "d1/missing") { MissingTitles(cat, query) }
     }
 }
 

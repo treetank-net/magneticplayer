@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stage 4: library search with "have" and "don't have" (D1), a title you don't have (D2). English. -->
+<resources>
+    <!-- D1: search -->
+    <string name="srch_field">Search a title, actor, director</string>
+    <string name="srch_hint">Searches your disks and the film database (Wikidata/IMDb).</string>
+    <string name="srch_have">ON YOUR DISKS · %1$d</string>
+    <string name="srch_missing">YOU DON\'T HAVE IT · FROM THE FILM DATABASE</string>
+    <string name="srch_people">PEOPLE</string>
+    <string name="srch_play">Play</string>
+    <string name="srch_want_tag">want</string>
+    <string name="srch_series">series</string>
+    <string name="srch_missing_loading">Searching the film database…</string>
+    <string name="srch_missing_none">Nothing else in the film database.</string>
+    <string name="srch_no_index">The server doesn\'t have the film database yet (it downloads in the background).</string>
+    <string name="srch_have_none">Nothing on your disks.</string>
+    <plurals name="srch_person_films">
+        <item quantity="one">%1$d film on your disks</item>
+        <item quantity="other">%1$d films on your disks</item>
+    </plurals>
+
+    <!-- D2: a title you don't have -->
+    <string name="d2_header_missing">You don\'t have it on your disks</string>
+    <string name="d2_dir">dir. %1$s</string>
+    <string name="d2_phrase">Phrase: “%1$s”. Pick a result in the browser and the magnet comes back to the app and lands in this title (the right folder from the tags).</string>
+    <string name="d2_similar">SIMILAR · YOU HAVE %1$d</string>
+    <string name="d2_on_disk">on disk</string>
+    <string name="d2_not_have">you don\'t have</string>
+    <string name="d2_source">Source: %1$s</string>
+</resources>

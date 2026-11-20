@@ -57,7 +57,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.16.0"
+VERSION = "1.16.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -1228,6 +1228,8 @@ class App:
                 # task scopes, GET /api/library/jobs, one plan kind per task, /api/config/jobs (agent 1.16+)
                 "jobs_v2": True,
                 "episode_lists": True,  # GET /api/catalog/episodes (agent 1.16+)
+                # GET /api/catalog/search (titles you don't have) and "about" in /api/catalog/title (agent 1.16.1+)
+                "catalog_search": True,
                 "jobs": ["free", "dupes", "audio_fix", "modernize", "downscale", "compress", "subs_get", "subs", "tags", "trash"],
                 "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
@@ -2148,6 +2150,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(a.catalog.title(qd.get("imdb", ""), mp_i18n.lang()))
                 except ValueError:
                     raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
+            if p == "/api/catalog/search" and method == "GET":  # the local IMDb index by title (agent 1.16.1+)
+                return self.send_json(a.catalog.search(qd.get("q", ""), qd.get("limit") or 20))
             if p == "/api/catalog/episodes" and method == "GET":
                 return self.send_json(a.series_episodes(qd.get("imdb", "")))
             if p == "/api/catalog/person" and method == "GET":

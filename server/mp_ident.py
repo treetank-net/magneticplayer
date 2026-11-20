@@ -252,6 +252,38 @@ class Index:
         ex = set(exclude)
         return [x for x in (_row(r) for r in self.db.execute(q, args)) if x["imdb"] not in ex][:limit]
 
+    def search(self, query, limit=20):
+        """Titles whose (original or primary) title starts with `query`, for the library search's "you don't have it"
+        group: an exact title first, then the most voted. A trailing year ("Metropolis 1927") is a preference, not a
+        filter. Indexed range lookup on the title keys; keys shorter than 3 characters match whole titles only."""
+        if not self.db or not query:
+            return []
+        q, year = query.strip(), None
+        m = re.search(r"(?:^|\s)((?:18|19|20)\d\d)$", q)
+        if m and m.start(1) > 0:
+            year, q = int(m.group(1)), q[:m.start(1)]
+        key = norm(q)
+        if not key:
+            return []
+        if len(key) < 3:
+            rows = self.db.execute("SELECT k.key, t.* FROM k JOIN t USING(id) WHERE k.key=? ORDER BY t.votes DESC LIMIT 200",
+                                   (key,)).fetchall()
+        else:
+            # keys are [a-z0-9] only, so "{" sorts after every key with this prefix
+            rows = self.db.execute("SELECT k.key, t.* FROM k JOIN t USING(id) WHERE k.key>=? AND k.key<? "
+                                   "ORDER BY (k.key=?) DESC, t.votes DESC LIMIT 200", (key, key + "{", key)).fetchall()
+        best = {}
+        for r in rows:
+            exact = r[0] == key
+            if r[1] not in best or (exact and not best[r[1]][0]):
+                best[r[1]] = (exact, r[1:])
+
+        def rank(v):
+            exact, r = v
+            off = abs(r[3] - year) if year and r[3] else 0
+            return (not exact, min(off, 3) if year else 0, -(r[6] or 0))
+        return [_row(r) for _, r in sorted(best.values(), key=rank)[:max(1, min(int(limit), 50))]]
+
     def find(self, title, year=None, kind=None, only=False):
         """Best title: exact key first, then year (closer is better) and kind, finally popularity. `only`: titles of
         that kind only (a single video file is never a whole series)."""
