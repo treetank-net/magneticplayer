@@ -162,4 +162,5 @@
     <string name="main_confirm_foreign_stop">Pytaj przed zamknięciem innych aplikacji na Chromecaście</string>
     <string name="main_confirm_foreign_stop_desc">Spotify, YouTube i inne: „Zakończ” zamyka aplikację na telewizorze</string>
     <string name="main_notif_confirm_stop">Dotknij ■ jeszcze raz, żeby zamknąć %1$s</string>
+    <string name="main_all_status">Działa %1$d z %2$d serwerów</string>
 </resources>

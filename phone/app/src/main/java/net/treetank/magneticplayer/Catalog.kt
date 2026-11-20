@@ -18,6 +18,9 @@ data class CatItem(
     val audio: List<String>, val subs: List<String>, val size: Long, val added: Double, val kids: Boolean,
     val episodes: Int, val age: Int?, val cast: List<String>, val roles: List<String?>, val directors: List<String>,
     val topics: List<String>,
+    /** "All" in the switcher: the server this copy is on ("" = the one the catalog came from) and the same title's
+     * copies on the other servers (mergeCatalogs). */
+    val srv: String = "", val alsoOn: List<CatItem> = emptyList(),
 ) {
     val series get() = kind == "series"
     fun ref(srv: String) = MediaRef.InLibrary(root, path, srv)
@@ -32,7 +35,9 @@ data class CatalogData(
     val version: String, val scanning: Boolean, val done: Int, val total: Int, val items: List<CatItem>,
     val people: Map<String, String>, val topics: Map<String, String>,
 ) {
-    fun byId(id: String) = items.firstOrNull { it.id == id }
+    fun byId(id: String) = items.firstOrNull { it.id == id } ?: items.firstNotNullOfOrNull { p -> p.alsoOn.firstOrNull { it.id == id } }
+        // a merged catalog ("All") prefixes ids with the server: an id from a server's answer (wishlist, "what next")
+        ?: items.firstOrNull { it.srv.isNotEmpty() && it.id == "${it.srv}/$id" }
     fun byImdb(imdb: String) = items.firstOrNull { it.imdb == imdb }
     fun person(q: String) = people[q] ?: q
 }
@@ -225,6 +230,13 @@ object CatalogCache {
     /** Fetches what changed (blocking, call off the main thread). */
     fun refresh(ctx: Context, api: Api): CatalogData {
         val key = api.srv.key
+        // the server moved files between disks: re-key positions and "watched" before the catalog shows them
+        if (api.srv.hasMoves) runCatching {
+            val s = Settings(ctx)
+            val (moves, now) = api.libraryMoves(s.movesSeen(key))
+            moves.forEach { (fr, f, tr, t) -> s.applyMove(key, fr as Int, f as String, tr as Int, t as String) }
+            s.setMovesSeen(key, now)
+        }
         val old = cached(ctx, key)
         val got = api.catalog(old?.version)
         val f = file(ctx, key)
@@ -259,10 +271,30 @@ object CatalogCache {
  */
 data class Resume(val item: CatItem, val path: String, val posMs: Long, val at: Long)
 
+/**
+ * The catalogs of several servers as one ("All" in the switcher). Ids get the server's key; a title on several servers
+ * (the same IMDb id) is one item, the best copy (higher resolution, then Polish audio or subtitles), with the other
+ * copies in `alsoOn`. The order of the first catalog's items is kept, the others' follow.
+ */
+fun mergeCatalogs(parts: List<Pair<String, CatalogData>>): CatalogData {
+    val all = parts.flatMap { (k, c) -> c.items.map { it.copy(srv = k, id = "$k/${it.id}") } }
+    val groups = all.filter { it.imdb != null }.groupBy { it.imdb }
+    val best = groups.mapValues { (_, g) ->
+        val b = g.maxWith(compareBy<CatItem>({ it.height ?: 0 }, { if (it.plAudio || it.plSubs) 1 else 0 }))
+        b.copy(alsoOn = g.filter { it !== b })
+    }
+    val seen = mutableSetOf<String>()
+    val items = all.mapNotNull { x -> if (x.imdb == null) x else if (seen.add(x.imdb)) best[x.imdb] else null }
+    return CatalogData(parts.joinToString(",") { (k, c) -> "$k:${c.version}" }, parts.any { it.second.scanning },
+        parts.sumOf { it.second.done }, parts.sumOf { it.second.total }, items,
+        parts.fold(emptyMap()) { m, p -> m + p.second.people }, parts.fold(emptyMap()) { m, p -> m + p.second.topics })
+}
+
 /** Positions saved on this phone that belong to items of this server, most recent first. */
 fun resumes(ctx: Context, srv: String, cat: CatalogData, withDone: Boolean = false): List<Resume> {
     val prefix = Servers.prefixOf(srv) + "lib"
-    val byRoot = cat.items.groupBy { it.root }
+    // a merged catalog ("All"): only this server's copies, also those folded into another server's item
+    val byRoot = cat.items.flatMap { listOf(it) + it.alsoOn }.filter { it.srv.isEmpty() || it.srv == srv }.groupBy { it.root }
     val s = Settings(ctx)
     // a series episode watched to the end keeps the series in the row (its next episode), like an interrupted one
     val finished = s.watchedAll().filterKeys { it.startsWith(prefix) }.mapValues { 0L to it.value }
@@ -295,7 +327,7 @@ fun norm(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFD).repla
  * (recently added, newest first).
  */
 object Cond {
-    fun matches(c: String, x: CatItem, cat: CatalogData, rootTags: Map<Int, List<String>>): Boolean {
+    fun matches(c: String, x: CatItem, cat: CatalogData, tagsOf: (CatItem) -> List<String>): Boolean {
         val v = c.substringAfter(':', "")
         return when (c.substringBefore(':')) {
             "age" -> x.fitsAge(v.toIntOrNull() ?: 0)
@@ -309,7 +341,7 @@ object Cond {
                 else -> v in x.audio
             }
             "decade" -> x.year?.let { it / 10 * 10 == v.toIntOrNull() } ?: false
-            "tag" -> v in rootTags[x.root].orEmpty()
+            "tag" -> v in tagsOf(x)
             "q" -> search(x, cat, v)
             "short" -> (x.minutes ?: Int.MAX_VALUE) <= 95
             "pl" -> x.plAudio || x.plSubs

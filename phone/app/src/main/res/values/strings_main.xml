@@ -162,4 +162,5 @@
     <string name="main_confirm_foreign_stop">Ask before closing other apps on Chromecast</string>
     <string name="main_confirm_foreign_stop_desc">Spotify, YouTube and others: “Stop” closes the app on the TV</string>
     <string name="main_notif_confirm_stop">Tap ■ again to close %1$s</string>
+    <string name="main_all_status">%1$d of %2$d servers on</string>
 </resources>

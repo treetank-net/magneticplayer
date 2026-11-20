@@ -164,6 +164,7 @@ class Tasks:
         backend(): the torrent client."""
         self.path, self.cfg, self.save_cfg, self.library = path, cfg, save_cfg, library
         self.encodes = os.path.join(os.path.dirname(path), "encodes")  # detached encodes (mp_detached)
+        self.moves_path = os.path.join(os.path.dirname(path), "moves.json")  # journal of moved items (phones re-key)
         self.backend, self.watching, self.renderers, self.log = backend, watching, renderers, log
         self.lock = threading.Lock()
         self.plans = {}  # id → {state, progress, result | error}; in memory, an hour
@@ -1135,6 +1136,7 @@ class Tasks:
             try:
                 if i["op"] == "move":
                     self._move(i, progress)
+                    self._record_move(i)
                 elif i["op"] == "subs":
                     self._subs(i, t)
                 elif i["op"] == "subs_get":
@@ -1289,6 +1291,36 @@ class Tasks:
                 os.remove(a)
         mp_media.remove_variant(src)
 
+    def _record_move(self, i):
+        """Phones keep positions and "watched" under the library folder and path, so every move is journalled:
+        GET /api/library/moves lets them re-key what they saved (agent 1.14+)."""
+        to = "/".join(x for x in ((i.get("to_sub") or "").strip("/"), os.path.basename(i["path"])) if x)
+        with self.lock:
+            try:
+                with open(self.moves_path) as f:
+                    j = json.load(f)
+            except (OSError, ValueError):
+                j = []
+            j.append({"at": time.time(), "from_root_id": i["root_id"], "from": i["path"],
+                      "to_root_id": i["to_root_id"], "to": to})
+            j = j[-5000:]
+            tmp = self.moves_path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(j, f)
+            os.replace(tmp, self.moves_path)
+
+    def moves(self, since=0.0):
+        """Moves after `since` (epoch s) with the library folders' current numbers; unknown folders are left out."""
+        try:
+            with open(self.moves_path) as f:
+                j = json.load(f)
+        except (OSError, ValueError):
+            j = []
+        idx = {r["id"]: r["index"] for r in self.library.roots()}
+        out = [{"at": m["at"], "from_root": idx[m["from_root_id"]], "from": m["from"], "to_root": idx[m["to_root_id"]],
+                "to": m["to"]} for m in j if m["at"] > since and m["from_root_id"] in idx and m["to_root_id"] in idx]
+        return {"moves": out, "now": time.time()}
+
     def _move_torrent(self, i, src, dst_dir, dst, progress):
         be = self.backend()
         be.move(i["torrent"], dst_dir)
@@ -1340,6 +1372,16 @@ class Tasks:
             raise TaskError(T("the file changed since the preview", "plik zmienił się od podglądu"))
         if self._inside(full, self._torrents()):
             raise TaskError(T("the file is back in the torrent client", "plik jest z powrotem w kliencie torrentów"))
+        if not mp_detached.Detached.find(self.encodes, i.get("job")):
+            # the new file is written next to the old one before the old one goes to the trash (on the same disk):
+            # without room, ffmpeg dies at the end with ENOSPC, file after file (457 such errors on a full disk)
+            free = shutil.disk_usage(os.path.dirname(full)).free
+            need = int(i.get("est") or st.st_size) + (256 << 20)
+            if free < need:
+                raise TaskError(T(f"not enough room on the disk: about {need >> 20} MB needed, {free >> 20} MB free "
+                                  f"(the trash of its library folders may hold old originals)",
+                                  f"za mało miejsca na dysku: potrzeba ok. {need >> 20} MB, wolne {free >> 20} MB "
+                                  f"(kosz folderów biblioteki może trzymać stare oryginały)"))
         info = mp_media.probe(full)
         pr = PROFILES[i["profile"]]
         stem, ext = os.path.splitext(full)

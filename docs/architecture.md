@@ -307,7 +307,8 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    anything down but do hold the swap: the result replaces a file only when nobody has touched it for a minute,
    since a player asks for byte ranges of the original. The result must have the same duration (±0.5%), decode without errors and be at least 7.5%
    smaller; then the original goes to `<library folder>/.mp-trash/<date>/` and the `.mkv` result takes its place.
-   The trash is purged after `trash_days` (default 14).
+   The trash is purged after `trash_days` (default 14). Before encoding, the item needs room for the result next
+   to the original (its estimate + 256 MB): the trash is on the same disk, so a big run frees nothing for 14 days.
 5. The phone shows one notification per finished task.
 6. Replication (decision 5): a folder with `replicate_to` (another folder's id, set in the folder's settings) gets
    its new or changed top-level items copied there every 30 minutes and after each task, quietly: no notification,
@@ -380,6 +381,9 @@ the credits; its countdown starts at the credits when they are known, otherwise 
 The catalog is kept on the phone too (`files/catalog/<server>.json`, the agent's last answer, ~0.5 MB for a few
 thousand titles): Library opens on it when the server is unreachable (a bar says since when), and every refresh asks
 `?since=<version>`, so an unchanged catalog costs one tiny answer. Per-item changes aren't worth it at this size.
+Before that refresh the phone asks `/api/library/moves?since=` (agent 1.14+): every move a task made (freeing a disk,
+load balancing) is journalled in `moves.json`, and the phone re-keys what it keeps under a library folder and path
+(positions, "watched", buffer use, a folder's audio choice and subtitle shift) to the new place.
 
 "Similar in your collection" on the title screen is computed by the app from the catalog: shared actors and
 directors, then topics, then genres. Genres alone need two specific ones in common ("Drama" doesn't count), and

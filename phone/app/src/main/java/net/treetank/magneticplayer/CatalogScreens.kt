@@ -1,5 +1,6 @@
 package net.treetank.magneticplayer
 
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.DownloadForOffline
@@ -117,13 +118,25 @@ object Nav {
     fun wishlist() = JSONObject().put("k", "wishlist")
 }
 
+fun tagKey(srv: String, root: Int) = "$srv|$root"
+
 /** What every catalog screen needs: the server, the data and navigation. */
 class CatCtx(
     val api: Api, val snack: SnackbarHostState, val onPlayingOnPc: () -> Unit, val cat: CatalogData?,
-    val wish: List<WishItem>?, val rootTags: Map<Int, List<String>>, val push: (JSONObject) -> Unit, val pop: () -> Unit,
+    val wish: List<WishItem>?, val rootTags: Map<String, List<String>>, val push: (JSONObject) -> Unit, val pop: () -> Unit,
     val onOpenFolder: (Int, String) -> Unit, private val scope: CoroutineScope, private val setWish: (List<WishItem>) -> Unit,
+    /** "All" in the switcher: the servers merged into [cat] and their Api; null = one server ([api]) */
+    val all: List<String>? = null, private val apiFor: (String) -> Api? = { null },
 ) {
     val srv get() = api.srv.key
+    /** The server an item's copy is on, and its Api (a merged catalog mixes servers). */
+    fun srvOf(x: CatItem) = x.srv.ifEmpty { srv }
+    fun apiOf(x: CatItem): Api = if (x.srv.isEmpty() || x.srv == srv) api else apiFor(x.srv) ?: api
+    fun tagsOf(x: CatItem): List<String> = rootTags[tagKey(srvOf(x), x.root)].orEmpty()
+    /** Positions on this phone matched to the catalog: of every merged server. */
+    fun resumes(ctx: Context, cat: CatalogData, withDone: Boolean = false): List<Resume> =
+        if (all == null) resumes(ctx, srv, cat, withDone)
+        else all.flatMap { resumes(ctx, it, cat, withDone) }.sortedByDescending { it.at }.distinctBy { it.item.imdb ?: it.item.id }
     fun listed(imdb: String) = wish?.any { it.imdb == imdb } == true
 
     /** Adds to or removes from the shared "want to watch" list. */
@@ -147,12 +160,14 @@ class CatCtx(
 @Composable
 fun CatalogArea(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, mode: String, onMode: (String) -> Unit,
                 stack: String, onStack: (String) -> Unit, onOpenFolder: (Int, String) -> Unit, offline: Boolean = false,
-                folders: @Composable () -> Unit) {
+                all: List<String>? = null, folders: @Composable () -> Unit) {
     // covers: the server's own posters or frames from the films (agent 1.6+), drawn ones otherwise
     val ctx = LocalContext.current
     val coverApi = remember(api.srv.key) { (Servers.get(ctx, api.srv.key) ?: api.srv).let { if (it.libraryCovers) Api(api.s, it) else null } }
-    androidx.compose.runtime.CompositionLocalProvider(LocalCoverApi provides coverApi) {
-        CatalogAreaBody(api, snack, onPlayingOnPc, mode, onMode, stack, onStack, onOpenFolder, offline, folders)
+    // "All": every merged server's Api (covers, episodes, playing come from the server the copy is on)
+    val apis = remember(all) { all.orEmpty().associateWith { Api.of(ctx, it) } }
+    androidx.compose.runtime.CompositionLocalProvider(LocalCoverApi provides coverApi, LocalCoverApiFor provides { k -> apis[k] }) {
+        CatalogAreaBody(api, snack, onPlayingOnPc, mode, onMode, stack, onStack, onOpenFolder, offline, all, { k -> apis[k] }, folders)
     }
 }
 
@@ -160,20 +175,26 @@ fun CatalogArea(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, m
 @Composable
 private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, mode: String, onMode: (String) -> Unit,
                 stack: String, onStack: (String) -> Unit, onOpenFolder: (Int, String) -> Unit, offline: Boolean,
-                folders: @Composable () -> Unit) {
+                all: List<String>?, apiFor: (String) -> Api?, folders: @Composable () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val srvKey = api.srv.key
     val ver by CatalogCache.version
-    val catState = produceState(CatalogCache.peek(srvKey), srvKey, ver) {
-        value = withContext(Dispatchers.IO) { CatalogCache.cached(ctx, srvKey) }
+    // "All": the kept catalogs of every server merged (a server that is asleep shows what it had at the last sync)
+    fun merged(get: (String) -> CatalogData?): CatalogData? =
+        if (all == null) get(srvKey) else all.mapNotNull { k -> get(k)?.let { k to it } }.takeIf { it.isNotEmpty() }?.let(::mergeCatalogs)
+    val catState = produceState(remember(all) { merged { CatalogCache.peek(it) } }, srvKey, all, ver) {
+        value = withContext(Dispatchers.IO) { merged { CatalogCache.cached(ctx, it) } }
     }
     val cat = catState.value
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(srvKey) {
+    LaunchedEffect(srvKey, all) {
         while (true) {
             val c = try {
-                withContext(Dispatchers.IO) { CatalogCache.refresh(ctx, api) }.also { error = null }
+                withContext(Dispatchers.IO) {
+                    all.orEmpty().filter { it != srvKey }.forEach { k -> apiFor(k)?.let { runCatching { CatalogCache.refresh(ctx, it) } } }
+                    CatalogCache.refresh(ctx, api)
+                }.also { error = null }
             } catch (e: ApiException) {
                 error = e.message; null
             }
@@ -188,9 +209,14 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
             delay(30_000)
         }
     }
-    var rootTags by remember(srvKey) { mutableStateOf<Map<Int, List<String>>>(emptyMap()) }
+    var rootTags by remember(srvKey) { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     LaunchedEffect(srvKey) {
-        rootTags = withContext(Dispatchers.IO) { runCatching { api.libraryRoots().associate { it.index to it.tags } }.getOrDefault(emptyMap()) }
+        rootTags = withContext(Dispatchers.IO) {
+            (all ?: listOf(srvKey)).flatMap { k ->
+                val a = if (k == srvKey) api else Api.of(ctx, k)
+                runCatching { a!!.libraryRoots().map { tagKey(k, it.index) to it.tags } }.getOrDefault(emptyList())
+            }.toMap()
+        }
     }
     val entries = remember(stack) { runCatching { JSONArray(stack) }.getOrDefault(JSONArray()).let { a -> List(a.length()) { a.getJSONObject(it) } } }
     fun push(o: JSONObject) = onStack(JSONArray(entries.map { it } + o).toString())
@@ -203,7 +229,7 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
             push(Nav.next(pending.second, ended = true))
         }
     }
-    val c = CatCtx(api, snack, onPlayingOnPc, cat, wish, rootTags, ::push, ::pop, onOpenFolder, scope) { wish = it }
+    val c = CatCtx(api, snack, onPlayingOnPc, cat, wish, rootTags, ::push, ::pop, onOpenFolder, scope, { wish = it }, all, apiFor)
     val top = entries.lastOrNull()
     if (top != null) {
         BackHandler { pop() }
@@ -256,13 +282,13 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
 private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
     val ctx = LocalContext.current
     val back = rememberResumedTick()
-    val resumesAll = remember(cat, back) { resumes(ctx, c.srv, cat) }
+    val resumesAll = remember(cat, back) { c.resumes(ctx, cat) }
     // series: the episode they continue at ("Next: S1 E5"); a series finished to its last episode leaves the row
     val nextEp by produceState<Map<String, Episode?>>(emptyMap(), resumesAll) {
         value = withContext(Dispatchers.IO) {
-            resumesAll.filter { it.item.series && it.item.dir != null && c.api.srv.libraryEpisodes }.associate { r ->
-                r.item.id to runCatching { c.api.episodes(r.item.root, r.item.dir!!).episodes }.getOrNull()?.let { eps ->
-                    val i = continueIndex(Settings(ctx), c.srv, r.item.root, eps)
+            resumesAll.filter { it.item.series && it.item.dir != null && c.apiOf(it.item).srv.libraryEpisodes }.associate { r ->
+                r.item.id to runCatching { c.apiOf(r.item).episodes(r.item.root, r.item.dir!!).episodes }.getOrNull()?.let { eps ->
+                    val i = continueIndex(Settings(ctx), c.srvOf(r.item), r.item.root, eps)
                     val last = eps.indexOfFirst { it.path == r.path }
                     if (r.posMs <= 0 && last == eps.size - 1) null else eps.getOrNull(i)
                 }
@@ -288,7 +314,7 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
     val kids = remember(cat) { cat.items.filter { it.fitsAge(7) } }
     // "Because you watched": the title watched last (also a film finished) and what is like it, minus what was watched
     val because = remember(cat, back) {
-        val seen = resumes(ctx, c.srv, cat, withDone = true)
+        val seen = c.resumes(ctx, cat, withDone = true)
         val ids = seen.map { it.item.id }.toSet()
         seen.firstOrNull()?.item?.let { x -> x to similar(ctx, cat, x).filter { it.first.id !in ids } }?.takeIf { it.second.size >= 3 }
     }
@@ -323,7 +349,7 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
                     else nextEp[r.item.id]?.label?.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.cat_next_ep, it) }
                     ?: cardMeta(r.item), progress = if (total > 0 && !r.item.series) r.posMs.toFloat() / total else null) {
                     if (r.item.series) c.open(r.item)  // the series' screen: "Resume S1 E3" on top, any other episode below
-                    else playOnPhone(ctx, MediaRef.InLibrary(r.item.root, r.path, c.srv), r.item.imdb, r.item.kind)
+                    else playOnPhone(ctx, MediaRef.InLibrary(r.item.root, r.path, c.srvOf(r.item)), r.item.imdb, r.item.kind)
                 }
             }
         }
@@ -368,7 +394,7 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
 private fun Hero(c: CatCtx, x: CatItem, isNew: Boolean) {
     val ctx = LocalContext.current
     Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp)).clickable { c.open(x) }) {
-        SyntheticCover("", null, x.genres, Modifier.fillMaxSize(), corner = 18.dp, art = x.art(), wide = true)
+        SyntheticCover("", null, x.genres, Modifier.fillMaxSize(), corner = 18.dp, art = x.art(), wide = true, artSrv = x.srv)
         Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
             Text(stringResource(if (isNew) R.string.cat_hero_new else R.string.cat_hero_top).uppercase(Locale.getDefault()),
                 color = Color(0xFFFFDAD6), fontSize = 12.sp, letterSpacing = 1.5.sp)
@@ -379,7 +405,7 @@ private fun Hero(c: CatCtx, x: CatItem, isNew: Boolean) {
                 plBadge(x.audio, x.subs)).joinToString(" · "),
                 color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button({ playItem(ctx, x, c.srv) }) {
+                Button({ playItem(ctx, x, c.srvOf(x)) }) {
                     Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.cat_play))
                 }
                 OutlinedButton({ c.open(x) }) { Text(stringResource(R.string.cat_details), color = Color.White) }
@@ -407,7 +433,7 @@ private fun BrowseScreen(c: CatCtx, cat: CatalogData) {
             else CoverGrid(c, hits)
             return@Column
         }
-        val counts = remember(cat, c.rootTags) { BrowseCounts.of(cat, c.rootTags) }
+        val counts = remember(cat, c.rootTags) { BrowseCounts.of(cat, c::tagsOf) }
         LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { SectionTitle(stringResource(R.string.cat_who_watches)) }
             item {
@@ -475,14 +501,14 @@ private class BrowseCounts(
     companion object {
         private fun <K> count(keys: List<K>) = keys.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key to it.value }
 
-        fun of(cat: CatalogData, rootTags: Map<Int, List<String>>): BrowseCounts {
+        fun of(cat: CatalogData, tagsOf: (CatItem) -> List<String>): BrowseCounts {
             val items = cat.items
             val langs = listOf("plaudio" to items.count { it.plAudio }, "plsubs" to items.count { it.plSubs },
                 "en" to items.count { "en" in it.audio }, "ja" to items.count { "ja" in it.audio },
                 "nopl" to items.count { !it.plAudio && !it.plSubs }).filter { it.second > 0 }
             return BrowseCounts(count(items.flatMap { it.genres }), count(items.flatMap { it.topics }).take(16), langs,
                 count(items.mapNotNull { it.year?.let { y -> y / 10 * 10 } }).sortedBy { it.first },
-                count(items.flatMap { rootTags[it.root].orEmpty() }),
+                count(items.flatMap { tagsOf(it) }),
                 count(items.flatMap { (it.cast.take(6) + it.directors).distinct() }).filter { it.second >= 2 }.take(12))
         }
     }
@@ -547,7 +573,7 @@ private fun ResultsScreen(c: CatCtx, conds: List<String>, sort0: String) {
     var sort by rememberSaveable { mutableStateOf(sort0) }
     val sorts = SORTS.filter { it.first != "added" || sort0 == "added" }
     val list = remember(cat, active, sort, c.rootTags) {
-        val l = cat.items.filter { x -> active.all { Cond.matches(it, x, cat, c.rootTags) } }
+        val l = cat.items.filter { x -> active.all { Cond.matches(it, x, cat, c::tagsOf) } }
         when (sort) {
             "year" -> l.sortedByDescending { it.year ?: 0 }
             "short" -> l.sortedBy { it.minutes ?: Int.MAX_VALUE }
@@ -588,7 +614,7 @@ private fun CoverGrid(c: CatCtx, list: List<CatItem>) {
         items(list.size, key = { list[it].id }) { i ->
             val x = list[i]
             Column(Modifier.clickable { c.open(x) }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SyntheticCover(x.title, null, x.genres, Modifier.fillMaxWidth().aspectRatio(2f / 3f), badge = plBadge(x.audio, x.subs), art = x.art(),
+                SyntheticCover(x.title, null, x.genres, Modifier.fillMaxWidth().aspectRatio(2f / 3f), badge = plBadge(x.audio, x.subs), art = x.art(), onPhone = onPhone(x), artSrv = x.srv,
                     titleSize = 13.sp, padding = 7.dp)
                 Text(listOfNotNull(yearMinutes(x.year, x.minutes).ifEmpty { null }, x.rating?.let { ratingText(it) }).joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
@@ -600,24 +626,48 @@ private fun CoverGrid(c: CatCtx, list: List<CatItem>) {
 
 // ---------------------------------------------------------------- Title
 
+/** "On servers": this copy and the same title's copies on the other servers (a merged catalog, "All"). */
+@Composable
+private fun CopiesOnServers(c: CatCtx, x: CatItem) {
+    val ctx = LocalContext.current
+    val copies = listOf(x) + x.alsoOn
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(stringResource(R.string.cat_on_servers), style = MaterialTheme.typography.labelLarge)
+        copies.forEach { y ->
+            val name = Servers.get(ctx, y.srv)?.name ?: y.srv
+            Row(Modifier.fillMaxWidth().clickable(enabled = y !== x) { c.open(y) }.padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(name, fontWeight = if (y === x) FontWeight.Bold else null)
+                    Text(listOfNotNull(y.rootName, qualityText(y.height), plBadge(y.audio, y.subs)).joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (y === x) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TitleScreen(c: CatCtx, x: CatItem) {
     val cat = c.cat ?: return
     val ctx = LocalContext.current
+    val xs = c.srvOf(x)  // the server of this copy (a merged catalog mixes servers)
+    val xa = c.apiOf(x)
     val similar = remember(cat, x) { similar(ctx, cat, x) }
     // a series: its episodes in order (agent 1.10+), where this phone left off, extras apart
-    val canEps = x.series && x.dir != null && (Servers.get(ctx, c.srv) ?: c.api.srv).libraryEpisodes
+    val canEps = x.series && x.dir != null && (Servers.get(ctx, xs) ?: xa.srv).libraryEpisodes
     var eps by remember(x.id) { mutableStateOf<Episodes?>(null) }
-    if (canEps) LaunchedEffect(x.id) { eps = withContext(Dispatchers.IO) { runCatching { c.api.episodes(x.root, x.dir!!) }.getOrNull() } }
+    if (canEps) LaunchedEffect(x.id) { eps = withContext(Dispatchers.IO) { runCatching { xa.episodes(x.root, x.dir!!) }.getOrNull() } }
     val back = rememberResumedTick()
     val settings = remember { Settings(ctx) }
     val list = eps?.episodes.orEmpty()
-    val cont = remember(eps, back) { if (list.isEmpty()) -1 else continueIndex(settings, c.srv, x.root, list) }
+    val cont = remember(eps, back) { if (list.isEmpty()) -1 else continueIndex(settings, xs, x.root, list) }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Box(Modifier.fillMaxWidth().height(300.dp)) {
-                SyntheticCover(x.title, null, x.genres, Modifier.fillMaxSize(), titleSize = 34.sp, corner = 0.dp, padding = 20.dp, art = x.art(), wide = true)
+                SyntheticCover(x.title, null, x.genres, Modifier.fillMaxSize(), titleSize = 34.sp, corner = 0.dp, padding = 20.dp, art = x.art(), wide = true, artSrv = x.srv)
                 BackOnCover(c.pop)
             }
         }
@@ -635,16 +685,18 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 Spacer(Modifier.height(4.dp))
                 if (cont >= 0) {
                     val e = list[cont]
-                    val started = settings.position(MediaRef.InLibrary(x.root, e.path, c.srv).key()) > 0
-                    MediaActions(c.api, MediaRef.InLibrary(x.root, e.path, c.srv), c.snack, c.onPlayingOnPc, big = true, subsFolder = x.dir,
-                        onPlay = { playEpisode(ctx, c.srv, x.root, list, cont) },
+                    val started = settings.position(MediaRef.InLibrary(x.root, e.path, xs).key()) > 0
+                    MediaActions(xa, MediaRef.InLibrary(x.root, e.path, xs), c.snack, c.onPlayingOnPc, big = true, subsFolder = x.dir,
+                        onPlay = { playEpisode(ctx, xs, x.root, list, cont) },
                         playLabel = stringResource(if (started) R.string.cat_play_resume_ep else R.string.cat_play_ep,
                             e.label.ifEmpty { (cont + 1).toString() }))
-                } else MediaActions(c.api, x.ref(c.srv), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
+                } else MediaActions(xa, x.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
+                // "All": where the copies are; another copy plays from its server (it opens its own title screen)
+                if (x.srv.isNotEmpty()) CopiesOnServers(c, x)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     x.genres.forEach { g -> AssistChip({ c.push(Nav.results(listOf("genre:$g"))) }, { Text(genreLabel(g)) }) }
                     x.topics.forEach { q -> cat.topics[q]?.let { t -> AssistChip({ c.push(Nav.results(listOf("topic:$q"))) }, { Text(t) }) } }
-                    c.rootTags[x.root].orEmpty().forEach { t -> AssistChip({ c.push(Nav.results(listOf("tag:$t"))) }, { Text("#" + tagLabel(t)) }) }
+                    c.tagsOf(x).forEach { t -> AssistChip({ c.push(Nav.results(listOf("tag:$t"))) }, { Text("#" + tagLabel(t)) }) }
                 }
                 if (x.audio.isNotEmpty()) MetaRow(stringResource(R.string.cat_audio)) { Text(x.audio.distinct().map { langName(it) }.joinToString()) }
                 if (x.subs.isNotEmpty()) MetaRow(stringResource(R.string.cat_subtitles)) { Text(x.subs.distinct().map { langName(it) }.joinToString()) }
@@ -724,7 +776,7 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
     var download by remember { mutableStateOf(false) }
     var dlTick by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
-    if (download) SeriesDownloadDialog(c.srv, x.root, list, extras, cont, shown, onDismiss = { download = false }) { n ->
+    if (download) SeriesDownloadDialog(c.srvOf(x), x.root, list, extras, cont, shown, onDismiss = { download = false }) { n ->
         download = false; dlTick++
         scope.launch { c.snack.showSnackbar(ctx.resources.getQuantityString(R.plurals.ser_dl_started, n, n)) }
     }
@@ -742,11 +794,11 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
         }
         list.forEachIndexed { i, e ->
             if (e.season != shown) return@forEachIndexed
-            val k = MediaRef.InLibrary(x.root, e.path, c.srv).key()
+            val k = MediaRef.InLibrary(x.root, e.path, c.srvOf(x)).key()
             val pos = remember(k, back) { settings.position(k) }
             val watched = remember(k, back) { settings.watchedAt(k) > 0 && pos <= 0 }
             val total = remember(k, back) { OfflineStore.get(ctx, k)?.durationMs ?: 0L }
-            Row(Modifier.fillMaxWidth().clickable { playEpisode(ctx, c.srv, x.root, list, i) }
+            Row(Modifier.fillMaxWidth().clickable { playEpisode(ctx, c.srvOf(x), x.root, list, i) }
                 .background(if (i == cont) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else Color.Transparent)
                 .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.PlayArrow, null, Modifier.size(20.dp),
@@ -761,7 +813,7 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
                     else if (pos > 0) Text(stringResource(R.string.cat_ep_at, pos / 60_000), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary)
                 }
-                val mark = remember(k, back, dlTick) { offlineMark(ctx, MediaRef.InLibrary(x.root, e.path, c.srv), e.size) }
+                val mark = remember(k, back, dlTick) { offlineMark(ctx, MediaRef.InLibrary(x.root, e.path, c.srvOf(x)), e.size) }
                 if (mark != null) Icon(if (mark == "complete") Icons.Filled.DownloadDone else Icons.Filled.Downloading,
                     stringResource(if (mark == "complete") R.string.ser_dl_on_phone else R.string.ser_dl_downloading),
                     Modifier.padding(start = 8.dp).size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -775,7 +827,7 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
                 Icon(if (showExtras) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
             }
             if (showExtras) extras.forEach { e ->
-                Row(Modifier.fillMaxWidth().clickable { playEpisode(ctx, c.srv, x.root, listOf(e), 0) }
+                Row(Modifier.fillMaxWidth().clickable { playEpisode(ctx, c.srvOf(x), x.root, listOf(e), 0) }
                     .padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Movie, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(12.dp))
@@ -1042,8 +1094,8 @@ private fun NextScreen(c: CatCtx, imdb: String, ended: Boolean) {
                 val item = m.id?.let { c.cat?.byId(it) }
                 val whyText = src?.let { s -> ctx.getString(R.string.cat_why_after, s.title, m.why) } ?: m.why
                 FilmRow(m.titlePl?.let { "${m.title} · $it" } ?: m.title, m.year, m.genres, !m.have, yearMinutes(m.year, m.minutes), m.why,
-                    onClick = { if (m.have && m.id != null) c.push(Nav.title(m.id)) else c.push(Nav.missing(m.imdb, whyText)) }) {
-                    if (m.have && item != null) FilledTonalButton({ playItem(ctx, item, c.srv) }) {
+                    onClick = { if (m.have && m.id != null) c.push(Nav.title(item?.id ?: m.id)) else c.push(Nav.missing(m.imdb, whyText)) }) {
+                    if (m.have && item != null) FilledTonalButton({ playItem(ctx, item, c.srvOf(item)) }) {
                         Text(stringResource(R.string.cat_play))
                     } else if (!m.have) OutlinedButton({ c.toggleWish(ctx, m.imdb, m.title, m.year, m.genres, whyText) }) {
                         Text(stringResource(if (c.listed(m.imdb)) R.string.cat_listed_short else R.string.cat_list_add_short))

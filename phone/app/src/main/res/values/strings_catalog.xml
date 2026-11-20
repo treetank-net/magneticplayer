@@ -48,6 +48,7 @@
     <string name="cat_row_kids">For kids</string>
     <string name="cat_row_because">Because you watched %1$s</string>
     <string name="cat_offline_from">Server unreachable · the catalog as synced %1$s; downloaded videos play</string>
+    <string name="cat_on_phone">On the phone</string>
     <string name="cat_offline">Server unreachable · the catalog from the last sync; downloaded videos play</string>
     <string name="cat_row_with">With %1$s</string>
     <string name="cat_row_added">Recently added</string>
@@ -215,4 +216,5 @@
     </plurals>
     <string name="ser_dl_on_phone">On the phone</string>
     <string name="ser_dl_downloading">Downloading to the phone</string>
+    <string name="cat_on_servers">On servers</string>
 </resources>

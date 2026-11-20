@@ -211,6 +211,9 @@ object PlanBody {
     /** missing subtitles in `langs` ("pl,en"): the whole library (root null) or one folder or file */
     fun subsGet(langs: String, root: Int? = null, path: String? = null) = JSONObject().put("kind", "subs_get").put("languages", langs)
         .apply { if (root != null) put("root", root).put("path", path ?: "") }.toString()
+    /** explicit moves: (root, path, target root), into the target's top level */
+    fun move(items: List<Triple<Int, String, Int>>) = JSONObject().put("kind", "move").put("items",
+        JSONArray(items.map { (r, p, t) -> JSONObject().put("root", r).put("path", p).put("to_root", t) })).toString()
     fun trash(items: List<Pair<Int, String>>) = JSONObject().put("kind", "trash").put("items",
         JSONArray(items.map { (r, p) -> JSONObject().put("root", r).put("path", p) })).toString()
 }

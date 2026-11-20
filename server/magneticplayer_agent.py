@@ -54,7 +54,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.13.3"
+VERSION = "1.14.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -1170,6 +1170,8 @@ class App:
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
+                "library_moves": True,  # GET /api/library/moves?since= (agent 1.14+)
+                "convert_audio": True,  # POST /api/media/convert takes "audio" (agent 1.14+)
                 "library_modernize": True,  # POST /api/library/plan {"kind": "modernize"} (agent 1.8.2+)
                 "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
@@ -1642,8 +1644,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not a.ref_complete(b):
                     raise ApiError(T("the video is still downloading; it will be prepared once complete",
                                      "film jeszcze się pobiera; przygotuję go, gdy będzie cały"), 409)
+                # the phone's remembered audio choice ("kind|lang", as for mpv): the version carries that track (agent 1.14+)
+                aidx = None
+                if b.get("audio"):
+                    try:
+                        tr = [{"type": "audio", "id": x["index"] + 1, "title": x.get("title"), "lang": x.get("lang")}
+                              for x in mp_media.probe(full)["audio"]]
+                        hit = pick_audio(tr, b["audio"])
+                        aidx = hit - 1 if hit else None
+                    except (ValueError, OSError, subprocess.TimeoutExpired, KeyError):
+                        aidx = None
                 try:
-                    return self.send_json(a.convert.start(full, os.path.basename(full)))
+                    return self.send_json(a.convert.start(full, os.path.basename(full), aidx))
                 except (RuntimeError, ValueError, OSError) as e:
                     raise ApiError(str(e), 409)
             if p == "/api/media/converts" and method == "GET":
@@ -1820,6 +1832,12 @@ class Handler(BaseHTTPRequestHandler):
                     a.library.add_root(b["path"], b.get("name"))
                 return self.send_json(a.library.visible_roots(True))
             # ---- disks and background file tasks (mp_tasks.py)
+            if p == "/api/library/moves" and method == "GET":
+                try:
+                    since = float((q.get("since") or ["0"])[0])
+                except ValueError:
+                    since = 0.0
+                return self.send_json(a.tasks.moves(since))
             if p == "/api/library/disks" and method == "GET":
                 return self.send_json({"disks": a.tasks.disks(), "trash": a.tasks.trash(), "trash_days": a.tasks.trash_days()})
             if p == "/api/library/plan" and method == "POST":

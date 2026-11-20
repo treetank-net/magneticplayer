@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -92,6 +93,7 @@ object LibraryNav {
  */
 @Composable
 fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
+               connecting: Boolean = false, all: List<String>? = null, onPickServer: (String) -> Unit = {},
                onSwitchServer: (String, Int) -> Unit = { _, _ -> }) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -110,7 +112,9 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     }
     // without the server: the catalog from its last sync (downloaded videos play), nothing else
     val offlineCatalog = !online && srv.hasCatalog && CatalogCache.hasCopy(ctx, api.srv.key)
-    if (!online && !(offlineCatalog && root == null && plan == null && !disks)) return Hint(stringResource(R.string.media_lib_offline))
+    // connecting (app start, back from the background): the kept catalog without the "unreachable" bar, not "asleep"
+    val offlineText = if (connecting) R.string.main_connecting else R.string.media_lib_offline
+    if (!online && !(offlineCatalog && root == null && plan == null && !disks)) return Hint(stringResource(offlineText))
     val r = root
     val p = plan
     when {
@@ -126,8 +130,10 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
             DisksScreen(api, snack, onBack = { disks = false }) { plan = it }
         }
         r == null && srv.hasCatalog -> CatalogArea(api, snack, onPlayingOnPc, mode, { mode = it }, stack, { stack = it },
-            onOpenFolder = { r0, p0 -> if (online) { root = r0; path = p0 } }, offline = !online) {
-            if (!online) Hint(stringResource(R.string.media_lib_offline)) else RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
+            onOpenFolder = { r0, p0 -> if (online) { root = r0; path = p0 } }, offline = !online && !connecting, all = all) {
+            // "All": the folders of one server, picked in a row on top
+            if (all != null) ServerChips(all, api.srv.key, onPickServer)
+            if (!online) Hint(stringResource(offlineText)) else RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
                 root = r0; path = p0
             }
         }
@@ -598,10 +604,34 @@ private fun DirScreen(
     onOpen: (String) -> Unit, onUp: () -> Unit, onPlan: (String) -> Unit,
 ) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val srv = remember { Servers.get(ctx, api.srv.key) ?: api.srv }
     val covers = srv.libraryCovers
     var shrinking by remember { mutableStateOf(false) }
     var subsGet by remember { mutableStateOf(false) }
+    var more by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf<List<LibRoot>?>(null) }
+    moving?.let { roots ->
+        // another library folder for this one (the same tag first): the plan preview shows the move before it runs
+        val here = roots.firstOrNull { it.index == root }
+        val others = roots.filter { it.index != root && it.exists }
+            .sortedByDescending { r -> here?.tags?.any { it in r.tags } == true }
+        AlertDialog({ moving = null }, title = { Text(stringResource(R.string.lib_move_title, path.substringAfterLast('/'))) },
+            text = {
+                LazyColumn {
+                    items(others, key = { it.index }) { r ->
+                        Column(Modifier.fillMaxWidth().clickable {
+                            moving = null; onPlan(PlanBody.move(listOf(Triple(root, path, r.index))))
+                        }.padding(vertical = 10.dp)) {
+                            Text(r.name)
+                            if (r.tags.isNotEmpty()) Text(r.tags.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            },
+            confirmButton = {}, dismissButton = { TextButton({ moving = null }) { Text(stringResource(android.R.string.cancel)) } })
+    }
     if (subsGet) SubsGetDialog(api, onDismiss = { subsGet = false }) { langs -> subsGet = false; onPlan(PlanBody.subsGet(langs, root, path)) }
     var dir by remember(root, path) { mutableStateOf<LibDir?>(null) }
     LaunchedEffect(root, path) {
@@ -619,6 +649,23 @@ private fun DirScreen(
             }
             if (srv.libraryTasks && !srv.isGuest) IconButton({ shrinking = true }) {
                 Icon(Icons.Filled.Compress, stringResource(R.string.lib_shrink_folder))
+            }
+            // jobs on this folder as a whole: move it to another library folder (another disk), delete it to the trash
+            if (srv.libraryTasks && !srv.isGuest && path.isNotEmpty()) Box {
+                IconButton({ more = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.lib_folder_more)) }
+                DropdownMenu(more, { more = false }) {
+                    DropdownMenuItem({ Text(stringResource(R.string.lib_move_folder)) }, {
+                        more = false
+                        scope.launch {
+                            moving = try { withContext(Dispatchers.IO) { api.libraryRoots() } } catch (e: ApiException) {
+                                snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); null
+                            }
+                        }
+                    })
+                    DropdownMenuItem({ Text(stringResource(R.string.lib_trash_folder)) }, {
+                        more = false; onPlan(PlanBody.trash(listOf(root to path)))
+                    })
+                }
             }
         }
         if (shrinking) ShrinkDialog(srv, if (path.isEmpty()) "/" else path, onDismiss = { shrinking = false }) { profile ->

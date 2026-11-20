@@ -79,6 +79,10 @@
     <string name="lib_profile_compact_short">kompaktowa (720p)</string>
     <string name="lib_profile_tiny_short">mała (480p)</string>
     <string name="lib_shrink_now">Zmniejsz teraz…</string>
+    <string name="lib_folder_more">Więcej</string>
+    <string name="lib_move_folder">Przenieś do innego folderu biblioteki…</string>
+    <string name="lib_move_title">Przenieś „%1$s” do</string>
+    <string name="lib_trash_folder">Usuń do kosza…</string>
     <string name="lib_shrink_folder">Zmniejsz ten folder…</string>
     <string name="lib_shrink_folder_title">Zmniejsz ten folder</string>
     <string name="lib_shrink_hint">Najpierw zobaczysz podgląd: nic się nie zmieni, zanim go nie potwierdzisz. Pliki, które się jeszcze seedują, są pomijane, a oryginały zostają na jakiś czas w koszu.</string>

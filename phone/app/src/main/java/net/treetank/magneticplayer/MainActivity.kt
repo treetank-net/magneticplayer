@@ -132,6 +132,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -246,6 +247,10 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     // file server (Torrents, Library, Suspend) and the Remote screen
     val servers = remember(ver) { Servers.all(ctx) }
     val api = remember(ver) { Api.active(ctx) }
+    // "All" in the switcher: Library merges every server with files; the others are pinged for the header and the asleep pane
+    val allMode = remember(ver) { Servers.allMode(ctx) }
+    val fileKeys = remember(ver) { Servers.fileKeys(ctx) }
+    val allUp = remember(ver) { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
     var screenKey by remember(ver) { mutableStateOf(Servers.screenKey(ctx)) }
     val screenApi = remember(ver, screenKey) { Api.of(ctx, screenKey) }
     var online by remember(ver) { mutableStateOf<Boolean?>(null) }
@@ -264,11 +269,21 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         if (online == true) update = withContext(Dispatchers.IO) { Updater.check(ctx, api) }
     }
 
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(ver) {
         var first = true
         var pings = 0
         var fails = 0
         while (true) {
+            // only while the app is on screen: a foreground service (Remote, downloads) keeps the process alive and
+            // this loop pinged the server every 5 s with the app in the background
+            val awaySince = System.currentTimeMillis()
+            if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                lifecycle.currentStateFlow.first { it.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) }
+                // back after a while: what was known then is stale (the computer may have gone to sleep, the phone
+                // may be home again), so "…" until a fresh answer instead of the old "on" or "asleep"
+                if (System.currentTimeMillis() - awaySince > 30_000) { online = null; fails = 0 }
+            }
             // 3 s for connecting: after a longer break the phone's Wi-Fi and the first connection can be slow
             val ok = withContext(Dispatchers.IO) { api.ping(3000) }
             // "asleep" only after two failed attempts in a row, also right after opening the app (until then "…")
@@ -293,6 +308,16 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         }
     }
     val srv = remember(ver, online, infoVer) { Servers.get(ctx, api.srv.key) ?: api.srv }
+    if (allMode) LaunchedEffect(ver) {
+        while (true) {
+            lifecycle.currentStateFlow.first { it.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) }
+            fileKeys.filter { it != api.srv.key }.forEach { k ->
+                launch(Dispatchers.IO) { Api.of(ctx, k)?.let { allUp[k] = it.ping(2000) } }
+            }
+            delay(10_000)
+        }
+    }
+    val anyUp = online == true || allUp.values.any { it }
 
     fun wake(key: String = api.srv.key) = scope.launch {
         val a = Api.of(ctx, key) ?: return@launch
@@ -315,10 +340,13 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             TopAppBar(
                 title = {
                     Column(if (servers.size > 1) Modifier.clickable { sheet = true } else Modifier) {
-                        Text(if (servers.isEmpty()) "MagneticPlayer" else srv.name + if (servers.size > 1) " ▾" else "",
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (servers.isEmpty()) "MagneticPlayer" else (if (allMode) stringResource(R.string.srv_all_servers) else srv.name) +
+                            if (servers.size > 1) " ▾" else "", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val up = (if (online == true) 1 else 0) + allUp.filterKeys { it != api.srv.key }.count { it.value }
                         val (txt, col) = when {
                             servers.isEmpty() -> stringResource(R.string.main_add_server_in_settings) to MaterialTheme.colorScheme.onSurfaceVariant
+                            allMode && waking == null -> stringResource(R.string.main_all_status, up, fileKeys.size) to
+                                (if (up > 0) OK_GREEN else MaterialTheme.colorScheme.error)
                             waking != null -> waking!! to MaterialTheme.colorScheme.tertiary
                             wrong -> stringResource(R.string.main_status_wrong_server) to MaterialTheme.colorScheme.error
                             online == true -> stringResource(R.string.main_status_online, srv.rolesText(LocalContext.current)) to OK_GREEN
@@ -392,16 +420,23 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                     Hint(stringResource(R.string.main_hint_no_server))
                 // Library without the server: the catalog from the last sync when the phone has one (Wake stays at the top)
                 (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) &&
-                    !(t == TAB_LIBRARY && waking == null && srv.hasCatalog && CatalogCache.hasCopy(ctx, srv.key)) ->
+                    !(t == TAB_LIBRARY && waking == null && srv.hasCatalog && CatalogCache.hasCopy(ctx, srv.key)) &&
+                    !(t == TAB_LIBRARY && allMode && anyUp && waking == null) ->
                     AsleepPane(srv, waking, wrong) { wake() }
                 t == TAB_TORRENTS && !srv.hasTorrent && !srv.hasCatalog ->
                     Hint(stringResource(R.string.main_hint_no_torrent, srv.name))
                 t == TAB_LIBRARY && !srv.hasLibrary -> Hint(stringResource(R.string.main_hint_no_library, srv.name))
-                else -> key(api.srv.key) {
+                else -> key(if (allMode && t == TAB_LIBRARY) "*" else api.srv.key) {
                     when (t) {
-                        TAB_TORRENTS -> TorrentsTab(api, srv, online == true, snack, onPlaying)
-                        TAB_LIBRARY -> LibraryTab(api, online == true, snack, onPlaying) { key, root ->
-                            LibraryNav.openAfterSwitch(key, root); Servers.setActive(ctx, key); changed()
+                        TAB_TORRENTS -> Column(Modifier.fillMaxSize()) {
+                            // "All": one server's downloads at a time, picked here (each has its own list and actions)
+                            if (allMode) ServerChips(fileKeys, api.srv.key) { Servers.setActive(ctx, it); changed() }
+                            Box(Modifier.weight(1f)) { TorrentsTab(api, srv, online == true, snack, onPlaying) }
+                        }
+                        TAB_LIBRARY -> LibraryTab(api, if (allMode) anyUp else online == true, snack, onPlaying,
+                            connecting = online == null && !(allMode && anyUp), all = if (allMode) fileKeys else null,
+                            onPickServer = { Servers.setActive(ctx, it); changed() }) { key, root ->
+                            LibraryNav.openAfterSwitch(key, root); Servers.setActive(ctx, key); Servers.setAll(ctx, false); changed()
                         }
                         TAB_REMOTE -> PilotTab(screenApi, snack, onPickScreen = { Servers.setScreen(ctx, it); screenKey = it }) { wake(it) }
                         TAB_OFFLINE -> OfflineTab(onPlaying)
@@ -414,7 +449,9 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     }
 
     if (sheet) ServerSheet(api.srv.key,
-        onPick = { sheet = false; Servers.setActive(ctx, it); changed() },
+        onPick = { sheet = false; Servers.setActive(ctx, it); Servers.setAll(ctx, false); changed() },
+        allMode = allMode, onAll = { sheet = false; Servers.setAll(ctx, true); changed() },
+        onWakeAll = { keys -> sheet = false; keys.forEach { wake(it) } },
         // waking a screen-only server does not make it the file server (it has no library or downloads)
         onWake = { sheet = false; if (Servers.get(ctx, it)?.hasFiles != false) { Servers.setActive(ctx, it); changed() }; wake(it) },
         onAdd = { sheet = false; addServer = true; tab.intValue = TAB_SETTINGS },

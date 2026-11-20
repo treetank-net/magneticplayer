@@ -54,6 +54,7 @@
     <string name="cat_row_kids">Dla dzieci</string>
     <string name="cat_row_because">Podobne do „%1$s”</string>
     <string name="cat_offline_from">Serwer niedostępny · katalog z synchronizacji %1$s; pobrane filmy zagrają</string>
+    <string name="cat_on_phone">Na telefonie</string>
     <string name="cat_offline">Serwer niedostępny · katalog z ostatniej synchronizacji; pobrane filmy zagrają</string>
     <string name="cat_row_with">Z udziałem: %1$s</string>
     <string name="cat_row_added">Ostatnio dodane</string>
@@ -229,4 +230,5 @@
     </plurals>
     <string name="ser_dl_on_phone">Na telefonie</string>
     <string name="ser_dl_downloading">Pobiera się na telefon</string>
+    <string name="cat_on_servers">Na serwerach</string>
 </resources>

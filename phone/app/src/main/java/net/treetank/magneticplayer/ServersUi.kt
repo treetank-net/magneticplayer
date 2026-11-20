@@ -21,10 +21,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.ConnectedTv
@@ -392,7 +394,8 @@ private fun SheetRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerSheet(current: String?, onPick: (String) -> Unit, onWake: (String) -> Unit, onAdd: () -> Unit,
-                onManage: () -> Unit, onDismiss: () -> Unit) {
+                onManage: () -> Unit, allMode: Boolean = false, onAll: () -> Unit = {}, onWakeAll: (List<String>) -> Unit = {},
+                onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val servers = remember { Servers.all(ctx) }
     val online = remember { mutableStateMapOf<String, Boolean>() }
@@ -405,16 +408,21 @@ fun ServerSheet(current: String?, onPick: (String) -> Unit, onWake: (String) -> 
     ModalBottomSheet(onDismiss) {
         Column(Modifier.padding(bottom = 24.dp)) {
             Text(stringResource(R.string.srv_videos_from_server), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.titleMedium)
+            // "All": first, with two or more servers that have files
+            if (servers.count { it.hasFiles } >= 2) SheetRow(Icons.Filled.Layers, stringResource(R.string.srv_all_servers),
+                stringResource(R.string.srv_all_servers_sub), null, allMode) { onAll() }
             servers.forEach { s ->
                 val on = online[s.key]
                 val status = when (on) { true -> stringResource(R.string.srv_status_online); false -> stringResource(R.string.srv_status_asleep); null -> "…" }
                 SheetRow(if (s.hasPlayer) Icons.Filled.Computer else Icons.Filled.Dns, s.name,
                     if (s.hasFiles) "${s.rolesText(ctx)} · $status" else stringResource(R.string.srv_screen_only_status, status),
                     when (on) { true -> OK_GREEN; false -> MaterialTheme.colorScheme.outline; null -> null },
-                    s.key == current, enabled = s.hasFiles,
+                    s.key == current && !allMode, enabled = s.hasFiles,
                     trailing = if (on == false && s.mac.isNotBlank()) ({ TextButton({ onWake(s.key) }) { Text(stringResource(R.string.srv_wake)) } }) else null,
                 ) { onPick(s.key) }
             }
+            val asleep = servers.filter { online[it.key] == false && it.mac.isNotBlank() }.map { it.key }
+            if (asleep.size >= 2) SheetRow(Icons.Filled.PowerSettingsNew, stringResource(R.string.srv_wake_all), null, null, false) { onWakeAll(asleep) }
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
             SheetRow(Icons.Filled.Add, stringResource(R.string.srv_add_server), null, null, false) { onAdd() }
             SheetRow(Icons.Filled.Settings, stringResource(R.string.srv_manage_servers), null, null, false) { onManage() }
@@ -1030,3 +1038,15 @@ fun qrBitmap(text: String, size: Int): android.graphics.Bitmap {
     return android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888)
 }
 
+
+/** "All": which server Downloads and Folders show (the active one), as a row of chips. */
+@Composable
+fun ServerChips(keys: List<String>, current: String, onPick: (String) -> Unit) {
+    val ctx = LocalContext.current
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        keys.forEach { k ->
+            FilterChip(k == current, { onPick(k) }, { Text(Servers.get(ctx, k)?.name ?: k) })
+        }
+    }
+}

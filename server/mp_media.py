@@ -202,7 +202,8 @@ def probe(path):
                      "width": s.get("width"), "height": s.get("height")}
         elif t == "audio":
             audio.append({"index": len(audio), "codec": s.get("codec_name"), "channels": s.get("channels"),
-                          "lang": tags.get("language"), "default": bool((s.get("disposition") or {}).get("default"))})
+                          "lang": tags.get("language"), "title": tags.get("title"),
+                          "default": bool((s.get("disposition") or {}).get("default"))})
         elif t == "subtitle":
             subs.append({"codec": s.get("codec_name"), "lang": tags.get("language")})
     fmt = d.get("format") or {}
@@ -213,9 +214,12 @@ def probe(path):
     return res
 
 
-def pick_audio(info, langs=("pol", "pl")):
-    """Audio track for the Chromecast version: Polish, then the default one, then the first."""
+def pick_audio(info, langs=("pol", "pl"), index=None):
+    """Audio track for the Chromecast version: the one asked for ([index], from the phone's remembered choice), else
+    Polish, then the default one, then the first."""
     a = info["audio"]
+    if index is not None and 0 <= index < len(a):
+        return a[index]
     return (next((x for x in a if (x["lang"] or "") in langs), None) or next((x for x in a if x["default"]), None)
             or (a[0] if a else None))
 
@@ -224,9 +228,10 @@ AUDIO_OK = {"aac", "mp3"}
 AUDIO_MAYBE = {"ac3", "eac3", "opus", "vorbis", "flac"}
 
 
-def cast_check(info):
-    """Chromecast verdict: "ok" | "maybe" | "no", the reasons and what a conversion would do."""
-    v, a = info["video"], pick_audio(info)
+def cast_check(info, audio=None):
+    """Chromecast verdict: "ok" | "maybe" | "no", the reasons and what a conversion would do ([audio]: the track index
+    the version will carry, None = pick_audio's choice)."""
+    v, a = info["video"], pick_audio(info, index=audio)
     problems, verdict = [], "ok"
     v_copy = bool(v and v["codec"] == "h264" and v["bits"] == 8 and (v["height"] or 0) <= 1088)
     if not v:
@@ -255,7 +260,7 @@ def cast_check(info):
     if "matroska" in (info["container"] or "") and verdict == "ok":
         problems.append(T("MKV container: usually works", "kontener MKV: zwykle działa"))
     return {"verdict": verdict, "problems": problems, "video_copy": v_copy, "audio_copy": a_copy,
-            "audio": a and {"codec": a["codec"], "lang": a["lang"]}}
+            "audio": a and {"codec": a["codec"], "lang": a["lang"], "index": a["index"], "title": a.get("title")}}
 
 
 def cast_check_for(info, prof):
@@ -361,7 +366,7 @@ class Converter:
         with self.lock:
             return [dict(j, path=p) for p, j in self.jobs.items()]
 
-    def start(self, full, title):
+    def start(self, full, title, audio=None):
         if not detect_encoder():
             raise RuntimeError(T("this server has no ffmpeg (install it: install-root.sh)", "na tym serwerze nie ma ffmpeg (zainstaluj: install-root.sh)"))
         info = probe(full)
@@ -373,7 +378,7 @@ class Converter:
             if j and j["state"] in ("queued", "running"):
                 return dict(j)
             j = {"state": "queued", "title": title, "pct": 0, "speed": None, "error": None, "started": None,
-                 "check": cast_check(info), "encoder": None}
+                 "check": cast_check(info, audio), "encoder": None, "audio": audio}
             self.jobs[full] = j
             self.queue.append(full)
             if not self.worker or not self.worker.is_alive():
@@ -411,7 +416,7 @@ class Converter:
 
     def _cmd(self, full, out, info, chk, enc):
         name, label, pre, vf, args = next(e for e in ENCODERS if e[0] == enc["encoder"])
-        a = pick_audio(info)
+        a = pick_audio(info, index=chk.get("audio") and chk["audio"].get("index"))
         cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error"]
         if not chk["video_copy"]:
             cmd += pre
@@ -431,7 +436,7 @@ class Converter:
 
     def _run(self, full, j):
         info, enc = probe(full), detect_encoder()
-        chk = cast_check(info)
+        chk = cast_check(info, j.get("audio"))
         out = variant_path(full)
         os.makedirs(os.path.dirname(out), exist_ok=True)
         part = out + ".part"

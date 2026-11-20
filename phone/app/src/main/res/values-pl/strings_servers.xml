@@ -227,4 +227,7 @@
     <string name="srv_shrink_while_watching">Zmniejszaj, gdy ktoś ogląda</string>
     <string name="srv_shrink_while_watching_on">Inne dyski pełną parą, ten sam dysk wolniej; oglądany film podmieni się po seansie</string>
     <string name="srv_shrink_while_watching_off">Zmniejszanie czeka, aż nikt nie będzie oglądał</string>
+    <string name="srv_all_servers">Wszystkie serwery</string>
+    <string name="srv_all_servers_sub">Jedna biblioteka ze wszystkich; pobieranie i foldery po jednym serwerze</string>
+    <string name="srv_wake_all">Obudź wszystkie</string>
 </resources>

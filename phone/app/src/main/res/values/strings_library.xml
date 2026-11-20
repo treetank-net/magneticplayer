@@ -79,6 +79,10 @@
     <string name="lib_profile_compact_short">compact (720p)</string>
     <string name="lib_profile_tiny_short">tiny (480p)</string>
     <string name="lib_shrink_now">Shrink now…</string>
+    <string name="lib_folder_more">More</string>
+    <string name="lib_move_folder">Move to another library folder…</string>
+    <string name="lib_move_title">Move “%1$s” to</string>
+    <string name="lib_trash_folder">Delete to the trash…</string>
     <string name="lib_shrink_folder">Shrink this folder…</string>
     <string name="lib_shrink_folder_title">Shrink this folder</string>
     <string name="lib_shrink_hint">You\'ll see a preview first: nothing changes before you confirm it. Files still seeding are skipped, and originals stay in the trash for a while.</string>

@@ -1,5 +1,6 @@
 package net.treetank.magneticplayer
 
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -77,6 +78,8 @@ private fun grey(c: Color): Color {
 
 /** The server whose covers the catalog shows (set by the catalog area); null = drawn covers only. */
 val LocalCoverApi = androidx.compose.runtime.staticCompositionLocalOf<Api?> { null }
+/** "All": the covers of another server's items come from that server (null = no covers there). */
+val LocalCoverApiFor = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Api?> { { null } }
 
 /** Where a catalog item's picture comes from: its folder (poster.jpg…, or a frame of its main video) or the file. */
 fun CatItem.art(): Pair<Int, String> = root to (dir ?: path)
@@ -91,11 +94,13 @@ fun CatItem.art(): Pair<Int, String> = root to (dir ?: path)
 @Composable
 fun SyntheticCover(title: String, year: Int?, genres: List<String>, modifier: Modifier, missing: Boolean = false,
                    badge: String? = null, titleSize: TextUnit = 14.sp, corner: Dp = 10.dp, padding: Dp = 8.dp,
-                   art: Pair<Int, String>? = null, wide: Boolean = false) {
+                   art: Pair<Int, String>? = null, wide: Boolean = false, onPhone: Boolean = false, artSrv: String = "") {
     val (a0, b0) = genreColors(genres)
     val a = if (missing) grey(a0) else a0
     val b = if (missing) grey(b0) else b0
-    val api = LocalCoverApi.current?.takeIf { art != null && it.srv.libraryCovers }
+    val base = LocalCoverApi.current
+    val forSrv = LocalCoverApiFor.current
+    val api = (if (artSrv.isEmpty() || artSrv == base?.srv?.key) base else forSrv(artSrv))?.takeIf { art != null && it.srv.libraryCovers }
     val k = if (api != null && art != null) Covers.key(api, art.first, art.second, wide) else null
     var bmp by remember(k) { mutableStateOf(k?.let { Covers.cached(it) }) }
     if (k != null && bmp == null && !Covers.isMissing(k)) LaunchedEffect(k) {
@@ -126,12 +131,46 @@ fun SyntheticCover(title: String, year: Int?, genres: List<String>, modifier: Mo
         }
         if (badge != null) Text(badge, Modifier.padding(6.dp).clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.55f))
             .padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        // downloaded to this phone (a film, or at least one episode of a series): plays without the server
+        if (onPhone) androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.DownloadDone,
+            stringResource(R.string.cat_on_phone), Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp).clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f)).padding(3.dp), tint = Color.White)
         if (pic == null || frame) Column(Modifier.align(Alignment.BottomStart).padding(padding)) {
             Text(title, color = Color.White, fontSize = titleSize, fontWeight = FontWeight.Black, lineHeight = titleSize * 1.1f,
                 maxLines = 4, overflow = TextOverflow.Ellipsis)
             if (year != null) Text(year.toString(), color = Color.White.copy(alpha = 0.75f), fontSize = (titleSize.value * 0.7f).sp)
         }
     }
+}
+
+/**
+ * Whether this phone holds a whole copy of [item] (a film) or of one of its episodes (a series), for the cover mark.
+ * The downloaded keys are read at most every few seconds: a row draws many covers.
+ */
+object OnPhoneMarks {
+    private var at = 0L
+    private var keys: Set<String> = emptySet()
+    fun keys(ctx: android.content.Context): Set<String> {
+        val now = System.currentTimeMillis()
+        if (now - at > 5000) {
+            keys = runCatching { OfflineStore.all(ctx).filter { it.complete }.map { it.key }.toSet() }.getOrDefault(emptySet())
+            at = now
+        }
+        return keys
+    }
+    fun has(ctx: android.content.Context, srv: String, item: CatItem): Boolean {
+        val k = keys(ctx)
+        if (k.isEmpty()) return false
+        val p = Servers.prefixOf(srv) + "lib${item.root}/"
+        return if (item.dir != null) k.any { it.startsWith(p + item.dir + "/") } else (p + item.path) in k
+    }
+}
+
+@Composable
+fun onPhone(item: CatItem): Boolean {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val srv = item.srv.ifEmpty { LocalCoverApi.current?.srv?.key ?: return false }
+    return remember(item.id, srv) { OnPhoneMarks.has(ctx, srv, item) }
 }
 
 /** "PL audio" / "PL subs" on a cover, or null. */
@@ -147,8 +186,13 @@ fun plBadge(audio: List<String>, subs: List<String>): String? = when {
 fun CoverCard(item: CatItem, meta: String?, width: Dp = 112.dp, progress: Float? = null, onClick: () -> Unit) {
     Column(Modifier.width(width).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SyntheticCover(item.title, item.year, item.genres, Modifier.width(width).height(width * 1.5f),
-            badge = plBadge(item.audio, item.subs), art = item.art())
+            badge = plBadge(item.audio, item.subs), art = item.art(), onPhone = onPhone(item), artSrv = item.srv)
         if (progress != null) LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(4.dp))
+        // "All": which server it is on ("jmpc", "jmpc +1" when another server has it too)
+        val where = item.srv.takeIf { it.isNotEmpty() }?.let { k ->
+            (Servers.get(androidx.compose.ui.platform.LocalContext.current, k)?.name ?: k) + if (item.alsoOn.isNotEmpty()) " +${item.alsoOn.size}" else ""
+        }
+        val meta = listOfNotNull(where, meta).joinToString(" · ").ifEmpty { null }
         if (meta != null) Text(meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

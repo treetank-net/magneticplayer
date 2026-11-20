@@ -145,6 +145,51 @@ class Settings(ctx: Context) {
         p.edit().putFloat("cw:$key", watched).putLong("cu:$key", System.currentTimeMillis()).apply()
     fun forgetCache(key: String) = p.edit().remove("cw:$key").remove("cu:$key").apply()
 
+    /**
+     * A file or folder of server [srv] moved on the server (load balancing, freeing a disk): what this phone saved
+     * under its old place (positions, "watched", buffer use, the folder's audio and subtitle shift) follows it.
+     * Downloaded copies keep their old key: they still play from "On the phone".
+     */
+    fun applyMove(srv: String, fromRoot: Int, from: String, toRoot: Int, to: String) {
+        val oldKey = Servers.prefixOf(srv) + "lib$fromRoot/$from"
+        val newKey = Servers.prefixOf(srv) + "lib$toRoot/$to"
+        val oldDir = "$srv:$fromRoot:$from"
+        val newDir = "$srv:$toRoot:$to"
+        val e = p.edit()
+        var n = 0
+        for ((k, v) in p.all) {
+            val pre = k.substringBefore(':', "") + ":"
+            val rest = k.substringAfter(':', "")
+            val moved = when (pre) {
+                "pos:", "pt:", "wd:", "cw:", "cu:" -> when {
+                    rest == oldKey -> newKey
+                    rest.startsWith("$oldKey/") -> newKey + rest.removePrefix(oldKey)
+                    else -> null
+                }
+                "audio:", "subshift:" -> when {
+                    rest == oldDir -> newDir
+                    rest.startsWith("$oldDir/") -> newDir + rest.removePrefix(oldDir)
+                    else -> null
+                }
+                else -> null
+            } ?: continue
+            if (p.contains(pre + moved)) continue  // something saved at the new place already wins
+            when (v) {
+                is Long -> e.putLong(pre + moved, v)
+                is Float -> e.putFloat(pre + moved, v)
+                is String -> e.putString(pre + moved, v)
+                else -> continue
+            }
+            e.remove(k)
+            n++
+        }
+        if (n > 0) e.apply()
+    }
+
+    /** Up to when (server epoch s) moves of server [srv] were applied. */
+    fun movesSeen(srv: String): Double = p.getString("moves_s:$srv", null)?.toDoubleOrNull() ?: 0.0
+    fun setMovesSeen(srv: String, at: Double) = p.edit().putString("moves_s:$srv", at.toString()).apply()
+
 }
 
 /** One video of a series folder: [path] relative to the library folder, [season]/[episode] from the name (null = none). */
@@ -465,6 +510,14 @@ class Api(val s: Settings, srv: Server) {
     /** `{state: waiting|downloading|joined, server: {host, port, id, name, pair_code} | null, expires_in}` */
     fun installStatus(code: String): JSONObject = JSONObject(call("GET", "/api/install/status?code=$code", null, 4000))
     /** Pending access requests from the home network: `[{id, name, ip, age, expires_in}]` (mp_access.py). */
+    /** Library items moved after [since] (epoch s): (from root, from path, to root, to path) and the server's "now". */
+    fun libraryMoves(since: Double): Pair<List<List<Any>>, Double> {
+        val o = JSONObject(call("GET", "/api/library/moves?since=$since", null, 6000))
+        val a = o.getJSONArray("moves")
+        return (0 until a.length()).map { a.getJSONObject(it) }.map {
+            listOf(it.getInt("from_root"), it.getString("from"), it.getInt("to_root"), it.getString("to"))
+        } to o.getDouble("now")
+    }
     fun accessRequests(): JSONArray = JSONObject(call("GET", "/api/access/requests", null, 4000)).getJSONArray("requests")
     fun accessDecide(id: String, approve: Boolean, role: String = "guest", days: Int = 0) {
         call("POST", "/api/access/requests/$id", JSONObject().put("action", if (approve) "approve" else "deny")
@@ -629,7 +682,17 @@ class Api(val s: Settings, srv: Server) {
 
     /** A series folder's videos in watching order and its extras (agent 1.10+, `Server.libraryEpisodes`). */
     fun episodes(root: Int, path: String): Episodes {
-        val o = JSONObject(call("GET", "/api/library/episodes?root=$root&path=${Uri.encode(path)}"))
+        // kept on the phone (files/episodes/<server>/<hash>.json): a series' list opens without the server, next to
+        // the catalog kept the same way (CatalogCache)
+        val f = java.io.File(ctx.filesDir, "episodes/${srv.key.ifEmpty { "local" }}/${"$root/$path".hashCode().toUInt()}.json")
+        val raw = try {
+            call("GET", "/api/library/episodes?root=$root&path=${Uri.encode(path)}").also { r ->
+                runCatching { f.parentFile?.mkdirs(); java.io.File(f.path + ".tmp").apply { writeText(r) }.renameTo(f) }
+            }
+        } catch (e: Exception) {
+            if (f.exists()) f.readText() else throw e
+        }
+        val o = JSONObject(raw)
         fun list(a: JSONArray?) = if (a == null) emptyList() else List(a.length()) { i ->
             val x = a.getJSONObject(i)
             Episode(x.getString("path"), x.optString("name"), x.optInt("season", -1).takeIf { !x.isNull("season") && it >= 0 },
@@ -839,7 +902,13 @@ class Api(val s: Settings, srv: Server) {
     /** File format and rating for Chromecast, the "for Chromecast" version and its preparation (agent 1.2+). */
     fun mediaProbe(ref: MediaRef): JSONObject = JSONObject(call("GET", "/api/media/probe?${ref.query()}", timeout = 30000))
     fun mediaConvert(ref: MediaRef, op: String? = null): JSONObject =
-        JSONObject(call("POST", "/api/media/convert", ref.json().apply { if (op != null) put(op, true) }))
+        JSONObject(call("POST", "/api/media/convert", ref.json().apply {
+            if (op != null) put(op, true)
+            // the version for a TV carries the audio this phone picked last (the same folder's choice first): a
+            // Chromecast plays one audio track of a file, it can't switch like the phone's player or mpv
+            else if (srv.hasConvertAudio) ((ref as? MediaRef.InLibrary)?.let { s.folderAudio(folderKey(it)) } ?: s.audioChoice)
+                ?.let { put("audio", it) }
+        }))
 
     /** Chromecast seen by the agent (any sender): `{active, device, id, app, title, state, pos, …, all: [...]}`. */
     fun castStatus(): JSONObject = JSONObject(call("GET", "/api/cast/status", timeout = 3000))

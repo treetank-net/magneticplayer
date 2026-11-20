@@ -57,6 +57,10 @@ data class Server(
      * the settings and the history of files sent from phones (`/api/uploads`).
      */
     val hasCatalog get() = features?.optBoolean("catalog", false) ?: false
+    /** GET /api/library/moves: what moved between library folders (agent 1.14+), for [Settings.applyMove]. */
+    val hasMoves get() = features?.optBoolean("library_moves", false) ?: false
+    /** POST /api/media/convert takes the remembered audio choice (agent 1.14+). */
+    val hasConvertAudio get() = features?.optBoolean("convert_audio", false) ?: false
     /** Agent 1.8.2+: a plan that re-encodes old picture formats across the library. */
     val hasModernize get() = features?.optBoolean("library_modernize", false) ?: false
     /** agent 1.9+: subtitles fitted to the film's speech (after a download, and the "Subtitles" task in Disks) */
@@ -186,6 +190,13 @@ object Servers {
         ?.takeIf { k -> all(ctx).any { it.key == k } } ?: all(ctx).firstOrNull()?.key
 
     fun setActive(ctx: Context, key: String?) = prefs(ctx).edit().putString("active_server", key).apply()
+
+    /** Servers with files (downloads or a library), the ones "All" merges. */
+    fun fileKeys(ctx: Context) = all(ctx).filter { it.hasFiles }.map { it.key }
+    /** "All" in the switcher: Library over every server with files merged, Downloads and Folders with a server row on
+     * top (the active server is the one they show). Only with two or more servers with files. */
+    fun allMode(ctx: Context) = prefs(ctx).getBoolean("all_servers", false) && fileKeys(ctx).size >= 2
+    fun setAll(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("all_servers", on).apply()
 
     fun active(ctx: Context): Server = get(ctx, activeKey(ctx))
         ?: all(ctx).let { l -> l.firstOrNull { it.hasFiles } ?: l.firstOrNull() } ?: Server.NONE

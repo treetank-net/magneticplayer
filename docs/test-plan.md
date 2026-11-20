@@ -154,7 +154,46 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       [x] 2026-11-20, emulator, v1.261119.2356: airplane mode, app restarted: Library opens on Discover with the bar
       ("synced 0 minutes ago"), drawn covers, "Continue watching" plays the buffered MKV episode offline.
 
+- [ ] Moves are journalled (agent 1.14.0, `GET /api/library/moves?since=`): after "Free up" / load balancing moves
+      a series to another disk, the phone (on its next catalog sync) keeps its positions, "watched" marks, the
+      folder's audio choice and subtitle shift under the new place: "Continue watching" still shows the series.
+      Downloaded copies keep their old key (they still play from "On the phone"). Moves made before the app update
+      are applied on the first sync after it.
+      [x] 2026-11-20, jmpc, agent 1.14.0: the journal endpoint answers (empty before the first move).
+      [x] 2026-11-20, jmpc, agent 1.14.0: after the first folder of a load-balancing task finished, the journal
+      lists it (from folder 8 to folder 1). [ ] The phone re-keying its positions with it.
+- [ ] A shrink item checks free room first (agent 1.14.0): on a full disk it fails at once with "not enough room on
+      the disk: about X MB needed, Y MB free (the trash … may hold old originals)" instead of running ffmpeg into
+      ENOSPC (a task with 644 old-format files ran into a full disk: 457 items failed that way, one by one).
+- [ ] The app polls the server (ping, access requests, tasks, uploads) only while it is on screen: before, a foreground
+      service (the Remote's session, downloads) kept the process alive and the loop pinged every 5 s in the background.
+      Back after more than 30 s the header and Library say "Connecting…" until the first answer, not "asleep" /
+      "unreachable" from the old state.
+- [ ] Library offline, continued: a series' episode list opened once online opens offline too (kept per server);
+      covers of titles with a complete copy on the phone get a "downloaded" mark (a series: any episode).
+- [ ] Folders: a folder's ⋮ menu has "Move to another library folder…" (the other library folders, the same tag
+      first; it shows the move preview and starts a task) and "Delete to the trash…" (the trash preview).
+- [ ] Chromecast and the audio choice (agent 1.14.0, `convert_audio`): "Prepare" for a dual-audio film converts with
+      the audio track picked last (the folder's choice first), not always the Polish/first one; the variant then plays
+      on the Chromecast with that language.
+
+## "All servers" (two or more servers with files)
+
+- [ ] The top switcher has "All servers" at the top; picked, the header says "All servers ▾" with "N of M servers
+      on". Picking one server leaves All. "Wake all" when two or more are asleep with a known MAC.
+- [ ] Library in All: Discover/Browse/search over all servers at once; a title on two servers shows once (the better
+      copy: resolution, Polish audio), the cover says the server and "+1", the title screen lists "On servers" with
+      each copy's quality, playing picks the copy's server. Continue watching and positions stay per server.
+- [ ] Downloads and Folders in All: a row of server chips on top, one server's list at a time.
+- [ ] With the active server asleep and another one on, Library in All doesn't show the asleep pane.
+
 ## Noted wishes
+- [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
+  tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a
+  disk passes ~90%). First run done by hand 2026-11-20: 14 folders (~320 GiB) moved from the full disk to the other
+  one with "Free up" + an explicit pick (a folder tagged also `anime` and a series being watched were left out).
+  Needs: keeping extra tags (a folder with `filmy`+`anime` must not land in a folder that has only `filmy`), and the
+  trash: shrink originals stay in the source disk's trash for `trash_days`, so a shrunk disk does not get its room back.
 - [idea] Library and servers (stage 2 of docs/plan-multi-server.md, "a shared library from all servers: later"):
   the top switcher gets "All" next to each server; with "All" Library and Downloads merge every reachable server
   (titles marked with their server, e.g. "jmpc · Series (TOSHIBA)"), with one server picked they filter to it.
@@ -170,6 +209,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   saw and gets only what changed since (the whole catalog only the first time or when it is small).
 - [todo] Two season 2 extras of one re-encoded series failed: their AVI originals are truncated (the header promises
   more than is there). The check was fixed in agent 1.10.1; the two files only need a new shrink run on that folder.
+  2026-11-20: the rerun failed with "no space left" (the disk was full); the series is moved to the other disk by the
+  load balancing run, the rerun goes after it.
 - [later] The folder browser plays a single file (no next-episode card, no queue); the catalog's series screen is the
   way to watch a series. An episode picker inside the player will cover the rest.
 - [~] Audio choice on screens: mpv done (agent 1.13.3, see "Catalog and Remote"); Chromecast still plays the file's
@@ -182,3 +223,26 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
   by language. mpv and Chromecast get the same choice; DLNA cannot switch tracks (the file's default plays).
 - [idea] The folder browser as the place for jobs on its files: shrink, missing subtitles (both there), and more as
   they come. Zip archiving gives videos almost nothing (already compressed), so no.
+
+## UX notes (observed while testing; to review with the user, not fixed)
+
+Written down as seen, also when unsure whether it is a problem at all.
+
+- 2026-11-20, Remote, Audio sheet: a track's own title can contradict the detail line under it ("English: 5.1ch
+  (AC3 640Kbps)" over "5.1 · AAC": the file really has AAC; the title is the release's). Which one to trust is unclear.
+- 2026-11-20, Remote on jmpc: the title shown is the raw file name with release tags
+  ("[group].Title.02.Episode [1080p.BRrip.x264.Dual-Audio].mkv"), not the recognised series/episode as in the catalog.
+- 2026-11-20, tasks: item errors are cut from the front ("ffmpeg failed: e left on device Error writing trailer of
+  /media/…/.Film.mp-shrink.part.mkv: No space left on device"): starts mid-word, shows a hidden temp path, and 457
+  identical errors are listed one per file instead of one reason.
+- 2026-11-20, shrink / "Update old formats": the preview promises space saved, but originals go to the trash on the
+  same disk for 14 days, so the disk fills up during a big run; nothing on the preview or the task says so.
+- 2026-11-20, Remote: after leaving the Remote (app in the background, nothing of ours playing) its session service
+  stayed in the foreground for 10+ minutes (another app's paused cast session on the TV was selected).
+- A Chromecast variant keeps the audio track it was prepared with: after switching the language on the phone,
+  casting the same film again uses the old variant (no "Prepare" offered, it already exists). Unclear whether a
+  second variant per language, or a hint "prepared with English audio", is wanted.
+- "All servers": a title on two servers resumes only on the copy where it was watched (positions are per server);
+  the merged cover may open the other copy from zero. Flagged in the prototype as a simplification.
+- "All servers" in Downloads and Folders is a chip row, not a merged list: it reads like a filter, while Library
+  really merges. Could confuse; check with the user.
