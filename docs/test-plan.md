@@ -188,7 +188,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       Found with it: the screens' own polling loops (disks screen every 2 s, catalog and moves every minute, wish
       list every 30 s, and the Remote, Chromecast, DLNA, torrent files) kept running in the background while a
       service kept the process alive. Fixed after it: they all wait until the app is on screen again.
-      [ ] Check: with the app in the background only the service's minute reads reach the server.
+      [x] 2026-11-20, Pixel, v1.261120.0851: app sent to the background (Home) with a followed task: for 3 minutes
+      the only requests from the phone were `GET /api/tasks?brief=1` at 09:06:54, 09:07:54, 09:08:54, 09:09:54.
 - [ ] Library offline, continued: a series' episode list opened once online opens offline too (kept per server);
       covers of titles with a complete copy on the phone get a "downloaded" mark (a series: any episode).
       [x] 2026-11-20, Pixel, v1.261120.0826: Loki opened once online, then Wi-Fi off ("Działa 0 z 2 serwerów"): the
