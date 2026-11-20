@@ -96,6 +96,20 @@ def numbered(files):
     return len(have) if len(have) >= 3 and sum(x[1] is not None for x in nums) >= 0.8 * len(nums) else 0
 
 
+def film_years(files):
+    """Distinct years in the paths of a folder's big videos ("01. Film (2001)/…", "02. Film 2 (2002)/…"): 2+ means a
+    collection of films, since episodes of one series don't each carry their own year."""
+    vids = [(p, s) for p, s in files if os.path.splitext(p)[1].lower() in VIDEO and not is_extra(p)]
+    if len(vids) < 2:
+        return 0
+    top = max(s for _, s in vids)
+    big = [p for p, s in vids if s >= 0.15 * top]
+    ys = [re.findall(r"(?<!\d)(?:19|20)\d\d(?!\d)", p) for p in big]
+    if sum(bool(y) for y in ys) < 0.8 * len(big):
+        return 0
+    return len({y[0] for y in ys if y})
+
+
 def episodes(files):
     """(path, size) videos of a series folder → (episodes in watching order, extras). Each: {path, season, episode, size}.
     Small leftovers (< 15% of the biggest video, e.g. samples) count as extras too."""
@@ -238,18 +252,24 @@ class Index:
         ex = set(exclude)
         return [x for x in (_row(r) for r in self.db.execute(q, args)) if x["imdb"] not in ex][:limit]
 
-    def find(self, title, year=None, kind=None):
-        """Best title: exact key first, then year (±1) and kind, finally popularity."""
+    def find(self, title, year=None, kind=None, only=False):
+        """Best title: exact key first, then year (closer is better) and kind, finally popularity. `only`: titles of
+        that kind only (a single video file is never a whole series)."""
         if not self.db or not title:
             return None
         rows = self.db.execute("SELECT t.* FROM k JOIN t USING(id) WHERE k.key=?", (norm(title),)).fetchall()
+        if only and kind is not None:
+            rows = [r for r in rows if r[1] == kind]
         if not rows:
             return None
 
         def score(r):
             s = r[6] ** 0.3  # popularity: gently
             if year and r[3]:
-                s += 1000 if r[3] == year else 400 if abs(r[3] - year) == 1 else -300
+                d = abs(r[3] - year)
+                # a year off by 2 is a common naming slip (the year a film was dubbed, released here); far off is
+                # another title of the same name (a remake), the farther the worse
+                s += 1000 if d == 0 else 400 if d == 1 else 150 if d == 2 else -300 - 10 * d
             if kind is not None and r[1] == kind:
                 s += 150
             return s
@@ -361,6 +381,7 @@ def wd_kids(w):
 
 RANGE1 = re.compile(r"(?<=[\s._])(\d)-(\d{2,3})(?=[\s._\[(]|$)")
 COLLECTION = re.compile(r"^(?P<c>.+?\d)\s+-\s+\d{1,3}\s+-\s+(?P<t>.+)$")
+LEADYEAR = re.compile(r"^(?P<y>(?:19|20)\d\d)\s*-\s+(?P<t>.+)$")
 
 
 def _guessit(name):
@@ -369,6 +390,24 @@ def _guessit(name):
     # ends with a number (a series' "Show - 01 - Pilot" has neither and stays as it was).
     # "Show.1-25 [1080p]": an episode range guessit reads as part of the title ("Show 1", episode 25) unless padded
     name = RANGE1.sub(r"0\1-\2", name)
+    # "1961 - <Title>.avi": the year first (a collection sorted by year); guessit takes the year for the title and
+    # reads an episode. The rest is the title, the leading year the film's unless the rest has its own
+    m = LEADYEAR.match(name)
+    if m and not EPISODE.search(m.group("t")):
+        g = _guessit_raw(m.group("t"))
+        # a number starting the title ("101 <Title>") is read as an episode and cut off: keep the name's own text
+        t = re.split(r"[\[(]|\b(?:480|576|720|1080|2160)p\b", os.path.splitext(m.group("t"))[0])[0].strip(" -._")
+        if g.get("title") and norm(t) != norm(g["title"]) and norm(t).endswith(norm(g["title"])):
+            g["title"] = t
+        elif g.get("title") and (n := re.match(r"\d+\s", t)) and not g["title"].startswith(n.group(0)):
+            g["title"] = n.group(0) + g["title"]  # "101 <Title> 2 - <subtitle>": the number goes back
+        if g.get("title"):
+            if not g.get("year"):
+                g["year"] = int(m.group("y"))
+            g["type"] = "movie"
+            for k in ("season", "episode", "episode_title"):
+                g.pop(k, None)
+            return g
     m = COLLECTION.match(name)
     if m:
         g = _guessit_raw(m.group("t"))
@@ -420,6 +459,14 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
     title, year = g.get("title"), g.get("year")
     # series only from episode markers: a large number of files alone may also be a movie collection
     series_hint = (g.get("type") == "episode" and "episode" in g or "season" in g) or c.get("episodes", 0) >= 2
+    # a single video without episode markers is never a whole series: an exact title match of a series of the same
+    # name ("<Film> (2014)" → a 1967 series) is ignored. Folders of several videos keep the old way (webisodes,
+    # numbered parts of a film series can go either way)
+    single = (not files and os.path.splitext(name or "")[1].lower() in VIDEO) or c.get("videos", 0) == 1 and bool(files)
+    films_only = not series_hint and single
+    # what is inside is known and nothing in it looks like an episode (one film, or a set of films)
+    # ("Show - 01" numbering counts as episodes here: anime series folders)
+    no_eps = not series_hint and (single or bool(files) and c.get("videos", 0) >= 2 and (numbered(files) < 3 or film_years(files) >= 2))
     if series_hint:
         why.append(f"episodes ({c.get('episodes', 0)}/{c.get('videos', 0)})" if files else "name looks like an episode")
     hit = None
@@ -434,7 +481,7 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
         for t in dict.fromkeys(x for x in (title, alt) if x):
             if hit:
                 break
-            hit = index.find(t, year, 1 if series_hint else None)
+            hit = index.find(t, year, 1 if series_hint else 0 if films_only else None, only=films_only)
             if hit:
                 why.append(f"IMDb: {hit['title']} ({hit['year']})")
     kind = hit["kind"] if hit else ("series" if series_hint else "movie")
@@ -446,7 +493,8 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
     dark = gen & {"Horror", "Thriller", "Crime", "War"}
     anim, family = "Animation" in gen, "Family" in gen
     kids = not dark and ((anim and family) or (anim and kind == "movie") or (family and kind == "movie"))
-    conf = "high" if hit and (hit.get("year") == year or "IMDb from .nfo" in why) else "medium" if hit else "low"
+    near = not year or not hit or not hit.get("year") or abs(hit["year"] - year) <= 2
+    conf = "high" if hit and (hit.get("year") == year or "IMDb from .nfo" in why) else "medium" if hit and near else "low"
     if kids and not (anim and family):
         conf = "low"  # animation alone (adult anime) or "Family" alone (live-action remakes) is not enough
     # uncertain: ask Wikidata (age ratings, "children's film", Polish titles)
@@ -456,9 +504,12 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
             w = wd(t, year, kind if hit or series_hint else None)
             if w:
                 break
+        # videos without a single episode marker: a series of the same name doesn't make them a series (a film of a
+        # cartoon series, or another title), it only tells whether it is for children
+        info_only = bool(w) and w["kind"] == "series" and no_eps
         if w:
-            why.append(f"Wikidata: {w['title']} ({w['year']})")
-            if not hit:
+            why.append(f"Wikidata: {w['title']} ({w['year']})" + (", a series: kind not taken" if info_only else ""))
+            if not hit and not info_only:
                 hit = (index.get(w["imdb"]) if index and w["imdb"] else None) or \
                     {"imdb": w["imdb"], "kind": w["kind"], "title": w["title"], "year": w["year"], "genres": []}
                 kind = "series" if series_hint and c.get("episodes", 0) >= 2 else hit["kind"]
@@ -467,8 +518,9 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
             if k is not None:
                 kids = k and not dark
                 why.append(("for children" if kids else "not for children") + (f" (age {w['age']}+)" if w["age"] is not None else ""))
-                conf = "high" if w["year"] == year or not year else "medium"
-            elif conf == "low" and not kids:
+                if not info_only:
+                    conf = "high" if w["year"] == year or not year else "medium"
+            elif conf == "low" and not kids and not info_only:
                 conf = "medium"
     if kids:
         why.append("animation/family: " + ",".join(sorted(gen)))

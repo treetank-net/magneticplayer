@@ -332,7 +332,9 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       obraz bez zmian"; running it copies the picture and re-encodes only those tracks; the film then plays on the phone
       with sound to the end. [x] 2026-11-20, laptop throwaway agent: a synthetic H.264 MKV with damaged MP3 frames found
       by the preview and by the background scan, fixed (AAC, no decoder errors, picture copied, original in the trash),
-      a second preview empty. [ ] On jmpc, the real files. [ ] The item line in the app.
+      a second preview empty. [x] On jmpc, the real files (9, see below). [x] The item line in the app (2026-11-20,
+      emulator, v1.261120.1625, English): "Damaged sound MP3 → AAC, picture unchanged · 490 MB" among the old formats,
+      with the warning about files not checked yet.
 - [ ] Catalog groups (agent 1.15.0): a top folder holding several series (`ANIME/<series>/…`) gives one title per
       series, each with `group`; "Show - 01" / "Show.01." numbering counts as episodes in series folders; "Show.1-25"
       folder names lose the range. [x] 2026-11-20, jmpc via the API: 8 series from the anime folder, 7 recognised;
@@ -367,6 +369,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       decodes with 0 errors, lengths as before. [ ] Played on the Pixel with sound.
 - [ ] Damaged sound re-encoded at 128k stereo / 256k multichannel instead of 192k / 384k (agent 1.15.3): the fixed
       files no longer grow (the sources are MP3s of ~96-128k).
+- [ ] "Tidy up" no longer proposes moving films to the series folder (agent 1.15.3, catalog items re-identified): a
+      single video is never matched to a series of the same name, a folder of films with their own years in the names
+      ("01. Film (2001)", "02. Film 2 (2002)") isn't a series either, "2004 - Title" names keep the title and the
+      year, and a title match with the right year wins over a closer-sounding one. Checked against the whole jmpc
+      library offline (316 items, only the intended ones changed); to see in the app's Tidy up preview.
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
@@ -408,6 +415,15 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 ## UX notes (observed while testing; to review with the user, not fixed)
 
 Written down as seen, also when unsure whether it is a problem at all.
+
+- 2026-11-20, "Old formats" preview (emulator, jmpc): ~2 minutes of "Preparing the preview…" with the bar standing at
+  the start (the damaged-sound check spends up to 90 s); nothing says what it is doing or how long it takes.
+- 2026-11-20, "Old formats" preview: every one of 494 items is ticked, and the button reads "Shrink" (the screen is
+  "Update old formats"); one tap starts ~40 h of CPU work. Damaged-sound items sit among the picture conversions
+  with nothing grouping them (the job grouping prototype `docs/ux-jobs.html` covers this).
+- 2026-11-20, "Disks and tidy-up": five tool buttons ("Tidy up", "Duplicates", "Old formats", "Subtitles", "Get
+  subtitles"); "Subtitles" next to "Get subtitles" doesn't say the first one fits subtitles already on the disk.
+- 2026-11-20, "Disks and tidy-up": "Free up space" is offered on a disk with 718 GB of 1.8 TB free.
 
 - 2026-11-20, catalog: a library folder's subfolder that holds many series (e.g. `ANIME/<series>/…`) is one unrecognised
   item named after that subfolder; the series inside don't get their own titles in Discover/Browse. (Addressed by agent
