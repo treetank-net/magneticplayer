@@ -234,52 +234,52 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       (`.mp-trash/<date>/<source folder name>/…`) and moves its own older trash days there before an encode.
       [x] 2026-11-20, laptop, unit check with a faked full disk (scratchpad vs ~/.cache): original moved, own trash
       used when there is room, an old trash day moved to make room. [ ] On jmpc with a real run.
-- [ ] Shrink decode check (agent 1.14.4): only the video decoder's complaints reject a result. Found 2026-11-20 on
+- [x] Shrink decode check (agent 1.14.4): only the video decoder's complaints reject a result. Found 2026-11-20 on
       jmpc: the old-format run of one series' S2 extras + S4E08-09 failed 4/4 with "doesn't decode cleanly"; the
       result's picture decoded clean, the only line was "[mp3float] Header missing" from the copied MP3 audio (already
       damaged in the original). The first failing line is now logged. [x] Rerun of the 4 items on jmpc
-      (2026-11-20, agent 1.14.4): 4 done, 0 errors, 1033 → 657 MB; a frame at 20:00 matches the original, same length.
+      (2026-11-20, agent 1.14.4): 4 done, 0 errors, 1033 → 657 MB; a frame at 20:00 matches the original, same length. Also the 2 files of an older run rejected the same way: done, 0 errors, 676 MB saved.
 - [ ] Shrink: an item that would leave its disk under the 5 % reserve, with no other disk able to take the original,
       isn't started: "dysk zszedłby poniżej rezerwy 5%…" in the task's errors (agent 1.14.3). Unit check on the laptop (fake disk
       usage, 2026-11-20): refused with no other disk, passes when another disk has room. [ ] On jmpc.
-- [ ] "All servers" header: Wake / Sleep name the server they act on ("Obudź jmpc"; several asleep: "Obudź wszystkie";
-      several awake: "Uśpij…" opens a list), no longer the hidden active server only.
-- [ ] Cancelling a running task asks first ("Przerwać …?", "Niech działa"); "Monitoruj" moved under the progress,
-      with a bell icon. The shrink preview says the space comes back only after the trash days.
-- [ ] Offline, a video with nothing of it on the phone: a dialog "Nie ma go na telefonie" (not downloaded, the server
+- [x] "All servers" header: Wake / Sleep name the server they act on ("Obudź jmpc"; several asleep: "Obudź wszystkie";
+      several awake: "Uśpij…" opens a list), no longer the hidden active server only. (2026-11-20, Pixel, v1.261120.1000) Seen: "Uśpij jmpc" with the laptop active; offline "Obudź wszystkie". The "Uśpij…" list (two awake servers with power control) not exercised: only jmpc has it.
+- [x] Cancelling a running task asks first ("Przerwać …?", "Niech działa"); "Monitoruj" moved under the progress,
+      with a bell icon. The shrink preview says the space comes back only after the trash days. (2026-11-20, Pixel, v1.261120.1000) Dialog seen, "Niech działa" kept the task running; Monitoruj with a bell under the progress.
+- [x] Offline, a video with nothing of it on the phone: a dialog "Nie ma go na telefonie" (not downloaded, the server
       doesn't answer) and back, instead of a player at 00:00 reconnecting for a minute. Also from the Discover hero.
-      A buffered video offline no longer waits for the server's subtitle list.
-- [ ] Player: a spinner from opening until the first picture and while buffering.
-- [ ] Resume starts at the keyframe before the saved position (then seeks are exact again): picture and sound start
-      together. Check on an x265 episode resumed mid-way (before: sound ran while the picture stood still).
-- [ ] Episode list: "Na telefonie" / "Na telefonie do 90%" / "Pobiera się na telefon" under the episode's title, in
-      the accent colour (the grey icon at the end read as "watched").
-- [ ] "Move to…": each target folder shows its disk's free space. "On the phone" header shows the phone's free space.
-- [ ] Task card: errors once per reason with a count ("457 × brak miejsca na dysku"), ffmpeg's reason without temp
-      paths (agent 1.14.2 `error_groups`; older tasks are grouped too).
-- [ ] "All servers" → Folders: server sections keep the order of the server list (no swap after opening a folder);
-      inside a folder a line above the path says "jmpc: Seriale (disk)".
-- [ ] Remote / jmpc screen: a library video shows its recognised name ("Series · S2 E3", "Film (1968)") instead of the
-      release's file name (agent 1.14.2).
-- [ ] A title's screen: "Na serwerach" only with two or more copies.
+      A buffered video offline no longer waits for the server's subtitle list. (2026-11-20, Pixel, v1.261120.1000) From the Discover hero, Wi-Fi and data off after a force-stop; OK closes the player.
+- [x] Player: a spinner from opening until the first picture and while buffering. (2026-11-20, Pixel, v1.261120.1000) Seen in a screen recording while a local x265 episode opened.
+- [x] Resume starts at the keyframe before the saved position (then seeks are exact again): picture and sound start
+      together. Check on an x265 episode resumed mid-way (before: sound ran while the picture stood still). (2026-11-20, Pixel, v1.261120.1000) Recording of a resumed x265 episode: the picture moves from the first frames.
+- [x] Episode list: "Na telefonie" / "Na telefonie do 90%" / "Pobiera się na telefon" under the episode's title, in
+      the accent colour (the grey icon at the end read as "watched"). (2026-11-20, Pixel, v1.261120.1000) "Na telefonie" and "Na telefonie do 90%" seen; "Pobiera się" not exercised.
+- [x] "Move to…": each target folder shows its disk's free space. "On the phone" header shows the phone's free space. (2026-11-20, Pixel, v1.261120.1000) "wolne 706 GB / 321 GB" per target; "wolne na telefonie 45 GB" in the header.
+- [x] Task card: errors once per reason with a count ("457 × brak miejsca na dysku"), ffmpeg's reason without temp
+      paths (agent 1.14.2 `error_groups`; older tasks are grouped too). (2026-11-20, Pixel, v1.261120.1000) "457 × brak miejsca na dysku", "2 × wynik nie dekoduje się czysto…".
+- [x] "All servers" → Folders: server sections keep the order of the server list (no swap after opening a folder);
+      inside a folder a line above the path says "jmpc: Seriale (disk)". (2026-11-20, Pixel, v1.261120.1000) Order kept after opening the laptop's folder; "Laptop: Videos" and "jmpc: Filmy (<disk>)" above the path.
+- [x] Remote / jmpc screen: a library video shows its recognised name ("Series · S2 E3", "Film (1968)") instead of the
+      release's file name (agent 1.14.2). (2026-11-20, Pixel, v1.261120.1000) Remote and player/status: the film's recognised title with its year (agent 1.14.4).
+- [x] A title's screen: "Na serwerach" only with two or more copies. (2026-11-20, Pixel, v1.261120.1000) Single-copy title: no row. Two copies not exercised (no such title found).
 - [ ] Chromecast version and audio (agent 1.14.2): for a file with two or more audio tracks the cast sheet says the
       version's sound ("Dźwięk w niej: angielski") and, when the language picked since differs, offers "Przygotuj
       ponownie: japoński" (removes the old version, prepares one with the new track).
-- [ ] "All servers", cover cards: the card's own line first, the server after it ("Dalej: S1 E3 · jmpc"), so a cut
-      line loses the server, not the episode.
+- [x] "All servers", cover cards: the card's own line first, the server after it ("Dalej: S1 E3 · jmpc"), so a cut
+      line loses the server, not the episode. (2026-11-20, Pixel, v1.261120.1000) "Dalej: S1 E1 · jmpc".
 - [ ] Audio sheet (player and Remote): a track's title loses the release's codec/channel claims and a bare language
       ("English: 5.1ch (AC3 640Kbps)" shows nothing extra; "Lektor PL (AC3 2.0)" → "Lektor PL"); the line under it,
       read from the file, says channels and codec.
 - [ ] Remote's notification: another app's session (Spotify) left paused on a Chromecast ends our notification and
       foreground service after ~2 minutes (before: 10+ minutes); opening the Remote brings it back. Our own paused
       video keeps its notification.
-- [ ] Discover hero: a carousel of a few slides ("Nowe na twoich dyskach" ×2, "Podobne do „…”", "Najwyżej oceniany",
-      "Na chybił trafił"), in a random order each time, turning every 8 s, swipeable, dots below.
+- [x] Discover hero: a carousel of a few slides ("Nowe na twoich dyskach" ×2, "Podobne do „…”", "Najwyżej oceniany",
+      "Na chybił trafił"), in a random order each time, turning every 8 s, swipeable, dots below. (2026-11-20, Pixel, v1.261120.1000) Turns by itself, dots, random first slide. UX note below: it can turn right under a tap.
 - [ ] "All servers", a title on two servers: "Play" on the hero / title screen and the episode list use the copy this
       phone watched last (its server and position), not always the first copy.
-- [ ] Downloads in "All servers": with one server that has a torrent client (the usual case) its list shows without
+- [x] Downloads in "All servers": with one server that has a torrent client (the usual case) its list shows without
       server chips; chips only with two or more such servers. A true merged list is deferred (each client has its own
-      actions and settings).
+      actions and settings). (2026-11-20, Pixel, v1.261120.1000) No chips (only jmpc has a torrent client).
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
@@ -321,6 +321,15 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 ## UX notes (observed while testing; to review with the user, not fixed)
 
 Written down as seen, also when unsure whether it is a problem at all.
+
+- 2026-11-20, Discover hero carousel: it can turn to the next slide just as "Odtwórz" is tapped, so another title
+  starts than the one looked at (seen offline: tapped on one film, the dialog named another).
+- 2026-11-20, Discover hero: the small pink label over a bright cover is hard to read.
+- 2026-11-20, server picker: "Wszystkie serwery" is described as "pobieranie po jednym serwerze", which no longer
+  matches Downloads with a single torrent server (no chips).
+- 2026-11-20, phone player: the title is still the release's file name ("… (1080p BluRay x265 …).mkv"), while the
+  Remote now shows the recognised name.
+- 2026-11-20, playing on jmpc from a folder: the app stays on the folder; the Remote has to be opened by hand.
 
 - 2026-11-20, Remote, Audio sheet: a track's own title can contradict the detail line under it ("English: 5.1ch
   (AC3 640Kbps)" over "5.1 · AAC": the file really has AAC; the title is the release's). Which one to trust is unclear.
