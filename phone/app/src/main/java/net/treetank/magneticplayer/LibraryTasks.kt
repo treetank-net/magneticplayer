@@ -626,6 +626,9 @@ fun PlanScreen(api: Api, body: String, onBack: () -> Unit, onStarted: () -> Unit
                 Text(stringResource(R.string.lib_plan_preparing), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(progress = { ((p?.progress ?: 0) / 100f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                // the file or folder being checked: a long preview (minutes on a big library) visibly moves
+                p?.step?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.MiddleEllipsis, modifier = Modifier.padding(top = 6.dp)) }
                 Text(stringResource(R.string.lib_plan_nothing_changes), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             }

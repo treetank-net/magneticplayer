@@ -403,6 +403,9 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] The subtitle previews say what their number means ("N videos already have them", "N subtitle files fitted
       before, left out") instead of "Checked N folders", and "Subtitles" no longer shows the size of the subtitle
       files. Next app; compiled only.
+- [ ] Previews show what they are looking at under the progress bar (agent 1.15.3 `step` + the next app), and the
+      Tidy up bar moves within a library folder too (it stood at 7% for most of the preview). API on jmpc: `step`
+      present, Tidy up progress 8 → 33% in 20 s. App compiled only.
 - [x] "Subtitles" task on a video without speech (same setup): the card shows "1 error" and "no speech found in the
       sound"; the old app's notification said "Moved 0 items, 1 error" (the next app: only "1 error").
 
@@ -521,7 +524,8 @@ Written down as seen, also when unsure whether it is a problem at all.
 - 2026-11-20, "Tidy up" (emulator, jmpc): 31 of 33 items are "unsure" moves between the films and cartoons folders
   (Filmy ↔ Bajki, Anime → Bajki), shown unticked because the folder the user chose wins. They fill the list and hide
   the few real suggestions; maybe a collapsed "Unsure" section, or leave Filmy ↔ Bajki out entirely.
-- 2026-11-20, "Tidy up" and "Duplicates" previews take ~50 s to 2 min with no hint of what is being checked.
+- 2026-11-20, "Tidy up" and "Duplicates" previews take ~50 s to 2 min with no hint of what is being checked. Next app:
+  the name of the file or folder being checked under the bar.
 - 2026-11-20, "Subtitles" (fit) preview: all 578 items ticked, "about 289 min of work", and "38 MB" (the size of the
   subtitle files, which says nothing here). Fitting keeps the originals, so less risky than "Old formats", but one
   tap still queues hours of work.

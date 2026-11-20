@@ -538,6 +538,7 @@ class Tasks:
             src_roots = [r for r in roots if r["exists"] and _dev(r["path"]) == src_dev and not set(r["tags"]) & HIDDEN_TAGS]
             for k, r in enumerate(src_roots):
                 p["progress"] = int(100 * k / max(len(src_roots), 1))
+                p["step"] = r["name"]  # what is being looked at, under the preview's progress bar
                 try:
                     names = sorted(os.listdir(r["path"]))
                 except OSError:
@@ -643,14 +644,16 @@ class Tasks:
                     names = sorted(os.listdir(r["path"]))
                 except OSError:
                     continue
-                for name in names:
+                for j, name in enumerate(names):
                     if name.startswith("."):
                         continue
                     full = os.path.join(r["path"], name)
                     if os.path.isfile(full) and os.path.splitext(name)[1].lower() not in VIDEO_EXT:
                         continue
                     n += 1
-                    p["progress"] = int(100 * k / max(len(roots), 1))
+                    # within the folder too: one big folder held the bar still for most of the preview
+                    p["progress"] = int(100 * (k + j / max(len(names), 1)) / max(len(roots), 1))
+                    p["step"] = name  # what is being looked at, under the preview's progress bar
                     files, nfo = [], None
                     if os.path.isdir(full):
                         for dp, dirs, fs in os.walk(full):
@@ -749,6 +752,7 @@ class Tasks:
             items, checked = [], 0
             for k, (r, full) in enumerate(files):
                 p["progress"] = int(100 * k / max(len(files), 1))
+                p["step"] = os.path.basename(full)  # what is being looked at, under the preview's progress bar
                 subs = []
                 for x in mp_library.sidecar_subs(full):
                     sp = os.path.join(os.path.dirname(full), x["name"])
@@ -805,6 +809,7 @@ class Tasks:
             items, have = [], 0
             for k, (r, full) in enumerate(files):
                 p["progress"] = int(100 * k / max(len(files), 1))
+                p["step"] = os.path.basename(full)  # what is being looked at, under the preview's progress bar
                 side = mp_library.sidecar_subs(full)
                 # a file without a language in its name ("Film.srt"): the language from its text, so a film that has
                 # subtitles is not counted as missing them (each download uses up the daily OpenSubtitles limit)
@@ -902,6 +907,7 @@ class Tasks:
             roots = [r for r in self.library.roots() if r["exists"] and not set(r["tags"]) & HIDDEN_TAGS]  # `kopia`: on purpose
             for n, r in enumerate(roots):
                 p["progress"] = int(30 * n / max(len(roots), 1))  # walking the folders: 0–30 %
+                p["step"] = r["name"]  # what is being looked at, under the preview's progress bar
                 for dp, dirs, fs in os.walk(r["path"]):
                     dirs[:] = [d for d in dirs if not d.startswith(".")]
                     for f in fs:
@@ -952,6 +958,7 @@ class Tasks:
             out = []
             for k, g in enumerate(groups):
                 p["progress"] = 30 + int(70 * k / max(len(groups), 1))
+                p["step"] = os.path.basename(g[0][1])  # what is being looked at, under the preview's progress bar
                 sz = os.stat(g[0][1]).st_size
                 for hf in (lambda fp: quick(fp, sz), full):
                     buckets = {}
@@ -1055,6 +1062,7 @@ class Tasks:
             unchecked, deadline = 0, time.time() + AUDIO_CHECK_BUDGET
             for k, (r, full) in enumerate(files):
                 p["progress"] = int(100 * k / max(len(files), 1))
+                p["step"] = os.path.basename(full)  # what is being looked at, under the preview's progress bar
                 relf = os.path.relpath(os.path.realpath(full), os.path.realpath(r["path"]))
                 prof = effective_profile(r, relf)
                 if modernize and (prof == "original" or PROFILES[prof].get("copy")):

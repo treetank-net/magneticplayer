@@ -251,7 +251,9 @@ data class Disk(val id: String, val name: String, val mount: String, val total: 
 data class TrashDay(val root: Int, val rootName: String, val day: String, val size: Long, val files: Int)
 data class Disks(val disks: List<Disk>, val trash: List<TrashDay>, val trashDays: Int)
 /** A plan (preview of a file task): `result` is the agent's JSON (kind-specific fields, see docs/api.md). */
-data class LibPlan(val id: String, val kind: String, val state: String, val progress: Int, val error: String?, val result: JSONObject?)
+/** `step`: what the planner is looking at now (agent 1.15.3+), shown under the preview's progress bar. */
+data class LibPlan(val id: String, val kind: String, val state: String, val progress: Int, val error: String?, val result: JSONObject?,
+                   val step: String? = null)
 data class TaskItem(val name: String, val path: String, val size: Long, val state: String, val error: String?, val saved: Long,
                     /** agent 1.9+: outcome of a subtitle item ("pl: fitted (−0.7 s)…"), localized */
                     val note: String? = null)
@@ -749,7 +751,7 @@ class Api(val s: Settings, srv: Server) {
     }
 
     private fun plan(o: JSONObject) = LibPlan(o.getString("id"), o.optString("kind"), o.optString("state"), o.optInt("progress"),
-        o.optStr("error"), o.optJSONObject("result"))
+        o.optStr("error"), o.optJSONObject("result"), o.optStr("step"))
 
     /** Starts a plan (a preview: nothing changes on disk); body as in docs/api.md (`kind`: free, shrink, tidy, dupes, trash, move). */
     fun planStart(body: JSONObject): LibPlan = plan(JSONObject(call("POST", "/api/library/plan", body, 20000)))
