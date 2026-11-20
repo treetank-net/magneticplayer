@@ -1122,12 +1122,6 @@ class App:
         if not re.fullmatch(r"tt\d+", imdb or ""):
             raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
         lang = mp_i18n.lang()
-        listing = None
-        if self.ident.online:
-            try:
-                listing = self.episodes.get(imdb, lang)
-            except Exception as e:  # noqa: BLE001 — a failed lookup still shows the own episodes
-                log("episodes:", e)
         files = []
         for c in self.catalog.public(lang)["items"]:
             if c.get("imdb") != imdb or not c.get("dir"):
@@ -1137,6 +1131,12 @@ class App:
             except LibError:
                 continue
             files += [(x["season"], x["episode"], f"{c['root']}:{x['path']}") for x in eps]
+        listing = None
+        if self.ident.online:
+            try:
+                listing = self.episodes.get(imdb, lang, on_disk=len({(s, e) for s, e, _ in files if e}))
+            except Exception as e:  # noqa: BLE001 — a failed lookup still shows the own episodes
+                log("episodes:", e)
         out = mp_episodes.Episodes.merge(listing, files)
 
         def split(v):

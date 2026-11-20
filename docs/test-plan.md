@@ -663,6 +663,27 @@ by the stage's author.
 - Differences from the board: the cover is the drawn one (no poster images are fetched); the board's second note
   (how "Set up search sites" behaves) is a design note, not shown.
 
+**Emulator run before the tag (2026-11-20, local debug build of agent 1.17.0 + app, against jmpc, EN)**: seen working
+on real data, previews only, nothing started or confirmed:
+- [x] A1 rows "Folder layout · 68 to move", "Balance between disks · 39% / 42% free", "For Chromecast" (count equals
+  B5's "Found N files");
+- [x] A2: level chips with order numbers, live tree per library folder, age groups (three chips), "Don't touch" with
+  the hand-arranged count, "Preview" asks for the hand-arranged folders first (list correct; cancelled, not confirmed);
+- [x] A3: goals, now → after per disk, "To move: 1 title · 24 GB", rules;
+- [x] B5: found files with reasons (series grouped), options, preview button;
+- [x] C4 "Recently" with grouped errors and "Empty the trash and retry" (not tapped);
+- [x] D1: "On your disks" and "You don't have it · from the film database" groups; D2 page with Wikipedia lead,
+  "Similar · you have N", "Set up search engines ›" when there are none;
+- [x] E1: seasons from IMDb with missing seasons collapsed ("you don't have it · 12 ep."), "Search the whole season",
+  per-episode "Search" sheet with the phrase "Title S02E01";
+- found and fixed in the agent: for some anime Wikidata lists the seasons as the "episodes" (4 instead of 89), and
+  their titles were laid over IMDb's episodes 1–4: a Wikidata list shorter than the episode files on disk now counts
+  as incomplete (IMDb is used) and is matched only by IMDb id.
+- [ ] A2 question for the owner: the board's tree is "Films/, Series/, Kids/, Anime/" at the top; with several library
+  folders per disk the agent lays out inside each library folder ("Kids (disk)/Teens/"). Is that the wanted result?
+- [ ] not seen yet: scope entry points (stage 3), pause/resume/reorder of a running task, D2 search buttons with
+  engines set, PL wording of the new screens.
+
 ### Stages 3 and 5 (the next app, agent 1.16+ with `jobs_v2` and `episode_lists`): element by element, next to the boards
 
 **Scope entry points (E2 everywhere)**: each opens "Optimise" with its scope; back returns to where it came from;

@@ -234,10 +234,11 @@ class Episodes:
 
     # -- public
 
-    def get(self, imdb_series_id, lang="en"):
+    def get(self, imdb_series_id, lang="en", on_disk=0):
         """The episode listing of a series (see the module docstring), or None when no source knows the series yet
         (offline, or not on Wikidata and no IMDb pass has run yet: one is then queued). `pending` is True while an IMDb
-        pass the listing waits for is queued or running."""
+        pass the listing waits for is queued or running. `on_disk`: how many numbered episode files the server has; a
+        Wikidata list shorter than that is incomplete (for some anime Wikidata lists the seasons as the "episodes")."""
         tt = imdb_series_id
         if not TT.fullmatch(tt or ""):
             raise ValueError("bad imdb id")
@@ -247,7 +248,7 @@ class Episodes:
             wd = self._refresh_wd(tt, lang)  # never seen: wait for Wikidata once
         elif self._stale(wd, tt) or (lang not in wd.get("langs", [])):
             self._background(tt, lang)
-        return self._compose(tt, wd, lang)
+        return self._compose(tt, wd, lang, on_disk)
 
     @staticmethod
     def merge(listing, files):
@@ -437,7 +438,7 @@ class Episodes:
 
     # -- building a listing
 
-    def _compose(self, tt, wd, lang):
+    def _compose(self, tt, wd, lang, on_disk=0):
         """Wikidata's list when it is complete enough; otherwise IMDb's. Whichever is the base, the other fills the
         episodes it lacks (Wikidata lags behind on new episodes of running series, IMDb has no air dates), and
         Wikidata's titles (in `lang`) and air dates are laid over IMDb's rows."""
@@ -447,7 +448,10 @@ class Episodes:
         expected = (wd or {}).get("expected") or 0
         imdb_count = len([x for x in im_eps if x[0] > 0])
         wd_count = len([x for x in wd_eps if x[0] > 0])
-        enough = wd_count > 0 and wd_count >= ENOUGH * max(expected, imdb_count)
+        # fewer than the files on disk: Wikidata's "episodes" are something else (seasons, for some anime), so its rows
+        # are matched to IMDb's only by IMDb id, never by number, and none is added on its own
+        wd_odd = wd_count < on_disk
+        enough = wd_count > 0 and wd_count >= ENOUGH * max(expected, imdb_count) and not wd_odd
         running = self._running(wd, im)
         pending = False
         if not enough or running or tt in self.state["series"]:
@@ -466,13 +470,13 @@ class Episodes:
         wd_by_id = {e["imdb"]: e for e in wd_rows.values() if e["imdb"]}
         rows = {}
         for se, ep, eid, t, y in im_eps:
-            w = wd_by_id.get(eid) or wd_rows.get((se, ep))
+            w = wd_by_id.get(eid) or (None if wd_odd else wd_rows.get((se, ep)))
             rows[(se, ep)] = {"season": se, "episode": ep, "title": (w or {}).get("title") or t, "imdb": eid,
                               "aired": (w or {}).get("aired"), "year": (w or {}).get("year") or y}
         if use_imdb:
             matched = {r["imdb"] for r in rows.values()}
             for k, e in wd_rows.items():  # Wikidata rows IMDb lacks (not the ones already matched by IMDb id)
-                if k not in rows and (not e["imdb"] or e["imdb"] not in matched):
+                if not wd_odd and k not in rows and (not e["imdb"] or e["imdb"] not in matched):
                     rows[k] = e
         else:
             im_ids = {r["imdb"]: k for k, r in rows.items()}
