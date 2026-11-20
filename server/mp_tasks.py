@@ -1495,10 +1495,10 @@ class Tasks:
             return
         dec = subprocess.run(_nice(["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-i", part, "-map", "0:v:0",
                                     "-f", "null", "-"]), capture_output=True, text=True)
-        # the null muxer's own complaints (repeated timestamps from AVI sources) are not decoding errors
-        bad = [ln for ln in dec.stderr.splitlines() if ln.strip() and not ln.startswith("[null @")]
+        bad = _video_decode_errors(dec.stderr, (ninfo.get("video") or {}).get("codec"))
         if dec.returncode != 0 or bad:
             _rm(part)
+            self.log(f"shrink: {os.path.basename(full)}: decode check: {(bad or [dec.stderr.strip()[-200:]])[0]}")
             raise TaskError(T("the result doesn't decode cleanly, the original was kept", "wynik nie dekoduje się czysto, oryginał został"))
         if not pr.get("copy"):
             h = (ninfo.get("video") or {}).get("height") or 0
@@ -1728,6 +1728,22 @@ def _ffmpeg_reason(tail):
     if len(last) > 160:
         last = last[:160].rsplit(" ", 1)[0] + "…"
     return T("ffmpeg failed: ", "ffmpeg się nie udał: ") + last
+
+
+def _video_decode_errors(stderr, vcodec):
+    """Lines of a decode check that are about the result's picture. Only the video decoder's own complaints count:
+    the null muxer's (repeated timestamps from AVI sources) and the copied audio's ("[mp3float] Header missing": a
+    damaged frame already in the original, copied as is, read while ffmpeg probes the file) are not the encode's
+    fault; they rejected every episode of an old series."""
+    out = []
+    for ln in stderr.splitlines():
+        if not ln.strip() or ln.lstrip().startswith("Last message repeated"):
+            continue
+        m = re.match(r"\[(\w+) @", ln)
+        if m and m.group(1) != (vcodec or m.group(1)):
+            continue
+        out.append(ln)
+    return out
 
 
 def _reason(err):

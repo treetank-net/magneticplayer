@@ -21,7 +21,7 @@ Results and tick marks live in `test-plan.md`; this file says what to do and in 
 | 9 | Magnet re-recognition | done |
 | 10 | Folder view menus | menu and move dialog verified |
 | 11 | Continue watching | done |
-| 12 | Re-encode of one series' season 2 extras (old-format run) | the series is on the bigger disk now; rerun pending |
+| 12 | Re-encode of one series' season 2 extras (old-format run) | done 2026-11-20 (agent 1.14.4: the decode check no longer rejects results for the copied audio's old damage) |
 
 ## Approved fixes, in order
 

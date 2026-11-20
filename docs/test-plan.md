@@ -234,6 +234,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       (`.mp-trash/<date>/<source folder name>/…`) and moves its own older trash days there before an encode.
       [x] 2026-11-20, laptop, unit check with a faked full disk (scratchpad vs ~/.cache): original moved, own trash
       used when there is room, an old trash day moved to make room. [ ] On jmpc with a real run.
+- [ ] Shrink decode check (agent 1.14.4): only the video decoder's complaints reject a result. Found 2026-11-20 on
+      jmpc: the old-format run of one series' S2 extras + S4E08-09 failed 4/4 with "doesn't decode cleanly"; the
+      result's picture decoded clean, the only line was "[mp3float] Header missing" from the copied MP3 audio (already
+      damaged in the original). The first failing line is now logged. [x] Rerun of the 4 items on jmpc
+      (2026-11-20, agent 1.14.4): 4 done, 0 errors, 1033 → 657 MB; a frame at 20:00 matches the original, same length.
 - [ ] Shrink: an item that would leave its disk under the 5 % reserve, with no other disk able to take the original,
       isn't started: "dysk zszedłby poniżej rezerwy 5%…" in the task's errors (agent 1.14.3). Unit check on the laptop (fake disk
       usage, 2026-11-20): refused with no other disk, passes when another disk has room. [ ] On jmpc.
