@@ -105,10 +105,14 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       last on the phone (the same folder's choice first: "lector", "original", a language); the Remote's "Audio"
       opens the same sheet as the phone's player (tracks by language, kind, channels, codec) and the pick there is
       remembered too (the next episode on the phone or the screen starts with it).
+      [x] 2026-11-20, jmpc, agent 1.13.3 via the API: a dual-audio MKV (English default, Japanese second) opened with
+      `audio: "|ja"` plays the Japanese track, with `"|en"` the English one. [ ] The Remote's sheet and the phone
+      sending its choice: on the Pixel.
 
 - [ ] Catalog, Discover: a row "Because you watched <title>" after "Continue watching", from the title watched last
       (a film finished too), with titles like it on the disks (the same match as "Similar" on a title's screen) minus
-      what was watched; hidden with fewer than 3.
+      what was watched; hidden with fewer than 3. (Emulator, v1.261119.2356: hidden, its only watched item is an
+      unrecognised folder; to see on the Pixel.)
 
 ## Magnets
 
@@ -144,6 +148,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       the catalog as synced <when>", a downloaded film plays from it; Folders and the disks say the server is
       unreachable. Back online the bar goes and `?since=` refreshes it (an unchanged catalog: one small answer).
       Not yet: series episode lists offline, downloaded marks on covers, sending offline positions back.
+      [x] 2026-11-20, emulator, v1.261119.2356: airplane mode, app restarted: Library opens on Discover with the bar
+      ("synced 0 minutes ago"), drawn covers, "Continue watching" plays the buffered MKV episode offline.
 
 ## Noted wishes
 - [idea] Library and servers (stage 2 of docs/plan-multi-server.md, "a shared library from all servers: later"):
