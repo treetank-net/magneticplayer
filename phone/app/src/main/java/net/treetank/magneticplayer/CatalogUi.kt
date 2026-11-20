@@ -338,6 +338,8 @@ fun libraryTitle(ctx: android.content.Context, ref: MediaRef): String? {
     val cat = CatalogCache.cached(ctx, ref.srv) ?: return null
     val it = cat.items.firstOrNull { x -> x.root == ref.root && (x.path == ref.path || (x.dir != null && ref.path.startsWith(x.dir + "/"))) }
         ?: return null
+    // an unrecognised item is only a folder's name (a folder holding many series became one item): the file says more
+    if (it.imdb == null) return null
     if (it.series) {
         val name = ref.path.substringAfterLast('/')
         val m = Regex("""(?i)\bS(\d{1,2})[ ._-]?E(\d{1,3})""").find(name) ?: Regex("""\b(\d{1,2})x(\d{2,3})\b""").find(name)

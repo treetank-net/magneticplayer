@@ -269,9 +269,10 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       ponownie: japoński" (removes the old version, prepares one with the new track).
 - [x] "All servers", cover cards: the card's own line first, the server after it ("Dalej: S1 E3 · jmpc"), so a cut
       line loses the server, not the episode. (2026-11-20, Pixel, v1.261120.1000) "Dalej: S1 E1 · jmpc".
-- [ ] Audio sheet (player and Remote): a track's title loses the release's codec/channel claims and a bare language
+- [x] Audio sheet (player and Remote): a track's title loses the release's codec/channel claims and a bare language
       ("English: 5.1ch (AC3 640Kbps)" shows nothing extra; "Lektor PL (AC3 2.0)" → "Lektor PL"); the line under it,
-      read from the file, says channels and codec.
+      read from the file, says channels and codec. (2026-11-20, Pixel, v1.261120.1424) Phone player, an anime episode with "English: 5.1ch (AC3
+      640Kbps)" / "Japanese: Stereo (FLAC 24bit)": rows "Ścieżka 1 · 5.1 · AAC", "Ścieżka 2 · stereo · AAC". Remote not checked.
 - [ ] Remote's notification: another app's session (Spotify) left paused on a Chromecast ends our notification and
       foreground service after ~2 minutes (before: 10+ minutes); opening the Remote brings it back. Our own paused
       video keeps its notification.
@@ -303,16 +304,23 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [x] Settings → "Okładki na telefonie": none (always from the server), tiny (~1 KB each, blurred, like a message
       preview), full; the usage line; switching to none deletes them, to tiny shrinks them. Offline cold start shows
       kept covers. (2026-11-20, Pixel, v1.261120.1336) "Miniatury": 223 covers / 203 KB after ~3 min; Wi-Fi off + cold start: blurred covers
-      in every row. Switching back to none not exercised yet.
+      in every row. (2026-11-20, Pixel, v1.261120.1424) Back to "Nie zapisuj": the usage line goes away.
 - [x] Discover hero: a touch holds the carousel for 15 s; a dark scrim under the text; the label is white on a dark chip.
       (2026-11-20, Pixel, v1.261120.1336) Screenshots every 3 s: the slide stood ~21-24 s after a touch, then turned every ~8 s; scrim and chip seen.
 - [ ] "Play on jmpc" from a folder switches to the Remote (the launch no longer dies with the folder screen).
 - [x] Server picker: "Wszystkie serwery" reads "Biblioteka, foldery i pobierania ze wszystkich". (2026-11-20, Pixel, v1.261120.1336)
-- [ ] People's names: well-known actors and directors showed as Wikidata ids ("Reżyseria Q25191"): Wikidata keeps
+- [x] People's names: well-known actors and directors showed as Wikidata ids ("Reżyseria Q25191"): Wikidata keeps
       their names only as `mul` (one label for all languages). Agent 1.14.6 asks for `mul` and retries empty names
-      once per start: on jmpc 26 unnamed → 0 (API). [ ] In the app.
-- [ ] "All servers": the "Podobne do „X”" slide/row no longer offers X itself (another server's copy, same IMDb id).
-- [ ] "Na serwerach": the mark is on the copy "Odtwórz" will use (the one watched last), refreshed after the player.
+      once per start: on jmpc 26 unnamed → 0 (API). (2026-11-20, Pixel, v1.261120.1424) "Reżyseria Christopher Nolan".
+- [x] "All servers": the "Podobne do „X”" slide/row no longer offers X itself (another server's copy, same IMDb id).
+      (2026-11-20, Pixel, v1.261120.1424) The row shows other titles.
+- [x] "Na serwerach": the mark is on the copy "Odtwórz" will use (the one watched last), refreshed after the player.
+      (2026-11-20, Pixel, v1.261120.1424) Mark on the laptop copy watched last.
+- [ ] Folders search in "All servers" (or with other servers' folders listed) asks every responding server, results
+      under "Na <server>"; a folder of another server opens there (path kept). Before: only the active server was asked
+      (an anime series on jmpc not found with the laptop active).
+- [ ] Phone player title: an unrecognised catalog item (no IMDb, e.g. a folder that holds many series) no longer names
+      the video; the file name stays (was "ANIME").
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
@@ -355,6 +363,10 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 
 Written down as seen, also when unsure whether it is a problem at all.
 
+- 2026-11-20, catalog: a library folder's subfolder that holds many series (e.g. `ANIME/<series>/…`) is one unrecognised
+  item named after that subfolder; the series inside don't get their own titles in Discover/Browse.
+- 2026-11-20, covers in "Miniatury" mode: after a start without the server, the blurred thumbnails stay when the server
+  comes back; sharp covers return only after the app is restarted.
 - 2026-11-20, Discover hero carousel: it can turn to the next slide just as "Odtwórz" is tapped, so another title
   starts than the one looked at (seen offline: tapped on one film, the dialog named another).
 - 2026-11-20, Discover hero: the small pink label over a bright cover is hard to read.

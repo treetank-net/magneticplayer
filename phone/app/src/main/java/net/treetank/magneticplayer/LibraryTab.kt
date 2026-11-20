@@ -82,9 +82,11 @@ import kotlinx.coroutines.withContext
 
 /** A folder to open after switching the active server from the Library (folders of another server). */
 object LibraryNav {
-    @Volatile private var pending: Pair<String, Int>? = null
-    fun openAfterSwitch(srvKey: String, root: Int) { pending = srvKey to root }
-    fun take(srvKey: String): Int? = pending?.takeIf { it.first == srvKey }?.second?.also { pending = null }
+    @Volatile private var pending: Triple<String, Int, String>? = null
+    fun openAfterSwitch(srvKey: String, root: Int, path: String = "") { pending = Triple(srvKey, root, path) }
+    /** The folder (library folder index, path inside it) to open on [srvKey], once. */
+    fun take(srvKey: String): Pair<Int, String>? =
+        pending?.takeIf { it.first == srvKey }?.let { it.second to it.third }?.also { pending = null }
 }
 
 /**
@@ -94,11 +96,12 @@ object LibraryNav {
 @Composable
 fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
                connecting: Boolean = false, all: List<String>? = null,
-               onSwitchServer: (String, Int) -> Unit = { _, _ -> }) {
+               onSwitchServer: (String, Int, String) -> Unit = { _, _, _ -> }) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var root by rememberSaveable { mutableStateOf(LibraryNav.take(api.srv.key)) }
-    var path by rememberSaveable { mutableStateOf("") }
+    val nav0 = remember { LibraryNav.take(api.srv.key) }
+    var root by rememberSaveable { mutableStateOf(nav0?.first) }
+    var path by rememberSaveable { mutableStateOf(nav0?.second ?: "") }
     // disks and tidy-up, and a plan (preview) on top of whatever was open: its request body, or null
     var disks by rememberSaveable { mutableStateOf(false) }
     var plan by rememberSaveable { mutableStateOf<String?>(null) }
@@ -111,7 +114,7 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     var shownSrv by rememberSaveable { mutableStateOf(api.srv.key) }
     if (shownSrv != api.srv.key) {
         shownSrv = api.srv.key
-        root = LibraryNav.take(api.srv.key); path = ""; disks = false; plan = null
+        LibraryNav.take(api.srv.key).let { root = it?.first; path = it?.second ?: "" }; disks = false; plan = null
     }
     val pendingNext = CatalogNav.pending.value
     LaunchedEffect(pendingNext) {
@@ -164,7 +167,7 @@ object RootNames {
 }
 
 @Composable
-private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onSwitchServer: (String, Int) -> Unit,
+private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onSwitchServer: (String, Int, String) -> Unit,
                         allMode: Boolean,
                         onDisks: () -> Unit, onPlan: (String) -> Unit, onOpen: (Int, String) -> Unit) {
     val ctx = LocalContext.current
@@ -218,7 +221,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
             ?.disks?.filter { it.total > 0 }?.maxByOrNull { 1.0 - it.free.toDouble() / it.total }
     }
     if (query.trim().length >= 2) {
-        SearchResults(api, query.trim(), snack, onPlayingOnPc, onOpen)
+        SearchResults(api, others.map { it.first }, query.trim(), snack, onPlayingOnPc, onOpen, onSwitchServer)
         return@Column
     }
     val allTags = ((roots ?: emptyList()) + others.flatMap { it.second }).flatMap { it.tags }.distinct()
@@ -245,7 +248,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
                         fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp, start = 4.dp))
                 }
                 items(shownHere, key = { "srv/${s.key}/${it.index}" }) { r ->
-                    Card(Modifier.fillMaxWidth().clickable { onSwitchServer(s.key, r.index) }) {
+                    Card(Modifier.fillMaxWidth().clickable { onSwitchServer(s.key, r.index, "") }) {
                         Row(Modifier.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.width(14.dp))
@@ -326,27 +329,48 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
     }
 }
 
-/** Search across the library folders this device sees: folders open, files have the usual actions. */
+/** Search across the library folders this device sees: folders open, files have the usual actions. The other servers
+ *  whose folders are listed ([others], those that respond) are searched too, each under its name; a folder there opens
+ *  on that server (it becomes the active one). */
 @Composable
-private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onOpen: (Int, String) -> Unit) {
+private fun SearchResults(api: Api, others: List<Server>, query: String, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
+                          onOpen: (Int, String) -> Unit, onSwitchServer: (String, Int, String) -> Unit) {
     val ctx = LocalContext.current
-    var hits by remember { mutableStateOf<List<LibHit>?>(null) }
-    LaunchedEffect(query) {
+    var hits by remember { mutableStateOf<List<Pair<Api, LibHit>>?>(null) }
+    LaunchedEffect(query, others) {
         kotlinx.coroutines.delay(350)  // wait until typing pauses
-        hits = try { withContext(Dispatchers.IO) { api.librarySearch(query) } } catch (e: ApiException) {
-            snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); emptyList()
+        hits = withContext(Dispatchers.IO) {
+            val mine = async {
+                try { api.librarySearch(query).map { api to it } } catch (e: ApiException) {
+                    withContext(Dispatchers.Main) { snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)) }; emptyList()
+                }
+            }
+            val theirs = others.filter { it.librarySearch }.map { s ->
+                async { val a = Api(api.s, s); runCatching { a.librarySearch(query).map { a to it } }.getOrDefault(emptyList()) }
+            }
+            mine.await() + theirs.awaitAll().flatten()
         }
     }
     val list = hits ?: return Hint(stringResource(R.string.media_loading))
     if (list.isEmpty()) return Hint(stringResource(R.string.media_lib_search_none))
-    val covers = remember { (Servers.get(ctx, api.srv.key) ?: api.srv).libraryCovers }
+    val several = list.map { it.first.srv.key }.distinct().size > 1
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-        items(list, key = { "${it.root}/${it.path}" }) { h ->
+        list.groupBy { it.first.srv.key }.forEach { (key, group) ->
+        val ha = group.first().first
+        val here = key == api.srv.key
+        val covers = (Servers.get(ctx, key) ?: ha.srv).libraryCovers
+        if (several) item(key = "srv/$key") {
+            Text(stringResource(R.string.lib_on_server, ha.srv.name), style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp))
+        }
+        fun open(root: Int, path: String) = if (here) onOpen(root, path) else onSwitchServer(key, root, path)
+        items(group.map { it.second }, key = { "$key/${it.root}/${it.path}" }) { h ->
+            val api = ha
             val name = h.path.substringAfterLast('/')
             val parent = h.path.substringBeforeLast('/', "")
             val where = h.rootName + (if (parent.isNotEmpty()) " / $parent" else "")
             if (h.dir) {
-                Row(Modifier.fillMaxWidth().clickable { onOpen(h.root, h.path) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                Row(Modifier.fillMaxWidth().clickable { open(h.root, h.path) }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     if (covers) CoverThumb(api, h.root, h.path, 48.dp) { Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary) }
                     else Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary)
@@ -360,7 +384,7 @@ private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onP
             } else {
                 val ref = MediaRef.InLibrary(h.root, h.path, api.srv.key)
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    if (covers && h.media != "audio") Row(Modifier.clickable { onOpen(h.root, parent) }, verticalAlignment = Alignment.CenterVertically) {
+                    if (covers && h.media != "audio") Row(Modifier.clickable { open(h.root, parent) }, verticalAlignment = Alignment.CenterVertically) {
                         CoverThumb(api, h.root, h.path) { Icon(Icons.Filled.Movie, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.tertiary) }
                         Spacer(Modifier.width(12.dp))
                         Column {
@@ -369,7 +393,7 @@ private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onP
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.StartEllipsis)
                         }
                     } else {
-                    Row(Modifier.clickable { onOpen(h.root, parent) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.clickable { open(h.root, parent) }, verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (h.media == "audio") Icons.Filled.MusicNote else Icons.Filled.Movie, null,
                             Modifier.size(20.dp), tint = MaterialTheme.colorScheme.tertiary)
                         Spacer(Modifier.width(10.dp))
@@ -383,6 +407,7 @@ private fun SearchResults(api: Api, query: String, snack: SnackbarHostState, onP
                 }
             }
             HorizontalDivider()
+        }
         }
     }
 }
