@@ -77,6 +77,11 @@ data class Server(
     /** Agent 1.16+: one screen per task, scopes and counters (`/api/library/jobs`, LibraryJobs.kt); without it the
      *  old Disks screen stays. */
     val hasJobsV2 get() = features?.optBoolean("jobs_v2", false) ?: false
+    /** The task kinds the agent has screens' plans for (`features.jobs`, agent 1.16+); agent 1.17+ adds "layout",
+     *  "balance" and "cast_ready", and the app shows those rows only when they are listed here. */
+    val jobKinds: List<String> get() = features?.optJSONArray("jobs")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList()
+    /** Agent 1.17+: /api/tasks/<id>/pause|resume|move|retry, /api/tasks/order (Background work, C4). */
+    val hasTaskQueue get() = features?.optBoolean("task_queue", false) ?: false
     /** POST /api/tasks/<id>/remove (agent 1.12.1+) */
     val hasTaskRemove get() = features?.optBoolean("task_remove", false) ?: false
     /** agent 1.14.1+: `/api/tasks?brief=1` and the latest finish time in `/api/ping` */

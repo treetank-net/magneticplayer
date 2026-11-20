@@ -57,7 +57,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.16.0"
+VERSION = "1.17.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -1228,7 +1228,10 @@ class App:
                 # task scopes, GET /api/library/jobs, one plan kind per task, /api/config/jobs (agent 1.16+)
                 "jobs_v2": True,
                 "episode_lists": True,  # GET /api/catalog/episodes (agent 1.16+)
-                "jobs": ["free", "dupes", "audio_fix", "modernize", "downscale", "compress", "subs_get", "subs", "tags", "trash"],
+                "jobs": ["free", "dupes", "audio_fix", "modernize", "downscale", "compress", "subs_get", "subs", "tags", "trash",
+                         "layout", "balance", "cast_ready"],  # agent 1.17+: folder layout, balance, ready for Chromecast
+                # pause/resume, queue order and retry of tasks: /api/tasks/<id>/pause|resume|move|retry, /api/tasks/order
+                "task_queue": True,  # agent 1.17+
                 "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
                 "library_profiles": list(mp_tasks.PROFILE_NAMES),
@@ -1977,16 +1980,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(a.tasks.plan_subs(bool(b.get("every"))))
                 if kind == "trash":
                     return self.send_json(a.tasks.plan_trash(b.get("items") or [], m=m))
+                if kind == "layout":  # agent 1.17+
+                    return self.send_json(a.tasks.plan_layout(b, scope))
+                if kind == "balance":  # agent 1.17+, whole disks
+                    if scope:
+                        raise ApiError(T("this task works on whole disks only", "to zadanie działa tylko na całych dyskach"), 400)
+                    return self.send_json(a.tasks.plan_balance(b))
+                if kind == "cast_ready":  # agent 1.17+
+                    return self.send_json(a.tasks.plan_cast_ready(b, scope))
                 raise ApiError(T("kind must be free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
-                                 "subs, subs_get or trash",
+                                 "subs, subs_get, trash, layout, balance or cast_ready",
                                  "kind to free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
-                                 "subs, subs_get albo trash"), 400)
+                                 "subs, subs_get, trash, layout, balance albo cast_ready"), 400)
             if p == "/api/library/jobs" and method == "GET":  # counters of the task list for a scope (agent 1.16+)
                 try:
                     scope = mp_scope.parse((q.get("scope") or [""])[0])
                 except mp_scope.ScopeError as e:
                     raise ApiError(str(e), 400) from None
-                return self.send_json(a.tasks.jobs(scope, (q.get("languages") or ["pl,en"])[0]))
+                lv = q.get("levels")  # agent 1.17+: the folder layout counter for these levels
+                return self.send_json(a.tasks.jobs(scope, (q.get("languages") or ["pl,en"])[0], None if lv is None else lv[0]))
             if (m := re.fullmatch(r"/api/library/plan/([0-9a-f]{8})", p)) and method == "GET":
                 return self.send_json(a.tasks.plan_status(m.group(1)))
             if p == "/api/library/profile" and method == "POST":
@@ -2007,6 +2019,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(a.tasks.remove(m.group(1)))
             if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/cancel", p)) and method == "POST":
                 return self.send_json(a.tasks.cancel(m.group(1)))
+            # agent 1.17+ (features.task_queue): pause and resume, the queue's order, a failed task again
+            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/(pause|resume)", p)) and method == "POST":
+                return self.send_json(getattr(a.tasks, m.group(2))(m.group(1)))
+            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/move", p)) and method == "POST":
+                return self.send_json({"queue": a.tasks.move(m.group(1), str(self.body().get("to") or "up"))})
+            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/retry", p)) and method == "POST":
+                return self.send_json(a.tasks.retry(m.group(1)))
+            if p == "/api/tasks/order" and method == "POST":
+                ids = self.body().get("ids")
+                if not isinstance(ids, list):
+                    raise ApiError(T("ids must be a list", "ids to lista"), 400)
+                return self.send_json({"queue": a.tasks.order([str(x) for x in ids])})
             if p == "/api/library/cover" and method in ("GET", "HEAD"):
                 # a folder or a video: poster.jpg/folder.jpg/<name>.jpg next to it, otherwise a frame (mp_media.cover)
                 pic = mp_media.cover(a.library.resolve(int(qd.get("root", 0)), qd.get("path", "")),

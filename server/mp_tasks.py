@@ -47,6 +47,7 @@ import sys
 import threading
 import time
 
+import mp_arrange
 import mp_detached
 import mp_media
 import mp_i18n
@@ -80,6 +81,9 @@ AAC_QUALITIES = ("standard", "high")
 SUBS_PER_DAY = 20  # OpenSubtitles downloads a day without an account (what the counters plan with)
 WATCHING_DAYS = 14  # a folder something was streamed from this recently is "being watched"
 FACTS_RESCAN = 1800  # seconds between the background scans behind the counters (sooner after a library change)
+FACTS_V = 2  # the scan's fact format: 2 (1.17) keeps the codec of embedded subtitles (For Chromecast); older facts are probed again
+TEXT_SUBS = {"subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"}  # embedded subtitles that can become .srt
+CAST_SPEED = 80 << 20  # bytes per second of a remux (For Chromecast), for the estimates
 PROFILE_NAMES = ("original", *PROFILES)
 LOSSLESS_AUDIO = {"truehd", "dts", "flac", "mlp"} | {f"pcm_{x}" for x in ("s16le", "s24le", "s32le", "s16be", "s24be")}
 MIN_SAVING = 0.15
@@ -279,12 +283,35 @@ class Tasks:
     def public(self, t, brief=False):
         """A task for the API; `brief` leaves the items out (only their counts): a finished task with hundreds of
         files is ~400 kB, and phones read the list often."""
-        out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc", "titles", "scope_labels", "bad_subs")} | {
+        out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc", "titles", "scope_labels", "bad_subs", "_run",
+                                                     "held_at", "held_secs")} | {
             "item_count": len(t["items"]), "items_done": sum(1 for i in t["items"] if i.get("state") == "done")}
         # the same reason once with a count (a full disk once listed 457 identical errors, one per file)
-        reasons = collections.Counter(_reason(i["error"]) for i in t["items"] if i.get("state") == "error" and i.get("error"))
+        errs = [i for i in t["items"] if i.get("state") == "error" and i.get("error")]
+        reasons = collections.Counter(_reason(i["error"]) for i in errs)
         if reasons:
-            out["error_groups"] = [{"error": e, "count": n} for e, n in reasons.most_common(5)]
+            out["error_groups"] = []
+            for e, n in reasons.most_common(5):
+                g = {"error": e, "count": n}
+                if _space_error(e) and t["state"] in ("done", "cancelled"):
+                    # agent 1.17+: the fix as a link on the task screen ("Empty the trash and retry")
+                    first = next((i for i in errs if _reason(i["error"]) == e), None)
+                    root = self._roots().get((first or {}).get("root_id")) or {}
+                    g.update(fix="empty_trash_retry", trash=self._trash_size(),
+                             disk=os.path.basename(_mount(root["path"]).rstrip("/")) if root.get("path") else None)
+                out["error_groups"].append(g)
+        # agent 1.17+ (F4): paused by a person, the place in the queue, a quick task, the time left / of work
+        out["held"] = bool(t.get("held"))
+        out["paused"] = bool(t.get("paused") or t.get("held"))
+        out["quick"] = bool(t.get("quick"))
+        if t["state"] == "queued":
+            q = [x for x in self.items if x["state"] == "queued"]
+            out["queue"] = next((n + 1 for n, x in enumerate(q) if x is t), None)
+        out["eta"] = self._eta(t)
+        out["estimate"] = (T("Quick: starts in a break between files", "Szybkie: ruszy w przerwie między plikami")
+                           if t.get("quick") and t["state"] == "queued" else
+                           T(f"About {SUBS_PER_DAY} a day (OpenSubtitles limit)", f"Ok. {SUBS_PER_DAY} dziennie (limit OpenSubtitles)")
+                           if t["kind"] == "subs_get" and t["state"] == "queued" else None)
         if not brief:
             out["items"] = [{k: v for k, v in i.items() if not k.startswith("_")} for i in t["items"]]
         if t.get("titles"):
@@ -294,7 +321,40 @@ class Tasks:
             out["encoder"] = self.encoder_label(t["enc"])
         if t.get("hold"):
             out["note"] = self.hold_text(t["hold"])
+        elif t.get("held") and t["state"] in ("queued", "running"):
+            out["note"] = self.hold_text("held")
         return out
+
+    def _eta(self, t):
+        """Seconds left of a running task (from its pace in this run, without paused time), or of work for a queued
+        one (the plan's estimates; copies between disks by COPY_SPEED); None when unknown."""
+        now = time.time()
+        if t["state"] == "running" and t.get("_run"):
+            t0, b0, h0 = t["_run"]
+            el = now - t0 - (t.get("held_secs", 0) - h0) - ((now - t["held_at"]) if t.get("held_at") else 0)
+            done = t["done_bytes"] - b0
+            if el > 30 and done > 0:
+                return int(el / done * max(t["total"] - t["done_bytes"], 0))
+            return None
+        if t["state"] != "queued":
+            return None
+        work = 0.0
+        for i in t["items"]:
+            if i.get("state") not in (None, "pending", "running"):
+                continue
+            if i.get("work") is not None:
+                work += i["work"]
+            elif i["op"] == "move":
+                work += 1 if i.get("same_disk") else i["size"] / mp_arrange.COPY_SPEED
+            elif i["op"] == "trash":
+                work += 0.2
+            elif i["op"] == "subs":
+                work += 30
+            elif i["op"] == "subs_get":
+                work += 60
+            else:
+                return None
+        return int(work)
 
     @staticmethod
     def hold_text(hold):
@@ -303,6 +363,7 @@ class Tasks:
                                 "Wstrzymane, trwa przygotowanie wersji dla telewizora"),
                 "same_disk": T("Slower: somebody is watching from the same disk", "Wolniej: ktoś ogląda z tego samego dysku"),
                 "in_use": T("Waiting to swap: this film is being watched", "Czeka z podmianą: ten film jest właśnie oglądany"),
+                "held": T("Paused", "Wstrzymane"),
                 }.get(hold, "")
 
     # ---- encoders (shrinking)
@@ -406,16 +467,110 @@ class Tasks:
             _rm(part)
 
     def remove(self, tid):
-        """A finished or cancelled task off the list (agent 1.12.1+); a queued or running one has to be cancelled first."""
+        """A finished or cancelled task off the list (agent 1.12.1+); a running one has to be cancelled first. Agent
+        1.17+: a waiting task is taken off the queue (cancelled and removed at once, C4's ✕)."""
         with self.lock:
             t = next((t for t in self.items if t["id"] == tid), None)
             if not t:
                 raise TaskError(T("no such task", "nie ma takiego zadania"), 404)
-            if t["state"] in ("queued", "running"):
+            if t["state"] == "running":
                 raise TaskError(T("cancel the task first", "najpierw anuluj zadanie"), 409)
+            if t["state"] == "queued":
+                self._drop_queued(t)
             self.items.remove(t)
             self._save()
             return {"ok": True}
+
+    def _find(self, tid):
+        t = next((t for t in self.items if t["id"] == tid), None)
+        if not t:
+            raise TaskError(T("no such task", "nie ma takiego zadania"), 404)
+        return t
+
+    def _drop_queued(self, t):
+        """A waiting task cancelled (under the lock): its items skipped, and an encode it paused (F4) stopped for good."""
+        t["state"] = "cancelled"
+        t["finished"] = time.time()
+        jobs = [{"job": i.pop("job")} for i in t["items"] if i.get("job")]
+        _stopped(t)
+
+        def stop():
+            for x in jobs:
+                self._drop_job(x)
+        if jobs:
+            threading.Thread(target=stop, daemon=True).start()
+
+    # ---- pause, resume and queue order (agent 1.17+, docs/plan-ux-tasks.md F4)
+
+    def pause(self, tid):
+        """Pauses a task: a waiting one keeps its place and isn't started; a running one stops at the next file, or its
+        encode is suspended where it is (it then waits in the queue and the next task runs). Kept across restarts."""
+        with self.lock:
+            t = self._find(tid)
+            if t["state"] not in ("queued", "running"):
+                raise TaskError(T("only a waiting or running task can be paused", "wstrzymać można tylko zadanie czekające albo trwające"), 409)
+            if not t.get("held"):
+                t["held"], t["held_at"] = True, time.time()
+                self._save()
+            return self.public(t)
+
+    def resume(self, tid):
+        with self.lock:
+            t = self._find(tid)
+            if t.get("held"):
+                t["held"] = False
+                t["held_secs"] = t.get("held_secs", 0) + time.time() - (t.pop("held_at", None) or time.time())
+                self._save()
+            out = self.public(t)
+        self.wake.set()
+        return out
+
+    def move(self, tid, to="up"):
+        """A waiting task one place up or down the queue, or to its top (`to`: up, down, top). The running task stays."""
+        if to not in ("up", "down", "top"):
+            raise TaskError(T("to must be up, down or top", "to to up, down albo top"))
+        with self.lock:
+            t = self._find(tid)
+            if t["state"] != "queued":
+                raise TaskError(T("only a waiting task can be moved", "przesunąć można tylko zadanie czekające"), 409)
+            q = [x for x in self.items if x["state"] == "queued"]
+            k = q.index(t)
+            if to == "top" and k > 0:
+                self.items.remove(t)
+                self.items.insert(self.items.index(q[0]), t)
+            elif (to == "up" and k > 0) or (to == "down" and k < len(q) - 1):
+                o = q[k - 1] if to == "up" else q[k + 1]
+                a, b = self.items.index(t), self.items.index(o)
+                self.items[a], self.items[b] = o, t
+            self._save()
+            return [self.public(x, True) for x in self.items if x["state"] == "queued"]
+
+    def order(self, ids):
+        """The waiting tasks in this order (`ids` first, the rest after them as they were)."""
+        with self.lock:
+            q = [x for x in self.items if x["state"] == "queued"]
+            pos = [n for n, x in enumerate(self.items) if x["state"] == "queued"]
+            by = {x["id"]: x for x in q}
+            new = [by[i] for i in dict.fromkeys(ids or []) if i in by]
+            new += [x for x in q if x not in new]
+            for n, x in zip(pos, new):
+                self.items[n] = x
+            self._save()
+            return [self.public(x, True) for x in self.items if x["state"] == "queued"]
+
+    def retry(self, tid):
+        """A new task with the items of a finished task that failed (after the trash was emptied, for example)."""
+        with self.lock:
+            t = self._find(tid)
+            if t["state"] not in ("done", "cancelled"):
+                raise TaskError(T("the task hasn't finished yet", "zadanie jeszcze się nie skończyło"), 409)
+            drop = ("state", "error", "job", "saved", "new_size", "new_path", "note", "result", "trash_on")
+            items = [{k: v for k, v in i.items() if k not in drop} for i in t["items"] if i.get("state") == "error"]
+            res = {"kind": t["kind"], "title": t["title"], "titles": t.get("titles"), "encoder_id": t.get("enc"),
+                   "scope_labels": t.get("scope_labels")}
+        if not items:
+            raise TaskError(T("nothing failed in this task", "w tym zadaniu żaden plik nie skończył się błędem"))
+        return self.public(self._add_task(res, items))
 
     def cancel(self, tid):
         with self.lock:
@@ -423,9 +578,7 @@ class Tasks:
             if not t:
                 raise TaskError(T("no such task", "nie ma takiego zadania"), 404)
             if t["state"] == "queued":
-                t["state"] = "cancelled"
-                t["finished"] = time.time()
-                _stopped(t)
+                self._drop_queued(t)
             elif t["state"] == "running":
                 t["cancel"] = True
                 self.cancel_ev.set()
@@ -453,12 +606,20 @@ class Tasks:
 
     def _add_task(self, res, items):
         """Queues a task with `items` (a plan's result, or one made by the agent itself for new files)."""
+        roots = self._roots()
         for i in items:
             i["state"] = "pending"
+            if i.get("op") == "move" and "same_disk" not in i:
+                src = roots.get(i.get("root_id"), {}).get("path")
+                dst = roots.get(i.get("to_root_id"), {}).get("path") if i.get("to_root_id") else src
+                i["same_disk"] = bool(src and dst and _dev(src) is not None and _dev(src) == _dev(dst))
+        # quick (agent 1.17+): only the trash, or moves within a disk outside torrents; runs between another task's files
+        quick = all(i.get("op") == "trash" or (i.get("op") == "move" and i.get("same_disk") and not i.get("torrent"))
+                    for i in items)
         t = {"id": secrets.token_hex(4), "kind": res["kind"], "title": res["title"], "titles": res.get("titles"), "state": "queued",
              "created": time.time(), "started": None, "finished": None, "items": items,
              "total": sum(i["size"] for i in items), "done_bytes": 0, "current": None, "pct": 0,
-             "saved": 0, "errors": 0, "lang": mp_i18n.lang(),
+             "saved": 0, "errors": 0, "lang": mp_i18n.lang(), **({"quick": True} if quick else {}),
              **({"enc": res["encoder_id"]} if res.get("encoder_id") else {}),
              **({"scope_labels": res["scope_labels"]} if res.get("scope_labels") else {})}
         with self.lock:
@@ -1276,12 +1437,12 @@ class Tasks:
             info = {"container": info.get("container"), "duration": info.get("duration"), "video": info.get("video"),
                     "audio": [{k: a.get(k) for k in ("index", "codec", "channels", "lang", "default")}
                               for a in info.get("audio") or []],
-                    "subs": [{"lang": s.get("lang")} for s in info.get("subs") or []]}
+                    "subs": [{"lang": s.get("lang"), "codec": s.get("codec")} for s in info.get("subs") or []]}
             err = None
         except Exception as e:  # noqa: BLE001 — an unreadable or half-written file
             info, err = None, str(e)[:200]
         return {"root_id": r["id"], "rel": rel, "size": st.st_size, "mtime": int(st.st_mtime), "real": real,
-                "ino": [st.st_dev, st.st_ino], "info": info, "err": err, "seen": time.time()}
+                "ino": [st.st_dev, st.st_ino], "info": info, "err": err, "seen": time.time(), "v": FACTS_V}
 
     def _scan_wait(self, dev):
         """The background scan gives way: while somebody watches from the same disk it waits (a USB disk spinning
@@ -1292,9 +1453,10 @@ class Tasks:
             time.sleep(5)
         time.sleep(0.2)
 
-    def _fresh_fact(self, r, rel, full, dsigs, store=True, scan=False):
+    def _fresh_fact(self, r, rel, full, dsigs, store=True, scan=False, upgrade=False):
         """The fact of one video, from the scan when the file is unchanged, else probed now; subtitles listed again
-        when its folder changed. None when the file is gone."""
+        when its folder changed. None when the file is gone. A fact of an older format is probed again by the
+        background scan, or now with `upgrade` (a plan that needs the new fields)."""
         try:
             st = os.stat(full)
         except OSError:
@@ -1302,7 +1464,8 @@ class Tasks:
         key = f"{r['id']}/{rel}"
         with self.flock:
             f = self.facts.get(key)
-        if not f or f["size"] != st.st_size or f["mtime"] != int(st.st_mtime):
+        old = f is not None and f.get("v", 1) < FACTS_V and (scan or upgrade)
+        if not f or f["size"] != st.st_size or f["mtime"] != int(st.st_mtime) or old:
             if scan:
                 self._scan_wait(st.st_dev)
             f = self._make_fact(r, rel, full, st, os.path.realpath(full), low=scan)
@@ -1439,13 +1602,28 @@ class Tasks:
     # ---- settings of the task screens
 
     def jobs_config(self):
-        return {"audio_fix_auto": bool(self.cfg.get("audio_fix_auto")), "subs_auto": self.cfg.get("subs_auto") or ""}
+        st = self.layout_settings()
+        idx = {r["id"]: r["index"] for r in self.library.roots()}
+        return {"audio_fix_auto": bool(self.cfg.get("audio_fix_auto")), "subs_auto": self.cfg.get("subs_auto") or "",
+                "layout_levels": st["levels"], "layout_ages": st["ages"],  # 1.17+
+                "layout_keep": None if st["keep"] is None else [{"root": idx[a], "path": b} for a, b in st["keep"] if a in idx]}
 
     def set_jobs_config(self, b):
         if "audio_fix_auto" in b:
             self.cfg["audio_fix_auto"] = bool(b["audio_fix_auto"])
         if "subs_auto" in b:
             self.cfg["subs_auto"] = ",".join(_langs(b["subs_auto"] or ""))
+        if "layout_levels" in b:
+            self.cfg["layout_levels"] = mp_arrange.norm_levels(b["layout_levels"]) or list(mp_arrange.DEFAULT_LEVELS)
+        if "layout_ages" in b:
+            self.cfg["layout_ages"] = mp_arrange.norm_ages(b["layout_ages"])
+        if "layout_keep" in b:
+            if b["layout_keep"] is None:
+                self.cfg.pop("layout_keep", None)
+            else:
+                ids = {r["index"]: r["id"] for r in self.library.roots()}
+                self.cfg["layout_keep"] = [{"root_id": ids[int(k["root"])], "path": str(k.get("path") or "").strip("/")}
+                                           for k in b["layout_keep"] if str(k.get("root", "")).isdigit() and int(k["root"]) in ids]
         self.save_cfg()
         return self.jobs_config()
 
@@ -1570,7 +1748,7 @@ class Tasks:
     def _matcher(self, scope):
         return mp_scope.Matcher(scope, self.library.roots(), self.catalog)
 
-    def _plan_facts(self, m, p, probe=True):
+    def _plan_facts(self, m, p, probe=True, upgrade=False):
         """[(root, fact, full)] of the scope's videos, fresh, for a plan (the walk is the search's, cached minutes)."""
         listing = []
         for r in self._job_roots():
@@ -1583,7 +1761,7 @@ class Tasks:
             p["step"] = os.path.basename(rel)
             full = os.path.join(r["path"], rel)
             if probe:
-                f = self._fresh_fact(r, rel, full, dsigs)
+                f = self._fresh_fact(r, rel, full, dsigs, upgrade=upgrade)
             else:
                 try:
                     st = os.stat(full)
@@ -1647,8 +1825,8 @@ class Tasks:
                 if c.get("skip"):
                     skipped.append(dict(base, reason=c["skip"], **({"est": c["est"]} if c.get("est") else {})))
                     continue
-                est = c["cost"](enc)[0]
-                items.append(dict(base, est=est, codec=v.get("codec"), height=v.get("height"), duration=dur,
+                est, work = c["cost"](enc)
+                items.append(dict(base, est=est, work=work, codec=v.get("codec"), height=v.get("height"), duration=dur,
                                   bitrate=int(f["size"] * 8 / dur / 1000), **c["item"]))
                 for e in choices:
                     b, w = c["cost"](e)
@@ -1957,9 +2135,378 @@ class Tasks:
                     "minutes": -(-len(items) // 2), "which": which}
         return self._plan("subs", run, m)
 
+    # ---- folder layout (A2) and balance between disks (A3), agent 1.17+: mp_arrange computes, these plan and count
+
+    def layout_settings(self):
+        """The owner's folder layout: levels in the order tapped, age groups → kids/teens/films, and the folders they
+        arranged by hand that stay as they are ([(root id, path)], None = never confirmed: all detected ones stay)."""
+        keep = self.cfg.get("layout_keep")
+        return {"levels": mp_arrange.norm_levels(self.cfg.get("layout_levels")) or list(mp_arrange.DEFAULT_LEVELS),
+                "ages": mp_arrange.norm_ages(self.cfg.get("layout_ages")),
+                "keep": None if keep is None else [(k["root_id"], k["path"]) for k in keep if k.get("root_id")]}
+
+    def _arrange_ctx(self, m, torrents):
+        """(units, roots with `writable`, roots by id, device of each root) for layout and balance."""
+        roots = [dict(r, writable=os.access(r["path"], os.W_OK)) for r in self._job_roots()]
+        by_id = {r["id"]: r for r in roots}
+        devs = {r["id"]: _dev(r["path"]) for r in roots}
+        us = mp_arrange.units(m, by_id, self.catalog, mp_i18n.lang())
+        # files a waiting or running task still has to do (a paused encode among them) don't move under it
+        busy = set()
+        with self.lock:
+            for t in self.items:
+                if t["state"] in ("queued", "running"):
+                    for i in t["items"]:
+                        if i.get("state") in ("pending", "running") and i.get("root_id") in by_id and i.get("path"):
+                            busy.add(os.path.realpath(os.path.join(by_id[i["root_id"]]["path"], i["path"])))
+        if busy:
+            for u in us:
+                rp = os.path.realpath(u["full"])
+                if any(b == rp or b.startswith(rp + os.sep) for b in busy):
+                    u["busy"] = True
+        return mp_arrange.group_torrents(us, by_id, torrents), roots, by_id, devs
+
+    def _layout(self, m, torrents, levels, ages, keep=None, keep_unsure=True, keep_seeding=False):
+        """(moves, skipped, stats, hand folders, keep confirmed) of a folder layout in the scope of `m`."""
+        us, roots, by_id, devs = self._arrange_ctx(m, torrents)
+        hand = mp_arrange.hand_folders(us, by_id)
+        st = self.layout_settings()
+        confirmed = keep is not None or st["keep"] is not None
+        if keep is None:
+            keep = st["keep"] if st["keep"] is not None else [(h["root_id"], h["path"]) for h in hand]
+        moves, skipped, stats = mp_arrange.layout(us, levels, ages, keep, roots, mp_arrange.names(), keep_unsure,
+                                                  keep_seeding, devs)
+        kept = {tuple(k) for k in keep}
+        for h in hand:
+            h["keep"] = (h["root_id"], h["path"]) in kept
+        return moves, skipped, stats, hand, confirmed
+
+    @staticmethod
+    def _unit_item(u, dr, sub, **extra):
+        """A move item of a whole title (a folder or a file with the files that belong to it)."""
+        item = {"op": "move", "root_id": u["root_id"], "root": u["root"], "root_name": u["root_name"], "path": u["rel"],
+                "name": u.get("title") or os.path.basename(u["rel"]), "size": u["size"],
+                "to_root_id": dr["id"], "to_root": dr["index"], "to_name": dr["name"], "to_sub": sub}
+        if not u["dir"] and u.get("torrent") is None:
+            item["extra"] = companions(u["full"])
+        if u.get("torrent") is not None:
+            item["torrent"] = u["torrent"]
+        if u.get("members"):
+            item["titles"] = len(u["members"])
+        item.update(extra)
+        return item
+
+    def plan_layout(self, o, scope=None):
+        """Folder layout (A2): `levels`, `ages` ({"0": "kids", …}), `keep` (the hand-arranged folders to leave alone,
+        [{root, path}]; given = confirmed and remembered), `keep_unsure` (titles without a sure recognition stay where
+        they are; false = in the preview, unticked), `seeding` ("move": a seeding torrent moves through its client,
+        whole, "skip"), `remember` (levels and ages become the layout's settings). Every title stays on its disk."""
+        levels = mp_arrange.norm_levels(o.get("levels")) if o.get("levels") is not None else self.layout_settings()["levels"]
+        if not levels:
+            raise TaskError(T("choose at least one level", "wybierz przynajmniej jeden poziom"))
+        ages = mp_arrange.norm_ages(o.get("ages")) if o.get("ages") is not None else self.layout_settings()["ages"]
+        keep = None
+        if o.get("keep") is not None:
+            idx = {r["index"]: r for r in self.library.roots()}
+            keep = [(idx[int(k["root"])]["id"], str(k.get("path") or "").strip("/")) for k in o["keep"]
+                    if str(k.get("root", "")).lstrip("-").isdigit() and int(k["root"]) in idx]
+            self.cfg["layout_keep"] = [{"root_id": a, "path": b} for a, b in keep]
+        if o.get("remember"):
+            self.cfg["layout_levels"], self.cfg["layout_ages"] = levels, ages
+        if keep is not None or o.get("remember"):
+            self.save_cfg()
+        keep_unsure = o.get("keep_unsure", True) is not False
+        keep_seeding = (o.get("seeding") or "move") == "skip"
+        m = self._matcher(scope)
+
+        def run(p):
+            moves, skipped, stats, hand, confirmed = self._layout(m, self._torrents(), levels, ages, keep, keep_unsure,
+                                                                 keep_seeding)
+            items = []
+            for u, dr, sub in moves:
+                items.append(self._unit_item(u, dr, sub, prune=True, same_disk=True, unsure=bool(u.get("unsure")),
+                                             why="/".join(x for x in (dr["name"], sub) if x)))
+            p["progress"] = 100
+            return {"kind": "layout", **_title("Folder layout", "Układ folderów"), "items": items,
+                    "bytes": sum(i["size"] for i in items), "levels": levels, "ages": ages, "confirmed": confirmed,
+                    "hand_folders": hand, "stats": stats,
+                    "skipped": [{"root_id": u["root_id"], "root": u["root"], "root_name": u["root_name"], "path": u["rel"],
+                                 "name": u.get("title") or os.path.basename(u["rel"]), "size": u["size"],
+                                 "reason": mp_arrange.reason(k)} for u, k in skipped if k != "kept"][:200],
+                    "eta": len(items), "trash_days": self.trash_days()}
+        return self._plan("layout", run, m)
+
+    def _balance_disks(self, roots, devs):
+        out = {}
+        for r in roots:
+            d = devs.get(r["id"])
+            if d is None or d in out or not r.get("writable", True):
+                continue
+            try:
+                u = shutil.disk_usage(r["path"])
+            except OSError:
+                continue
+            out[d] = {"name": os.path.basename(_mount(r["path"]).rstrip("/")) or _mount(r["path"]), "total": u.total,
+                      "free": u.free}
+        return out
+
+    def _watched_paths(self):
+        """Real paths watched now or streamed in the last WATCHING_DAYS (balance leaves them where they are)."""
+        cut = time.time() - WATCHING_DAYS * 86400
+        with self.flock:
+            out = {p for p, t in self.played.items() if t > cut}
+        out |= {os.path.realpath(w["path"]) for w in self.watching() if w.get("path")}
+        return out
+
+    def _balance(self, goal, rules, torrents):
+        us, roots, by_id, devs = self._arrange_ctx(self._matcher(None), torrents)
+        disks = self._balance_disks(roots, devs)
+        moves, skipped, after = mp_arrange.balance(goal, us, disks, roots, devs, rules, self._watched_paths())
+        return moves, skipped, disks, after
+
+    @staticmethod
+    def _disk_rows(disks, after):
+        return [{"name": d["name"], "total": d["total"], "free": d["free"], "free_after": after.get(k, d["free"]),
+                 "pct": round(100 * d["free"] / max(d["total"], 1)), "pct_after": round(100 * after.get(k, d["free"]) / max(d["total"], 1))}
+                for k, d in sorted(disks.items(), key=lambda kv: kv[1]["name"])]
+
+    def plan_balance(self, o):
+        """Balance between disks (A3), whole computer only: `goal` (even, kind_per_disk, fill_newer) and `rules`
+        (skip_watching, seeding: a seeding torrent moves whole through its client, backup: never onto the disk of a
+        folder's replica). Whole titles move into the folder with the same tag on the other disk, same subfolder."""
+        goal = o.get("goal") or "even"
+        if goal not in mp_arrange.GOALS:
+            raise TaskError(T("goal must be even, kind_per_disk or fill_newer", "goal to even, kind_per_disk albo fill_newer"))
+        rules = {k: bool(v) for k, v in (o.get("rules") or {}).items() if k in ("skip_watching", "seeding", "backup")}
+
+        def run(p):
+            moves, skipped, disks, after = self._balance(goal, rules, self._torrents())
+            if len(disks) < 2:
+                raise TaskError(T("the library is on one disk only", "biblioteka jest tylko na jednym dysku"))
+            items = [self._unit_item(u, dr, sub, same_disk=False, why=dr["name"]) for u, dr, sub in moves]
+            p["progress"] = 100
+            total = sum(i["size"] for i in items)
+            return {"kind": "balance", **_title("Balance between disks", "Rozkład na dyski"), "items": items,
+                    "bytes": total, "goal": goal, "rules": rules, "disks": self._disk_rows(disks, after),
+                    "eta": int(total / mp_arrange.COPY_SPEED),
+                    "skipped": [{"root_id": u["root_id"], "root": u["root"], "root_name": u["root_name"], "path": u["rel"],
+                                 "name": u.get("title") or os.path.basename(u["rel"]), "size": u["size"],
+                                 "reason": mp_arrange.reason(k)} for u, k in skipped][:200]}
+        return self._plan("balance", run)
+
+    # ---- ready for Chromecast (B5), agent 1.17+: an AAC track next to the original sound, for good, in the file
+
+    def _cast_need(self, f, o, torrents):
+        """What cast_ready would do with one video: None (not for it: no fact yet, a picture Chromecast can't take, or
+        nothing to do), {"pending": True} (its subtitle tracks weren't probed with codecs yet) or the item fields."""
+        info = f.get("info") or {}
+        v = info.get("video")
+        if not v or not info.get("duration") or f["size"] < MIN_SIZE:
+            return None
+        if not ((v.get("codec") == "h264" and v.get("bits", 8) == 8 and (v.get("height") or 0) <= 1088)
+                or (v.get("codec") == "hevc" and v.get("bits", 8) == 8)):
+            return None  # the picture itself needs converting: "Prepare" does that per showing
+        audio = info.get("audio") or []
+        a = mp_media.pick_audio({"audio": audio}) if audio else None
+        reasons, out = [], {}
+        if o.get("add_aac", True) and a and a.get("codec") not in mp_media.AUDIO_OK \
+                and not any(x.get("codec") in mp_media.AUDIO_OK and (x.get("lang") or "") == (a.get("lang") or "") for x in audio):
+            ch = a.get("channels") or 0
+            chs = {1: "mono", 2: "stereo", 6: "5.1", 7: "6.1", 8: "7.1"}.get(ch, f"{ch} ch" if ch else "")
+            name = f"{(a.get('codec') or '?').upper()}{' ' + chs if chs else ''}"
+            reasons.append(T(f"{name} sound", f"dźwięk {name}"))
+            out.update(add_aac=True, aac_from=audio.index(a), aac_lang=a.get("lang") or "", audio_codec=a.get("codec"))
+        subs = info.get("subs") or []
+        if o.get("subs_to_srt", True) and subs:
+            if any(not isinstance(s, dict) for s in subs):
+                return {"pending": True}
+            have = {x.get("lang") for x in f.get("side") or [] if x.get("lang")}
+            want = []
+            for n, s in enumerate(subs):
+                code = _lang2(s.get("lang")) or ""
+                if s.get("codec") in TEXT_SUBS and code and code not in have and code not in {w["lang"] for w in want}:
+                    want.append({"n": n, "lang": code})
+            if want:
+                reasons.append(T("subtitles in the file", "napisy w pliku"))
+                out["subs"] = want
+        if o.get("avi_to_mkv", True) and "avi" in (info.get("container") or "").lower():
+            reasons.append(T("AVI container", "kontener AVI"))
+            out["avi"] = True
+        if not reasons:
+            return None
+        seeding = _in_torrent(f.get("real") or "", torrents)
+        if seeding:  # a seeding file stays byte for byte: only its subtitles can be written next to it
+            if not out.get("subs"):
+                return {"skip": _seeding_text()}
+            out = {"subs": out["subs"], "seeding": True}
+            reasons = [T("subtitles in the file", "napisy w pliku")]
+        remux = bool(out.get("add_aac") or out.get("avi"))
+        return dict(out, why=" · ".join(reasons), est=int(f["size"] * 1.03) if remux else f["size"],
+                    work=(f["size"] / CAST_SPEED if remux else 0) + 5 * len(out.get("subs") or []))
+
+    def plan_cast_ready(self, o, scope=None):
+        """Ready for Chromecast (B5): `add_aac` (an AAC stereo track first, the original kept), `subs_to_srt` (text
+        subtitle tracks written next to the file as .srt), `avi_to_mkv` (repacked, not re-encoded). The picture is
+        never touched; the result is an .mkv and the original goes to the trash."""
+        opts = {k: o.get(k, True) is not False for k in ("add_aac", "subs_to_srt", "avi_to_mkv")}
+        if not any(opts.values()):
+            raise TaskError(T("choose at least one action", "wybierz przynajmniej jedną czynność"))
+        m = self._matcher(scope)
+
+        def run(p):
+            torrents = self._torrents()
+            items, skipped, unchecked = [], [], 0
+            for r, f, full in self._plan_facts(m, p, upgrade=True):
+                c = self._cast_need(f, opts, torrents)
+                if not c:
+                    continue
+                base = {"op": "cast_ready", "root_id": r["id"], "root": r["index"], "root_name": r["name"],
+                        "path": f["rel"], "name": os.path.basename(f["rel"]), "size": f["size"]}
+                if c.get("pending"):
+                    unchecked += 1
+                elif c.get("skip"):
+                    skipped.append(dict(base, reason=c["skip"]))
+                else:
+                    it = m.title(r["id"], f["rel"]) or {}
+                    items.append(dict(base, title=it.get("title"), series=it.get("kind") == "series", **c))
+            p["progress"] = 100
+            total = sum(i["size"] for i in items)
+            return {"kind": "cast_ready", **_title("Ready for Chromecast", "Pod Chromecasta"), "items": items,
+                    "bytes": total, "est": sum(i["est"] for i in items), "saved": total - sum(i["est"] for i in items),
+                    "eta": int(sum(i["work"] for i in items)), "options": opts, "skipped": skipped[:100],
+                    "by_title": self._cast_titles(items), "trash_days": self.trash_days(),
+                    "warnings": [T(f"{unchecked} files weren't checked yet", f"{unchecked} plików jeszcze nie sprawdzono")]
+                    if unchecked else []}
+        return self._plan("cast_ready", run, m)
+
+    @staticmethod
+    def _cast_titles(entries):
+        """Files grouped by title for the screen: a series once, as "Title, N episodes"."""
+        out = {}
+        for e in entries:
+            key = (e.get("title") or e["name"], bool(e.get("series")))
+            g = out.setdefault(key, {"title": key[0], "series": key[1], "files": 0, "why": e["why"], "size": 0})
+            g["files"] += 1
+            g["size"] += e["size"]
+        return sorted(out.values(), key=lambda g: -g["size"])
+
+    def _cast_ready(self, i, progress, t):
+        root = self._root_path(i["root_id"])
+        full = os.path.join(root, i["path"])
+        if not os.path.exists(full):
+            raise TaskError(T("the file no longer exists", "pliku już nie ma"))
+        st = os.stat(full)
+        if st.st_size != i["size"]:
+            raise TaskError(T("the file changed since the preview", "plik zmienił się od podglądu"))
+        stem = os.path.splitext(full)[0]
+        info = mp_media.probe(full)
+        wrote = []
+        for s in i.get("subs") or []:  # subtitles next to the file first: they never replace a file that's there
+            out = f"{stem}.{s['lang']}.srt"
+            if os.path.exists(out):
+                continue
+            r = subprocess.run(_nice(["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-n", "-i", full,
+                                      "-map", f"0:s:{s['n']}", "-c:s", "srt", out]), capture_output=True, text=True)
+            if r.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) == 0:
+                _rm(out)
+                self.log(f"cast_ready: {os.path.basename(full)}: subtitles {s['lang']}: {r.stderr.strip()[-200:]}")
+            else:
+                wrote.append(os.path.basename(out))
+            self._check_cancel()
+        if wrote:
+            i["subs_written"] = wrote
+        if not (i.get("add_aac") or i.get("avi")):
+            progress(i["size"])
+            return
+        if self._inside(full, self._torrents()):
+            raise TaskError(T("the file is back in the torrent client", "plik jest z powrotem w kliencie torrentów"))
+        need = int(st.st_size * 1.05) + (256 << 20)
+        if shutil.disk_usage(os.path.dirname(full)).free < need:
+            self._relieve(root, need - shutil.disk_usage(os.path.dirname(full)).free)
+        if shutil.disk_usage(os.path.dirname(full)).free < need:
+            raise TaskError(T(f"not enough room on the disk: about {need >> 20} MB needed",
+                              f"za mało miejsca na dysku: potrzeba ok. {need >> 20} MB"))
+        part = os.path.join(os.path.dirname(full), f".{os.path.basename(stem)}.mp-cast.part.mkv")
+        out_final = stem + ".mkv"
+        n_audio = len(info.get("audio") or [])
+        cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-v", "error", "-progress", "pipe:1"]
+        if i.get("avi"):
+            cmd += ["-fflags", "+genpts"]
+        cmd += ["-i", full, "-map", "0:v:0"]
+        if i.get("add_aac"):
+            cmd += ["-map", f"0:a:{i['aac_from']}"]
+        cmd += ["-map", "0:a?", "-map", "0:s?", "-map", "0:t?", "-map_chapters", "0", "-c", "copy"]
+        if any(s.get("codec") == "mov_text" for s in info.get("subs") or []):
+            cmd += ["-c:s", "srt"]
+        if i.get("add_aac"):
+            cmd += ["-c:a:0", "aac", "-b:a:0", "192k", "-ac:a:0", "2", "-metadata:s:a:0", "title=AAC stereo",
+                    "-disposition:a", "0", "-disposition:a:0", "default"]
+            if i.get("aac_lang"):
+                cmd += ["-metadata:s:a:0", f"language={i['aac_lang']}"]
+        cmd.append(part)
+        _rm(part)
+        self.log("cast_ready:", os.path.basename(full), "aac" if i.get("add_aac") else "", "avi→mkv" if i.get("avi") else "")
+        p = subprocess.Popen(_nice(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        with self.lock:
+            self.proc = p
+        dur = info.get("duration") or 0
+        err = []
+        threading.Thread(target=lambda: err.extend(p.stderr.read().splitlines()[-20:]), daemon=True).start()
+        try:
+            for line in p.stdout:
+                if line.startswith("out_time_us=") and dur:
+                    us = line.split("=", 1)[1].strip()
+                    if us.isdigit():
+                        progress(int(i["size"] * min(int(us) / 1e6 / dur, 1)))
+                if self.cancel_ev.is_set():
+                    p.terminate()
+                    break
+            p.wait()
+        finally:
+            with self.lock:
+                self.proc = None
+        if self.cancel_ev.is_set():
+            _rm(part)
+            raise _Cancelled()
+        if p.returncode != 0:
+            _rm(part)
+            raise TaskError(_ffmpeg_reason(err))
+        try:
+            ninfo = mp_media.probe(part)
+        except Exception as e:  # noqa: BLE001
+            _rm(part)
+            raise TaskError(T(f"the result can't be read: {e}", f"wyniku nie da się odczytać: {e}"))
+        got = ninfo.get("duration") or 0
+        if abs(got - dur) > max(2.0, dur * 0.005) and abs(got - _readable_length(full)) > max(2.0, got * 0.005):
+            _rm(part)
+            raise TaskError(T("the result has a different length, the original was kept", "wynik ma inną długość, oryginał został"))
+        if len(ninfo.get("audio") or []) < n_audio + (1 if i.get("add_aac") else 0) \
+                or (i.get("add_aac") and (ninfo["audio"][0].get("codec") != "aac")):
+            _rm(part)
+            raise TaskError(T("the result lacks a sound track, the original was kept", "w wyniku brakuje ścieżki dźwięku, oryginał został"))
+        real = os.path.realpath(full)
+        while any(os.path.realpath(w["path"]) == real for w in self.watching()):
+            t["hold"] = "in_use"
+            if self.cancel_ev.wait(5):
+                t["hold"] = None
+                _rm(part)
+                raise _Cancelled()
+        t["hold"] = None
+        new = os.path.getsize(part)
+        if self.trash_days() > 0:
+            self._to_trash(full, root, i)
+        else:
+            os.remove(full)
+        os.rename(part, out_final)
+        mp_media.remove_variant(full)
+        i.update(new_size=new, new_path=os.path.relpath(out_final, root), grew=new - st.st_size)
+        mp_library.forget_names()
+        self.log(f"cast_ready done: {os.path.basename(full)} {st.st_size >> 20} → {new >> 20} MB")
+
     # ---- counters for the task list (GET /api/library/jobs): only what the background scans know
 
-    def jobs(self, scope=None, languages="pl,en"):
+    def jobs(self, scope=None, languages="pl,en", levels=None):
+        """`levels` (1.17+): the folder layout counter with these levels (the A2 screen while the owner taps them)."""
         m = self._matcher(scope)
         roots = {r["id"]: r for r in self._job_roots()}
         with self.flock:
@@ -2169,14 +2716,66 @@ class Tasks:
                            why=None if total - recog else T("every title is recognised", "wszystkie tytuły rozpoznane"),
                            options={"recognised": recog, "total": total})
 
+        # folder layout (1.17+): titles that would move, with the settings or the levels being chosen
+        lset = self.layout_settings()
+        lv = mp_arrange.norm_levels(levels) if levels is not None else lset["levels"]
+        moves, skipped, stats, hand, confirmed = self._layout(m, torrents, lv or lset["levels"], lset["ages"])
+        tree = {}
+        for u, dr, sub in moves:
+            k = "/".join(x for x in ([dr["name"]] + sub.split("/")[:1]) if x)
+            tree[k] = tree.get(k, 0) + 1
+        jobs["layout"] = job(count=len(moves), size=sum(u["size"] for u, _, _ in moves), eta=len(moves),
+                             why=None if moves else T("every title is in its place", "każdy tytuł jest na swoim miejscu"),
+                             options={"levels": lset["levels"], "ages": lset["ages"], "confirmed": confirmed,
+                                      "hand_folders": hand[:50], "unsure": stats["unsure"], "seeding": stats["seeding"],
+                                      "kept": stats["kept"], "tree": [{"path": k, "titles": n} for k, n in sorted(tree.items())][:30]})
+
+        # balance between disks (1.17+): the whole computer, like free up
+        if not m.whole:
+            jobs["balance"] = job(False, why=whole_only)
+        else:
+            by_goal, rows = {}, None
+            for g in mp_arrange.GOALS:
+                bm, _, disks, after = self._balance(g, None, torrents)
+                rows = rows or self._disk_rows(disks, {})
+                b = sum(u["size"] for u, _, _ in bm)
+                by_goal[g] = {"count": len(bm), "size": b, "eta": int(b / mp_arrange.COPY_SPEED),
+                              "disks": self._disk_rows(disks, after)}
+            ev = by_goal["even"]
+            many = rows is not None and len(rows) >= 2
+            jobs["balance"] = job(applicable=many, count=ev["count"], size=ev["size"], eta=ev["eta"],
+                                  why=(None if ev["count"] else T("the disks are balanced", "dyski są wyrównane")) if many
+                                  else T("the library is on one disk only", "biblioteka jest tylko na jednym dysku"),
+                                  options={"disks": rows or [], "by_goal": by_goal})
+
+        # ready for Chromecast (1.17+)
+        cr, cr_wait = [], 0
+        for k, r, f in inscope:
+            c = self._cast_need(f, {}, torrents)
+            if not c or c.get("skip"):
+                continue
+            if c.get("pending"):
+                cr_wait += 1
+                continue
+            it = m.title(r["id"], f["rel"]) or {}
+            cr.append(dict(c, name=os.path.basename(f["rel"]), title=it.get("title"), series=it.get("kind") == "series",
+                           size=f["size"]))
+        groups = self._cast_titles(cr)
+        jobs["cast_ready"] = job(count=len(cr), size=sum(x["size"] for x in cr),
+                                 saving=-sum(x["est"] - x["size"] for x in cr), eta=int(sum(x["work"] for x in cr)),
+                                 pending=pending + cr_wait,
+                                 why=None if cr else T("every file plays on a Chromecast as it is", "każdy plik gra na Chromecaście tak, jak jest"),
+                                 options={"by_title": groups[:3], "more_files": sum(g["files"] for g in groups[3:]),
+                                          "by_reason": {"aac": sum(1 for x in cr if x.get("add_aac")),
+                                                        "subs": sum(1 for x in cr if x.get("subs")),
+                                                        "avi": sum(1 for x in cr if x.get("avi"))},
+                                          "growth": sum(x["est"] - x["size"] for x in cr)})
+
         # trash: whole disks
         if not m.whole:
             jobs["trash"] = job(False, why=whole_only, options={"days": self.trash_days()})
         else:
-            at_t, tr = self._trash_cache
-            if time.time() - at_t > 60 or tr is None:
-                tr = self.trash()
-                self._trash_cache = (time.time(), tr)
+            tr = self._trash_list()
             tsize, tfiles = sum(x["size"] for x in tr), sum(x["files"] for x in tr)
             jobs["trash"] = job(count=tfiles, size=tsize, saving=tsize, why=None if tfiles else T("the trash is empty", "kosz jest pusty"),
                                 options={"days": self.trash_days()})
@@ -2243,7 +2842,7 @@ class Tasks:
                     self.log("trash purge:", e)
             while True:
                 with self.lock:
-                    t = next((t for t in self.items if t["state"] == "queued"), None)
+                    t = next((t for t in self.items if t["state"] == "queued" and not t.get("held")), None)
                     if not t:
                         break
                     t.update(state="running", started=t["started"] or time.time())
@@ -2251,16 +2850,26 @@ class Tasks:
                     self._save()
                 self._run(t)
 
-    def _run(self, t):
+    def _run(self, t, nested=False):
+        """Does a task's items in order. `nested`: a quick task run in a break between another task's files."""
         mp_i18n.set_lang(t.get("lang"))  # item errors in the language of whoever started the task
         self.log(f"task {t['id']} ({t['kind']}): {t['title']}, {len(t['items'])} items")
         done_before = sum(i["size"] for i in t["items"] if i["state"] in ("done", "error", "skipped"))
         t["done_bytes"] = done_before
+        t["_run"] = (time.time(), done_before, t.get("held_secs", 0))
+        held = False
         for i in t["items"]:
             if i["state"] in ("done", "error", "skipped"):
                 continue
             if t.get("cancel"):
                 break
+            if t.get("held"):  # paused by the owner (F4): stop at the file boundary
+                held = True
+                break
+            if not nested:
+                self._run_quick(t)
+                if t.get("cancel"):
+                    break
             t["current"] = i["name"]
             i["state"] = "running"
             with self.lock:
@@ -2274,6 +2883,10 @@ class Tasks:
                 if i["op"] == "move":
                     self._move(i, progress)
                     self._record_move(i)
+                    if i.get("prune"):
+                        self._prune(i)
+                elif i["op"] == "cast_ready":
+                    self._cast_ready(i, progress, t)
                 elif i["op"] == "subs":
                     self._subs(i, t)
                 elif i["op"] == "subs_get":
@@ -2287,6 +2900,10 @@ class Tasks:
             except _Cancelled:
                 i["state"] = "pending"
                 break
+            except _Held:
+                i["state"] = "pending"
+                held = True
+                break
             except Exception as e:  # noqa: BLE001 — one item doesn't stop the task
                 i.update(state="error", error=str(e)[:300])
                 t["errors"] += 1
@@ -2297,13 +2914,20 @@ class Tasks:
                 self._save()
         with self.lock:
             t["current"] = None
+            t.pop("_run", None)
             if t.get("cancel"):
                 t["state"] = "cancelled"
                 _stopped(t)
+                t["finished"] = time.time()
+            elif (held and t.get("held")) or (nested and any(i["state"] == "pending" for i in t["items"])):
+                t["state"] = "queued"  # waits, paused, in its place; resume puts it back to work
             else:
                 t["state"] = "done"
-            t["finished"] = time.time()
+                t["finished"] = time.time()
             self._save()
+        if t["state"] == "queued":
+            self.log(f"task {t['id']} paused")
+            return
         if t.get("bad_subs") and t["state"] == "done":  # "add the ones that don't fit to Download missing" (1.16+)
             want = {}
             for rid, idx, rname, path, code in t.pop("bad_subs"):
@@ -2315,11 +2939,41 @@ class Tasks:
             self._add_task({"kind": "subs_get", **_title("Download subtitles that didn't fit",
                                                          "Pobierz napisy, które nie pasowały")}, items)
         self.library.invalidate()
-        try:
-            self.replicate()
-        except Exception as e:  # noqa: BLE001
-            self.log("replication:", e)
+        if not nested:
+            try:
+                self.replicate()
+            except Exception as e:  # noqa: BLE001
+                self.log("replication:", e)
         self.log(f"task {t['id']} {t['state']}: {sum(i['state'] == 'done' for i in t['items'])} done, {t['errors']} errors")
+
+    def _run_quick(self, cur):
+        """Quick tasks (the trash, moves within a disk) waiting behind `cur` run now, between its files (F4)."""
+        while True:
+            with self.lock:
+                q = next((x for x in self.items if x["state"] == "queued" and x.get("quick") and not x.get("held")
+                          and x is not cur), None)
+                if not q:
+                    return
+                q.update(state="running", started=q["started"] or time.time())
+                self._save()
+            self._run(q, nested=True)
+            if not cur.get("cancel"):
+                self.cancel_ev.clear()  # a cancelled quick task doesn't cancel the one it interrupted
+            mp_i18n.set_lang(cur.get("lang"))
+
+    def _prune(self, i):
+        """After a move by the folder layout: the folders it left empty go, up to the library folder."""
+        try:
+            root = self._root_path(i["root_id"])
+        except TaskError:
+            return
+        d = os.path.dirname(os.path.join(root, i["path"]))
+        while os.path.realpath(d).startswith(os.path.realpath(root) + os.sep):
+            try:
+                os.rmdir(d)  # only an empty one
+            except OSError:
+                return
+            d = os.path.dirname(d)
 
     def _check_cancel(self, t=None):
         if self.cancel_ev.is_set():
@@ -2510,13 +3164,24 @@ class Tasks:
 
     # ---- shrinking
 
+    def _drop_job(self, i):
+        """An item's detached encode (one paused or left by a restart) stopped and forgotten."""
+        j = mp_detached.Detached.find(self.encodes, i.pop("job", None))
+        if j:
+            _signal(j, "SIGCONT")
+            j.terminate()
+            self._drop_part(j)
+            j.remove()
+
     def _shrink(self, i, progress, t):
         root = self._root_path(i["root_id"])
         full = os.path.join(root, i["path"])
         if not os.path.exists(full):
+            self._drop_job(i)
             raise TaskError(T("the file no longer exists", "pliku już nie ma"))
         st = os.stat(full)
         if st.st_size != i["size"]:
+            self._drop_job(i)
             raise TaskError(T("the file changed since the preview", "plik zmienił się od podglądu"))
         if self._inside(full, self._torrents()):
             raise TaskError(T("the file is back in the torrent client", "plik jest z powrotem w kliencie torrentów"))
@@ -2584,7 +3249,9 @@ class Tasks:
             self.proc = p
         done = threading.Event()
         work = [0.0]  # seconds the encoder was allowed to run (to learn its speed)
-        threading.Thread(target=self._govern, args=(p, t, full, done, work), daemon=True).start()
+        gov = threading.Thread(target=self._govern, args=(p, t, full, done, work), daemon=True)
+        gov.start()
+        stop = False
         try:
             while p.poll() is None:
                 us = p.progress().get("out_time_us", "")
@@ -2592,6 +3259,15 @@ class Tasks:
                     progress(int(i["size"] * min(int(us) / 1e6 / dur, 1)))
                 if self.cancel_ev.wait(1):
                     raise _Cancelled()
+                if t.get("held") and sys.platform != "win32":
+                    raise _Held()
+        except _Held:
+            # paused by the owner: the encode stays where it is, suspended, and is attached to again on resume
+            done.set()
+            gov.join(5)
+            stop = True
+            self.log("shrink: paused", os.path.basename(full))
+            raise
         except _Cancelled:
             done.set()
             p.terminate()
@@ -2605,7 +3281,7 @@ class Tasks:
             raise
         finally:
             done.set()
-            _signal(p, "SIGCONT")
+            _signal(p, "SIGSTOP" if stop else "SIGCONT")
             t.update(paused=False, hold=None)
             with self.lock:
                 self.proc = None
@@ -2704,6 +3380,10 @@ class Tasks:
         can = sys.platform != "win32"
         last, rate = _read_bytes(p.pid), None
         while not done.is_set():
+            if t.get("held") and can:  # paused by the owner: _shrink stops the encode for good at its next check
+                _signal(p, "SIGSTOP")
+                done.wait(1)
+                continue
             hold = self._hold(dev) if can else None
             if hold == "same_disk" and rate is not None and rate < SAME_DISK_FREE:
                 hold = None
@@ -2916,6 +3596,17 @@ class Tasks:
             self.log(f"trash: {day} of {self._trash_name(rpath)} ({size >> 20} MB) moved to {other['name']} for room")
         return moved
 
+    def _trash_list(self):
+        """trash(), at most a minute old (it walks every trash folder)."""
+        at_t, tr = self._trash_cache
+        if time.time() - at_t > 60 or tr is None:
+            tr = self.trash()
+            self._trash_cache = (time.time(), tr)
+        return tr
+
+    def _trash_size(self):
+        return sum(x["size"] for x in self._trash_list())
+
     def trash(self):
         out = []
         for r in self.library.roots():
@@ -2951,6 +3642,15 @@ class Tasks:
 
 class _Cancelled(Exception):
     pass
+
+
+class _Held(Exception):
+    """The owner paused the task (F4): the encode is suspended where it is and the task waits in the queue."""
+
+
+def _space_error(err):
+    e = (err or "").lower()
+    return any(x in e for x in ("no space left", "brak miejsca", "not enough room", "za mało miejsca"))
 
 
 def _no_space():
@@ -3125,9 +3825,13 @@ def _lang2(code):
         try:
             from babelfish import Language
             c = Language.fromcode(c, "alpha3b").alpha2
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 — without babelfish: the common ones
+            c = _ISO3.get(c, c)
     return "" if c in ("und", "mul", "zxx") else c
+
+
+_ISO3 = {"eng": "en", "pol": "pl", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es", "ita": "it",
+         "rus": "ru", "cze": "cs", "ces": "cs", "jpn": "ja", "por": "pt", "dut": "nl", "nld": "nl", "ukr": "uk"}
 
 
 def _audio_damaged(full, a):

@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Etap 2 planu (agent 1.17+, docs/plan-ux-tasks.md): Układ folderów (A2), Rozkład na dyski (A3), Pod Chromecasta (B5),
+     Praca w tle (C4); LibraryJobs2.kt. Polski. -->
+<resources>
+    <!-- wiersze na A1 / E2 -->
+    <string name="j2_layout">Układ folderów</string>
+    <string name="j2_layout_row">Filmy, seriale, bajki, wiek, gatunek</string>
+    <string name="j2_balance">Rozkład na dyski</string>
+    <string name="j2_balance_row">Wyrównuje wolne miejsce między dyskami</string>
+    <string name="j2_cast">Pod Chromecasta</string>
+    <string name="j2_cast_row">Dźwięk AAC obok DTS/AC3, na stałe</string>
+    <plurals name="j2_n_to_move">
+        <item quantity="one">%1$d do przeniesienia</item>
+        <item quantity="few">%1$d do przeniesienia</item>
+        <item quantity="many">%1$d do przeniesienia</item>
+        <item quantity="other">%1$d do przeniesienia</item>
+    </plurals>
+    <string name="j2_bal_counter">%1$s wolne</string>
+    <string name="j2_instead_balance">Rozkład na dyski: przenieś %1$s na luźniejszy dysk</string>
+
+    <!-- A2 Układ folderów -->
+    <string name="j2_layout_desc">Przenosi tytuły do folderów według tagów z katalogu (IMDb/Wikidata), niezależnie od tego, gdzie leżą teraz.</string>
+    <string name="j2_layout_levels">Układaj według (kolejne poziomy)</string>
+    <string name="j2_layout_levels_hint">Stukaj w kolejności poziomów; drugie stuknięcie zdejmuje poziom.</string>
+    <string name="j2_lv_kind">Rodzaj: film, serial</string>
+    <string name="j2_lv_age">Grupa wiekowa</string>
+    <string name="j2_lv_category">Kategoria (anime…)</string>
+    <string name="j2_lv_genre">Gatunek</string>
+    <string name="j2_lv_collection">Seria filmów</string>
+    <string name="j2_lv_decade">Dekada</string>
+    <string name="j2_layout_tree">Tak będzie</string>
+    <string name="j2_layout_tree_none">Nic się nie przeniesie.</string>
+    <string name="j2_layout_ages">Grupy wiekowe</string>
+    <string name="j2_layout_ages_hint">Stuknij, żeby zmienić, do którego folderu trafia grupa wiekowa.</string>
+    <string name="j2_age_chip">%1$s → %2$s</string>
+    <string name="j2_and">i</string>
+    <string name="j2_bucket_kids">Bajki</string>
+    <string name="j2_bucket_teens">Młodzież</string>
+    <string name="j2_bucket_films">Filmy</string>
+    <string name="j2_layout_keep">Nie ruszaj</string>
+    <string name="j2_keep_hand">Folderów, które ułożyłem sam (%1$s)</string>
+    <string name="j2_keep_hand_none">Folderów, które ułożyłem sam (nie znaleziono)</string>
+    <string name="j2_keep_hand_unconfirmed">Jeszcze niepotwierdzone: lista pokaże się przed pierwszym podglądem.</string>
+    <string name="j2_keep_unsure">Tytułów bez pewnego rozpoznania (%1$d)</string>
+    <string name="j2_keep_seeding">Seedowanych torrentów</string>
+    <string name="j2_keep_seeding_sub">Bez zaznaczenia: przenoszone w całości przez klienta torrentów, który dalej seeduje; torrent z kilkoma tytułami zostaje razem.</string>
+    <string name="j2_layout_note">Każdy tytuł zostaje na swoim dysku; między dyskami przenosi „Rozkład na dyski”.</string>
+    <plurals name="j2_layout_cta">
+        <item quantity="one">Podgląd · ok. %1$d przeniesienie</item>
+        <item quantity="few">Podgląd · ok. %1$d przeniesienia</item>
+        <item quantity="many">Podgląd · ok. %1$d przeniesień</item>
+        <item quantity="other">Podgląd · ok. %1$d przeniesienia</item>
+    </plurals>
+    <string name="j2_hand_title">Foldery ułożone przez Ciebie?</string>
+    <string name="j2_hand_text">Te foldery mają po kilka tytułów i nie należą do układu. Zaznaczone zostają tak, jak są.</string>
+    <string name="j2_hand_ok">Potwierdź</string>
+    <plurals name="j2_n_titles">
+        <item quantity="one">%1$d tytuł</item>
+        <item quantity="few">%1$d tytuły</item>
+        <item quantity="many">%1$d tytułów</item>
+        <item quantity="other">%1$d tytułu</item>
+    </plurals>
+    <plurals name="j2_together">
+        <item quantity="one">%1$d tytuł w jednym torrencie: przenosi się razem</item>
+        <item quantity="few">%1$d tytuły w jednym torrencie: przenoszą się razem</item>
+        <item quantity="many">%1$d tytułów w jednym torrencie: przenoszą się razem</item>
+        <item quantity="other">%1$d tytułu w jednym torrencie: przenoszą się razem</item>
+    </plurals>
+
+    <!-- A3 Rozkład na dyski -->
+    <string name="j2_bal_desc">Przenosi całe tytuły między dyskami. Układ folderów na każdym dysku zostaje ten sam.</string>
+    <string name="j2_bal_goal">Cel</string>
+    <string name="j2_goal_even">Wyrównaj wolne miejsce</string>
+    <string name="j2_goal_even_hint">Na każdym dysku ten sam procent wolnego.</string>
+    <string name="j2_goal_kind">Rodzaj na dysk</string>
+    <string name="j2_goal_kind_hint">Np. seriale na jednym, filmy i bajki na drugim (wg tagów folderów).</string>
+    <string name="j2_goal_fill">Najpierw zapełnij nowszy</string>
+    <string name="j2_goal_fill_hint">Starszy dysk odpoczywa, można go odłączyć.</string>
+    <string name="j2_bal_now_after">Teraz → po</string>
+    <string name="j2_bal_pct">%1$d%% → %2$d%% wolne</string>
+    <string name="j2_bal_moves">Do przeniesienia: %1$s</string>
+    <string name="j2_bal_nothing">Dla tego celu nie ma czego przenosić.</string>
+    <string name="j2_bal_default_rules">Policzone z domyślnymi zasadami; podgląd użyje tych poniżej.</string>
+    <string name="j2_bal_rules">Zasady</string>
+    <string name="j2_rule_series">Serial w całości na jednym dysku</string>
+    <string name="j2_rule_watching">Nie przenoś tego, co ktoś teraz ogląda</string>
+    <string name="j2_rule_seeding">Seedowany torrent przenoś w całości przez klienta torrentów (dalej seeduje)</string>
+    <string name="j2_rule_seeding_off">Bez zaznaczenia: seedowane torrenty zostają na miejscu.</string>
+    <string name="j2_rule_backup">Kopia zapasowa: folder na obu dyskach</string>
+    <string name="j2_rule_backup_sub">Tytuł z folderu kopiowanego na inny dysk nie trafia na dysk z jego kopią.</string>
+    <string name="j2_about">ok. %1$s</string>
+
+    <!-- B5 Pod Chromecasta -->
+    <string name="j2_cast_desc">Dziś „Przygotuj” robi wersję dla Chromecasta przy każdym seansie. To zadanie robi to raz, na stałe, w samym pliku.</string>
+    <plurals name="j2_cast_found">
+        <item quantity="one">Znaleziono %1$d plik</item>
+        <item quantity="few">Znaleziono %1$d pliki</item>
+        <item quantity="many">Znaleziono %1$d plików</item>
+        <item quantity="other">Znaleziono %1$d pliku</item>
+    </plurals>
+    <string name="j2_cast_series">%1$s, %2$s</string>
+    <plurals name="j2_n_episodes">
+        <item quantity="one">%1$d odcinek</item>
+        <item quantity="few">%1$d odcinki</item>
+        <item quantity="many">%1$d odcinków</item>
+        <item quantity="other">%1$d odcinka</item>
+    </plurals>
+    <plurals name="j2_cast_pending">
+        <item quantity="one">Jeszcze %1$d plik jest sprawdzany w tle.</item>
+        <item quantity="few">Jeszcze %1$d pliki są sprawdzane w tle.</item>
+        <item quantity="many">Jeszcze %1$d plików jest sprawdzanych w tle.</item>
+        <item quantity="other">Jeszcze %1$d pliku jest sprawdzane w tle.</item>
+    </plurals>
+    <string name="j2_cast_what">Co zrobi</string>
+    <string name="j2_cast_aac">Dodaj ścieżkę AAC stereo, oryginalna zostaje</string>
+    <string name="j2_cast_subs">Napisy z pliku zapisz obok jako .srt</string>
+    <string name="j2_cast_avi">AVI przepakuj do MKV (bez przekodowania)</string>
+    <string name="j2_cast_note">Obrazu nie przekodowuje. Pliki rosną o ok. 2–4%%. Ok. %1$s na plik.</string>
+    <plurals name="j2_cast_cta">
+        <item quantity="one">Podgląd · %1$d plik</item>
+        <item quantity="few">Podgląd · %1$d pliki</item>
+        <item quantity="many">Podgląd · %1$d plików</item>
+        <item quantity="other">Podgląd · %1$d pliku</item>
+    </plurals>
+
+    <!-- podgląd (PlanScreen) -->
+    <string name="j2_sum_grow">Pliki urosną o ok. %1$s</string>
+    <string name="j2_sum_work">Ok. %1$s pracy</string>
+
+    <!-- C4 Praca w tle -->
+    <string name="j2_bg_running">Trwa</string>
+    <string name="j2_bg_queued">W kolejce</string>
+    <string name="j2_bg_recent">Ostatnio</string>
+    <string name="j2_state_running">trwa</string>
+    <string name="j2_state_paused">wstrzymane</string>
+    <string name="j2_files_of">%1$d z %2$d plików</string>
+    <string name="j2_saved_so_far">−%1$s do teraz</string>
+    <string name="j2_now">Teraz: %1$s</string>
+    <string name="j2_left">zostało ok. %1$s</string>
+    <string name="j2_pause">Wstrzymaj</string>
+    <string name="j2_resume">Wznów</string>
+    <string name="j2_cancel">Anuluj…</string>
+    <string name="j2_cancel_q">Zatrzymać „%1$s”? Gotowe pliki (%2$d) zostają, bieżący wraca do oryginału, nie zostanie zrobionych: %3$d.</string>
+    <string name="j2_cancel_q_between">Zatrzymać „%1$s”? Gotowe pliki (%2$d) zostają, nie zostanie zrobionych: %3$d.</string>
+    <string name="j2_no">Nie</string>
+    <string name="j2_stop">Zatrzymaj</string>
+    <string name="j2_up">Przesuń wyżej</string>
+    <string name="j2_remove_q">Usuń z kolejki</string>
+    <string name="j2_today">Dziś</string>
+    <string name="j2_yesterday">Wczoraj</string>
+    <string name="j2_recent_cancelled">anulowane</string>
+    <plurals name="j2_recent_ok">
+        <item quantity="one">%1$d plik, bez błędów</item>
+        <item quantity="few">%1$d pliki, bez błędów</item>
+        <item quantity="many">%1$d plików, bez błędów</item>
+        <item quantity="other">%1$d pliku, bez błędów</item>
+    </plurals>
+    <plurals name="j2_recent_failed">
+        <item quantity="one">%1$d pliku nie zrobiono</item>
+        <item quantity="few">%1$d plików nie zrobiono</item>
+        <item quantity="many">%1$d plików nie zrobiono</item>
+        <item quantity="other">%1$d pliku nie zrobiono</item>
+    </plurals>
+    <string name="j2_fix_space">Brak miejsca na %1$s (kosz %2$s)</string>
+    <string name="j2_fix_link">Opróżnij kosz i ponów</string>
+    <string name="j2_fix_q">Opróżnić kosz (%1$s)?</string>
+    <plurals name="j2_fix_text">
+        <item quantity="one">Oryginały trzymane w koszu znikną na dobre. Potem %1$d plik wróci do kolejki.</item>
+        <item quantity="few">Oryginały trzymane w koszu znikną na dobre. Potem %1$d pliki wrócą do kolejki.</item>
+        <item quantity="many">Oryginały trzymane w koszu znikną na dobre. Potem %1$d plików wróci do kolejki.</item>
+        <item quantity="other">Oryginały trzymane w koszu znikną na dobre. Potem %1$d pliku wróci do kolejki.</item>
+    </plurals>
+    <string name="j2_fix_done">Kosz opróżniony (%1$s), pliki znowu w kolejce</string>
+</resources>

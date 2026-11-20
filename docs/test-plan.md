@@ -520,6 +520,67 @@ only after seeing it on the phone next to its board (EN and PL).
 - [ ] `GET /api/catalog/episodes` (stage 5 data, agent side only for now): a series on jmpc gives its seasons with
   the own episodes marked (checked locally with a public series and no files).
 
+### Stage 2 (agent 1.17.0 + the next app): element by element, next to the boards
+
+Checked on a throwaway agent with synthetic files only (layout into Films/Kids with empty folders removed; AVI → MKV
+and AC3 5.1 → an AAC stereo default track with `.en.srt` written; pause → encode stopped, survives a restart, resume
+re-attaches; cancel leaves no encode). Nothing of it ran on jmpc or the real library yet; the app part wasn't compiled
+by the stage's author.
+
+**A1 / E2 rows**
+- [ ] "Folder layout" and "Balance between disks" under Tidy up, "For Chromecast" at the end of Renovation; hidden with
+  an agent before 1.17 (no `layout`/`balance`/`cast_ready` in `features.jobs`).
+- [ ] counters: layout "N to move", balance "39% / 42% free" (grey when nothing would move), For Chromecast "N files".
+- [ ] E2 (a scope): layout and For Chromecast counted for the scope; balance replaced by the disk-wide note.
+- [ ] Free up space (A5) "Instead": "Balance between disks: move X to the emptier disk" when balance has moves; opens A3.
+
+**A2. Folder layout**
+- [ ] description: moves titles into folders by catalog tags wherever they are now;
+- [ ] "ARRANGE BY (LEVELS IN ORDER)" chips: kind, age group, category (anime…), genre, film series, decade; a tap adds
+  or removes a level, the number on the chip is its place, the order of taps is the order of levels;
+- [ ] "IT WILL LOOK LIKE" tree updated from the chosen levels (the counter is read again with `levels`);
+- [ ] "AGE GROUPS" chips 0+ and 7+ → Kids, 12+ → Teens, 16+ and 18+ → Films; tapping opens the editor, a change is saved
+  on the agent and the tree follows;
+- [ ] "DON'T TOUCH": folders I arranged myself (names, detected), titles without a sure match (count), seeding torrents
+  (unticked = moved whole through the client; deviation from the board, where it is ticked: decision 13);
+- [ ] the hand-arranged folders list comes up before the first preview and is remembered after "Confirm";
+- [ ] note: every title stays on its disk; moving between disks is "Balance between disks";
+- [ ] primary button "Preview · about N moves"; the preview: unsure titles unticked when "without a sure match" is
+  off, a torrent with several titles shown as moving together; the task runs between files of a running encode.
+- [ ] on the real library: no title of a hand-arranged folder moves; the catalog still finds the titles after the move
+  (no re-recognition of everything moved).
+
+**A3. Balance between disks**
+- [ ] description: moves whole titles between disks; the folder layout on each disk stays the same;
+- [ ] "GOAL" chips with a hint each: even free space / one kind per disk / fill the newer disk first ("newer" = the
+  largest disk);
+- [ ] "NOW → AFTER" per disk with percentages and "To move: N titles · X GB · about T" for the chosen goal;
+- [ ] "RULES": a series stays whole (always, shown ticked and greyed), don't move what someone watches now, a seeding
+  torrent moves whole through the client and keeps seeding, backup folders on both disks;
+- [ ] "Preview": the plan shows each disk before → after; a real move between the two USB disks finishes and the
+  torrent keeps seeding from the new place.
+
+**B5. For Chromecast**
+- [ ] description: today "Prepare" converts at every viewing; this does it once, in the file;
+- [ ] "FOUND N FILES" with the reason per title (DTS 5.1 sound, AC3 · subtitles in the file, AVI container), a series as
+  "Title, N episodes", "… and N more";
+- [ ] "WHAT IT DOES": the three checkboxes; "Picture not re-encoded. Files grow about 2–4%. About T per file.";
+- [ ] "Preview · N files"; after the task the file casts to a Chromecast without "Prepare", with sound, and the
+  `.srt` shows up as subtitles.
+
+**C4. Background work** (agent 1.17+; an older agent keeps the old task cards)
+- [ ] "RUNNING": a card per task with its scope, "running"/"paused", "N of M files · −X GB so far", progress bar,
+  "Now: <file> · encoder · about T left", the slow-down reason when someone watches from the same disk;
+- [ ] "Pause" / "Resume" (the encode stops and goes on from where it was, also after an agent restart);
+- [ ] "Cancel…" with the inline confirmation (finished files stay, the current one returns to the original, M won't be
+  done) and "No" / "Stop";
+- [ ] "QUEUED": a card per task with its estimate ("Quick: starts in a break between files", the OpenSubtitles limit,
+  or about T), ↑ moves it up, ✕ takes it off the queue;
+- [ ] "RECENTLY": one line per finished task ("Today · <task>: N files, no errors" / "N files not done"), its errors
+  grouped under it; a full disk shows "No space on <disk> (trash X) · Empty the trash and retry", which asks first,
+  empties the trash and queues the failed files again;
+- [ ] the bell on a running card follows the task with the notification, as before.
+
 ### Stage 4 (the same app release): Settings, search sites, On the phone, title page from the phone
 
 **D3. Settings**
