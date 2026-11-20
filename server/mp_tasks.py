@@ -141,6 +141,21 @@ class TaskError(Exception):
         self.status = status
 
 
+def free_name(path):
+    """`path`, or `name (2).ext`, `name (3).ext`… when something with that name is already there (the trash keeps
+    every original: a second job on the same file the same day must not overwrite the first one's original)."""
+    if not os.path.lexists(path):
+        return path
+    stem, ext = os.path.splitext(path)
+    if os.path.isdir(path):
+        stem, ext = path, ""
+    for n in range(2, 1000):
+        cand = f"{stem} ({n}){ext}"
+        if not os.path.lexists(cand):
+            return cand
+    return f"{stem} ({secrets.token_hex(3)}){ext}"
+
+
 def tree_size(path):
     """(bytes, files) of a file or a directory (os.stat, not DirEntry: see mp_library.browse about the GIL)."""
     try:
@@ -431,7 +446,8 @@ class Tasks:
                 self.cancel_ev.set()
                 if self.proc:
                     try:
-                        self.proc.send_signal(signal.SIGCONT)
+                        if hasattr(signal, "SIGCONT"):  # a paused encode must wake up to die; not on Windows
+                            self.proc.send_signal(signal.SIGCONT)
                         self.proc.terminate()
                     except OSError:
                         pass
@@ -659,6 +675,11 @@ class Tasks:
                 try:
                     r, d = roots[int(x["root"])], roots[int(x["to_root"])]
                     full = self.library.resolve(r["index"], x["path"])
+                    if os.path.realpath(full) == os.path.realpath(r["path"]):
+                        raise ValueError(T("that is the whole library folder", "to cały folder biblioteki"))
+                    to_sub = str(x.get("to_sub") or "").strip("/")
+                    if os.path.isabs(to_sub) or ".." in to_sub.replace("\\", "/").split("/"):
+                        raise ValueError(T("bad target folder", "zły folder docelowy"))
                 except Exception as e:  # noqa: BLE001 — a bad entry is reported, the rest goes on
                     skipped.append({"path": x.get("path"), "reason": str(e)})
                     continue
@@ -1053,6 +1074,8 @@ class Tasks:
                 try:
                     r = roots[int(x["root"])]
                     full = self.library.resolve(r["index"], x["path"])
+                    if os.path.realpath(full) == os.path.realpath(r["path"]):
+                        raise ValueError(T("that is the whole library folder", "to cały folder biblioteki"))
                 except Exception as e:  # noqa: BLE001
                     skipped.append({"path": x.get("path"), "reason": str(e)})
                     continue
@@ -2249,7 +2272,13 @@ class Tasks:
                     t.update(state="running", started=t["started"] or time.time())
                     self.cancel_ev.clear()
                     self._save()
-                self._run(t)
+                try:
+                    self._run(t)
+                except Exception as e:  # noqa: BLE001 — the queue goes on with the next task
+                    self.log(f"task {t['id']} failed:", e)
+                    with self.lock:
+                        t.update(state="error", current=None, finished=time.time())
+                        self._save()
 
     def _run(self, t):
         mp_i18n.set_lang(t.get("lang"))  # item errors in the language of whoever started the task
@@ -2501,7 +2530,7 @@ class Tasks:
             a = os.path.join(os.path.dirname(full), name)
             if os.path.exists(a):
                 if self.trash_days() > 0:
-                    os.rename(a, os.path.join(dest, name))
+                    os.rename(a, free_name(os.path.join(dest, name)))
                 elif os.path.isdir(a):
                     shutil.rmtree(a)
                 else:
@@ -2880,11 +2909,11 @@ class Tasks:
         if other is None:
             dest = os.path.join(root, TRASH, day, rel_dir)
             os.makedirs(dest, exist_ok=True)
-            os.rename(full, os.path.join(dest, os.path.basename(full)))
+            os.rename(full, free_name(os.path.join(dest, os.path.basename(full))))
             return
         dest = os.path.join(other["path"], TRASH, day, self._trash_name(root), rel_dir)
         os.makedirs(dest, exist_ok=True)
-        shutil.move(full, os.path.join(dest, os.path.basename(full)))
+        shutil.move(full, free_name(os.path.join(dest, os.path.basename(full))))
         i["trash_on"] = other["name"]
         self.log(f"trash: {os.path.basename(full)} to the trash of {other['name']} (its disk is short of room)")
 

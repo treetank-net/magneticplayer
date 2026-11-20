@@ -122,13 +122,18 @@ def load_config():
     return cfg
 
 
+_config_lock = threading.Lock()
+
+
 def save_config(cfg):
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    tmp = CONFIG_PATH + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, CONFIG_PATH)
+    """Several threads save the config (devices, settings, tasks): one at a time, each with its own temp file."""
+    with _config_lock:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        tmp = f"{CONFIG_PATH}.{threading.get_ident()}.tmp"
+        with open(tmp, "w") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, CONFIG_PATH)
 
 
 # Guest (role "guest", mp_devices.py): watching only. An allow list, not a deny list, so new endpoints
