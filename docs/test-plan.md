@@ -509,11 +509,12 @@ only after seeing it on the phone next to its board (EN and PL).
 **Emulator run (2026-11-20, v1.261120.2138 against jmpc, EN and PL)**: A1, A4, A5, B1, B2, B4, C1, C2, E2 (folder
 scope), D3, D4 (add via API, edit kind in the app → saved on the agent with `kind`/`open`, delete), D5 (⋮ menu,
 Select bar) open and show live counters. Found and fixed for the next tag:
-- [ ] B1 examples said "0 frame errors" for checks from before 1.16 (the agent sends null): now only the codec;
-- [ ] B1 preview offered an encoder choice and "saves 0 B" (sound fix copies the picture): gone;
-- [ ] A4 "Seeding in the torrent client: 0" shown at zero: now hidden;
-- [ ] C1 preselected only the first subtitle language, so its count (961) didn't match A1 (1732): all languages
-  preselected.
+- [x] B1 examples said "0 frame errors" for checks from before 1.16 (the agent sends null): now only the codec (2026-11-20, emulator against jmpc, v1.261120.2210);
+- [x] B1 preview offered an encoder choice and "saves 0 B" (sound fix copies the picture): gone; the summary is "N items · size · h of video" (2026-11-20, emulator, v1.261120.2210). The hours used a decimal point in Polish ("13.6 h"): now the phone's locale, next tag;
+- [x] A4 "Seeding in the torrent client: 0" shown at zero: now hidden (2026-11-20, emulator, v1.261120.2210; jmpc has no seeding duplicates now, so the note with a count above zero is unchecked);
+- [x] C1 preselected only the first subtitle language: all languages preselected (2026-11-20, emulator, v1.261120.2210).
+  The counts still differ by design, as on the boards: A1 counts "no subtitles in that language" (1732), C1 opens on
+  "no subtitles at all" (961) and shows 1732 after picking "no subtitles in that language".
 Not checked on the emulator: D6 (needs a downloaded episode), starting a task, B3 with files above 1080p (none on
 jmpc). Typing fast into text fields loses characters on the emulator (slow typing works): an emulator artefact.
 

@@ -762,10 +762,10 @@ private fun PlanSummary(r: JSONObject, count: Int) {
     if (kind in ENCODE_KINDS && kind != "audio_fix") {
         lines += stringResource(R.string.lib_sum_shrink, humanBytes(r.optLong("bytes")), humanBytes(r.optLong("est")),
             humanBytes(r.optLong("saved")))
-        lines += stringResource(R.string.lib_sum_hours, String.format(java.util.Locale.ROOT, "%.1f", r.optDouble("hours", 0.0)))
+        lines += stringResource(R.string.lib_sum_hours, String.format("%.1f", r.optDouble("hours", 0.0)))
         r.optStr("encoder")?.let { lines += stringResource(R.string.lib_sum_encoder, it) }
     } else if (kind == "audio_fix") {
-        lines += stringResource(R.string.lib_sum_hours, String.format(java.util.Locale.ROOT, "%.1f", r.optDouble("hours", 0.0)))
+        lines += stringResource(R.string.lib_sum_hours, String.format("%.1f", r.optDouble("hours", 0.0)))
     }
     if (kind == "subs") {
         lines += stringResource(R.string.lib_sum_subs_time, r.optInt("minutes"))
