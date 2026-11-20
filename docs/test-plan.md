@@ -504,3 +504,5 @@ Written down as seen, also when unsure whether it is a problem at all.
 - 2026-11-20, "Get subtitles": the language dialog's button says "Download" although it only opens a preview (the
   preview's button says "Download" too); 1115 items "about 1115 min", which OpenSubtitles' daily limit spreads over
   days. Maybe start with films that have none at all, or let the user pick a folder first.
+- 2026-11-20, "Free up space" with "Up to 15% free" on a disk that is 39% free: the preview says only "Nothing to
+  do." and "Skipped (4)", not that the disk already has more than 15% free; the button could be hidden or say so.
