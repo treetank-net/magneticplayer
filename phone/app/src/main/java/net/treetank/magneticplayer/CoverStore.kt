@@ -38,13 +38,19 @@ object CoverStore {
         Settings(ctx).coverStore = m
         mode = m
         if (m == old) return
-        // a smaller choice drops what doesn't belong to it; a bigger one fills at the next catalog refresh
+        // a smaller choice drops what doesn't belong to it; a bigger one starts filling right away from the catalogs
+        // the phone holds (before, only at the next catalog refresh in the Library: the count in Settings stayed at 0)
+        val app = ctx.applicationContext
         scope.launch {
             when (m) {
-                NONE -> dir(ctx).deleteRecursively()
-                TINY -> dir(ctx).walkTopDown().filter { it.isFile }.forEach { f ->
+                NONE -> dir(app).deleteRecursively()
+                TINY -> dir(app).walkTopDown().filter { it.isFile }.forEach { f ->
                     if (f.length() > 4096) runCatching { shrink(f.readBytes())?.let { b -> f.writeBytes(b) } ?: f.delete() }
                 }
+            }
+            if (m != NONE) for (srv in Servers.all(app)) {
+                val cat = CatalogCache.cached(app, srv.key) ?: continue
+                runCatching { sync(app, Api(Settings(app), srv), cat) }
             }
         }
     }

@@ -338,7 +338,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       folder names lose the range. [x] 2026-11-20, jmpc via the API: 8 series from the anime folder, 7 recognised;
       no other folder of the library taken for a group. [ ] In the app (Discover/Browse, player title).
 - [ ] Covers: blurred kept thumbnails (and missing ones) load once the server answers again, without restarting the
-      app (one ping per server every 5 s at most, retries 5 s → 60 s). Compiled only.
+      app (one ping per server every 5 s at most, retries 5 s → 60 s). [x] 2026-11-20, Pixel, v1.261120.1530: cold
+      start with Wi-Fi off shows the kept "Thumbnails" covers, after Wi-Fi returns the same covers, sharp. The blurred →
+      sharp swap itself not caught on screen yet.
+- [ ] Covers: picking "Thumbnails" / "Full" in Settings starts saving at once for every server with a cached catalog
+      (before, only the next catalog refresh in the Library saved them). Compiled only.
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
