@@ -392,8 +392,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] "Free up space" with "Up to 15% free" on a disk that already has more: the empty preview says why (agent
       1.15.3). [x] Emulator, English (2026-11-20, v1.261120.1625): "⚠ This disk is already 39% free, more than 15%…";
       Polish not seen.
-- [ ] "Get subtitles" from Disks / a folder: the language dialog's button says "Preview" (it only opens the preview);
-      from a film's menu it still says "Download" (it starts at once). Next app; compiled only.
+- [x] "Get subtitles" from Disks / a folder: the language dialog's button says "Preview" (it only opens the preview);
+      from a film's menu it still says "Download" (it starts at once). (2026-11-20, Pixel, v1.261120.1856, Polish): "Podgląd" in the dialog.
 - [x] A whole "Update old formats" task on synthetic DivX 3 files (a throwaway agent on the laptop, 2026-11-20,
       emulator, v1.261120.1625): preview (2 items, the 20 MB file left out as a sample), the task card with progress,
       current file, Cancel and "Stop monitoring", the progress notification (a few seconds behind the card), the
@@ -401,19 +401,22 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       notification.
 - [ ] The final notification of a task says what it did: "Updated N files" when an old-format/sound task made the
       files bigger (was "Shrank N files, saved -386 MB"), "Fitted: X · don't fit: Y" for Subtitles and "Looked for
-      subtitles for N videos" for Get subtitles (both said "Moved N items"). Next app; compiled only.
+      subtitles for N videos" for Get subtitles (both said "Moved N items"). In v1.261120.1856, not seen yet (needs a
+      real task).
 - [ ] A library folder without "name" in a hand-edited config no longer breaks the library, the catalog and the
       wish list (KeyError 'name', 500); the folder's own name is used (agent 1.15.3). Seen on the throwaway agent.
 - [x] Cancelling a running task (throwaway agent, 2026-11-20, emulator, v1.261120.1625): the "Stop …?" dialog says
       what happens, ffmpeg stops, the original stays untouched, no leftovers, the progress notification turns into
       "Cancelled". [x] The item of a cancelled task now reads "skipped" instead of "waiting" for ever (agent 1.15.3,
       the same app; its note "not done: the task was stopped" isn't shown by the app).
-- [ ] The subtitle previews say what their number means ("N videos already have them", "N subtitle files fitted
+- [x] The subtitle previews say what their number means ("N videos already have them", "N subtitle files fitted
       before, left out") instead of "Checked N folders", and "Subtitles" no longer shows the size of the subtitle
-      files. Next app; compiled only.
-- [ ] Previews show what they are looking at under the progress bar (agent 1.15.3 `step` + the next app), and the
+      files. (2026-11-20, Pixel, v1.261120.1856, Polish): "653 filmy już je mają", "8 plików napisów dopasowanych wcześniej,
+      pominiętych", no sizes.
+- [x] Previews show what they are looking at under the progress bar (agent 1.15.3 `step` + the next app), and the
       Tidy up bar moves within a library folder too (it stood at 7% for most of the preview). API on jmpc: `step`
-      present, Tidy up progress 8 → 33% in 20 s. App compiled only.
+      present, Tidy up progress 8 → 33% in 20 s. (2026-11-20, Pixel, v1.261120.1856, Polish): the Duplicates preview shows the file
+      being checked under the bar. [ ] The "In the torrent client" label in Duplicates: no seeding duplicate right now.
 - [x] "Subtitles" task on a video without speech (same setup): the card shows "1 error" and "no speech found in the
       sound"; the old app's notification said "Moved 0 items, 1 error" (the next app: only "1 error").
 
