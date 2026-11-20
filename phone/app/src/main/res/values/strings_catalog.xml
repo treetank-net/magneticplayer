@@ -37,6 +37,7 @@
     <string name="cat_votes_m">%1$sM</string>
     <string name="cat_hero_new">New on your disks</string>
     <string name="cat_hero_top">Top rated on your disks</string>
+    <string name="cat_hero_random">Picked at random from your disks</string>
     <string name="cat_mood_kids">For kids</string>
     <string name="cat_mood_short">Short evening</string>
     <string name="cat_mood_pl_audio">With Polish audio</string>

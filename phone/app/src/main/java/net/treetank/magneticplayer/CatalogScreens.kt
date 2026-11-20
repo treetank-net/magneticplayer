@@ -301,11 +301,6 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
     val movies = cat.items.count { !it.series }
     val series = cat.items.size - movies
     val now = System.currentTimeMillis() / 1000.0
-    val (hero, heroNew) = remember(cat) {
-        cat.items.filter { it.rating != null && now - it.added < 30 * 86400 }.maxByOrNull { it.rating!! }?.let { it to true }
-            ?: cat.items.filter { (it.votes ?: 0) >= 1000 }.maxByOrNull { it.rating ?: 0.0 }?.let { it to false }
-            ?: (cat.items.first() to true)
-    }
     val genres = remember(cat) {
         cat.items.flatMap { it.genres }.groupingBy { it }.eachCount().filter { it.value >= 3 }.entries.sortedByDescending { it.value }
             .take(3).map { it.key }
@@ -320,6 +315,23 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
         val ids = seen.map { it.item.id }.toSet()
         seen.firstOrNull()?.item?.let { x -> x to similar(ctx, cat, x).filter { it.first.id !in ids } }?.takeIf { it.second.size >= 3 }
     }
+    // the hero: a few slides of different kinds ("New on your disks", "Because you watched…", "Top rated", a random
+    // pick), the first one picked at random each time the screen is built, turning by itself like a shop window
+    val heroNewLabel = stringResource(R.string.cat_hero_new)
+    val heroTopLabel = stringResource(R.string.cat_hero_top)
+    val heroRandomLabel = stringResource(R.string.cat_hero_random)
+    val heroBecause = because?.let { stringResource(R.string.cat_row_because, it.first.title) }
+    val slides = remember(cat, because) {
+        val out = mutableListOf<Pair<String, CatItem>>()
+        fun add(label: String, x: CatItem?) { if (x != null && out.none { it.second.id == x.id }) out += label to x }
+        cat.items.filter { it.rating != null && now - it.added < 30 * 86400 }.sortedByDescending { it.rating }.take(2)
+            .forEach { add(heroNewLabel, it) }
+        add(heroBecause ?: "", because?.second?.firstOrNull()?.first?.takeIf { heroBecause != null })
+        add(heroTopLabel, cat.items.filter { (it.votes ?: 0) >= 1000 && out.none { o -> o.second.id == it.id } }.maxByOrNull { it.rating ?: 0.0 })
+        add(heroRandomLabel, cat.items.filter { (it.rating ?: 0.0) >= 6.5 && out.none { o -> o.second.id == it.id } }.randomOrNull())
+        if (out.isEmpty()) add(heroNewLabel, cat.items.first())
+        out.shuffled()
+    }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item {
             Text(listOfNotNull(pluralStringResource(R.plurals.cat_films, movies, movies),
@@ -328,7 +340,7 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
                 Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
-            Hero(c, hero, heroNew)
+            HeroCarousel(c, slides)
         }
         item {
             val moods = listOf(
@@ -392,13 +404,37 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
     }
 }
 
+/** The hero slides: swiped by hand, turning by themselves every 8 s while nobody touches them; dots below. */
 @Composable
-private fun Hero(c: CatCtx, x: CatItem, isNew: Boolean) {
+private fun HeroCarousel(c: CatCtx, slides: List<Pair<String, CatItem>>) {
+    val pager = androidx.compose.foundation.pager.rememberPagerState { slides.size }
+    if (slides.size > 1) LaunchedEffect(pager, slides) {
+        while (true) {
+            kotlinx.coroutines.delay(8000)
+            if (!pager.isScrollInProgress) pager.animateScrollToPage((pager.currentPage + 1) % slides.size)
+        }
+    }
+    Column {
+        androidx.compose.foundation.pager.HorizontalPager(pager, key = { slides[it].second.id }) { i ->
+            Hero(c, slides[i].second, slides[i].first)
+        }
+        if (slides.size > 1) Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Center) {
+            repeat(slides.size) { i ->
+                Box(Modifier.padding(horizontal = 3.dp).size(if (i == pager.currentPage) 8.dp else 6.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(if (i == pager.currentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant))
+            }
+        }
+    }
+}
+
+@Composable
+private fun Hero(c: CatCtx, x: CatItem, label: String) {
     val ctx = LocalContext.current
     Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp)).clickable { c.open(x) }) {
         SyntheticCover("", null, x.genres, Modifier.fillMaxSize(), corner = 18.dp, art = x.art(), wide = true, artSrv = x.srv)
         Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
-            Text(stringResource(if (isNew) R.string.cat_hero_new else R.string.cat_hero_top).uppercase(Locale.getDefault()),
+            Text(label.uppercase(Locale.getDefault()), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = Color(0xFFFFDAD6), fontSize = 12.sp, letterSpacing = 1.5.sp)
             Text(x.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, lineHeight = 30.sp, maxLines = 2,
                 overflow = TextOverflow.Ellipsis)
@@ -655,17 +691,19 @@ private fun CopiesOnServers(c: CatCtx, x: CatItem) {
 private fun TitleScreen(c: CatCtx, x: CatItem) {
     val cat = c.cat ?: return
     val ctx = LocalContext.current
-    val xs = c.srvOf(x)  // the server of this copy (a merged catalog mixes servers)
-    val xa = c.apiOf(x)
+    // the copy that plays, with its server: this one, or in "All" the copy of the title watched last (positions are
+    // per server and file); the screen still shows the title as merged
+    val (px, xs) = remember(x) { lastWatchedCopy(ctx, x, c.srvOf(x)) }
+    val xa = Api.of(ctx, xs) ?: c.apiOf(x)
     val similar = remember(cat, x) { similar(ctx, cat, x) }
     // a series: its episodes in order (agent 1.10+), where this phone left off, extras apart
-    val canEps = x.series && x.dir != null && (Servers.get(ctx, xs) ?: xa.srv).libraryEpisodes
+    val canEps = x.series && px.dir != null && (Servers.get(ctx, xs) ?: xa.srv).libraryEpisodes
     var eps by remember(x.id) { mutableStateOf<Episodes?>(null) }
-    if (canEps) LaunchedEffect(x.id) { eps = withContext(Dispatchers.IO) { runCatching { xa.episodes(x.root, x.dir!!) }.getOrNull() } }
+    if (canEps) LaunchedEffect(x.id) { eps = withContext(Dispatchers.IO) { runCatching { xa.episodes(px.root, px.dir!!) }.getOrNull() } }
     val back = rememberResumedTick()
     val settings = remember { Settings(ctx) }
     val list = eps?.episodes.orEmpty()
-    val cont = remember(eps, back) { if (list.isEmpty()) -1 else continueIndex(settings, xs, x.root, list) }
+    val cont = remember(eps, back) { if (list.isEmpty()) -1 else continueIndex(settings, xs, px.root, list) }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Box(Modifier.fillMaxWidth().height(300.dp)) {
@@ -687,12 +725,12 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 Spacer(Modifier.height(4.dp))
                 if (cont >= 0) {
                     val e = list[cont]
-                    val started = settings.position(MediaRef.InLibrary(x.root, e.path, xs).key()) > 0
-                    MediaActions(xa, MediaRef.InLibrary(x.root, e.path, xs), c.snack, c.onPlayingOnPc, big = true, subsFolder = x.dir,
-                        onPlay = { playEpisode(ctx, xs, x.root, list, cont) },
+                    val started = settings.position(MediaRef.InLibrary(px.root, e.path, xs).key()) > 0
+                    MediaActions(xa, MediaRef.InLibrary(px.root, e.path, xs), c.snack, c.onPlayingOnPc, big = true, subsFolder = px.dir,
+                        onPlay = { playEpisode(ctx, xs, px.root, list, cont) },
                         playLabel = stringResource(if (started) R.string.cat_play_resume_ep else R.string.cat_play_ep,
                             e.label.ifEmpty { (cont + 1).toString() }))
-                } else MediaActions(xa, x.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
+                } else MediaActions(xa, px.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
                 // "All": where the copies are; another copy plays from its server (it opens its own title screen)
                 // only with a choice to make: one copy says nothing ("Available" says where it is)
                 if (x.srv.isNotEmpty() && x.alsoOn.isNotEmpty()) CopiesOnServers(c, x)
@@ -713,7 +751,7 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 }
             }
         }
-        if (list.isNotEmpty()) item { EpisodeList(c, x, list, eps?.extras.orEmpty(), cont, settings, back) }
+        if (list.isNotEmpty()) item { EpisodeList(c, px, list, eps?.extras.orEmpty(), cont, settings, back) }
         if (x.cast.isNotEmpty()) item {
             SectionTitle(stringResource(R.string.cat_cast))
             Spacer(Modifier.height(8.dp))

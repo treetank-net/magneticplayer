@@ -98,6 +98,24 @@ fun codecLabel(mime: String?): String? = when (mime?.removePrefix("audio/")) {
     else -> mime.removePrefix("audio/").uppercase()
 }
 
+/**
+ * A track's own title without what the detail line says better: releases write "English: 5.1ch (AC3 640Kbps)" into
+ * the title, often wrong (the file had AAC), and the language is already the group's header. Codecs, channels and
+ * bitrates are dropped, and so is a title that is only the language. Null when nothing is left.
+ */
+fun audioTitle(label: String?, lang: String, ui: java.util.Locale): String? {
+    if (label.isNullOrBlank()) return null
+    val tech = Regex("(?i)\\b(e-?ac-?3|ac-?3|aac(-lc)?|dts(-hd)?( ma)?|truehd|atmos|flac|mp3|mp2|opus|vorbis|pcm|lpcm|ddp?\\+?(\\d\\.\\d)?|" +
+        "\\d\\.\\d( ?ch)?|\\d ?ch|stereo|mono|\\d+ ?kbps|\\d+ ?kb/s|\\d+ ?bit|\\d+(\\.\\d)? ?khz)\\b")
+    var t = tech.replace(label, " ")
+    repeat(2) { t = t.replace(Regex("\\(\\s*[,;:/]*\\s*\\)|\\[\\s*[,;:/]*\\s*]"), " ") }
+    t = t.replace(Regex("\\s+"), " ").trim().trim(':', '-', ',', ';', '/', '·', '|', ' ')
+    if (t.isEmpty()) return null
+    val names = listOfNotNull(lang.takeIf { it.isNotEmpty() }?.let { langName(it, ui) },
+        lang.takeIf { it.isNotEmpty() }?.let { langName(it, java.util.Locale.ENGLISH) }, lang)
+    return t.takeUnless { names.any { n -> n.equals(t, true) } }
+}
+
 /** The audio sheet over the player: the tracks grouped by language, each with its title, channels and codec. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -124,7 +142,9 @@ fun AudioSheet(opts: List<AudioOpt>, onDismiss: () -> Unit, onPick: (AudioOpt) -
                                 "original" -> stringResource(R.string.audio_kind_original)
                                 else -> null
                             }
-                            Text(listOfNotNull(kind, o.label?.takeIf { it.isNotBlank() && !it.equals(kind, true) }).joinToString(" · ")
+                            // the title without codec/channel claims: the line below (from the file itself) says those
+                            val title = audioTitle(o.label, lang, ui)
+                            Text(listOfNotNull(kind, title?.takeIf { !it.equals(kind, true) }).joinToString(" · ")
                                 .ifEmpty { stringResource(R.string.audio_track_n, o.index + 1) })
                             listOfNotNull(channelsLabel(o.channels), codecLabel(o.codec)).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
                                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -259,6 +259,18 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Chromecast version and audio (agent 1.14.2): for a file with two or more audio tracks the cast sheet says the
       version's sound ("Dźwięk w niej: angielski") and, when the language picked since differs, offers "Przygotuj
       ponownie: japoński" (removes the old version, prepares one with the new track).
+- [ ] "All servers", cover cards: the card's own line first, the server after it ("Dalej: S1 E3 · jmpc"), so a cut
+      line loses the server, not the episode.
+- [ ] Audio sheet (player and Remote): a track's title loses the release's codec/channel claims and a bare language
+      ("English: 5.1ch (AC3 640Kbps)" shows nothing extra; "Lektor PL (AC3 2.0)" → "Lektor PL"); the line under it,
+      read from the file, says channels and codec.
+- [ ] Remote's notification: another app's session (Spotify) left paused on a Chromecast ends our notification and
+      foreground service after ~2 minutes (before: 10+ minutes); opening the Remote brings it back. Our own paused
+      video keeps its notification.
+- [ ] Discover hero: a carousel of a few slides ("Nowe na twoich dyskach" ×2, "Podobne do „…”", "Najwyżej oceniany",
+      "Na chybił trafił"), in a random order each time, turning every 8 s, swipeable, dots below.
+- [ ] "All servers", a title on two servers: "Play" on the hero / title screen and the episode list use the copy this
+      phone watched last (its server and position), not always the first copy.
 - [ ] Downloads in "All servers": with one server that has a torrent client (the usual case) its list shows without
       server chips; chips only with two or more such servers. A true merged list is deferred (each client has its own
       actions and settings).

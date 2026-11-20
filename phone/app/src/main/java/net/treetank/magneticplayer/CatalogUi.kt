@@ -193,11 +193,12 @@ fun CoverCard(item: CatItem, meta: String?, width: Dp = 112.dp, progress: Float?
         SyntheticCover(item.title, item.year, item.genres, Modifier.width(width).height(width * 1.5f),
             badge = plBadge(item.audio, item.subs), art = item.art(), onPhone = onPhone(item), artSrv = item.srv)
         if (progress != null) LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(4.dp))
-        // "All": which server it is on ("jmpc", "jmpc +1" when another server has it too)
+        // "All": which server it is on ("jmpc", "jmpc +1" when another server has it too), after the card's own line:
+        // the line is cut at the end, and "Next: S1 E3" matters more than the server ("jmpc · Next: S1 …" before)
         val where = item.srv.takeIf { it.isNotEmpty() }?.let { k ->
             (Servers.get(androidx.compose.ui.platform.LocalContext.current, k)?.name ?: k) + if (item.alsoOn.isNotEmpty()) " +${item.alsoOn.size}" else ""
         }
-        val meta = listOfNotNull(where, meta).joinToString(" · ").ifEmpty { null }
+        val meta = listOfNotNull(meta, where).joinToString(" · ").ifEmpty { null }
         if (meta != null) Text(meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -360,8 +361,30 @@ fun playEpisode(ctx: android.content.Context, srv: String, root: Int, eps: List<
     ctx.startActivity(PlayerActivity.intent(ctx, MediaRef.InLibrary(root, eps[i].path, srv), null, eps.drop(i + 1), series = true))
 }
 
+/**
+ * Of a merged title's copies ([CatItem.alsoOn], "All servers"), the one this phone watched last, with its server; the
+ * title itself when no other copy was watched more recently or that copy's server isn't paired any more.
+ */
+fun lastWatchedCopy(ctx: android.content.Context, item: CatItem, srv: String): Pair<CatItem, String> {
+    if (item.alsoOn.isEmpty()) return item to srv
+    val s = Settings(ctx)
+    val pos = s.positions()
+    val done = s.watchedAll()
+    fun last(x: CatItem, k: String): Long {
+        val key = MediaRef.InLibrary(x.root, x.path, k).key()
+        val dir = x.dir?.let { MediaRef.InLibrary(x.root, "$it/", k).key() }
+        fun hit(key2: String) = if (dir != null) key2.startsWith(dir) else key2 == key
+        return maxOf(pos.filterKeys(::hit).values.maxOfOrNull { it.second } ?: 0L, done.filterKeys(::hit).values.maxOrNull() ?: 0L)
+    }
+    return (listOf(item to srv) + item.alsoOn.map { it to it.srv.ifEmpty { srv } })
+        .filter { (_, k) -> Api.of(ctx, k) != null }
+        .maxByOrNull { (x, k) -> last(x, k) }?.takeIf { (x, k) -> last(x, k) > last(item, srv) } ?: (item to srv)
+}
+
 /** "Play" on a catalog card: a film from its main file; a series where this phone left off, without its extras. */
-fun playItem(ctx: android.content.Context, item: CatItem, srv: String) {
+fun playItem(ctx: android.content.Context, item0: CatItem, srv0: String) {
+    // "All": a title on two servers resumes on the copy watched last (positions are saved per server and file)
+    val (item, srv) = lastWatchedCopy(ctx, item0, srv0)
     val api = Api.of(ctx, srv)
     if (!item.series || item.dir == null || api == null || !api.srv.libraryEpisodes) {
         return playOnPhone(ctx, item.ref(srv), item.imdb, item.kind)

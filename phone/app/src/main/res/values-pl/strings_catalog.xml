@@ -43,6 +43,7 @@
     <string name="cat_votes_m">%1$s mln</string>
     <string name="cat_hero_new">Nowe na twoich dyskach</string>
     <string name="cat_hero_top">Najwyżej oceniany na twoich dyskach</string>
+    <string name="cat_hero_random">Na chybił trafił z twoich dysków</string>
     <string name="cat_mood_kids">Dla dzieci</string>
     <string name="cat_mood_short">Krótki wieczór</string>
     <string name="cat_mood_pl_audio">Z lektorem</string>

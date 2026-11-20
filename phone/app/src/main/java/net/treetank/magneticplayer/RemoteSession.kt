@@ -43,6 +43,8 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
     /** how many reads in a row had nothing playing (the service ends after a few) */
     var idlePolls = 0
         private set
+    /** reads in a row (~1.5 s each) with another app's session paused */
+    private var foreignPaused = 0
     /** "Stop" from the notification on someone else's app: a second tap before this moment closes it (instead of a confirmation dialog) */
     @Volatile private var armedUntil = 0L
 
@@ -69,8 +71,11 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
                 val r = pick()
                 val s = r?.let { runCatching { it.status() }.getOrNull() }
                 remote = r; st = s
+                // another app's session (Spotify paused on the Chromecast) left paused for 2 minutes isn't ours to keep
+                // a notification and a foreground service for: it ends like a stopped target (the Remote brings it back)
+                foreignPaused = if (s != null && s.app != null && !s.playing && !s.buffering) foreignPaused + 1 else 0
                 // a stopped TV (end of video, someone turned it off) counts as "nothing playing"
-                val idle = s == null || (r is DlnaRemote && Dlna.last?.state in Dlna.IDLE_STATES)
+                val idle = s == null || (r is DlnaRemote && Dlna.last?.state in Dlna.IDLE_STATES) || foreignPaused > 80
                 // a Chromecast with the Cast SDK has its own notification, but the series queue needs its state too
                 val q = if (r == null && kind == "cast" && Cast.session(ctx) != null) runCatching { CastRemote(ctx).status() }.getOrNull() else s
                 TvQueue.tick(ctx, kind, q, if (q === s) idle else q == null)
