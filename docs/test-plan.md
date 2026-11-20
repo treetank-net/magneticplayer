@@ -358,7 +358,10 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Stale copies on the phone: a downloaded copy keeps the file's `Last-Modified`; when the file changed on the
       server (torrent finished after the copy, re-encode, fixed sound), the next catalog refresh drops the copy's bytes
       and downloads it again (copies from before: when the file is newer than the download). Covers the broken copy
-      above.
+      above. [x] 2026-11-20, emulator, v1.261120.1625 against jmpc's agent 1.15.2 (a 6 MB synthetic test file in the
+      phone-uploads folder, removed afterwards): a copy made by v1.261119.2356 (no stamp), file unchanged → one HEAD
+      after the catalog refresh, no download; after `touch` on the server → downloaded again ("Whole video on phone");
+      `touch` once more (now with a stamp) → downloaded again. [ ] The Pixel's broken copy fixed by itself.
 - [ ] Damaged sound fix on jmpc's real files: 9 MP3 files, 0 errors (2026-11-20, agent 1.15.1, API); the files grew by
       ~386 MB in total (AAC came out larger than the damaged MP3). [x] 2026-11-20, jmpc: all 9 have AAC, the audio
       decodes with 0 errors, lengths as before. [ ] Played on the Pixel with sound.
