@@ -60,11 +60,13 @@ object Tasks {
             "shrink" -> if (t.saved > 0) r.getQuantityString(R.plurals.lib_notif_shrank, n, n, humanBytes(t.saved))
                 else r.getQuantityString(R.plurals.lib_notif_updated, n, n)
             "trash" -> r.getQuantityString(R.plurals.lib_notif_deleted, n, n)
-            "subs" -> ctx.getString(R.string.lib_task_subs, t.fixed, t.unfit)  // used to say "Moved N items"
+            // used to say "Moved N items"; nothing assessed (e.g. no speech in the sound): only the errors below
+            "subs" -> if (t.fixed + t.unfit > 0) ctx.getString(R.string.lib_task_subs, t.fixed, t.unfit) else ""
             "subs_get" -> r.getQuantityString(R.plurals.lib_notif_subs_got, n, n)
             else -> r.getQuantityString(R.plurals.lib_notif_moved, n, n)
         }
-        return if (t.errors > 0) main + ", " + r.getQuantityString(R.plurals.lib_errors, t.errors, t.errors) else main
+        val errs = if (t.errors > 0) r.getQuantityString(R.plurals.lib_errors, t.errors, t.errors) else ""
+        return listOf(main, errs).filter { it.isNotEmpty() }.joinToString(", ")
     }
 
     fun notifyFinished(ctx: Context, srv: Server, t: LibTask) {

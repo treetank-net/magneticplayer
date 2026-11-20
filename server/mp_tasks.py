@@ -92,6 +92,14 @@ AUDIO_SUSPECT = {"mp3", "mp2", "mp1", "ac3"}
 AUDIO_FIX = {"copy": True, "audio": "keep"}  # the picture copied, the damaged tracks re-encoded, the rest copied
 AUDIO_CHECK_BUDGET = 90  # seconds a preview spends checking files the background scan hasn't reached yet
 OLD_GROWTH = 1.25  # an old-format file may come out up to this much bigger (it then plays, which is the point)
+def _stopped(t):
+    """A cancelled task's items that never ran: "skipped" (the app showed them "waiting" for ever)."""
+    for i in t.get("items") or []:
+        if i.get("state") in (None, "pending", "running"):
+            i["state"] = "skipped"
+            i["note"] = T("not done: the task was stopped", "niezrobione: zadanie zatrzymano")
+
+
 MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
 RESERVE = 0.05  # of a disk kept free; under it a shrink's originals go to the trash of another disk
@@ -377,6 +385,7 @@ class Tasks:
             if t["state"] == "queued":
                 t["state"] = "cancelled"
                 t["finished"] = time.time()
+                _stopped(t)
             elif t["state"] == "running":
                 t["cancel"] = True
                 self.cancel_ev.set()
@@ -1226,6 +1235,7 @@ class Tasks:
             t["current"] = None
             if t.get("cancel"):
                 t["state"] = "cancelled"
+                _stopped(t)
             else:
                 t["state"] = "done"
             t["finished"] = time.time()

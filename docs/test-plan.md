@@ -396,6 +396,12 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       subtitles for N videos" for Get subtitles (both said "Moved N items"). Next app; compiled only.
 - [ ] A library folder without "name" in a hand-edited config no longer breaks the library, the catalog and the
       wish list (KeyError 'name', 500); the folder's own name is used (agent 1.15.3). Seen on the throwaway agent.
+- [x] Cancelling a running task (throwaway agent, 2026-11-20, emulator, v1.261120.1625): the "Stop …?" dialog says
+      what happens, ffmpeg stops, the original stays untouched, no leftovers, the progress notification turns into
+      "Cancelled". [x] The item of a cancelled task now reads "skipped" instead of "waiting" for ever (agent 1.15.3,
+      the same app; its note "not done: the task was stopped" isn't shown by the app).
+- [x] "Subtitles" task on a video without speech (same setup): the card shows "1 error" and "no speech found in the
+      sound"; the old app's notification said "Moved 0 items, 1 error" (the next app: only "1 error").
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
@@ -521,3 +527,4 @@ Written down as seen, also when unsure whether it is a problem at all.
   days. Maybe start with films that have none at all, or let the user pick a folder first.
 - 2026-11-20, "Free up space" with "Up to 15% free" on a disk that is 39% free: the preview says only "Nothing to
   do." and "Skipped (4)", not that the disk already has more than 15% free. Fixed: a warning says so (agent 1.15.3).
+- 2026-11-20, "Subtitles" preview with the videos right in the library folder (no subfolders): "Checked 0 folders".
