@@ -36,26 +36,25 @@ import mp_access
 import mp_appupdate
 import mp_selfupdate
 import mp_tasks
-import mp_scope
 import mp_mcp
+import mp_routes
 import mp_i18n
 from mp_i18n import T, bind
 import mp_power
-from mp_core import (APK_DIR, CONFIG_DIR, CONFIG_PATH, WEB_DIR, WINDOWS, ApiError, apk_version, lan_ip, load_config, log,
-                     save_config)
-from mp_mpv import Mpv, pick_audio
-from mp_power import SleepGuard, poweroff, suspend, wake_screen
-from mp_torrents import DelugeBackend, NoBackend, TransmissionBackend, media_duration, ready_end
+from mp_core import APK_DIR, CONFIG_DIR, CONFIG_PATH, WINDOWS, ApiError, apk_version, lan_ip, load_config, log, save_config
+from mp_mpv import Mpv
+from mp_power import SleepGuard, poweroff, suspend
+from mp_torrents import DelugeBackend, NoBackend, TransmissionBackend, ready_end
 
 # DLNA: byte seeking (OP=01), no conversion, streaming + background (FLAGS)
 DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 from mp_devices import Devices
-from mp_jobs import AFTER, Jobs, magnet_name
+from mp_jobs import Jobs
 import mp_catalog
 import mp_ident
 import mp_episodes
 import mp_library
-from mp_library import Library, LibError, media_kind, sidecar_subs
+from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt
 import mp_subsync
 import mp_segments
@@ -83,15 +82,6 @@ def guest_allowed(method, p):
     if p.startswith("/api/torrents/"):  # the torrent's file list is allowed, actions (start, remove, "after download") are not
         return method in ("GET", "HEAD") and p.endswith("/files")
     return any(p == a or (a.endswith("/") and p.startswith(a)) for a in allowed)
-
-
-def _variant_info(v):
-    """The prepared TV version: size, its cast check, and (1.14.2+) the language and title of its one audio track, so a
-    phone sees whether it matches the audio picked since."""
-    vi = mp_media.probe(v)
-    a = (vi.get("audio") or [{}])[0]
-    return {"size": os.path.getsize(v), "cast": mp_media.cast_check(vi),
-            "audio": {"lang": a.get("lang") or "", "title": a.get("title") or ""}}
 
 
 # ---------------------------------------------------------------- HTTP
@@ -609,7 +599,9 @@ class App:
 class Handler(BaseHTTPRequestHandler):
     server_version = f"MagneticPlayer/{VERSION}"
     protocol_version = "HTTP/1.1"
+    version = VERSION  # /api/ping (mp_api_system)
     app: App = None
+    routes = None  # mp_routes.build(app), set in main()
 
     def log_message(self, fmt, *args):
         if not self.path.startswith(("/api/player/status", "/api/torrents?")):
@@ -785,669 +777,24 @@ class Handler(BaseHTTPRequestHandler):
         u = urllib.parse.urlsplit(self.path)
         q = urllib.parse.parse_qs(u.query)
         p = u.path.rstrip("/")
+        ctx = {"method": method, "p": p, "q": q, "qd": {k: v[0] for k, v in q.items()}}
         try:
-            if p == "/api/ping":
-                # id: the app checks that the same server is at a known address before sending it the token
-                # tasks: when the latest library task finished, so a phone asks for the list only when it changes
-                return self.send_json({"ok": True, "app": "magneticplayer", "version": VERSION, "id": self.app.cfg["id"],
-                                       "tasks": self.app.tasks.last_finished()})
-            if p in ("", "/index.html") and method in ("GET", "HEAD"):
-                # web client (laptop/tablet without the app); a static file, API data requires a token anyway
-                return self.send_static(os.path.join(WEB_DIR, "index.html"), "text/html; charset=utf-8", method == "HEAD")
             a = self.app
-            # installation on a new computer: no token, but with a valid join code (mp_install.py)
-            if (m := re.fullmatch(r"/i/([A-Za-z0-9-]{4,12})(/bundle\.tar\.gz|/ps)?", p)) and method == "GET":
-                if m.group(2) == "/ps":
-                    return self.send_bytes(a.installs.script_ps(m.group(1), self.base_url()).encode(), "text/plain; charset=utf-8")
-                if m.group(2):
-                    return self.send_bytes(a.installs.bundle(m.group(1)), "application/gzip")
-                full = (q.get("full") or ["0"])[0] not in ("0", "")
-                return self.send_bytes(a.installs.script(m.group(1), self.base_url(), full).encode(),
-                                       "text/x-shellscript; charset=utf-8")
-            if p == "/api/install/join" and method == "POST":
-                return self.send_json(a.installs.join(self.body(), self.client_address[0]))
-            if p == "/api/pair" and method == "POST":
-                # no token: a one-time code (from another device's app or --pair on the computer) → device token
-                b = self.body()
-                res, err = a.devices.pair(b.get("code"), b.get("name"))
-                if err:
-                    raise ApiError(err, 403)
-                log("device paired:", (b.get("name") or "?")[:60])
-                return self.send_json({**res, "id": a.cfg["id"], "name": a.name()})
-            # access request: no token, home network only; after a household member accepts it returns a pairing code
-            if p == "/api/access/request" and method == "POST":
-                return self.send_json(a.access.request(self.body().get("name"), self.client_address[0]))
-            if (m := re.fullmatch(r"/api/access/request/([0-9a-f]{16})", p)) and method == "GET":
-                return self.send_json(a.access.poll(m.group(1), (q.get("secret") or [""])[0]))
-            # ---- MCP for an AI assistant (mp_mcp.py): OAuth with approval on the phone, then the device token
-            if p.startswith(("/.well-known/oauth-", "/oauth/")) or p == "/mcp":
-                return self.mcp_route(method, p, {k: v[0] for k, v in q.items()}, q)
+            # no token: ping, the web page, pairing, installing on a new computer, access requests, OAuth/MCP
+            hit = mp_routes.find(self.routes, method, p, public=True)
+            if hit:
+                return hit[0](self, a, **ctx, **hit[1])
             mp_library.set_viewer(None)
             self.device = self.authorized(q)
-            qd0 = {k: v[0] for k, v in q.items()}
             if not self.device and not (method in ("GET", "HEAD") and self.ticket_ok(p, q)):
                 raise ApiError(T("invalid token", "zły token"), 401)
             self.role = a.devices.role(self.device)
             mp_library.set_viewer(self.device, self.role)  # library folder visibility for this device
             if self.role == "guest" and not guest_allowed(method, p):
                 raise ApiError(T("guests don't have access to this (ask a household member)", "gość nie ma do tego dostępu (poproś domownika)"), 403)
-            if p.startswith("/api/upload/") and method in ("GET", "PUT"):
-                return mp_upload.handle(self, method, p[len("/api/upload/"):], qd0)
-            if p == "/api/info" and method == "GET":
-                return self.send_json(a.info(self.client_address[0], self.device, self.role))
-            if p == "/api/access/requests" and method == "GET":
-                return self.send_json({"requests": a.access.pending()})
-            if (m := re.fullmatch(r"/api/access/requests/([0-9a-f]{16})", p)) and method == "POST":
-                return self.send_json(a.access.decide(m.group(1), self.body(), a.devices, self.device))
-            if p == "/api/pair/code" and method == "POST":
-                b = self.body()
-                try:  # {"role": "guest", "days": 7}: a guest invitation (code valid for a day, access for `days`)
-                    code, ttl = a.devices.new_code(str(b.get("role") or "owner"), float(b.get("days") or 0) or None)
-                except ValueError as e:
-                    raise ApiError(str(e), 400)
-                host, _, port = (self.headers.get("Host") or "").rpartition(":")
-                return self.send_json({"code": code, "expires_in": ttl, "host": host or None,
-                                       "port": int(port) if port.isdigit() else a.cfg["port"],
-                                       "id": a.cfg["id"], "name": a.name()})
-            if p == "/api/install/code" and method == "POST":
-                code, ttl = a.installs.new_code(self.device)
-                url = f"{self.base_url()}/i/{code}"
-                return self.send_json({"code": code, "expires_in": ttl, "url": url,
-                                       "command": f"curl -fsSL {url} | bash",
-                                       "command_full": f"curl -fsSL '{url}?full=1' | bash",
-                                       "command_windows": f"irm {url}/ps | iex"})
-            if p == "/api/install/status" and method == "GET":
-                return self.send_json(a.installs.status(qd0.get("code"), self.device))
-            if p == "/api/devices" and method == "GET":
-                return self.send_json(a.devices.list(self.device))
-            if p == "/api/devices/revoke" and method == "POST":
-                dev = str(self.body().get("id") or "")
-                if not a.devices.revoke(dev):
-                    raise ApiError(T("no such device", "nie ma takiego urządzenia"), 404)
-                log("access revoked for device", dev)
-                return self.send_json({"ok": True})
-            if p == "/api/wake/verified" and method == "POST":
-                # the app woke this computer over the network (sent WoL, then it answered): remembered for everyone
-                net = platform.net_info(self.client_address[0])
-                a.cfg["wake_verified"] = {"at": time.time(), "mac": net.get("mac"), "by": self.device}
-                save_config(a.cfg)
-                log(f"wake over the network confirmed (device {self.device})")
-                return self.send_json({"ok": True})
-            if p == "/api/wake" and method == "POST":
-                b = self.body()
-                try:
-                    platform.send_wol(str(b.get("mac") or ""), b.get("ip"))
-                except ValueError as e:
-                    raise ApiError(str(e), 400)
-                return self.send_json({"ok": True})
-            if p == "/api/media/ticket" and method == "POST":
-                b = self.body()
-                return self.send_json(a.ticket_urls(b, self.base_url(), b.get("variant")))
-            # ---- file format and the version for Chromecast
-            if p == "/api/media/probe" and method == "GET":
-                full = a.resolve_ref(qd0)
-                if not mp_media.detect_encoder():
-                    return self.send_json({"ffmpeg": False})
-                try:
-                    info = mp_media.probe(full)
-                except (ValueError, OSError, subprocess.TimeoutExpired) as e:
-                    raise ApiError(T(f"can't read the file: {e}", f"nie da się odczytać pliku: {e}"), 422)
-                v = mp_media.variant(full)
-                # assessment for every known Chromecast (renderer registry with the model)
-                per = []
-                for r in a.renderers.casts():
-                    prof = mp_renderers.CAST_PROFILES.get(r.get("profile") or "")
-                    if prof:
-                        per.append({"id": r["id"], "name": r.get("name"), "label": mp_renderers.label(prof),
-                                    **mp_media.cast_check_for(info, prof)})
-                return self.send_json({
-                    "ffmpeg": True, "file": info, "cast": mp_media.cast_check(info), "cast_devices": per,
-                    "complete": a.ref_complete(qd0),
-                    "variant": _variant_info(v) if v else None,
-                    "job": a.convert.status(full), "encoder": mp_media.encoder_info()})
-            if p == "/api/media/convert" and method == "POST":
-                b = self.body()
-                full = a.resolve_ref(b)
-                if b.get("cancel"):
-                    a.convert.cancel(full)
-                    return self.send_json({"ok": True})
-                if b.get("remove"):
-                    a.convert.cancel(full)
-                    mp_media.remove_variant(full)
-                    return self.send_json({"ok": True})
-                if not a.ref_complete(b):
-                    raise ApiError(T("the video is still downloading; it will be prepared once complete",
-                                     "film jeszcze się pobiera; przygotuję go, gdy będzie cały"), 409)
-                # the phone's remembered audio choice ("kind|lang", as for mpv): the version carries that track (agent 1.14+)
-                aidx = None
-                if b.get("audio"):
-                    try:
-                        tr = [{"type": "audio", "id": x["index"] + 1, "title": x.get("title"), "lang": x.get("lang")}
-                              for x in mp_media.probe(full)["audio"]]
-                        hit = pick_audio(tr, b["audio"])
-                        aidx = hit - 1 if hit else None
-                    except (ValueError, OSError, subprocess.TimeoutExpired, KeyError):
-                        aidx = None
-                try:
-                    return self.send_json(a.convert.start(full, os.path.basename(full), aidx))
-                except (RuntimeError, ValueError, OSError) as e:
-                    raise ApiError(str(e), 409)
-            if p == "/api/media/converts" and method == "GET":
-                return self.send_json(a.convert.all())
-            # ---- Chromecast controlled from the agent (web client)
-            if p == "/api/cast/devices" and method == "GET":
-                return self.send_json(a.casts.devices())
-            if p == "/api/cast/play" and method == "POST":
-                b = self.body()
-                port = self.server.server_address[1]
-                t = a.ticket_urls(b, f"http://{lan_ip()}:{port}", "cast")
-                subs = [{"url": x["vtt"], "lang": x["lang"]} for x in t["subs"]]
-                return self.send_json(a.casts.play(str(b.get("device") or ""), t["url"], t["title"],
-                                                   t["content_type"] or "video/mp4", subs, b.get("start")))
-            if p == "/api/announce" and method == "GET":
-                return self.send_json(a.announce.list())
-            if p == "/api/renderers" and method == "GET":
-                return self.send_json(a.renderers.casts())
-            if p == "/api/cast/status" and method == "GET":
-                return self.send_json(a.casts.status())
-            if p == "/api/cast/cmd" and method == "POST":
-                b = self.body()
-                return self.send_json(a.casts.control(b.get("cmd"), b.get("value"), b.get("device") or None))
-            if p == "/api/app/version" and method == "GET":
-                return self.send_json(apk_version())
-            if p == "/app/MagneticPlayer.apk" and method in ("GET", "HEAD"):
-                return self.stream(os.path.join(APK_DIR, "MagneticPlayer.apk"), method == "HEAD")
-            if p == "/api/torrents" and method == "GET":
-                jobs = {j["id"]: j for j in a.jobs.all()}
-                out = a.backend.list()
-                for t in out:
-                    j = jobs.get(t["id"])
-                    t["mine"] = j is not None
-                    t["after"] = j.get("after", "none") if j else "none"
-                return self.send_json(out)
-            if p == "/api/jobs" and method == "GET":
-                present = {t["id"]: t for t in a.backend.list()}
-                out = []
-                for j in a.jobs.all():
-                    t = present.get(j["id"])
-                    out.append({"id": j["id"], "name": j.get("name") or (t or {}).get("name") or j["id"][:12],
-                                "added": j.get("added"), "after": j.get("after", "none"),
-                                "after_done": j.get("after_done", False), "magnet": j.get("magnet"),
-                                "in_client": t is not None, "progress": t["progress"] if t else None,
-                                "state": t["state"] if t else None})
-                return self.send_json(out)
-            m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/after", p)
-            if m and method == "POST":
-                after = self.body().get("after")
-                if after not in AFTER:
-                    raise ApiError("after: " + "/".join(AFTER), 400)
-                a.jobs.set_after(m.group(1).lower(), after)
-                return self.send_json({"ok": True})
-            if p == "/api/torrents" and method == "POST":
-                b = self.body()
-                uri = (b.get("magnet") or "").strip()
-                if not uri.startswith("magnet:?"):
-                    raise ApiError(T("this isn't a magnet link", "to nie jest magnet link"), 400)
-                dest = a.library.dest(int(b["root"]), str(b.get("sub") or "")) if b.get("root") is not None else None
-                tid = a.backend.add_magnet(uri, b.get("sequential", True), dest)
-                if tid:
-                    a.jobs.add(tid.lower(), uri, b.get("after", "none"))
-                    if dest:
-                        a.jobs.set_meta(tid.lower(), dest=dest, guess=b.get("guess"))
-                    elif not magnet_name(uri) and a.library.roots():
-                        # no name in the link: recognized and placed once the client has the metadata (place_unnamed)
-                        a.jobs.set_meta(tid.lower(), place_when_named=time.time())
-                log("magnet added:", tid, "→", dest or "(client default folder)")
-                return self.send_json({"id": tid, "path": dest})
-            m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/move", p)
-            if m and method == "POST":  # changing the folder after identification: the client moves it (keeps seeding)
-                b, tid = self.body(), m.group(1).lower()
-                dest = a.library.dest(int(b["root"]), str(b.get("sub") or ""))
-                a.backend.move(tid, dest)
-                j = a.jobs.get(tid) or {}
-                if b.get("learn") and j.get("guess"):  # next time this title goes straight here
-                    tags = a.library.roots()[int(b["root"])]["tags"]
-                    if tags:
-                        a.ident.learn(j["guess"], tags[0])
-                a.jobs.set_meta(tid, dest=dest)
-                log("torrent moved:", tid, "→", dest)
-                return self.send_json({"ok": True, "path": dest})
-            if p == "/api/library/guess" and method == "POST":
-                b = self.body()
-                name, files = b.get("name"), None
-                if b.get("magnet"):
-                    name = magnet_name(b["magnet"]) or name
-                if b.get("torrent"):  # already in the client (e.g. a magnet without a name, once the metadata is there)
-                    t = next((t for t in a.backend.list() if t["id"] == b["torrent"]), None)
-                    if t:
-                        name = t["name"]
-                        files = [(f["path"], f["size"]) for f in a.backend.files(b["torrent"])[1]] or None
-                g = a.ident.guess(name, files) if name else {"tag": None, "confidence": "low", "why": []}
-                kind = g.get("kind") if g.get("tag") in ("seriale", "bajki") else None
-                return self.send_json(dict(a.library.targets(g.get("tag"), g.get("title"), kind), guess=g, name=name))
-            m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/files", p)
-            if m and method == "GET":
-                save_path, files = a.backend.files(m.group(1))
-                for f in files:
-                    if f["media"] == "video" and f["ready"] > 0:
-                        dur = media_duration(os.path.join(save_path, f["path"]))
-                        if dur:
-                            f["duration"] = dur
-                            f["ready_sec"] = dur * f["ready"] / f["size"]
-                return self.send_json([{k: v for k, v in f.items() if not k.startswith("_")} for f in files])
-            m = re.fullmatch(r"/api/torrents/([0-9a-fA-F]+)/action", p)
-            if m and method == "POST":
-                act = self.body().get("action")
-                if act == "remove_data":  # the "for Chromecast" versions live in the torrent's folder: delete them along with it
-                    try:
-                        save_path, files = a.backend.files(m.group(1))
-                        for f in files:
-                            mp_media.remove_variant(os.path.join(save_path, f["path"]))
-                    except ApiError:
-                        pass
-                a.backend.action(m.group(1), act)
-                return self.send_json({"ok": True})
-            m = re.fullmatch(r"/media/([0-9a-fA-F]+)/(\d+)(/.*)?", p)
-            if m and method in ("GET", "HEAD"):
-                tid, idx = m.group(1), int(m.group(2))
-                full, f = a.resolve_file(tid, idx)
-                self.caption_header(q, f"torrent_id={tid}&file_index={idx}")
-                if qd0.get("v") == "cast" and mp_media.variant(full):
-                    return self.stream(mp_media.variant(full), method == "HEAD", watch=full)
-                # downloaded pieces only: instead of zeros from a not-yet-downloaded file we wait for Deluge (see stream())
-                return self.stream(full, method == "HEAD", f.get("_pieces"),
-                                   lambda: a.resolve_file(tid, idx)[1].get("_pieces"), watch=full)
-            if p == "/api/player/open" and method == "POST":
-                if not a.is_screen():
-                    raise ApiError(T(f"{a.name()} isn't a screen (no mpv/session or config: player)",
-                                     f"{a.name()} nie jest ekranem (brak mpv/sesji albo config: player)"), 409)
-                b = self.body()
-                if b.get("url"):  # a video from another server (URL with a ticket from /api/media/ticket)
-                    url = str(b["url"])
-                    subs = [str(u) for u in b.get("subs") or [] if str(u).startswith(("http://", "https://"))]
-                    if not url.startswith(("http://", "https://")):
-                        raise ApiError(T("url must be http(s)", "url musi być http(s)"), 400)
-                    a.mpv.open(url, b.get("title"), subs, b.get("start"), b.get("sub_lang"), b.get("audio"))
-                else:
-                    full = a.resolve_ref(b)
-                    # mpv finds subtitles next to the video by itself, but not those in a subfolder (Subs/English.srt from torrents)
-                    extra = [os.path.join(os.path.dirname(full), x["name"]) for x in sidecar_subs(full) if os.sep in x["name"]]
-                    # the recognised name ("Series · S2 E3") on the Remote and the screen, not the release's file name
-                    try:
-                        title = a.catalog.title_for(full)
-                    except Exception:  # noqa: BLE001 (a title is a nicety, the film plays anyway)
-                        title = None
-                    a.mpv.open(full, title, start=b.get("start"), subs=extra, sub_lang=b.get("sub_lang"), audio=b.get("audio"))
-                return self.send_json({"ok": True})
-            if p == "/api/player/status" and method == "GET":
-                return self.send_json(a.mpv.status())
-            if p == "/api/player/cmd" and method == "POST":
-                b = self.body()
-                a.mpv.control(b.get("cmd"), b.get("value"))
-                return self.send_json({"ok": True})
-            if p == "/api/system/suspend" and method == "POST":
-                if not mp_power.POWER:
-                    raise ApiError(T(f"{a.name()} has sleep over the network disabled", f"{a.name()} ma wyłączone usypianie z sieci"), 403)
-                if a.mpv.running():
-                    a.mpv.cmd("quit")
-                self.send_json({"ok": True})
-                threading.Timer(1.0, lambda: suspend(a.guard)).start()
-                return
-            if p == "/api/system/screen_on" and method == "POST":
-                return self.send_json({"ok": True, "unlocked": wake_screen()})
-            if p == "/api/system/unlock" and method == "POST":
-                return self.send_json({"ok": True, "unlocked": wake_screen(unlock=True)})
-            # ---- library
-            qd = {k: v[0] for k, v in q.items()}
-            if p == "/api/library" and method == "GET":
-                return self.send_json(a.library.visible_roots(qd.get("manage") == "1"))
-            if p == "/api/library" and method == "POST":
-                b = self.body()
-                if b.get("op") == "remove":
-                    a.library.remove_root(int(b["index"]))
-                elif b.get("op") == "update":
-                    a.library.update_root(int(b["index"]), b)
-                else:
-                    a.library.add_root(b["path"], b.get("name"))
-                return self.send_json(a.library.visible_roots(True))
-            # ---- disks and background file tasks (mp_tasks.py)
-            if p == "/api/library/moves" and method == "GET":
-                try:
-                    since = float((q.get("since") or ["0"])[0])
-                except ValueError:
-                    since = 0.0
-                return self.send_json(a.tasks.moves(since))
-            if p == "/api/library/disks" and method == "GET":
-                return self.send_json({"disks": a.tasks.disks(), "trash": a.tasks.trash(), "trash_days": a.tasks.trash_days()})
-            if p == "/api/library/plan" and method == "POST":
-                b = self.body()
-                kind = b.get("kind")
-                try:
-                    scope = mp_scope.parse(b.get("scope"))  # agent 1.16+: every kind takes a scope
-                except mp_scope.ScopeError as e:
-                    raise ApiError(str(e), 400) from None
-                m = a.tasks._matcher(scope) if scope else None
-                if kind == "free" and scope:
-                    raise ApiError(T("this task works on whole disks only", "to zadanie działa tylko na całych dyskach"), 400)
-                if kind == "free":
-                    if any(k in b for k in ("amount", "to_percent", "order", "skip_kept")):  # delete to the trash (1.16+)
-                        return self.send_json(a.tasks.plan_free_space(
-                            int(b["root"]), b.get("amount"), b.get("to_percent"), b.get("order") or "watched_oldest",
-                            bool(b.get("skip_kept", True))))
-                    return self.send_json(a.tasks.plan_free(int(b["root"]), b.get("need")))
-                if kind in ("audio_fix", "downscale", "compress") or (kind == "modernize" and "audio" in b):
-                    opts = {k: b[k] for k in ("encoder", "quality", "audio", "target", "remember", "only_high_bitrate",
-                                              "skip_hevc_av1", "skip_seeding") if k in b}
-                    return self.send_json(a.tasks.plan_job(kind, opts, scope))
-                if kind == "shrink":
-                    if b.get("profile"):  # choosing a profile for this folder/file is remembered (new files follow it)
-                        a.tasks.set_profile(int(b["root"]), b.get("path", ""), b["profile"])
-                    return self.send_json(a.tasks.plan_shrink(int(b["root"]), b.get("path", ""), b.get("encoder"), m=m))
-                if kind == "modernize":  # old picture formats in the whole library (agent 1.8.2+)
-                    return self.send_json(a.tasks.plan_shrink(-1, "", b.get("encoder"), modernize=True, m=m))
-                if kind == "move":
-                    return self.send_json(a.tasks.plan_move(b.get("items") or [], m=m))
-                if kind == "tidy":
-                    return self.send_json(a.tasks.plan_tidy(a.ident, m=m))
-                if kind == "dupes":
-                    if "what" in b or "keep" in b:  # agent 1.16+
-                        return self.send_json(a.tasks.plan_dupes2(b.get("what") or "same_files", b.get("keep") or "manual", scope))
-                    return self.send_json(a.tasks.plan_dupes(m=m))
-                if kind == "subs_get":  # missing subtitles downloaded (agent 1.12.1+): library, a folder or a film
-                    if "which" in b or scope:  # agent 1.16+
-                        return self.send_json(a.tasks.plan_subs_get2(b.get("languages") or "", b.get("which") or "no_subs_in_lang",
-                                                                     b.get("order") or "recent", scope))
-                    langs = str(b.get("languages") or "").split(",")
-                    return self.send_json(a.tasks.plan_subs_get(langs, b.get("root"), b.get("path")))
-                if kind == "subs":  # subtitles fitted to the films (agent 1.9+)
-                    if "which" in b or scope:  # agent 1.16+
-                        return self.send_json(a.tasks.plan_subs2(b.get("which") or "unchecked", bool(b.get("sub_to_srt", True)),
-                                                                 bool(b.get("mark_bad")), bool(b.get("queue_bad")), scope))
-                    return self.send_json(a.tasks.plan_subs(bool(b.get("every"))))
-                if kind == "trash":
-                    return self.send_json(a.tasks.plan_trash(b.get("items") or [], m=m))
-                if kind == "layout":  # agent 1.17+
-                    return self.send_json(a.tasks.plan_layout(b, scope))
-                if kind == "balance":  # agent 1.17+, whole disks
-                    if scope:
-                        raise ApiError(T("this task works on whole disks only", "to zadanie działa tylko na całych dyskach"), 400)
-                    return self.send_json(a.tasks.plan_balance(b))
-                if kind == "cast_ready":  # agent 1.17+
-                    return self.send_json(a.tasks.plan_cast_ready(b, scope))
-                raise ApiError(T("kind must be free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
-                                 "subs, subs_get, trash, layout, balance or cast_ready",
-                                 "kind to free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
-                                 "subs, subs_get, trash, layout, balance albo cast_ready"), 400)
-            if p == "/api/library/jobs" and method == "GET":  # counters of the task list for a scope (agent 1.16+)
-                try:
-                    scope = mp_scope.parse((q.get("scope") or [""])[0])
-                except mp_scope.ScopeError as e:
-                    raise ApiError(str(e), 400) from None
-                lv = q.get("levels")  # agent 1.17+: the folder layout counter for these levels
-                return self.send_json(a.tasks.jobs(scope, (q.get("languages") or ["pl,en"])[0], None if lv is None else lv[0]))
-            if (m := re.fullmatch(r"/api/library/plan/([0-9a-f]{8})", p)) and method == "GET":
-                return self.send_json(a.tasks.plan_status(m.group(1)))
-            if p == "/api/library/profile" and method == "POST":
-                b = self.body()
-                a.tasks.set_profile(int(b["root"]), b.get("path", ""), b.get("profile"))
-                return self.send_json({"ok": True})
-            if p == "/api/library/trash/empty" and method == "POST":
-                return self.send_json({"freed": a.tasks.purge_trash(everything=True)})
-            if p == "/api/tasks" and method == "GET":
-                return self.send_json(a.tasks.list(brief=q.get("brief", [""])[0] == "1"))
-            if p == "/api/tasks" and method == "POST":
-                b = self.body()
-                pick = b.get("pick")
-                return self.send_json(a.tasks.create(str(b.get("plan")), None if pick is None else {int(x) for x in pick}))
-            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})", p)) and method == "GET":
-                return self.send_json(a.tasks.get(m.group(1)))
-            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/remove", p)) and method == "POST":
-                return self.send_json(a.tasks.remove(m.group(1)))
-            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/cancel", p)) and method == "POST":
-                return self.send_json(a.tasks.cancel(m.group(1)))
-            # agent 1.17+ (features.task_queue): pause and resume, the queue's order, a failed task again
-            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/(pause|resume)", p)) and method == "POST":
-                return self.send_json(getattr(a.tasks, m.group(2))(m.group(1)))
-            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/move", p)) and method == "POST":
-                return self.send_json({"queue": a.tasks.move(m.group(1), str(self.body().get("to") or "up"))})
-            if (m := re.fullmatch(r"/api/tasks/([0-9a-f]{8})/retry", p)) and method == "POST":
-                return self.send_json(a.tasks.retry(m.group(1)))
-            if p == "/api/tasks/order" and method == "POST":
-                ids = self.body().get("ids")
-                if not isinstance(ids, list):
-                    raise ApiError(T("ids must be a list", "ids to lista"), 400)
-                return self.send_json({"queue": a.tasks.order([str(x) for x in ids])})
-            if p == "/api/library/cover" and method in ("GET", "HEAD"):
-                # a folder or a video: poster.jpg/folder.jpg/<name>.jpg next to it, otherwise a frame (mp_media.cover)
-                pic = mp_media.cover(a.library.resolve(int(qd.get("root", 0)), qd.get("path", "")),
-                                     720 if qd.get("w") == "720" else 360)
-                if not pic:
-                    raise ApiError(T("no cover", "brak okładki"), 404)
-                return self.send_static(pic, "image/png" if pic.endswith(".png") else "image/webp" if pic.endswith(".webp")
-                                        else "image/jpeg", method == "HEAD", "private, max-age=86400",
-                                        {"X-Cover-Kind": "frame" if mp_media.is_frame(pic) else "picture"})
-            if p == "/api/library/search" and method == "GET":
-                return self.send_json(a.library.search(qd.get("q", "")))
-            if p == "/api/library/browse" and method == "GET":
-                return self.send_json(a.library.browse(int(qd.get("root", 0)), qd.get("path", ""), qd.get("all") == "1"))
-            if p == "/api/library/episodes" and method == "GET":
-                return self.send_json(a.library.episodes(int(qd.get("root", 0)), qd.get("path", "")))
-            if p == "/api/library/segments" and method == "GET":
-                full = a.library.resolve(int(qd.get("root", 0)), qd.get("path", ""))
-                d = os.path.dirname(full)
-                try:
-                    names = [n for n in os.listdir(d) if not n.startswith(".") and media_kind(n) == "video"
-                             and os.path.isfile(os.path.join(d, n))]
-                except OSError:
-                    names = []
-                eps = [os.path.join(d, x["path"]) for x in mp_ident.episodes([(n, 0) for n in names])[0]]
-                return self.send_json(a.segments.request(full, eps))
-            if p == "/api/fs" and method == "GET":
-                return self.send_json(a.library.fs_dirs(qd.get("path", "")))
-            m = re.fullmatch(r"/lib/(\d+)/(.+)", p)
-            if m and method in ("GET", "HEAD"):
-                full = a.library.resolve(int(m.group(1)), urllib.parse.unquote(m.group(2)))
-                self.caption_header(q, f"root={int(m.group(1))}&path={urllib.parse.quote(urllib.parse.unquote(m.group(2)))}")
-                if qd0.get("v") == "cast" and mp_media.variant(full):
-                    return self.stream(mp_media.variant(full), method == "HEAD", watch=full)
-                part = a.downloading_part(full)
-                if part:  # a torrent still downloading into the library: downloaded pieces only (see /media/)
-                    tid, idx = part
-                    return self.stream(full, method == "HEAD", a.resolve_file(tid, idx)[1].get("_pieces"),
-                                       lambda: a.resolve_file(tid, idx)[1].get("_pieces"), watch=full)
-                return self.stream(full, method == "HEAD", watch=full)
-            # ---- subtitles
-            if p == "/api/subs/list" and method == "GET":
-                full = a.resolve_ref(qd)
-                out = []
-                for x in sidecar_subs(full):
-                    sp = os.path.join(os.path.dirname(full), x["name"])
-                    if x["ext"] == "sub" and mp_subsync.is_text_sub(sp):
-                        x["ext"] = "srt"  # served converted (/sub): MicroDVD/MPL2/TMPlayer as SubRip
-                    r = a.subsync.get(sp)
-                    if r:  # fitted or assessed before (agent 1.9+): good / unsure / bad for this copy of the film
-                        x["fit"] = {"verdict": r["verdict"], "z": r["z"]}
-                    src = a.subsources.get(sp)
-                    if src:  # downloaded by the agent (1.12+): search results it matches are marked "you have it"
-                        x["source"] = {"provider": src["provider"], "id": src["id"], "release": src.get("release", "")}
-                    out.append(x)
-                return self.send_json(out)
-            if p == "/sub" and method in ("GET", "HEAD"):
-                full = a.resolve_ref(qd)
-                names = {s["name"]: s for s in sidecar_subs(full)}
-                if qd.get("name") not in names:
-                    raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
-                if qd.get("vtt") == "1":  # browsers (<track>) understand only WebVTT
-                    return self.send_vtt(os.path.join(os.path.dirname(full), qd["name"]), full)
-                sp = os.path.join(os.path.dirname(full), qd["name"])
-                if qd["name"].lower().endswith(".srt") or (qd["name"].lower().endswith(".sub") and mp_subsync.is_text_sub(sp)):
-                    # MicroDVD/cp1250 named .srt, or a text .sub: the phone gets real UTF-8 SubRip
-                    return self.send_text(readable_srt(os.path.join(os.path.dirname(full), qd["name"]), full),
-                                          "application/x-subrip", method == "HEAD")
-                return self.stream(os.path.join(os.path.dirname(full), qd["name"]), method == "HEAD")
-            if p == "/api/subs/search" and method == "POST":
-                b = self.body()
-                langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
-                args = (a.resolve_ref(b), langs, (b.get("title") or "").strip() or None, b.get("year") or None)
-                if mp_subsync.available():  # while the user looks at the results: the embedded track's times for fitting
-                    threading.Thread(target=bind(lambda f: (mp_subsync.embedded(f) if os.path.exists(f) else None)),
-                                     args=(args[0],), daemon=True).start()
-                if b.get("async"):  # the app shows progress by polling /api/subs/job
-                    return self.send_json({"job": a.subs.start_search(*args)})
-                return self.send_json(a.subs.search(*args))
-            if p == "/api/subs/job" and method == "GET":
-                return self.send_json(a.subs.job(qd.get("id", "")))
-            if p == "/api/subs/job/stop" and method == "POST":
-                a.subs.stop(self.body().get("id", ""))
-                return self.send_json({"ok": True})
-            if p == "/api/subs/download" and method == "POST":
-                b = self.body()
-                full = a.resolve_ref(b)
-                if b.get("async"):  # agent 1.12.1+: {"job"} right away; /api/subs/job says "download", then "fit"
-                    return self.send_json({"job": a.subs.start_job(lambda job: a.download_subs(full, b, job), "download")})
-                return self.send_json(a.download_subs(full, b))
-            if p == "/api/subs/default" and method == "POST":  # this version becomes its language's default (1.12+)
-                b = self.body()
-                full = a.resolve_ref(b)
-                if b.get("name") not in {x["name"] for x in sidecar_subs(full)}:
-                    raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
-                try:
-                    name = mp_subfiles.promote(full, b["name"], a.subsources, a.tasks.torrent_owned, a.subsync.move)
-                except mp_subfiles.FileError as e:
-                    raise ApiError(str(e), e.status)
-                except OSError as e:
-                    raise ApiError(e.strerror or str(e), 500)
-                if a.mpv.running() and a.mpv.prop("path") == full:  # the Remote: this video plays in mpv, turn it on
-                    try:
-                        a.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), name), "select")
-                    except ApiError:
-                        pass
-                return self.send_json({"name": name})
-            if p == "/api/subs/fit" and method == "POST":  # one subtitle file next to the video (agent 1.9+)
-                b = self.body()
-                full = a.resolve_ref(b)
-                if b.get("name") not in {x["name"] for x in sidecar_subs(full)}:
-                    raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
-                return self.send_json(a.fit_subs(full, b["name"]))
-            if p == "/api/subs/shift" and method == "POST":  # by hand: {ref, name, by: seconds} (agent 1.12.1+)
-                b = self.body()
-                full = a.resolve_ref(b)
-                if b.get("name") not in {x["name"] for x in sidecar_subs(full)}:
-                    raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
-                try:
-                    by = float(b.get("by"))
-                except (TypeError, ValueError):
-                    raise ApiError(T("by: seconds", "by: sekundy"), 400)
-                if not -600 < by < 600 or not by:
-                    raise ApiError(T("by: seconds", "by: sekundy"), 400)
-                return self.send_json(a.shift_subs(full, b["name"], by))
-            if p == "/api/config/app_updates" and method == "GET":
-                return self.send_json(a.app_updates.status())
-            if p == "/api/config/app_updates" and method == "POST":
-                mode = self.body().get("mode")
-                if mode not in mp_appupdate.MODES:
-                    raise ApiError(T("mode must be auto or manual", "tryb to auto albo manual"), 400)
-                return self.send_json(a.app_updates.set_mode(mode))
-            # ---- catalog: films and series instead of folders (mp_catalog.py)
-            if p == "/api/catalog" and method == "GET":
-                if qd.get("since") and qd["since"] == str(a.catalog.version):
-                    return self.send_json({"version": a.catalog.version, "same": True})
-                return self.send_json(a.catalog.public(mp_i18n.lang()))
-            if p == "/api/catalog/title" and method == "GET":
-                try:
-                    return self.send_json(a.catalog.title(qd.get("imdb", ""), mp_i18n.lang()))
-                except ValueError:
-                    raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
-            if p == "/api/catalog/search" and method == "GET":  # the local IMDb index by title (agent 1.17+)
-                return self.send_json(a.catalog.search(qd.get("q", ""), qd.get("limit") or 20))
-            if p == "/api/catalog/episodes" and method == "GET":
-                return self.send_json(a.series_episodes(qd.get("imdb", "")))
-            if p == "/api/catalog/person" and method == "GET":
-                try:
-                    return self.send_json(a.catalog.person(qd.get("id", ""), mp_i18n.lang()))
-                except ValueError:
-                    raise ApiError(T("bad person id", "zły identyfikator osoby"), 400)
-            if p == "/api/catalog/next" and method == "GET":
-                return self.send_json(a.catalog.next(qd.get("imdb", ""), mp_i18n.lang()))
-            if p == "/api/wishlist" and method == "GET":
-                return self.send_json({"items": a.wishlist.list(a.catalog, mp_i18n.lang())})
-            if p == "/api/wishlist" and method == "POST":
-                try:
-                    a.wishlist.add(self.body(), self.device_name())
-                except ValueError:
-                    raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
-                return self.send_json({"items": a.wishlist.list(a.catalog, mp_i18n.lang())})
-            if p == "/api/wishlist/remove" and method == "POST":
-                a.wishlist.remove(str(self.body().get("imdb") or ""))
-                return self.send_json({"items": a.wishlist.list(a.catalog, mp_i18n.lang())})
-            if p == "/api/config/search" and method == "GET":
-                return self.send_json({"engines": a.cfg.get("search_engines") or []})
-            if p == "/api/config/search" and method == "POST":
-                eng = []
-                for e in (self.body().get("engines") or [])[:10]:
-                    name, url = str(e.get("name") or "").strip()[:40], str(e.get("url") or "").strip()[:500]
-                    if not name or not re.match(r"https?://[^\s/]+", url) or not re.search(r"\{(title|imdb|q)\}", url):
-                        raise ApiError(T("each search needs a name and an http(s) address with {q}, {title} or {imdb}",
-                                         "każda wyszukiwarka potrzebuje nazwy i adresu http(s) z {q}, {title} albo {imdb}"), 400)
-                    # 1.16+: what the site finds (torrents / video / subtitles) and where the app opens it (app / browser)
-                    kind = e.get("kind") if e.get("kind") in ("torrents", "video", "subtitles") else "torrents"
-                    opens = e.get("open") if e.get("open") in ("app", "browser") else "browser"
-                    eng.append({"name": name, "url": url, "kind": kind, "open": opens})
-                a.cfg["search_engines"] = eng
-                save_config(a.cfg)
-                return self.send_json({"engines": eng})
-            # ---- files that phones sent to the server (mp_upload.py history)
-            if p == "/api/uploads" and method == "GET":
-                items = a.uploads.list()
-                for h in items:
-                    if h["state"] == "new":
-                        g = a.ident.guess(h["name"])
-                        kind = g.get("kind") if g.get("tag") in ("seriale", "bajki") else None
-                        h.update(a.library.targets(g.get("tag"), g.get("title"), kind), guess=g)
-                        here = os.path.realpath(h["dir"])
-                        for t in h["targets"]:  # where it lies now is not a suggestion
-                            t["here"] = os.path.realpath(t["path"]) == here
-                        if h.get("pick") is not None and h["targets"][h["pick"]]["here"]:
-                            h["pick"] = None
-                    h.pop("dir", None)
-                    h.pop("path", None)
-                return self.send_json({"items": items, "new": sum(h["state"] == "new" for h in items)})
-            if p == "/api/uploads/keep" and method == "POST":
-                return self.send_json(a.uploads.keep(str(self.body().get("id") or "")))
-            if p == "/api/uploads/move" and method == "POST":
-                b = self.body()
-                root = a.library.roots()[int(b["root"])]
-                dest = a.library.dest(int(b["root"]), str(b.get("sub") or ""))
-                if b.get("learn") and b.get("guess") and root["tags"]:
-                    a.ident.learn(b["guess"], root["tags"][0])
-                return self.send_json(a.uploads.move(str(b.get("id") or ""), dest, root["name"]))
-            if p == "/api/config/jobs" and method == "GET":  # agent 1.16+
-                return self.send_json(a.tasks.jobs_config())
-            if p == "/api/config/jobs" and method == "POST":
-                return self.send_json(a.tasks.set_jobs_config(self.body()))
-            if p == "/api/config/shrink" and method == "GET":
-                return self.send_json(a.tasks.shrink_config())
-            if p == "/api/config/shrink" and method == "POST":
-                return self.send_json(a.tasks.set_shrink_config(self.body()))
-            if p == "/api/config/agent_updates" and method == "GET":
-                return self.send_json(a.agent_updates.status())
-            if p == "/api/config/agent_updates" and method == "POST":
-                mode = self.body().get("mode")
-                if mode not in mp_selfupdate.MODES:
-                    raise ApiError(T("mode must be auto or manual", "tryb to auto albo manual"), 400)
-                return self.send_json(a.agent_updates.set_mode(mode))
-            if p == "/api/agent/update" and method == "POST":
-                if not a.agent_updates.supported():
-                    raise ApiError(T("this system can't update the agent by itself yet", "ten system nie umie jeszcze sam zaktualizować agenta"), 409)
-                return self.send_json(a.agent_updates.update_now())
-            if p == "/api/config/opensubtitles" and method == "GET":
-                return self.send_json({"api_key": bool(a.cfg.get("opensubtitles_api_key")),
-                                       "username": a.cfg.get("opensubtitles_username", ""),
-                                       "password": bool(a.cfg.get("opensubtitles_password"))})
-            if p == "/api/config/opensubtitles" and method == "POST":
-                b = self.body()
-                a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
-                return self.send_json({"ok": True})
+            hit = mp_routes.find(self.routes, method, p, public=False)
+            if hit:
+                return hit[0](self, a, **ctx, **hit[1])
             raise ApiError(T("no such endpoint", "nie ma takiego endpointu"), 404)
         except (LibError, SubsError, CastError, mp_install.InstallError, mp_access.AccessError, mp_tasks.TaskError,
                 mp_upload.UploadError) as e:
@@ -1707,6 +1054,7 @@ def main():
         return
     app = App(cfg)
     Handler.app = app
+    Handler.routes = mp_routes.build(app)  # fails here, not in a request, if a route points at nothing
     if cfg.get("keep_awake", True):
         app.guard.start()
     srv = QuietServer(("0.0.0.0", int(cfg["port"])), Handler)

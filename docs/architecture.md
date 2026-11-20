@@ -23,7 +23,13 @@ pipe instead of a unix socket.
 
 | file | responsibility |
 |---|---|
-| `magneticplayer_agent.py` | HTTP API, authorization, Range streaming, Deluge and Transmission backends, mpv control, `SleepGuard`, computing "how much can be watched", video durations |
+| `magneticplayer_agent.py` | entry point: `App` (wires the modules together, status and `features`), the HTTP `Handler` (authorization, guest permissions `GUEST_ALLOWED`, error handling, Range streaming helpers, dispatch through the route table), the CLI (`--pair`, `--join`), `VERSION` |
+| `mp_core.py` | shared basics with no agent dependencies: config load/save, `log`, `ApiError`, `WEB_DIR`/`APK_DIR`, `apk_version`, `lan_ip` |
+| `mp_routes.py` | the route table: `(method, pattern, handler, options)` rows with typed `<name:type>` parameters, public rows (no token) first; `call("x.y", "param")` points a row straight at an `App` method and is resolved at startup, so a route pointing at nothing stops the agent from starting |
+| `mp_api_*.py` | route handlers by topic, `fn(req, app, *, method, p, q, qd, **params)`: `system` (ping, info, power, agent update), `access` (pairing, access requests, install scripts, OAuth/MCP), `media` (streams, tickets, variants), `player`, `torrents`, `library`, `tasks`, `subs`, `catalog`, `config` |
+| `mp_torrents.py` | Deluge and Transmission backends (and `NoBackend`), computing "how much can be watched", video durations |
+| `mp_mpv.py` | mpv control over its IPC socket / named pipe, choosing the audio track |
+| `mp_power.py` | `SleepGuard` (keeps the computer awake while something plays or downloads), poweroff and suspend, the `POWER`/`AUTO_UNLOCK` settings set by `App` |
 | `mp_jobs.py` | history of jobs sent from the phone and the after-download action (`none` / `stop` / `suspend`) |
 | `mp_library.py` | library folders, listing only video and audio files, subtitles next to videos, protection against escaping the folder (`safe_join`) |
 | `mp_subs.py` | searching and downloading subtitles via subliminal (lazy import from the venv) |
@@ -37,6 +43,7 @@ pipe instead of a unix socket.
 | `mp_catalog.py` | the library as films (agent 1.8+): `Catalog` groups library files into titles, recognises them (`mp_ident`), reads audio and subtitle languages, adds Wikidata details by IMDb id (cast, directors, topics, age) and answers title, person and "what next"; `Wishlist` is the shared want-to-watch list |
 | `mp_selfupdate.py` | the agent updates itself from signed GitHub releases (ECDSA P-256 verified in pure Python), at a quiet moment, through `self-update.sh` with a rollback |
 | `mp_tasks.py` | background file tasks with a preview: planners (free up a disk, tidy up by recognition, duplicates, shrinking by storage profiles, deleting to the trash; 1.16+: sound fix, modernize, downscale, compress, task counters from a background scan; 1.17+: folder layout, balance between disks, For Chromecast, pause, resume and queue order) and one worker; moving through the torrent client when the torrent is still in it; `.mp-trash/` per library folder |
+| `mp_tasks_*.py` | mixins of `Tasks`, split by topic: `common` (constants, helpers, `TaskError`), `plan` (v1 planners), `jobs` (v2 planners, task counters), `layout` (folder layout, balance, For Chromecast), `facts` (background scan, played files, audio), `ops` (subtitles, replicate, move, trash), `shrink` (encoders and shrinking) |
 | `mp_scope.py` | task scopes (agent 1.16+): parsing a scope, deciding which files it covers, its label |
 | `mp_arrange.py` | folder layout and balance between disks (agent 1.17+): whole-title units, hand-arranged folders, destinations by levels, moves for a balance goal |
 | `mp_mcp.py` | MCP server for an AI assistant in the LAN (Streamable HTTP, tools over the library and tasks) and the OAuth 2.1 endpoints whose approval is an access request on the phone |
