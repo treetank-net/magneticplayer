@@ -601,6 +601,52 @@ jmpc). Typing fast into text fields loses characters on the emulator (slow typin
 - Differences from the board: the cover is the drawn one (no poster images are fetched); the board's second note
   (how "Set up search sites" behaves) is a design note, not shown.
 
+### Stages 3 and 5 (the next app, agent 1.16+ with `jobs_v2` and `episode_lists`): element by element, next to the boards
+
+**Scope entry points (E2 everywhere)**: each opens "Optimise" with its scope; back returns to where it came from;
+the scope bar shows the agent's label; nothing appears on an agent without `jobs_v2` or for a guest.
+- [ ] Folders: ⋮ on a folder → "Optimise this folder" (also on a library folder's top level, where ⋮ used to be
+  hidden);
+- [ ] Library filtered by a category or age group: the `AutoFixHigh` icon in the Results header (genre or tag, and/or
+  "who watches" age) and next to the tag chips in Folders → the filter becomes the scope (category and age combined);
+  no icon when the filter has other parts (decade, language, person…);
+- [ ] film or series page: the icon button next to ▶ (the word "Optimise" too on a wide screen) → scope = the title;
+- [ ] season: ⋮ on the season header (E1) → "Optimise this season"; on an older agent the icon in the "Episodes" row
+  acts on the season shown;
+- [ ] a single file: ⋮ → "Optimise…" in the folder view and in an episode's ⋮ on the title page;
+- [ ] selection: "Select" / "Done" on the title page header, checkboxes on episodes on the disk, bottom bar
+  "Selected N" and "✨ Optimise · N ›" → scope "<title>, selected"; back while selecting ends it;
+- [ ] A1 "Narrow…": FOLDER (checkboxes), CATEGORY (folder tags, then the most common genres; one), AGE GROUP (0+ … 18+,
+  several), TITLE (search in the catalog, one title as a chip with ✕), the note that everything must match; Apply
+  opens E2 with all of it; the old "come in a later version" note is gone;
+- [ ] from "On the phone" (D6) and from another server's copy in "All": the Library of that server opens with E2;
+- [ ] E2 with a series as the scope: "N files · size · missing M" (M from the episode lists).
+
+**E1. A series in the library: have and don't have**
+- [ ] header: back, breadcrumb "Library › Series" ("Select episodes" while selecting), "Select" / "Done";
+- [ ] cover, title, years, seasons and episodes (counts from the catalog list), rating, tags,
+  "You have N of M · size · disk";
+- [ ] "▶ <episode> from <position>" and the Optimise icon button (→ E2 with the series as scope; text "Optimise" if
+  the width allows);
+- [ ] one collapsible header per season: "Season N · year", "have X of Y · missing E04" or "you don't have it · N ep.";
+  the season of the tapped / continued episode open, the rest collapsed; a season not out yet collapsed with
+  "not out yet · N ep.";
+- [ ] episodes on disk: number, title (from the catalog), state (watched, position bar, size, subtitles), phone
+  mark, ⋮ as before (plus "Optimise…");
+- [ ] missing episodes: grey, dashed separator, "Search"; not yet aired: the air date instead;
+- [ ] a missing season: collapsed, "Search the whole season" when expanded, then its episodes;
+- [ ] the search sheet: phrase (editable, "Title S01E04" or "Title S02"), one button per search site, "Set up search
+  engines ›" → D4 (back returns to the title), "Close";
+- [ ] a magnet from a result lands in the series' folder (the magnet card says "To: <folder>"), and the episode
+  appears on the page after returning to the app;
+- [ ] selecting: checkboxes on episodes that exist, bottom bar "Selected N" and "Optimise N ›" → E2;
+- [ ] own videos that match no catalog episode under "Other videos in the folder · N"; extras as before;
+- [ ] an agent without `episode_lists` (or a series without an IMDb id): the page exactly as before (season chips);
+  while the first request waits for Wikidata (up to 30 s) the old list shows, then the full one.
+- Not done: the same for film series (missing parts like missing episodes): the agent has no list of a film
+  series' parts yet. The magnet → series folder link is kept on the phone for two hours after the sheet opens and is
+  used only when the magnet's name (or the agent's recognition) contains the series' title.
+
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same

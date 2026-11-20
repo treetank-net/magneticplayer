@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stages 3 and 5 of docs/plan-ux-tasks.md: "Optimise" entry points (scopes) and the series page with every episode (E1). English. -->
+<resources>
+    <!-- entry points -->
+    <string name="s35_optimise_folder">Optimise this folder</string>
+    <string name="s35_optimise_season">Optimise this season</string>
+    <string name="s35_optimise_file">Optimise…</string>
+    <string name="s35_optimise_n">✨ Optimise · %1$d ›</string>
+    <string name="s35_selected_n">Selected %1$d</string>
+    <string name="s35_selected_label">%1$s, selected</string>
+    <string name="s35_select">Select</string>
+    <string name="s35_done">Done</string>
+    <string name="s35_missing_n">missing %1$d</string>
+    <!-- A1 "Narrow…" -->
+    <string name="s35_narrow_folder">FOLDER</string>
+    <string name="s35_narrow_category">CATEGORY</string>
+    <string name="s35_narrow_age">AGE GROUP</string>
+    <string name="s35_narrow_title">TITLE</string>
+    <string name="s35_narrow_title_hint">Search a title</string>
+    <string name="s35_narrow_and">Everything you choose must match: folder, category, age group and title together.</string>
+    <!-- E1 -->
+    <string name="s35_crumb_series">Library › Series</string>
+    <string name="s35_crumb_film">Library › Films</string>
+    <string name="s35_crumb_select">Select episodes</string>
+    <string name="s35_have_of">You have %1$d of %2$d</string>
+    <string name="s35_season_year">Season %1$d · %2$d</string>
+    <string name="s35_season_have">have %1$d of %2$d</string>
+    <string name="s35_season_missing">missing %1$s</string>
+    <string name="s35_season_upcoming">not out yet: %1$d</string>
+    <string name="s35_season_none">you don\'t have it · %1$d ep.</string>
+    <string name="s35_season_future">not out yet · %1$d ep.</string>
+    <string name="s35_search_season">Search the whole season</string>
+    <string name="s35_no_date">no date yet</string>
+    <string name="s35_other_files">Other videos in the folder · %1$d</string>
+    <string name="s35_ep_watched">watched</string>
+    <string name="s35_ep_subs">subtitles %1$s</string>
+    <string name="s35_ep_no_subs">no subtitles</string>
+    <string name="s35_sheet_title">Search: %1$s</string>
+    <string name="s35_sheet_phrase">Phrase</string>
+    <string name="s35_sheet_note">Edit the phrase if needed. A magnet from a result goes to the folder %1$s, and the episode appears on this page right away.</string>
+    <string name="s35_sheet_note_nodir">Edit the phrase if needed.</string>
+</resources>

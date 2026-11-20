@@ -77,6 +77,8 @@ data class Server(
     /** Agent 1.16+: one screen per task, scopes and counters (`/api/library/jobs`, LibraryJobs.kt); without it the
      *  old Disks screen stays. */
     val hasJobsV2 get() = features?.optBoolean("jobs_v2", false) ?: false
+    /** Agent 1.16+: every season and episode of a series from the catalog (`/api/catalog/episodes`, E1 in Stage35.kt). */
+    val hasEpisodeLists get() = features?.optBoolean("episode_lists", false) ?: false
     /** POST /api/tasks/<id>/remove (agent 1.12.1+) */
     val hasTaskRemove get() = features?.optBoolean("task_remove", false) ?: false
     /** agent 1.14.1+: `/api/tasks?brief=1` and the latest finish time in `/api/ping` */

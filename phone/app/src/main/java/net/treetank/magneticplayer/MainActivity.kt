@@ -447,6 +447,14 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 }
             }
           }
+          // "Optimise" opened from a title page, a folder… (JobsNav, plan stage 3): the Library of that server, also from
+          // "On the phone" (D6) and from another server's copy in "All"
+          val pendingJobs = JobsNav.pending.value
+          LaunchedEffect(pendingJobs) {
+              val p = pendingJobs ?: return@LaunchedEffect
+              if (Servers.activeKey(ctx) != p.first && Servers.get(ctx, p.first) != null) { Servers.setActive(ctx, p.first); changed() }
+              tab.intValue = TAB_LIBRARY
+          }
           // Library comes first; a server known to have no library (only downloads) opens on Downloads instead
           LaunchedEffect(srv.key, srv.hasLibrary) { if (tab.intValue == TAB_LIBRARY && !srv.hasLibrary) tab.intValue = TAB_TORRENTS }
           Box(Modifier.weight(1f).fillMaxWidth()) {

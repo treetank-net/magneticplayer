@@ -7,7 +7,6 @@
     <string name="job_scope_whole_sub">wszystkie dyski · liczniki dla całej biblioteki</string>
     <string name="job_narrow">Zawęź: folder, kategoria, wiek…</string>
     <string name="job_narrow_title">Zawęź zakres</string>
-    <string name="job_narrow_later">Kategoria, grupa wiekowa i tytuł dojdą w kolejnej wersji.</string>
     <string name="job_apply">Zastosuj</string>
     <string name="job_scope">Zakres: %1$s</string>
     <string name="job_scope_clear">✕ cały komputer</string>

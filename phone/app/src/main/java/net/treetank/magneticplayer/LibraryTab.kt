@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subtitles
@@ -124,7 +125,8 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     }
     // "Optimise" opened with a scope from elsewhere (JobsNav.openOptimise)
     val pendingJobs = JobsNav.pending.value
-    LaunchedEffect(pendingJobs) {
+    // (keyed on the server too: in "All" the tab stays while MainActivity makes the scope's server the active one)
+    LaunchedEffect(pendingJobs, api.srv.key) {
         if (pendingJobs != null && pendingJobs.first == api.srv.key) {
             JobsNav.pending.value = null
             jobScope = pendingJobs.second.encode(); job = null; bgWork = false; plan = null; disks = true
@@ -248,7 +250,15 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
     }
     val allTags = ((roots ?: emptyList()) + others.flatMap { it.second }).flatMap { it.tags }.distinct()
     if (allTags.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        // the library filtered by a tag (category): the icon makes the filter the scope of "Optimise" (plan stage 3)
+        val tf = tagFilter
+        if (tf != null && srv.hasJobsV2 && !srv.isGuest) {
+            val label = tagLabel(tf)
+            IconButton({ JobsNav.openOptimise(api.srv.key, JobScope(tag = tf, label = label)) }) {
+                Icon(Icons.Filled.AutoFixHigh, stringResource(R.string.job_optimise))
+            }
+        }
         FilterChip(tagFilter == null, { tagFilter = null }, label = { Text(stringResource(R.string.lib_tag_all)) })
         allTags.forEach { t -> FilterChip(tagFilter == t, { tagFilter = if (tagFilter == t) null else t }, label = { Text(tagLabel(t)) }) }
     }
@@ -742,11 +752,19 @@ private fun DirScreen(
             if (srv.libraryTasks && !srv.isGuest) IconButton({ shrinking = true }) {
                 Icon(Icons.Filled.Compress, stringResource(R.string.lib_shrink_folder))
             }
-            // jobs on this folder as a whole: move it to another library folder (another disk), delete it to the trash
-            if (srv.libraryTasks && !srv.isGuest && path.isNotEmpty()) Box {
+            // jobs on this folder as a whole: Optimise (E2 with the folder as the scope, plan stage 3), move it to another
+            // library folder (another disk), delete it to the trash
+            val jobs = srv.hasJobsV2 && !srv.isGuest
+            val wholeJobs = srv.libraryTasks && !srv.isGuest && path.isNotEmpty()
+            if (jobs || wholeJobs) Box {
                 IconButton({ more = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.lib_folder_more)) }
                 DropdownMenu(more, { more = false }) {
-                    DropdownMenuItem({ Text(stringResource(R.string.lib_move_folder)) }, {
+                    if (jobs) DropdownMenuItem({ Text(stringResource(R.string.s35_optimise_folder)) }, {
+                        more = false
+                        JobsNav.openOptimise(api.srv.key, Scopes.folder(root, path,
+                            path.substringAfterLast('/').ifEmpty { RootNames.get(srv.key, root) ?: "/" }))
+                    }, leadingIcon = { Icon(Icons.Filled.AutoFixHigh, null) })
+                    if (wholeJobs) DropdownMenuItem({ Text(stringResource(R.string.lib_move_folder)) }, {
                         more = false
                         scope.launch {
                             diskOf = withContext(Dispatchers.IO) {
@@ -757,7 +775,7 @@ private fun DirScreen(
                             }
                         }
                     })
-                    DropdownMenuItem({ Text(stringResource(R.string.lib_trash_folder)) }, {
+                    if (wholeJobs) DropdownMenuItem({ Text(stringResource(R.string.lib_trash_folder)) }, {
                         more = false; onPlan(PlanBody.trash(listOf(root to path)))
                     })
                 }
