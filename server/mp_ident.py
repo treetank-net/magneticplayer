@@ -416,7 +416,17 @@ def _guessit(name):
             for k in ("season", "episode", "episode_title"):
                 g.pop(k, None)
             return g
-    return _guessit_raw(name)
+    g = _guessit_raw(name)
+    # a title that is just a number ("300", "1917"): guessit reads a season and an episode (or a year) and no title
+    stem = os.path.splitext(name)[0] if os.path.splitext(name)[1].lower() in VIDEO else name
+    if not g.get("title") and re.fullmatch(r"\d{1,4}", stem.strip()):
+        g["title"] = stem.strip()
+        g["type"] = "movie"
+        for k in ("season", "episode", "episode_title"):
+            g.pop(k, None)
+        if str(g.get("year")) == g["title"]:
+            g.pop("year")
+    return g
 
 
 def _guessit_raw(name):

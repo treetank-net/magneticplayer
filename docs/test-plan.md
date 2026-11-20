@@ -372,7 +372,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] "Tidy up" no longer proposes moving films to the series folder (agent 1.15.3, catalog items re-identified): a
       single video is never matched to a series of the same name, a folder of films with their own years in the names
       ("01. Film (2001)", "02. Film 2 (2002)") isn't a series either, "2004 - Title" names keep the title and the
-      year, and a title match with the right year wins over a closer-sounding one. Checked against the whole jmpc
+      year, a title that is just a number is a film (guessit read it as season 3, episode 0), and a title match with
+      the right year wins over a closer-sounding one. Checked against the whole jmpc
       library offline (316 items, only the intended ones changed); to see in the app's Tidy up preview.
 
 ## Noted wishes
