@@ -196,6 +196,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       Found: no mark on Loki / Breaking Bad although whole episodes are on the phone: they are watching buffers, and
       the mark only counted finished downloads. Fixed after it (a buffer holding the whole video counts, as in the
       episode list). [ ] Check the marks again.
+      [x] Cold start (force-stop, Wi-Fi off, mobile data on), 2026-11-20, Pixel, v1.261120.0826: the catalog (404/41,
+      Continue watching) comes from the sync; the series screen and its episode list open; a whole episode plays
+      from "Na telefonie" and from the episode list ("Cały film na telefonie · działa bez sieci", HEVC hardware,
+      subtitles; picture and sound confirmed by the user).
+      Found: no covers on a cold start (placeholders only): they were in the process memory before, not on disk.
 - [~] Folders: a folder's ⋮ menu has "Move to another library folder…" (the other library folders, the same tag
       first; it shows the move preview and starts a task) and "Delete to the trash…" (the trash preview).
       [x] 2026-11-20, Pixel, v1.261120.0804: the menu on a film folder, the dialog lists the other folders with tags,
@@ -303,3 +308,8 @@ Written down as seen, also when unsure whether it is a problem at all.
   server only; it says nothing new there.
 - 2026-11-20, "All servers" with every server away: the header button says "Obudź" (wake) and wakes only the active
   server; "Wake all" lives in the switcher sheet.
+- 2026-11-20, offline: an episode that is not on the phone opens the player, which sits at 00:00 / 00:00 with a
+  spinning pause button and no message (watched for 28 s). The list doesn't say which episodes are on the phone
+  apart from the buffer bar; tapping one that isn't should say "not on the phone, server unreachable" instead.
+- 2026-11-20, offline: the hero offers "Odtwórz" for a film that is only on the server.
+- 2026-11-20, offline: covers are blank on a cold start (not kept on disk).
