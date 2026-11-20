@@ -681,6 +681,11 @@ on real data, previews only, nothing started or confirmed:
   as incomplete (IMDb is used) and is matched only by IMDb id.
 - [x] A2 question for the owner, answered 2026-11-20: the current folders are a mess, any consistent layout is fine;
   the one exception is the Polish cartoons folder, an exclusive category (cartoons in Polish) that must stay as it is.
+- [ ] Agent 1.17.1, folder specificity (the owner's idea, 2026-11-21): several fitting folders on a disk are chosen
+  like CSS specificity (`bajki` + `pl` beats `bajki` for a cartoon with Polish sound; unknown language or a tie =
+  stays). Checked only on synthetic units in Python. On jmpc the Polish/English cartoon folders still have only
+  `bajki`: they need `pl` / `en` added (owner's OK) before the layout preview can show it. Also: MCP `set_title_tags`
+  (hand tags, e.g. `pl` for a title whose dub has no language tag) not called yet.
 - [ ] "Continue watching": a film's tile played at once instead of opening its page (the 2026-11-19 wish covered only
   series). Now every tile opens the title page; a film watched part-way shows "▶ Resume from 1:02:10" there.
 - [ ] not seen yet: scope entry points (stage 3), pause/resume/reorder of a running task, D2 search buttons with

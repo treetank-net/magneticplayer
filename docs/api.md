@@ -243,6 +243,11 @@ New plan kinds for `POST /api/library/plan`:
   app leaves them unticked). `seeding: "move"` moves a seeding torrent through its client, whole (a torrent holding
   several titles moves only when they all belong in the same folder, else it is skipped with reason "together");
   `skip` leaves seeding torrents alone. A title another queued or running task still works on is skipped ("busy").
+  Agent 1.17.1+: when one disk has several folders whose tag fits, a folder fits a title only if the title has all of
+  its tags, and the most tags win (`bajki` + `pl` beats `bajki` for a cartoon with Polish sound). Known tags: kinds and
+  their synonyms, age groups, `anime`, `muzyka`/`music` and sound languages (`pl`, `en`, `de`, `fr`, `es`, `it`, `ru`,
+  `ja`, `uk`, `cs`; from the facts scan, or set by hand); other folder tags don't count. An unknown sound language or a
+  tie leaves the title in its folder. The item's `why` names the winning tags, e.g. "(bajki + pl)".
   Result: `items` (op `move` with `to_root`, `to_name`, `to_sub`, `torrent`, `titles` = titles in that torrent,
   `unsure`, `why` = the destination, `prune` = empty folders left behind are removed, `same_disk: true`), `levels`,
   `ages`, `confirmed`, `hand_folders`, `stats` (`unsure`, `seeding`, `kept`), `skipped`, `eta`. A task with only
@@ -332,6 +337,7 @@ landed on the server. Video files in the upload folder without an entry (sent ea
 | method and path | description |
 |---|---|
 | `POST /mcp` | MCP over Streamable HTTP (JSON responses only), `Authorization: Bearer <device token>`; without it `401` with `WWW-Authenticate: Bearer resource_metadata=…`. Tools in `server/mp_mcp.py`; a guest device gets only the read tools |
+| tool `set_title_tags` | `{"imdb": "tt…", "tags": ["pl", …]}` (agent 1.17.1+, household member): hand tags of a title, saved as `title_tags` in the config; they count for the folder layout's choice of folder (a language tag stands for the title's sound) |
 | `GET /.well-known/oauth-protected-resource`, `GET /.well-known/oauth-authorization-server` | OAuth metadata (RFC 9728, RFC 8414) |
 | `POST /oauth/register` | dynamic client registration; redirect URIs: loopback `http` or `https` |
 | `GET /oauth/authorize` | page in the browser: files an access request and waits for the phone; then redirects with a one-time code (2 min) |

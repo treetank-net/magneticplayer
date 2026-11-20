@@ -13,6 +13,15 @@ Genre, film series and decade nest under the top folder in the order tapped, for
 as it is, so a library with "Films" and "Series" folders tagged `filmy` and `seriale` is already in order. Every title
 stays on its disk.
 
+Which library folder (agent 1.17+): several folders on a disk can take the same top folder (Kids, Kids PL, Kids EN).
+A folder's tags work like a CSS selector: the folder fits a title only when the title has every one of its tags, and
+the folder with the most fitting tags wins ("bajki" + "pl" beats "bajki" for a cartoon with Polish sound). A title's
+tags: its kind and top folder (the synonyms below), "anime", the languages of its sound tracks from the background
+scan ("pl", "en"…) and the tags set by hand for the title (`title_tags` in the config, e.g. from an AI assistant). A
+tag the title can't be judged on (sound tracks without a language, a file not scanned yet) keeps it where it is when
+its current folder needs that tag; a tie keeps it where it is too. Tags outside this vocabulary ("archiwum",
+"kopia") don't take part.
+
 Folders the owner arranged by hand are the folders that hold two or more titles and aren't one of the layout's own
 names (Films, Series, Kids…): grouping folders and collections. They are detected here and confirmed by the owner once
 (`layout_keep` in the config); until then all of them are left alone.
@@ -44,6 +53,76 @@ DECADE = re.compile(r"\d{4}[–-]\d{4}")  # a decade folder of the layout ("1960
 # folder tags (and English names) that mean the same top folder
 SYNONYMS = {"movie": {"filmy", "films", "movies", "film"}, "series": {"seriale", "series", "tv"},
             "kids": {"bajki", "kids", "children"}, "teens": {"mlodziez", "młodzież", "teens", "youth"}}
+
+
+# a folder tag that is a sound language (ISO 639-1) and the ISO 639-2 codes ffprobe reports for it
+LANGS = {"pl": {"pol", "pl"}, "en": {"eng", "en"}, "de": {"ger", "deu", "de"}, "fr": {"fre", "fra", "fr"},
+         "es": {"spa", "es"}, "it": {"ita", "it"}, "ru": {"rus", "ru"}, "ja": {"jpn", "ja"}, "uk": {"ukr", "uk"},
+         "cs": {"cze", "ces", "cs"}}
+_LANG_OF = {c: k for k, v in LANGS.items() for c in v}
+OTHER_TAGS = {"anime", "muzyka", "music"}
+
+
+def vocabulary():
+    """Every folder tag that takes part in choosing a folder (the rest are notes for the owner)."""
+    out = set(LANGS) | OTHER_TAGS
+    for v in SYNONYMS.values():
+        out |= v
+    return out
+
+
+def sound_langs(facts, root_id, rel, is_dir, index=None):
+    """The sound languages ("pl", "en") of a title from the background scan's facts, or None when they can't be told
+    (not scanned yet, or any track without a language)."""
+    keys = (index or {}).get((root_id, rel)) if is_dir else [f"{root_id}/{rel}"]
+    langs, unknown = set(), False
+    for k in keys or []:
+        info = ((facts or {}).get(k) or {}).get("info")
+        if not info:
+            unknown = True
+            continue
+        for a in info.get("audio") or []:
+            code = (a.get("lang") or "").lower()
+            if code in _LANG_OF:
+                langs.add(_LANG_OF[code])
+            elif code in ("", "und", "unk"):
+                unknown = True
+    if not keys or unknown:
+        return None  # a track without a language could be any (a Polish dub tagged "und"): no guessing
+    return langs
+
+
+def facts_index(facts):
+    """{(root id, folder): [fact keys of the videos under it]} for sound_langs on folders."""
+    out = {}
+    for k in facts or {}:
+        rid, _, rel = k.partition("/")
+        parts = rel.split("/")[:-1]
+        for n in range(1, len(parts) + 1):
+            out.setdefault((rid, "/".join(parts[:n])), []).append(k)
+    return out
+
+
+def fit(root, u):
+    """How a library folder fits a title by its tags: None (it doesn't), or (fitting tags, undecided tags)."""
+    voc = vocabulary()
+    have = set(u.get("facts") or ())
+    ok, undecided = [], []
+    for t in {x.lower() for x in root.get("tags") or []} & voc:
+        if t in LANGS and t in have:
+            ok.append(t)  # set by hand for the title
+        elif t in LANGS:
+            if u.get("audio") is None:
+                undecided.append(t)
+            elif t in u["audio"]:
+                ok.append(t)
+            else:
+                return None
+        elif t in have:
+            ok.append(t)
+        else:
+            return None
+    return sorted(ok), sorted(undecided)
 
 
 def names():
@@ -81,9 +160,12 @@ def norm_levels(raw):
     return out
 
 
-def units(m, roots_by_id, catalog=None, lang="en"):
-    """The titles in the scope of matcher `m` (whose catalog snapshot it holds), as dicts for layout and balance."""
+def units(m, roots_by_id, catalog=None, lang="en", facts=None, title_tags=None):
+    """The titles in the scope of matcher `m` (whose catalog snapshot it holds), as dicts for layout and balance.
+    `facts`: the background scan (sound languages); `title_tags`: {imdb id: [tags]} set by hand."""
     out, own = [], own_names()
+    fidx = facts_index(facts)
+    title_tags = title_tags or {}
     per_dir = {}  # (root id, folder) → titles the catalog sees directly in it
     for it in m.items.values():
         if it.get("rel") and "/" in it["rel"]:
@@ -118,8 +200,23 @@ def units(m, roots_by_id, catalog=None, lang="en"):
                     "full": os.path.join(r["path"], rel), "dir": is_dir, "size": it.get("size") or 0,
                     "kind": it.get("kind") or "movie", "imdb": it.get("imdb"), "title": it.get("title"),
                     "year": it.get("year"), "genres": it.get("genres") or [], "category": cat,
-                    "age": mp_scope.age_group(m.age_of(it)), "collection": coll, "tags": tags})
+                    "age": mp_scope.age_group(m.age_of(it)), "collection": coll, "tags": tags,
+                    "audio": sound_langs(facts, r["id"], rel, is_dir, fidx),
+                    "hand_tags": [str(t).lower() for t in title_tags.get(it.get("imdb") or "", [])]})
     return out
+
+
+def title_facts(u, top, ages):
+    """The tags a title has for fit(): its kind, its top folder's synonyms, anime, and the ones set by hand."""
+    f = set(SYNONYMS["series" if u["kind"] == "series" else "movie"])
+    if top:
+        f |= SYNONYMS.get(top[0], set()) | ({top[0][4:]} if top[0].startswith("cat:") else set())
+    if u.get("age") is not None and ages.get(str(u["age"])) in ("kids", "teens"):
+        f |= SYNONYMS[ages[str(u["age"])]]
+    if (u.get("category") or "").lower() == "anime":
+        f.add("anime")
+    f |= set(u.get("hand_tags") or [])
+    return f
 
 
 def _clean(name):
@@ -151,15 +248,34 @@ def components(u, levels, ages, nm):
     return top, [s for s in subs if s]
 
 
-def root_for(top, dev, roots_on_dev, own_root):
-    """The library folder on the same disk that is the top folder itself (its tag or name), or None."""
+def root_for(top, dev, roots_on_dev, own_root, u=None):
+    """(library folder, why) on the same disk that is the top folder itself (its tag or name), or (None, None).
+    Among several, the most specific fitting one (see the module docstring); undecided or a tie: the current one."""
     key, name = top
     syn = SYNONYMS.get(key, set()) | ({key[4:]} if key.startswith("cat:") else set())
     cands = [r for r in roots_on_dev.get(dev, []) if syn & {t.lower() for t in r.get("tags") or []}
              or (r.get("name") or "").lower() == name.lower()]
     if not cands:
-        return None
-    return next((r for r in cands if r["id"] == own_root["id"]), cands[0])
+        return None, None
+    if u is None:
+        return next((r for r in cands if r["id"] == own_root["id"]), cands[0]), None
+    fits = [(r, fit(r, u)) for r in cands]
+    fits = [(r, f) for r, f in fits if f is not None]
+    if not fits:
+        return None, None
+    own = next(((r, f) for r, f in fits if r["id"] == own_root["id"]), None)
+    if own and own[1][1]:
+        return own[0], None  # its own folder needs a tag the title can't be judged on: it stays
+    best = max(len(f[0]) for _, f in fits)
+    top_fits = [(r, f) for r, f in fits if len(f[0]) == best and not f[1]]
+    if not top_fits:
+        return (own[0], None) if own else (None, None)
+    if own and own in top_fits:
+        return own[0], None
+    if len(top_fits) > 1:
+        return (own[0], None) if own else (top_fits[0][0], None)
+    r, f = top_fits[0]
+    return r, " + ".join(f[0]) if len(f[0]) > 1 else None
 
 
 def hand_folders(us, roots_by_id):
@@ -255,7 +371,8 @@ def layout(us, levels, ages, keep, roots, nm, keep_unsure=True, keep_seeding=Fal
         top, subs = components(u, levels, ages, nm)
         own = by_id[u["root_id"]]
         dev = devs.get(u["root_id"])
-        dr = root_for(top, dev, roots_on_dev, own) if top else None
+        dr, why = root_for(top, dev, roots_on_dev, own, dict(u, facts=title_facts(u, top, ages))) if top else (None, None)
+        u["why_root"] = why
         if top and dr is None:
             dr, sub = own, [top[1]] + subs
         else:

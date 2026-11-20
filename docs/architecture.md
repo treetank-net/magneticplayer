@@ -358,7 +358,11 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    (`busy`, skipped). `layout` turns the chosen levels (kind, age group via an editable age → Kids/Teens/Films mapping,
    category, genre, film series, decade) into a destination on the same disk: the library folder whose tag fits the
    kind, then subfolders; folders the owner arranged by hand (two or more titles under a name that isn't the layout's)
-   are detected and stay as they are once confirmed (`layout_keep`). Its moves are same-disk renames, so the task is
+   are detected and stay as they are once confirmed (`layout_keep`). Several folders with the kind's tag on one disk
+   are picked like CSS specificity (1.17.1+): a folder fits only when the title has every one of its tags (`bajki` +
+   `pl` = a cartoon with Polish sound), and the fit with the most tags wins. Title tags come from the kind, the age
+   group, the category, sound languages from the facts scan (a track without a language makes them unknown) and tags
+   set by hand (`title_tags`, MCP `set_title_tags`); an unknown language or a tie keeps the title where it is. Its moves are same-disk renames, so the task is
    **quick**: it runs between two files of a running encode instead of waiting behind it, and removes the folders it
    empties. The catalog looks into the layout's own folders (`Films/`, `Kids/`, a decade) and into decade folders, so
    a title keeps being a title after it moved there. `balance` moves whole titles between disks into the folder with

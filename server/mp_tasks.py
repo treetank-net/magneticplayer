@@ -2173,7 +2173,7 @@ class Tasks:
         roots = [dict(r, writable=os.access(r["path"], os.W_OK)) for r in self._job_roots()]
         by_id = {r["id"]: r for r in roots}
         devs = {r["id"]: _dev(r["path"]) for r in roots}
-        us = mp_arrange.units(m, by_id, self.catalog, mp_i18n.lang())
+        us = mp_arrange.units(m, by_id, self.catalog, mp_i18n.lang(), self.facts, self.cfg.get("title_tags"))
         # files a waiting or running task still has to do (a paused encode among them) don't move under it
         busy = set()
         with self.lock:
@@ -2203,6 +2203,22 @@ class Tasks:
         for h in hand:
             h["keep"] = (h["root_id"], h["path"]) in kept
         return moves, skipped, stats, hand, confirmed
+
+    def set_title_tags(self, imdb, tags):
+        """Tags set by hand for a title (`title_tags` in the config, e.g. "pl" when its sound tracks carry no language):
+        the folder layout takes them as the title's own (mp_arrange.fit). An empty list removes them."""
+        if not re.fullmatch(r"tt\d+", imdb or ""):
+            raise TaskError(T("bad IMDb id", "zły numer IMDb"))
+        clean = sorted({str(t).strip().lower() for t in tags or [] if re.fullmatch(r"[\w-]{1,24}", str(t).strip())})
+        with self.lock:
+            tt = dict(self.cfg.get("title_tags") or {})
+            if clean:
+                tt[imdb] = clean
+            else:
+                tt.pop(imdb, None)
+            self.cfg["title_tags"] = tt
+        self.save_cfg()
+        return {"imdb": imdb, "tags": clean}
 
     @staticmethod
     def _unit_item(u, dr, sub, **extra):
@@ -2248,7 +2264,8 @@ class Tasks:
             items = []
             for u, dr, sub in moves:
                 items.append(self._unit_item(u, dr, sub, prune=True, same_disk=True, unsure=bool(u.get("unsure")),
-                                             why="/".join(x for x in (dr["name"], sub) if x)))
+                                             why="/".join(x for x in (dr["name"], sub) if x)
+                                             + (f" ({u['why_root']})" if u.get("why_root") else "")))
             p["progress"] = 100
             return {"kind": "layout", **_title("Folder layout", "Układ folderów"), "items": items,
                     "bytes": sum(i["size"] for i in items), "levels": levels, "ages": ages, "confirmed": confirmed,

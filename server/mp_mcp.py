@@ -60,6 +60,11 @@ TOOLS = [
      "('all', 'owners' or device ids), excluded subfolders. Ask the user before changing visibility.",
      _schema({"root": S["root"], "name": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}},
               "visible": {}, "exclude": {"type": "array", "items": {"type": "string"}}}, ["root"])),
+    ("set_title_tags", True, "Set tags on a title by its IMDb id, used by the folder layout like the title's own: e.g. "
+     "'pl' or 'en' (its sound language when the file's tracks carry none: check with file_info), 'anime', 'bajki'. "
+     "A library folder fits a title when the title has all of the folder's tags; the most specific folder wins. "
+     "An empty list removes them. Moves nothing.",
+     _schema({"imdb": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, ["imdb", "tags"])),
     ("set_profile", True, "Set the storage profile of a folder, subfolder or file: original (never touch), good "
      "(HEVC up to 1080p), compact (HEVC up to 720p), tiny (HEVC up to 480p). Nothing is re-encoded until a "
      "plan_shrink preview is confirmed.",
@@ -303,6 +308,9 @@ poll();
     def t_set_folder(self, root, **b):
         self.app.library.update_root(int(root), {k: v for k, v in b.items() if k in ("name", "tags", "visible", "exclude")})
         return {"ok": True}
+
+    def t_set_title_tags(self, imdb, tags):
+        return self.app.tasks.set_title_tags(imdb, tags)
 
     def t_set_profile(self, root, profile, path=""):
         self.app.tasks.set_profile(int(root), path, profile)
