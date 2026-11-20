@@ -689,7 +689,7 @@ private fun DirScreen(
             },
             confirmButton = {}, dismissButton = { TextButton({ moving = null }) { Text(stringResource(android.R.string.cancel)) } })
     }
-    if (subsGet) SubsGetDialog(api, onDismiss = { subsGet = false }) { langs -> subsGet = false; onPlan(PlanBody.subsGet(langs, root, path)) }
+    if (subsGet) SubsGetDialog(api, preview = true, onDismiss = { subsGet = false }) { langs -> subsGet = false; onPlan(PlanBody.subsGet(langs, root, path)) }
     var dir by remember(root, path) { mutableStateOf<LibDir?>(null) }
     LaunchedEffect(root, path) {
         dir = try { withContext(Dispatchers.IO) { api.browse(root, path) } } catch (e: ApiException) {

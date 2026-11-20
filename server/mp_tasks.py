@@ -577,9 +577,14 @@ class Tasks:
                 chosen.append(pick)
                 freed += pick["size"]
             chosen.sort(key=lambda i: (i["root_name"], i["name"].lower()))
+            warnings = []
+            if not want:  # "up to 15% free" on a disk that has more: an empty preview needs a reason
+                pct = round(100 * u.free / max(u.total, 1))
+                warnings.append(T(f"This disk is already {pct}% free, more than 15%: choose how many GB to free instead.",
+                                  f"Ten dysk ma już {pct}% wolnego, więcej niż 15%: wybierz raczej, ile GB zwolnić."))
             return {"kind": "move", **_title(f"Free up {roots[root_index]['name']}", f"Zwolnij {roots[root_index]['name']}"),
                     "need": want, "free_before": u.free, "free_after": u.free + freed, "total": u.total,
-                    "items": chosen, "bytes": freed, "skipped": skipped[:50]}
+                    "items": chosen, "bytes": freed, "skipped": skipped[:50], "warnings": warnings}
         return self._plan("move", run)
 
     def plan_move(self, items):

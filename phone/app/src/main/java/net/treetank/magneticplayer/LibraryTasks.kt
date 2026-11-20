@@ -274,7 +274,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
     var confirmEmpty by remember { mutableStateOf(false) }
     var addOn by remember { mutableStateOf<Disk?>(null) }
     var subsGet by remember { mutableStateOf(false) }
-    if (subsGet) SubsGetDialog(api, onDismiss = { subsGet = false }) { langs -> subsGet = false; onPlan(PlanBody.subsGet(langs)) }
+    if (subsGet) SubsGetDialog(api, preview = true, onDismiss = { subsGet = false }) { langs -> subsGet = false; onPlan(PlanBody.subsGet(langs)) }
     LaunchedEffect(reload) {
         try {
             disks = withContext(Dispatchers.IO) { api.disks() }

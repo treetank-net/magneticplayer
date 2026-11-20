@@ -751,9 +751,10 @@ private fun SubRow(r: SubResult, busy: String?, have: Boolean, status: String? =
 /**
  * "Download missing subtitles": which languages (the user's ones, the one picked last ticked). The agent then finds the
  * videos without them (no file, no track in the video) in the scope and downloads the best fitting ones as a task.
+ * `preview`: the button opens the plan's preview (library screens) instead of starting at once (a film's menu).
  */
 @Composable
-fun SubsGetDialog(api: Api, onDismiss: () -> Unit, onGo: (String) -> Unit) {
+fun SubsGetDialog(api: Api, preview: Boolean = false, onDismiss: () -> Unit, onGo: (String) -> Unit) {
     val mine = remember {
         (listOfNotNull(api.s.subChoice?.takeIf { it != "off" }) + api.s.subLanguages.split(','))
             .map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
@@ -777,7 +778,7 @@ fun SubsGetDialog(api: Api, onDismiss: () -> Unit, onGo: (String) -> Unit) {
         },
         confirmButton = {
             TextButton({ onGo(mine.filter { it in picked }.joinToString(",")) }, enabled = picked.isNotEmpty()) {
-                Text(stringResource(R.string.subs_get_go))
+                Text(stringResource(if (preview) R.string.lib_preview else R.string.subs_get_go))  // a plan first: nothing downloads yet
             }
         },
         dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.media_cancel)) } })
