@@ -261,7 +261,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
     LaunchedEffect(Unit) {
         var finished = -1
         while (true) {
-            runCatching { withContext(Dispatchers.IO) { api.tasks() } }.getOrNull()?.let { list ->
+            runCatching { withContext(Dispatchers.IO) { api.tasks(brief = true) } }.getOrNull()?.let { list ->
                 tasks = list
                 val n = list.count { it.state == "done" || it.state == "cancelled" }
                 if (finished >= 0 && n != finished) reload++
@@ -274,7 +274,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
         // free space changes behind the app's back too (downloads, other phones): read it again on demand
         ScreenHeader(stringResource(R.string.lib_disks_title), onBack) {
             reload++
-            scope.launch { runCatching { withContext(Dispatchers.IO) { api.tasks() } }.getOrNull()?.let { tasks = it } }
+            scope.launch { runCatching { withContext(Dispatchers.IO) { api.tasks(brief = true) } }.getOrNull()?.let { tasks = it } }
         }
         val d = disks ?: return Hint(stringResource(R.string.media_loading))
         LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -311,7 +311,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
                     modifier = Modifier.padding(top = 8.dp))
             }
             items(tasks, key = { "task/${it.id}" }) { t ->
-                TaskCard(t, onRemove = if (api.srv.hasTaskRemove) ({
+                TaskCard(t, loadItems = { runCatching { withContext(Dispatchers.IO) { api.taskGet(t.id).items } }.getOrNull() }, onRemove = if (api.srv.hasTaskRemove) ({
                     scope.launch {
                         try {
                             withContext(Dispatchers.IO) { api.taskRemove(t.id) }
@@ -322,7 +322,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
                     scope.launch {
                         try {
                             withContext(Dispatchers.IO) { api.taskCancel(t.id) }
-                            tasks = withContext(Dispatchers.IO) { runCatching { api.tasks() }.getOrDefault(tasks) }
+                            tasks = withContext(Dispatchers.IO) { runCatching { api.tasks(brief = true) }.getOrDefault(tasks) }
                         } catch (e: ApiException) { snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)) }
                     }
                 }
@@ -464,8 +464,13 @@ private fun itemState(s: String) = when (s) {
 }
 
 @Composable
-private fun TaskCard(t: LibTask, onRemove: (() -> Unit)? = null, onCancel: () -> Unit) {
+private fun TaskCard(t: LibTask, loadItems: suspend () -> List<TaskItem>?, onRemove: (() -> Unit)? = null, onCancel: () -> Unit) {
     var open by remember { mutableStateOf(false) }
+    // the list comes without items (brief): an opened card reads its own, again only when the counts change
+    var items by remember(t.id) { mutableStateOf(t.items) }
+    LaunchedEffect(open, t.state, t.itemsDone, t.errors) {
+        if (open && t.items.isEmpty() && t.itemCount > 0) loadItems()?.let { items = it }
+    }
     // the agent finishes the current item before the task becomes "cancelled": show that the tap was taken
     var cancelling by remember(t.id) { mutableStateOf(false) }
     val active = t.state == "queued" || t.state == "running"
@@ -497,12 +502,12 @@ private fun TaskCard(t: LibTask, onRemove: (() -> Unit)? = null, onCancel: () ->
                 style = MaterialTheme.typography.bodySmall)
             if (t.errors > 0) Text(pluralStringResource(R.plurals.lib_errors, t.errors, t.errors), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error)
-            if (t.items.isNotEmpty()) {
+            if (t.itemCount > 0) {
                 Row(Modifier.clickable { open = !open }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, Modifier.size(18.dp))
-                    Text(pluralStringResource(R.plurals.lib_items, t.items.size, t.items.size), style = MaterialTheme.typography.labelMedium)
+                    Text(pluralStringResource(R.plurals.lib_items, t.itemCount, t.itemCount), style = MaterialTheme.typography.labelMedium)
                 }
-                if (open) t.items.forEach { i ->
+                if (open) (if (t.items.isNotEmpty()) t.items else items).forEach { i ->
                     Column(Modifier.padding(start = 18.dp, bottom = 4.dp)) {
                         Text(i.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         val extra = buildList {

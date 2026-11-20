@@ -169,6 +169,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       service (the Remote's session, downloads) kept the process alive and the loop pinged every 5 s in the background.
       Back after more than 30 s the header and Library say "Connecting…" until the first answer, not "asleep" /
       "unreachable" from the old state.
+- [ ] Task polling (agent 1.14.1): found 2026-11-20 on jmpc, the Pixel on an older build sent ~60 kB/s with the screen
+      locked: `/api/tasks` every 15 s for the "task finished" notification, 459 kB each (one finished task with 644
+      files). Now the ping carries the latest finish time and the list is read (without items, `?brief=1`) only when
+      it changes; the disks screen reads the brief list every 2 s and an opened task card fetches its own items.
+      Check: the notification still comes when a task finishes; the items of a task show when opened.
 - [ ] Library offline, continued: a series' episode list opened once online opens offline too (kept per server);
       covers of titles with a complete copy on the phone get a "downloaded" mark (a series: any episode).
 - [ ] Folders: a folder's ⋮ menu has "Move to another library folder…" (the other library folders, the same tag

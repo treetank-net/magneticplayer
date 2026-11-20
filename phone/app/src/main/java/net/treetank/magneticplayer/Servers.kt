@@ -76,6 +76,8 @@ data class Server(
     val hasPlayerAudio get() = features?.optBoolean("player_audio", false) ?: false
     /** POST /api/tasks/<id>/remove (agent 1.12.1+) */
     val hasTaskRemove get() = features?.optBoolean("task_remove", false) ?: false
+    /** agent 1.14.1+: `/api/tasks?brief=1` and the latest finish time in `/api/ping` */
+    val hasTasksBrief get() = features?.optBoolean("tasks_brief", false) ?: false
     /** library plan "subs_get": missing subtitles downloaded for the library, a folder or a film (agent 1.12.1+) */
     val hasSubsGetTask get() = features?.optBoolean("subs_get_task", false) ?: false
     /** How many search engines the user set on the server (`/api/config/search`); 0 = no "Search" button. */

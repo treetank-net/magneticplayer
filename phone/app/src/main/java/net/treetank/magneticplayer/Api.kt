@@ -259,6 +259,8 @@ data class LibTask(
     val encoder: String? = null, val note: String? = null,
     /** agent 1.9+, subtitle tasks: files fitted to their film, files that don't fit it */
     val fixed: Int = 0, val unfit: Int = 0,
+    /** item counts; with `?brief=1` (agent 1.14.1+) [items] is empty and only these say how many there are */
+    val itemCount: Int = items.size, val itemsDone: Int = items.count { it.state == "done" },
 )
 /** An encoder for shrinking (agent 1.7+); label and note come localized from the agent. */
 data class ShrinkEncoder(val id: String, val label: String, val note: String, val bframes: Boolean)
@@ -470,6 +472,7 @@ class Api(val s: Settings, srv: Server) {
             val id = j.optString("id")
             wrongServer = srv.uid != null && id.isNotEmpty() && id != srv.uid
             if (!wrongServer) j.optString("version").takeIf { it.isNotEmpty() }?.let { pingVersion = it }
+            if (!wrongServer) pingTasks = j.optDouble("tasks").takeIf { !it.isNaN() }
             j.optBoolean("ok") && !wrongServer
         } catch (e: Exception) {
             false
@@ -479,6 +482,8 @@ class Api(val s: Settings, srv: Server) {
     }
 
     @Volatile var wrongServer = false
+    /** agent 1.14.1+: when its latest library task finished (from the last ping); null from an older agent */
+    @Volatile var pingTasks: Double? = null
 
     fun infoRaw(): JSONObject = JSONObject(call("GET", "/api/info"))
 
@@ -746,10 +751,12 @@ class Api(val s: Settings, srv: Server) {
     /** Runs the picked items of a plan as a background task. */
     fun taskStart(planId: String, pick: List<Int>): LibTask =
         task(JSONObject(call("POST", "/api/tasks", JSONObject().put("plan", planId).put("pick", JSONArray(pick)), 20000)))
-    fun tasks(): List<LibTask> {
-        val a = JSONArray(call("GET", "/api/tasks"))
+    /** [brief]: without the items, only their counts (when the agent can, `Server.hasTasksBrief`). */
+    fun tasks(brief: Boolean = false): List<LibTask> {
+        val a = JSONArray(call("GET", if (brief && srv.hasTasksBrief) "/api/tasks?brief=1" else "/api/tasks"))
         return List(a.length()) { task(a.getJSONObject(it)) }
     }
+    fun taskGet(id: String): LibTask = task(JSONObject(call("GET", "/api/tasks/$id")))
     fun taskCancel(id: String) { call("POST", "/api/tasks/$id/cancel", JSONObject()) }
     /** A finished or cancelled task off the list (agent 1.12.1+, `Server.hasTaskRemove`). */
     fun taskRemove(id: String) { call("POST", "/api/tasks/$id/remove", JSONObject()) }
@@ -763,7 +770,9 @@ class Api(val s: Settings, srv: Server) {
                 val x = arr.getJSONObject(i)
                 TaskItem(x.optString("name").ifEmpty { x.optString("path").substringAfterLast('/') }, x.optString("path"),
                     x.optLong("size"), x.optString("state"), x.optStr("error"), x.optLong("saved"), x.optStr("note"))
-            }, o.optStr("encoder"), o.optStr("note"), o.optInt("fixed"), o.optInt("unfit"))
+            }, o.optStr("encoder"), o.optStr("note"), o.optInt("fixed"), o.optInt("unfit"),
+            o.optInt("item_count", arr.length()), o.optInt("items_done", -1).takeIf { it >= 0 }
+                ?: (0 until arr.length()).count { arr.getJSONObject(it).optString("state") == "done" })
     }
 
     /** Saves a storage profile for a folder (`path` "") or a subfolder. */

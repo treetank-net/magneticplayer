@@ -210,9 +210,13 @@ class Tasks:
         """Somebody really reads a video now (not just a phone probing its own copy)."""
         return any(w["kind"] != "probe" for w in self.watching())
 
-    def public(self, t):
+    def public(self, t, brief=False):
+        """A task for the API; `brief` leaves the items out (only their counts): a finished task with hundreds of
+        files is ~400 kB, and phones read the list often."""
         out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc", "titles")} | {
-            "items": [{k: v for k, v in i.items() if not k.startswith("_")} for i in t["items"]]}
+            "item_count": len(t["items"]), "items_done": sum(1 for i in t["items"] if i.get("state") == "done")}
+        if not brief:
+            out["items"] = [{k: v for k, v in i.items() if not k.startswith("_")} for i in t["items"]]
         if t.get("titles"):
             out["title"] = t["titles"].get(mp_i18n.lang()) or t["title"]
         if t.get("enc"):
@@ -291,9 +295,14 @@ class Tasks:
         sp[enc] = round(v if not sp.get(enc) else 0.7 * sp[enc] + 0.3 * v)
         self.save_cfg()
 
-    def list(self):
+    def list(self, brief=False):
         with self.lock:
-            return [self.public(t) for t in reversed(self.items)]
+            return [self.public(t, brief) for t in reversed(self.items)]
+
+    def last_finished(self):
+        """When the latest task finished (epoch s, 0 = none): in /api/ping, so phones read the list only after it changes."""
+        with self.lock:
+            return max((t.get("finished") or 0 for t in self.items), default=0)
 
     def get(self, tid):
         with self.lock:

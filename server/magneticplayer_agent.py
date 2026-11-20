@@ -54,7 +54,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.14.0"
+VERSION = "1.14.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -1170,6 +1170,7 @@ class App:
                 "library_covers": True,  # GET /api/library/cover (agent 1.6+)
                 # /api/catalog, /api/wishlist, /api/uploads, /api/config/search (agent 1.8+)
                 "catalog": True,
+                "tasks_brief": True,  # GET /api/tasks?brief=1, "tasks" in /api/ping (agent 1.14.1+)
                 "library_moves": True,  # GET /api/library/moves?since= (agent 1.14+)
                 "convert_audio": True,  # POST /api/media/convert takes "audio" (agent 1.14+)
                 "library_modernize": True,  # POST /api/library/plan {"kind": "modernize"} (agent 1.8.2+)
@@ -1516,7 +1517,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if p == "/api/ping":
                 # id: the app checks that the same server is at a known address before sending it the token
-                return self.send_json({"ok": True, "app": "magneticplayer", "version": VERSION, "id": self.app.cfg["id"]})
+                # tasks: when the latest library task finished, so a phone asks for the list only when it changes
+                return self.send_json({"ok": True, "app": "magneticplayer", "version": VERSION, "id": self.app.cfg["id"],
+                                       "tasks": self.app.tasks.last_finished()})
             if p in ("", "/index.html") and method in ("GET", "HEAD"):
                 # web client (laptop/tablet without the app); a static file, API data requires a token anyway
                 return self.send_static(os.path.join(WEB_DIR, "index.html"), "text/html; charset=utf-8", method == "HEAD")
@@ -1875,7 +1878,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/library/trash/empty" and method == "POST":
                 return self.send_json({"freed": a.tasks.purge_trash(everything=True)})
             if p == "/api/tasks" and method == "GET":
-                return self.send_json(a.tasks.list())
+                return self.send_json(a.tasks.list(brief=q.get("brief", [""])[0] == "1"))
             if p == "/api/tasks" and method == "POST":
                 b = self.body()
                 pick = b.get("pick")

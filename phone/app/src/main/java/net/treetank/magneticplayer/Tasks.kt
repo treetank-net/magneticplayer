@@ -24,9 +24,14 @@ object Tasks {
     fun check(ctx: Context, api: Api) {
         val srv = Servers.get(ctx, api.srv.key) ?: api.srv
         if (srv.isGuest || !srv.libraryTasks) return
-        val list = runCatching { api.tasks() }.getOrNull() ?: return
         val key = "tasks_seen:${srv.key}"
         val p = prefs(ctx)
+        // agent 1.14.1+ says in the ping when its latest task finished: nothing new = no request at all
+        api.pingTasks?.let { stamp ->
+            if (!p.contains(key)) { p.edit().putString(key, stamp.toString()).apply(); return }
+            if (stamp <= (p.getString(key, null)?.toDoubleOrNull() ?: 0.0)) return
+        }
+        val list = runCatching { api.tasks(brief = true) }.getOrNull() ?: return
         val latest = list.mapNotNull { it.finished }.maxOrNull() ?: 0.0
         if (!p.contains(key)) {
             // first check on this server: tasks finished so far do not notify (the agent's clock, not the phone's)
@@ -47,7 +52,7 @@ object Tasks {
     fun summary(ctx: Context, t: LibTask): String {
         val r = ctx.resources
         if (t.state == "cancelled") return ctx.getString(R.string.lib_notif_cancelled)
-        val n = t.items.count { it.state == "done" }
+        val n = t.itemsDone
         val main = when (t.kind) {
             "shrink" -> r.getQuantityString(R.plurals.lib_notif_shrank, n, n, humanBytes(t.saved))
             "trash" -> r.getQuantityString(R.plurals.lib_notif_deleted, n, n)
