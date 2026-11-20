@@ -751,6 +751,7 @@ class Api(val s: Settings, srv: Server) {
     /** Runs the picked items of a plan as a background task. */
     fun taskStart(planId: String, pick: List<Int>): LibTask =
         task(JSONObject(call("POST", "/api/tasks", JSONObject().put("plan", planId).put("pick", JSONArray(pick)), 20000)))
+            .also { TaskWatch.watch(s.ctx, srv.key, it.id) }  // started here: this phone follows it
     /** [brief]: without the items, only their counts (when the agent can, `Server.hasTasksBrief`). */
     fun tasks(brief: Boolean = false): List<LibTask> {
         val a = JSONArray(call("GET", if (brief && srv.hasTasksBrief) "/api/tasks?brief=1" else "/api/tasks"))

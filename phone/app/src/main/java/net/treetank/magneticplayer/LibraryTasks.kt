@@ -49,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -311,7 +312,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
                     modifier = Modifier.padding(top = 8.dp))
             }
             items(tasks, key = { "task/${it.id}" }) { t ->
-                TaskCard(t, loadItems = { runCatching { withContext(Dispatchers.IO) { api.taskGet(t.id).items } }.getOrNull() }, onRemove = if (api.srv.hasTaskRemove) ({
+                TaskCard(t, api.srv.key, loadItems = { runCatching { withContext(Dispatchers.IO) { api.taskGet(t.id).items } }.getOrNull() }, onRemove = if (api.srv.hasTaskRemove) ({
                     scope.launch {
                         try {
                             withContext(Dispatchers.IO) { api.taskRemove(t.id) }
@@ -464,7 +465,7 @@ private fun itemState(s: String) = when (s) {
 }
 
 @Composable
-private fun TaskCard(t: LibTask, loadItems: suspend () -> List<TaskItem>?, onRemove: (() -> Unit)? = null, onCancel: () -> Unit) {
+private fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<TaskItem>?, onRemove: (() -> Unit)? = null, onCancel: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     // the list comes without items (brief): an opened card reads its own, again only when the counts change
     var items by remember(t.id) { mutableStateOf(t.items) }
@@ -484,7 +485,16 @@ private fun TaskCard(t: LibTask, loadItems: suspend () -> List<TaskItem>?, onRem
                     t.encoder?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-                if (active && !cancelling) TextButton({ cancelling = true; onCancel() }) { Text(stringResource(R.string.media_cancel)) }
+                if (active && !cancelling) {
+                    // a task started elsewhere (another phone, the web page): follow it here too, with the notification
+                    val ctx = LocalContext.current
+                    val wv by TaskWatch.version.collectAsState()
+                    val watched = remember(wv, t.id) { TaskWatch.isWatched(ctx, srvKey, t.id) }
+                    TextButton({ if (watched) TaskWatch.unwatch(ctx, srvKey, t.id) else TaskWatch.watch(ctx, srvKey, t.id) }) {
+                        Text(stringResource(if (watched) R.string.lib_task_unwatch else R.string.lib_task_watch))
+                    }
+                    TextButton({ cancelling = true; onCancel() }) { Text(stringResource(R.string.media_cancel)) }
+                }
                 if (!active && onRemove != null) TextButton(onRemove) { Text(stringResource(R.string.lib_task_remove)) }
             }
             if (active) {

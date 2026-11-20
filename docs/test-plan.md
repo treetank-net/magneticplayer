@@ -150,7 +150,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       with the server off (or the phone away) Library still opens on Discover/Browse with a bar "Server unreachable ·
       the catalog as synced <when>", a downloaded film plays from it; Folders and the disks say the server is
       unreachable. Back online the bar goes and `?since=` refreshes it (an unchanged catalog: one small answer).
-      Not yet: series episode lists offline, downloaded marks on covers, sending offline positions back.
+      Episode lists and downloaded marks: the item below. Positions need no sending back: they live only on the
+      phone (watched offline = already saved where the catalog reads them).
       [x] 2026-11-20, emulator, v1.261119.2356: airplane mode, app restarted: Library opens on Discover with the bar
       ("synced 0 minutes ago"), drawn covers, "Continue watching" plays the buffered MKV episode offline.
 
@@ -174,6 +175,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       files). Now the ping carries the latest finish time and the list is read (without items, `?brief=1`) only when
       it changes; the disks screen reads the brief list every 2 s and an opened task card fetches its own items.
       Check: the notification still comes when a task finishes; the items of a task show when opened.
+- [ ] Following tasks (the user's wish, 2026-11-20): a task started on this phone shows an ongoing progress
+      notification ("45% · <item>", the bar), updated once a minute with the app in the background and every 15 s on
+      screen; when it ends, the "finished" notification replaces it. Another phone gets nothing unless it taps
+      "Monitor" on the task card (then the same notification; "Stop monitoring" ends it). Server asleep: "Server
+      unreachable, trying again every minute", gives up after about an hour.
 - [ ] Library offline, continued: a series' episode list opened once online opens offline too (kept per server);
       covers of titles with a complete copy on the phone get a "downloaded" mark (a series: any episode).
 - [ ] Folders: a folder's ⋮ menu has "Move to another library folder…" (the other library folders, the same tag

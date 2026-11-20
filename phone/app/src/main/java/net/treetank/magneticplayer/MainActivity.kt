@@ -209,6 +209,17 @@ class MainActivity : ComponentActivity() {
         appResumes.intValue++
     }
 
+    override fun onStart() {
+        super.onStart()
+        TaskWatch.appVisible = true
+        TaskWatch.ensure(this)  // a followed task still running: its progress notification (the service may have been stopped)
+    }
+
+    override fun onStop() {
+        TaskWatch.appVisible = false
+        super.onStop()
+    }
+
     /** On the Remote tab the phone's volume buttons control the mpv volume on the selected screen. */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         val vol = keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN

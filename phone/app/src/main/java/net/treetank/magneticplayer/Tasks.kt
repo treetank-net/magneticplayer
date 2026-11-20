@@ -12,8 +12,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
 /**
- * Finished file tasks (moving, shrinking, deleting; mp_tasks on the agent): one notification per task that finished since
- * the last check. Checked together with [Access] while the app is on screen, no background work.
+ * Finished file tasks (moving, shrinking, deleting; mp_tasks on the agent): one notification per followed task ([TaskWatch]:
+ * started on this phone or picked with "Monitor") that finished since the last check. [TaskWatchService] does this in
+ * the background; this check, with [Access] while the app is on screen, covers a service that was stopped.
  */
 object Tasks {
     private const val CHANNEL = "tasks"
@@ -39,10 +40,11 @@ object Tasks {
             return
         }
         val seen = p.getString(key, null)?.toDoubleOrNull() ?: 0.0
-        val fresh = list.filter { (it.state == "done" || it.state == "cancelled") && (it.finished ?: 0.0) > seen }
-        if (fresh.isEmpty()) return
         p.edit().putString(key, maxOf(seen, latest).toString()).apply()
-        fresh.forEach { notify(ctx, srv, it) }
+        list.filter { (it.state == "done" || it.state == "cancelled") && (it.finished ?: 0.0) > seen &&
+            TaskWatch.isWatched(ctx, srv.key, it.id) }.forEach { notifyFinished(ctx, srv, it); TaskWatch.unwatch(ctx, srv.key, it.id) }
+        // still running and followed: the service shows the progress
+        if (list.any { (it.state == "queued" || it.state == "running") && TaskWatch.isWatched(ctx, srv.key, it.id) }) TaskWatch.ensure(ctx)
     }
 
     private fun canNotify(ctx: Context) = Build.VERSION.SDK_INT < 33 ||
@@ -61,7 +63,7 @@ object Tasks {
         return if (t.errors > 0) main + ", " + r.getQuantityString(R.plurals.lib_errors, t.errors, t.errors) else main
     }
 
-    private fun notify(ctx: Context, srv: Server, t: LibTask) {
+    fun notifyFinished(ctx: Context, srv: Server, t: LibTask) {
         if (!canNotify(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, ctx.getString(R.string.lib_notif_channel), NotificationManager.IMPORTANCE_DEFAULT))

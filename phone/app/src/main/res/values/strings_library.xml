@@ -179,4 +179,10 @@
     <string name="lib_disks_card_free">%1$s: %2$s free of %3$s</string>
     <string name="lib_task_remove">Remove from list</string>
     <string name="lib_refresh">Refresh</string>
+    <string name="lib_watch_channel">Running library tasks</string>
+    <string name="lib_watch_checking">Checking tasks…</string>
+    <string name="lib_watch_unreachable">Server unreachable, trying again every minute</string>
+    <string name="lib_watch_more">and %1$d more</string>
+    <string name="lib_task_watch">Monitor</string>
+    <string name="lib_task_unwatch">Stop monitoring</string>
 </resources>

@@ -215,4 +215,10 @@
     <string name="lib_disks_card_free">%1$s: zostało %2$s z %3$s</string>
     <string name="lib_task_remove">Usuń z listy</string>
     <string name="lib_refresh">Odśwież</string>
+    <string name="lib_watch_channel">Trwające zadania biblioteki</string>
+    <string name="lib_watch_checking">Sprawdzam zadania…</string>
+    <string name="lib_watch_unreachable">Serwer niedostępny, ponawiam co minutę</string>
+    <string name="lib_watch_more">i jeszcze %1$d</string>
+    <string name="lib_task_watch">Monitoruj</string>
+    <string name="lib_task_unwatch">Nie monitoruj</string>
 </resources>
