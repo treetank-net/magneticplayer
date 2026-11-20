@@ -10,6 +10,8 @@ the phone as a remote. The human-facing description is in `README.md` and `docs/
 - `docs/plan-multi-server.md`: stage 1 decisions (multiple servers, files vs screen, pairing, per-device tokens), shipped;
 - `docs/plan-library.md`: folder tags and visibility, magnet → folder, disk organising, covers (in progress).
 - `docs/plan-12-points.md`: the current goal (12 points) and the UX fixes the owner approved, in order; what is out of scope.
+- `docs/plan-ux-tasks.md`: the next goal: one screen per task, task scopes, missing episodes; every board element as an
+  acceptance item, the order of work and the questions still open for the owner.
 - `docs/test-plan.md`: what the next release must be checked for on hardware, and the user's wishes noted while
   testing. Add every change and every wish there as it comes; tick items only after seeing them work.
 

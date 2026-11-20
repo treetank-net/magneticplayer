@@ -420,6 +420,11 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [x] "Subtitles" task on a video without speech (same setup): the card shows "1 error" and "no speech found in the
       sound"; the old app's notification said "Moved 0 items, 1 error" (the next app: only "1 error").
 
+## UX tasks (`plan-ux-tasks.md`)
+
+Before building a screen, copy its element list from `plan-ux-tasks.md` here as unticked items; tick each element
+only after seeing it on the phone next to its board (EN and PL).
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a
