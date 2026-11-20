@@ -479,7 +479,10 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                             LibraryNav.openAfterSwitch(key, root, path); Servers.setActive(ctx, key); changed()
                         }
                         TAB_REMOTE -> PilotTab(screenApi, snack, onPickScreen = { Servers.setScreen(ctx, it); screenKey = it }) { wake(it) }
-                        TAB_OFFLINE -> OfflineTab(onPlaying)
+                        TAB_OFFLINE -> OfflineTab(onPlaying, snack) { key, root, path ->
+                            // "Open folder" on a title page reached from the phone: that server's Library
+                            LibraryNav.openAfterSwitch(key, root, path); Servers.setActive(ctx, key); changed(); tab.intValue = TAB_LIBRARY
+                        }
                         else -> SettingsTab(api, ver, snack, addServer) { addServer = false; changed() }
                     }
                 }
@@ -497,6 +500,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         onAdd = { sheet = false; addServer = true; tab.intValue = TAB_SETTINGS },
         onManage = { sheet = false; tab.intValue = TAB_SETTINGS },
     ) { sheet = false }
+
+    InAppBrowserHost()  // search engines opened "in the app" (D4)
 
     suspendSrv?.let { s ->
         SuspendDialog(s, onConfirm = {
@@ -1187,78 +1192,210 @@ private fun RemoteButton(icon: ImageVector, desc: String, onClick: () -> Unit) {
 
 // ---------------------------------------------------------------- Settings
 
+/**
+ * D3 Settings: sections SERVERS, SEARCH, ON THE PHONE, OTHER; each row opens its own page ([SettingsNav.page]).
+ * Search engines (D4) are a full screen of their own, also reached from a missing title's page.
+ */
 @Composable
 private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: Boolean, onSaved: () -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
     val s = api.s
+    val page = SettingsNav.page.value
+    LaunchedEffect(openAdd) { if (openAdd) SettingsNav.page.value = null }
+    fun back() { SettingsNav.page.value = null }
+    when (page) {
+        null -> {}
+        "engines" -> {
+            val key = SettingsNav.enginesSrv.value
+            val a = remember(key, ver) { Api.of(ctx, key) ?: api }
+            return SearchEnginesScreen(a, ::back)
+        }
+        "subs" -> return SettingsPage(R.string.st4_sub_langs, ::back) { if (api.configured) OpenSubsSettings(api, snack) }
+        "space" -> return SettingsPage(R.string.st4_space, ::back) { SpaceSettings() }
+        "player" -> return SettingsPage(R.string.st4_player, ::back) { PlayerSettings(s) }
+        "downloads" -> return SettingsPage(R.string.st4_downloads, ::back) { DownloadSettings(s, ver, onSaved) }
+        "updates" -> return SettingsPage(R.string.st4_updates, ::back) { UpdateSettings(snack) }
+        "about" -> return SettingsPage(R.string.st4_about, ::back) {
+            Text(stringResource(R.string.st4_app_version, remember { appVersion(ctx) }), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.main_web_version_hint),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.main_magnet_links_hint), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        else -> back()
+    }
+    // the engines of the active server: count and kinds for the row (agent 1.8+ with the catalog)
+    val canEngines = api.configured && api.srv.hasCatalog && !api.srv.isGuest
+    var engines by remember(ver) { mutableStateOf<List<SearchEngine>?>(null) }
+    if (canEngines) LaunchedEffect(ver) {
+        engines = withContext(Dispatchers.IO) { runCatching { api.searchEngines() }.getOrNull() }
+    }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ServersSection(ver, snack, openAdd, onSaved)
+        SettingsHeading(R.string.st4_section_search)
+        androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
+            SettingsRow(stringResource(R.string.st4_engines),
+                when {
+                    !canEngines -> stringResource(R.string.st4_engines_unavailable)
+                    engines != null -> engineSummary(engines!!)
+                    api.srv.searchEngines > 0 -> pluralStringResource(R.plurals.cat_searches_n, api.srv.searchEngines, api.srv.searchEngines)
+                    else -> stringResource(R.string.st4_engines_none)
+                }, enabled = canEngines) { SettingsNav.openEngines(api.srv.key) }
+            SettingsRow(stringResource(R.string.st4_sub_langs),
+                s.subLanguages.split(',').map { it.trim() }.filter { it.isNotEmpty() }.map { langName(it) }.joinToString(", "),
+                enabled = api.configured) { SettingsNav.page.value = "subs" }
+        }
+        SettingsHeading(R.string.st4_section_phone)
+        androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
+            val maxGb = remember { MediaCache.maxBytes(ctx) }
+            SettingsRow(stringResource(R.string.st4_space),
+                stringResource(R.string.st4_space_summary, humanBytes(maxGb), retentionLabel(ctx, PhoneCopies.defaultPolicy(ctx)))) {
+                SettingsNav.page.value = "space"
+            }
+            SettingsRow(stringResource(R.string.st4_player), stringResource(R.string.st4_player_summary)) { SettingsNav.page.value = "player" }
+        }
+        SettingsHeading(R.string.st4_section_other)
+        androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
+            SettingsRow(stringResource(R.string.st4_downloads), stringResource(R.string.st4_downloads_summary)) { SettingsNav.page.value = "downloads" }
+            SettingsRow(stringResource(R.string.st4_updates), stringResource(R.string.st4_updates_summary)) { SettingsNav.page.value = "updates" }
+            SettingsRow(stringResource(R.string.st4_about), null) { SettingsNav.page.value = "about" }
+        }
+    }
+}
+
+private fun appVersion(ctx: Context): String =
+    runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?"
+
+@Composable
+private fun SettingsHeading(res: Int) {
+    Text(stringResource(res).uppercase(java.util.Locale.getDefault()), Modifier.padding(top = 8.dp),
+        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+}
+
+/** One Settings row: name, a summary under it, "›". */
+@Composable
+private fun SettingsRow(title: String, summary: String?, enabled: Boolean = true, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge,
+                color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant)
+            if (summary != null) Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (enabled) Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** A Settings page: back arrow, title, the page's settings; Back returns to the Settings list. */
+@Composable
+private fun SettingsPage(title: Int, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    androidx.activity.compose.BackHandler { onBack() }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up)) }
+            Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
+        }
+        HorizontalDivider()
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+            content = content)
+    }
+}
+
+/** Space for copies: how much the phone holds, how big it may get, the delete policy for new downloads, covers. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SpaceSettings() {
+    val ctx = LocalContext.current
+    var policy by remember { mutableStateOf(PhoneCopies.defaultPolicy(ctx)) }
+    val used by produceState(-1L) {
+        value = withContext(Dispatchers.IO) { OfflineStore.all(ctx).sumOf { PhoneCopies.cachedBytes(ctx, it) } }
+    }
+    val max = remember { MediaCache.maxBytes(ctx) }
+    Text(stringResource(R.string.st4_space_desc, humanBytes(max), if (used >= 0) humanBytes(used) else "…"),
+        style = MaterialTheme.typography.bodyMedium)
+    Text(stringResource(R.string.st4_default_policy), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.st4_default_policy_desc), style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        RETENTION.forEach { (k, res) ->
+            androidx.compose.material3.FilterChip(policy == k, { policy = k; PhoneCopies.setDefaultPolicy(ctx, k) }, { Text(stringResource(res)) })
+        }
+    }
+    HorizontalDivider()
+    CoverSettings()
+}
+
+/** Player: the disk buffer, the screen on the Remote, stopping what someone else plays. */
+@Composable
+private fun PlayerSettings(s: Settings) {
+    BufferSettings(s)
+    HorizontalDivider()
+    var keepScreen by remember { mutableStateOf(s.pilotKeepScreen) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.main_keep_screen))
+            Text(stringResource(R.string.main_keep_screen_desc), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(keepScreen, { keepScreen = it; s.pilotKeepScreen = it })
+    }
+    HorizontalDivider()
+    var confirmStop by remember { mutableStateOf(s.confirmForeignStop) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.main_confirm_foreign_stop))
+            Text(stringResource(R.string.main_confirm_foreign_stop_desc), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(confirmStop, { confirmStop = it; s.confirmForeignStop = it })
+    }
+}
+
+/** Downloads: sequential download, what to do after a download, the server for magnets, sending phone videos. */
+@Composable
+private fun DownloadSettings(s: Settings, ver: Int, onSaved: () -> Unit) {
+    val ctx = LocalContext.current
     var seq by remember(ver) { mutableStateOf(s.sequential) }
     var after by remember(ver) { mutableStateOf(s.afterDefault) }
     var afterDialog by remember { mutableStateOf(false) }
-
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        ServersSection(ver, snack, openAdd, onSaved)
-        Text(stringResource(R.string.main_web_version_hint),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton({
-            scope.launch {
-                try { withContext(Dispatchers.IO) { Updater.shareApk(ctx) } }
-                catch (e: Exception) { snack.showSnackbar(ctx.getString(R.string.main_failed, "${e.message}")) }
-            }
-        }) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_share_app)) }
-        HorizontalDivider()
-        Text(stringResource(R.string.main_tab_torrents), style = MaterialTheme.typography.titleMedium)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.main_sequential_download))
-                Text(stringResource(R.string.main_sequential_desc), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(seq, { seq = it; s.sequential = it })
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.main_sequential_download))
+            Text(stringResource(R.string.main_sequential_desc), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Row(Modifier.fillMaxWidth().clickable { afterDialog = true }, verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.main_default_after))
-                Text(afterLabels(LocalContext.current)[after] ?: after, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            }
-        }
-        if (Servers.magnetKey(ctx) != null) Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.main_magnets_always_on, Servers.get(ctx, Servers.magnetKey(ctx))?.name ?: "?"), Modifier.weight(1f),
-                style = MaterialTheme.typography.bodySmall)
-            TextButton({ Servers.setMagnetKey(ctx, null); onSaved() }) { Text(stringResource(R.string.main_ask)) }
-        }
-        HorizontalDivider()
-        BufferSettings(s)
-        HorizontalDivider()
-        CoverSettings()
-        HorizontalDivider()
-        var keepScreen by remember { mutableStateOf(s.pilotKeepScreen) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.main_keep_screen))
-                Text(stringResource(R.string.main_keep_screen_desc), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(keepScreen, { keepScreen = it; s.pilotKeepScreen = it })
-        }
-        HorizontalDivider()
-        var confirmStop by remember { mutableStateOf(s.confirmForeignStop) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.main_confirm_foreign_stop))
-                Text(stringResource(R.string.main_confirm_foreign_stop_desc), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(confirmStop, { confirmStop = it; s.confirmForeignStop = it })
-        }
-        HorizontalDivider()
-        UploadSettings()
-        HorizontalDivider()
-        if (api.configured) OpenSubsSettings(api, snack)
-        HorizontalDivider()
-        Text(stringResource(R.string.main_magnet_links_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Switch(seq, { seq = it; s.sequential = it })
     }
+    Row(Modifier.fillMaxWidth().clickable { afterDialog = true }, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.main_default_after))
+            Text(afterLabels(LocalContext.current)[after] ?: after, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+    if (Servers.magnetKey(ctx) != null) Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.main_magnets_always_on, Servers.get(ctx, Servers.magnetKey(ctx))?.name ?: "?"), Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall)
+        TextButton({ Servers.setMagnetKey(ctx, null); onSaved() }) { Text(stringResource(R.string.main_ask)) }
+    }
+    HorizontalDivider()
+    UploadSettings()
     if (afterDialog) AfterDialog(after, { afterDialog = false }) { after = it; s.afterDefault = it; afterDialog = false }
+}
+
+/** Updates: the app's version and sharing it; the servers' own updates are in each server's settings. */
+@Composable
+private fun UpdateSettings(snack: SnackbarHostState) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Text(stringResource(R.string.st4_app_version, remember { appVersion(ctx) }), style = MaterialTheme.typography.bodyLarge)
+    Text(stringResource(R.string.st4_updates_desc), style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    OutlinedButton({
+        scope.launch {
+            try { withContext(Dispatchers.IO) { Updater.shareApk(ctx) } }
+            catch (e: Exception) { snack.showSnackbar(ctx.getString(R.string.main_failed, "${e.message}")) }
+        }
+    }) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_share_app)) }
 }
 
 fun copyText(ctx: Context, label: String, text: String) {

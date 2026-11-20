@@ -53,6 +53,7 @@ import mp_i18n
 import mp_ident
 from mp_i18n import T
 import mp_library
+import mp_scope
 from mp_library import HIDDEN_TAGS, SUB_EXT, VIDEO_EXT
 
 PROFILES = {  # target height, x265 CRF, NVENC CQ, estimated video kb/s at that height, audio
@@ -61,7 +62,24 @@ PROFILES = {  # target height, x265 CRF, NVENC CQ, estimated video kb/s at that 
     "good": {"height": 1080, "crf": 24, "cq": 27, "kbps": 1800, "audio": "keep"},
     "compact": {"height": 720, "crf": 25, "cq": 28, "kbps": 900, "audio": "stereo"},
     "tiny": {"height": 480, "crf": 26, "cq": 29, "kbps": 450, "audio": "small"},
+    "mini": {"height": 360, "crf": 27, "cq": 30, "kbps": 260, "audio": "small"},  # an archive of old series (1.16+)
+    # HEVC at the file's own resolution (compression, 1.16+): `kbps` is for 1080p, scaled to the file's height
+    "same": {"same": True, "crf": 24, "cq": 27, "kbps": 1800, "audio": "keep"},
 }
+# downscale targets (agent 1.16+) and the profile each one uses
+TARGETS = {1080: "good", 720: "compact", 480: "tiny", 360: "mini"}
+# compression qualities (agent 1.16+): x265 CRF, graphics card CQ and the bitrate factor of the estimate
+QUALITIES = {"transparent": {"crf": 20, "cq": 23, "k": 1.6}, "balanced": {"crf": 24, "cq": 27, "k": 1.0},
+             "saving": {"crf": 27, "cq": 30, "k": 0.7}}
+HIGH_BITRATE = 3 << 30  # bytes per hour of video: "only high bitrate" in compression
+# old picture → H.264 at the same resolution (modernize with `audio`, agent 1.16+): plays on every phone, TV and
+# Chromecast; `kbps` is for 1080p
+MODERN = {"same": True, "codec": "h264", "crf": 20, "cq": 23, "kbps": 3500, "audio": "keep"}
+AUDIO_MODES = {"keep_if_ok": "keep", "always_aac": "aac"}
+AAC_QUALITIES = ("standard", "high")
+SUBS_PER_DAY = 20  # OpenSubtitles downloads a day without an account (what the counters plan with)
+WATCHING_DAYS = 14  # a folder something was streamed from this recently is "being watched"
+FACTS_RESCAN = 1800  # seconds between the background scans behind the counters (sooner after a library change)
 PROFILE_NAMES = ("original", *PROFILES)
 LOSSLESS_AUDIO = {"truehd", "dts", "flac", "mlp"} | {f"pcm_{x}" for x in ("s16le", "s24le", "s32le", "s16be", "s24be")}
 MIN_SAVING = 0.15
@@ -100,7 +118,7 @@ def _stopped(t):
             i["note"] = T("not done: the task was stopped", "niezrobione: zadanie zatrzymano")
 
 
-MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
+MIN_SIZE = int(os.environ.get("MP_TASKS_MIN_SIZE", 50 << 20))  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
 RESERVE = 0.05  # of a disk kept free; under it a shrink's originals go to the trash of another disk
 ENCODERS = ("auto", "cpu", "gpu")
@@ -195,6 +213,26 @@ class Tasks:
         self.lock = threading.Lock()
         self.plans = {}  # id → {state, progress, result | error}; in memory, an hour
         self.fetch_subs = None  # (full, lang, prefer_provider) → download result or None; set by the agent
+        self.subs_ok = None  # () → whether subtitle search works here; set by the agent
+        self.catalog = None  # the agent's mp_catalog.Catalog: scopes by title, tag and age group (1.16+)
+        self.subsources = None  # mp_subfiles.Sources: subtitles that don't fit are set aside with it (1.16+)
+        self.subsync = None
+        # what the background scan knows about every library video (1.16+): the counters never probe in a request
+        self.facts_path = os.path.join(os.path.dirname(path), "job-facts.json")
+        self.flock = threading.Lock()
+        self.facts_wake = threading.Event()
+        self._load_facts()
+        mp_library.ON_CHANGE.append(self.facts_wake.set)
+        # videos streamed from this server: real path → last time (free up "watched", subtitles "being watched")
+        self.played_path = os.path.join(os.path.dirname(path), "played.json")
+        try:
+            with open(self.played_path) as f:
+                self.played = json.load(f)
+        except (OSError, ValueError):
+            self.played = {}
+        self._played_saved = 0
+        self._tcache = (0, None)
+        self._trash_cache = (0, None)
         self.proc = None
         self.replicating = False
         self.cancel_ev = threading.Event()
@@ -224,6 +262,7 @@ class Tasks:
             self.wake.set()  # an interrupted task goes on right away (its encode may have been running all along)
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._audio_scan, daemon=True).start()
+        threading.Thread(target=self._facts_loop, daemon=True).start()
 
     # ---- state
 
@@ -240,7 +279,7 @@ class Tasks:
     def public(self, t, brief=False):
         """A task for the API; `brief` leaves the items out (only their counts): a finished task with hundreds of
         files is ~400 kB, and phones read the list often."""
-        out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc", "titles")} | {
+        out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc", "titles", "scope_labels", "bad_subs")} | {
             "item_count": len(t["items"]), "items_done": sum(1 for i in t["items"] if i.get("state") == "done")}
         # the same reason once with a count (a full disk once listed 457 identical errors, one per file)
         reasons = collections.Counter(_reason(i["error"]) for i in t["items"] if i.get("state") == "error" and i.get("error"))
@@ -250,6 +289,7 @@ class Tasks:
             out["items"] = [{k: v for k, v in i.items() if not k.startswith("_")} for i in t["items"]]
         if t.get("titles"):
             out["title"] = t["titles"].get(mp_i18n.lang()) or t["title"]
+        out["scope_label"] = (t.get("scope_labels") or {}).get(mp_i18n.lang())  # 1.16+, null for the whole computer
         if t.get("enc"):
             out["encoder"] = self.encoder_label(t["enc"])
         if t.get("hold"):
@@ -407,13 +447,20 @@ class Tasks:
         items = [dict(i) for n, i in enumerate(res["items"]) if (pick is None or n in pick) and not i.get("skip")]
         if not items:
             raise TaskError(T("nothing selected", "nic nie wybrano"))
+        t = self._add_task(res, items)
+        self.plans.pop(plan_id, None)
+        return self.public(t)
+
+    def _add_task(self, res, items):
+        """Queues a task with `items` (a plan's result, or one made by the agent itself for new files)."""
         for i in items:
             i["state"] = "pending"
         t = {"id": secrets.token_hex(4), "kind": res["kind"], "title": res["title"], "titles": res.get("titles"), "state": "queued",
              "created": time.time(), "started": None, "finished": None, "items": items,
              "total": sum(i["size"] for i in items), "done_bytes": 0, "current": None, "pct": 0,
              "saved": 0, "errors": 0, "lang": mp_i18n.lang(),
-             **({"enc": res["encoder_id"]} if res.get("encoder_id") else {})}
+             **({"enc": res["encoder_id"]} if res.get("encoder_id") else {}),
+             **({"scope_labels": res["scope_labels"]} if res.get("scope_labels") else {})}
         with self.lock:
             self.items.append(t)
             done = [x for x in self.items if x["state"] not in ("queued", "running")]
@@ -421,9 +468,8 @@ class Tasks:
                 drop = {x["id"] for x in done[:len(done) - KEEP]}
                 self.items = [x for x in self.items if x["id"] not in drop]
             self._save()
-        self.plans.pop(plan_id, None)
         self.wake.set()
-        return self.public(t)
+        return t
 
     # ---- library helpers
 
@@ -453,7 +499,10 @@ class Tasks:
             return "in"
         return None
 
-    def _plan(self, kind, fn):
+    def _plan(self, kind, fn, m=None):
+        """Runs planner `fn` in the background. With a scope matcher `m` (1.16+) the result carries `scope_label` (and
+        both languages for the task), and items, skipped entries and duplicate groups outside the scope are dropped
+        (the old planners walk everything; the new ones only the scope)."""
         pid = secrets.token_hex(4)
         p = {"id": pid, "kind": kind, "state": "running", "progress": 0, "created": time.time()}
         now = time.time()
@@ -463,7 +512,12 @@ class Tasks:
 
         def run():
             try:
-                p["result"] = fn(p)
+                res = fn(p)
+                if m is not None and not m.whole:
+                    _scope_filter(res, m, self.library.roots())
+                    res["scope_labels"] = {"en": m.label("en"), "pl": m.label("pl")}
+                res["scope_label"] = m.label(mp_i18n.lang()) if m is not None else None
+                p["result"] = res
                 p["state"] = "done"
             except Exception as e:  # noqa: BLE001 — reported to the app
                 p.update(state="error", error=str(e)[:300])
@@ -597,7 +651,7 @@ class Tasks:
                     "items": chosen, "bytes": freed, "skipped": skipped[:50], "warnings": warnings}
         return self._plan("move", run)
 
-    def plan_move(self, items):
+    def plan_move(self, items, m=None):
         """Explicit moves ({root, path, to_root, to_sub}), e.g. from an AI assistant over MCP; checked like plan_free."""
         def run(p):
             roots, torrents, out, skipped = self.library.roots(), self._torrents(), [], []
@@ -625,11 +679,11 @@ class Tasks:
                 out.append(item)
             return {"kind": "move", **_title(f"Move {len(out)} items", f"Przenieś {len(out)} pozycji"),
                     "items": out, "bytes": sum(i["size"] for i in out), "skipped": skipped}
-        return self._plan("move", run)
+        return self._plan("move", run, m)
 
     # ---- planner: tidying up (stage 4): recognition says the item belongs to a folder with another tag
 
-    def plan_tidy(self, ident):
+    def plan_tidy(self, ident, m=None):
         def run(p):
             roots = [r for r in self.library.roots() if r["exists"] and not set(r["tags"]) & HIDDEN_TAGS]
             torrents = self._torrents()
@@ -704,7 +758,7 @@ class Tasks:
             items.sort(key=lambda i: (i["unsure"], i["root_name"], i["name"].lower()))
             return {"kind": "move", **_title("Tidy up the library", "Porządki w bibliotece"), "checked": n,
                     "items": items, "bytes": sum(i["size"] for i in items), "skipped": skipped[:100]}
-        return self._plan("tidy", run)
+        return self._plan("tidy", run, m)
 
     # ---- planner: duplicates (stage 4): size, then the beginning and end of the file, then the whole file
 
@@ -890,6 +944,17 @@ class Tasks:
             out.append({"name": r["name"], "lang": x.get("lang"), "verdict": r["verdict"], "z": r["z"],
                         "changed": r["changed"], "locked": bool(x.get("locked")), "converted": r["name"] != x["name"],
                         "shift": r.get("fixed_offset", r["offset"]), "ratio": r.get("fixed_ratio", r["ratio"])})
+            if r["verdict"] == "bad" and not x.get("locked"):
+                # 1.16+: set aside to Subtitles/ (kept, no longer the default), and/or downloaded again afterwards
+                if i.get("mark_bad") and self.subsources is not None and "/" not in r["name"]:
+                    import mp_subfiles
+                    moved = mp_subfiles.demote(full, os.path.join(os.path.dirname(full), r["name"]), self.subsources,
+                                               self.torrent_owned, self.subsync.move)
+                    if moved:
+                        out[-1]["aside"] = os.path.relpath(moved, os.path.dirname(full))
+                code = _lang2(x.get("lang"))
+                if i.get("queue_bad") and len(code) == 2:
+                    t.setdefault("bad_subs", []).append([i["root_id"], i.get("root"), i["root_name"], i["path"], code])
             t["fixed"] = t.get("fixed", 0) + (1 if r["changed"] else 0)
             t["unfit"] = t.get("unfit", 0) + (1 if r["verdict"] == "bad" else 0)
             self._check_cancel()
@@ -900,7 +965,7 @@ class Tasks:
         if errors:
             i["note"] += "; " + "; ".join(errors)
 
-    def plan_dupes(self):
+    def plan_dupes(self, m=None):
         def run(p):
             import hashlib
             by_size = {}
@@ -918,7 +983,7 @@ class Tasks:
                             sz = os.stat(fp).st_size
                         except OSError:
                             continue
-                        if sz >= 50 << 20:
+                        if sz >= MIN_SIZE:
                             by_size.setdefault(sz, []).append((r, fp))
             def distinct(g):
                 # one entry per file on disk: symlinks and hard links to the same data are not copies (nothing to free)
@@ -978,9 +1043,9 @@ class Tasks:
             out.sort(key=lambda g: -g["size"] * (len(g["files"]) - 1))
             return {"kind": "dupes", **_title("Duplicates", "Duplikaty"), "groups": out, "items": [],
                     "wasted": sum(g["size"] * (len(g["files"]) - 1) for g in out)}
-        return self._plan("dupes", run)
+        return self._plan("dupes", run, m)
 
-    def plan_trash(self, items):
+    def plan_trash(self, items, m=None):
         """Files the owner picked to delete (e.g. a duplicate): they go to the trash of their library folder."""
         def run(p):
             roots, torrents, out, skipped = self.library.roots(), self._torrents(), [], []
@@ -1001,7 +1066,7 @@ class Tasks:
                 out.append(item)
             return {"kind": "trash", **_title(f"Delete {len(out)} items", f"Usuń {len(out)} pozycji"), "items": out,
                     "bytes": sum(i["size"] for i in out), "skipped": skipped, "trash_days": self.trash_days()}
-        return self._plan("trash", run)
+        return self._plan("trash", run, m)
 
     # ---- planner: shrinking by storage profiles
 
@@ -1029,7 +1094,7 @@ class Tasks:
                              f"{c.get('name')} ({label(prof)}) nie odtwarza HEVC: przed oglądaniem trzeba będzie użyć \"Przygotuj\""))
         return out
 
-    def plan_shrink(self, root_index, rel="", encoder=None, modernize=False):
+    def plan_shrink(self, root_index, rel="", encoder=None, modernize=False, m=None):
         """Re-encoding by storage profiles of one folder; `modernize`: only old picture formats (OLD_VIDEO), in every
         library folder except backups, whatever the folder's profile ("original" and lossless "tidy" → "good")."""
         if encoder is not None and encoder not in ENCODERS:
@@ -1115,11 +1180,12 @@ class Tasks:
                     # bitrates are guesses (Matroska keeps none per stream): never promise more than half the file
                     est = int(max(size - max(before - after, 0) * dur * 1000 / 8, size * 0.5))
                 else:
-                    h = min(v.get("height") or pr["height"], pr["height"])
-                    if v.get("codec") in ("hevc", "av1") and (v.get("height") or 0) <= pr["height"]:
+                    ph = pr.get("height") or v.get("height") or 1080  # "same": the file's own height
+                    h = min(v.get("height") or ph, ph)
+                    if v.get("codec") in ("hevc", "av1") and (v.get("height") or 0) <= ph:
                         skipped.append(dict(item, reason=T("already HEVC/AV1 at this size", "już HEVC/AV1 w tym rozmiarze")))
                         continue
-                    vkbps = pr["kbps"] * (h / pr["height"]) ** 1.5
+                    vkbps = pr["kbps"] * (h / (pr.get("height") or 1080)) ** 1.5
                     akbps = sum(_audio_kbps(a, pr["audio"]) for a in _audio_keep(info, pr["audio"]))
                     g = ((mp_media.hevc_info() or {}).get("gpu") or {})
                     ests = {e: int(dur * (vkbps * (GPU_SIZE[g.get("bframes", False)] if e == "gpu" else 1) + akbps)
@@ -1160,10 +1226,1000 @@ class Tasks:
                                  for e in self.encoders()],
                     "warnings": warnings, "skipped": skipped[:100], "audio_unchecked": unchecked,
                     "trash_days": self.trash_days()}
-        return self._plan("shrink", run)
+        return self._plan("shrink", run, m)
 
     def trash_days(self):
         return int(self.cfg.get("trash_days", 14))
+
+
+    # ---- jobs v2 (agent 1.16+, docs/plan-ux-tasks.md F1/F2): scopes, counters, one plan kind per task
+
+    def _load_facts(self):
+        try:
+            with open(self.facts_path) as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            d = {}
+        self.facts = d.get("files") or {}  # "<root id>/<rel>" → what the background scan knows about the video
+        self.facts_list = d.get("list")  # [[root id, rel, size]] of the last walk (also files not probed yet)
+        self.facts_at = d.get("at")  # when the last scan finished
+        self.dupe_groups = d.get("dupes") or []  # [[key, …]] identical files (size + sampled hashes)
+
+    def _save_facts(self):
+        with self.flock:
+            data = json.dumps({"files": self.facts, "list": self.facts_list, "at": self.facts_at,
+                               "dupes": self.dupe_groups}, ensure_ascii=False)
+        tmp = self.facts_path + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(data)
+        os.replace(tmp, self.facts_path)
+
+    def _facts_loop(self):
+        """The background scan behind the counters: every half hour (sooner after a library change) the library is
+        walked; new or changed videos are probed (ffprobe, once per file), their subtitles listed and identical files
+        found. New files then get what the owner asked for (`audio_fix_auto`, `subs_auto`)."""
+        time.sleep(float(os.environ.get("MP_FACTS_SCAN_DELAY", 60)))
+        while True:
+            self.facts_wake.clear()
+            try:
+                self.scan_facts()
+            except Exception as e:  # noqa: BLE001 — a disk that went away mid-walk must not stop the thread
+                self.log("jobs scan failed:", e)
+            self.facts_wake.wait(FACTS_RESCAN)
+
+    def _job_roots(self):
+        return [r for r in self.library.roots() if r["exists"] and not set(r["tags"]) & HIDDEN_TAGS]
+
+    def _make_fact(self, r, rel, full, st, real, low=False):
+        try:
+            info = mp_media.probe(full, low=low)
+            info = {"container": info.get("container"), "duration": info.get("duration"), "video": info.get("video"),
+                    "audio": [{k: a.get(k) for k in ("index", "codec", "channels", "lang", "default")}
+                              for a in info.get("audio") or []],
+                    "subs": [{"lang": s.get("lang")} for s in info.get("subs") or []]}
+            err = None
+        except Exception as e:  # noqa: BLE001 — an unreadable or half-written file
+            info, err = None, str(e)[:200]
+        return {"root_id": r["id"], "rel": rel, "size": st.st_size, "mtime": int(st.st_mtime), "real": real,
+                "ino": [st.st_dev, st.st_ino], "info": info, "err": err, "seen": time.time()}
+
+    def _scan_wait(self, dev):
+        """The background scan gives way: while somebody watches from the same disk it waits (a USB disk spinning
+        through thousands of ffprobes next to a stream stuttered it), and it never probes faster than ~5 files/s."""
+        for _ in range(720):  # at most an hour per file, then it goes on slowly anyway
+            if self._hold(dev) not in ("same_disk", "watching"):
+                break
+            time.sleep(5)
+        time.sleep(0.2)
+
+    def _fresh_fact(self, r, rel, full, dsigs, store=True, scan=False):
+        """The fact of one video, from the scan when the file is unchanged, else probed now; subtitles listed again
+        when its folder changed. None when the file is gone."""
+        try:
+            st = os.stat(full)
+        except OSError:
+            return None
+        key = f"{r['id']}/{rel}"
+        with self.flock:
+            f = self.facts.get(key)
+        if not f or f["size"] != st.st_size or f["mtime"] != int(st.st_mtime):
+            if scan:
+                self._scan_wait(st.st_dev)
+            f = self._make_fact(r, rel, full, st, os.path.realpath(full), low=scan)
+            if store:
+                with self.flock:
+                    self.facts[key] = f
+        d = os.path.dirname(full)
+        if d not in dsigs:
+            dsigs[d] = _dir_sig(d)
+        if f.get("dsig") != dsigs[d]:
+            f["side"], f["dsig"] = _side(full), dsigs[d]
+        return f
+
+    def scan_facts(self):
+        roots = self._job_roots()
+        try:  # a torrent still downloading: its files are looked at once they are complete
+            unfinished = {os.path.realpath(os.path.join(t["save_path"], t["name"]))
+                          for t in self.backend().list() if t.get("progress", 100) < 100}
+        except Exception:  # noqa: BLE001
+            unfinished = set()
+        first = self.facts_at is None
+        listing, new, dsigs, n = [], [], {}, 0
+        for r in roots:
+            for rel, is_dir, size in self.library._names(r):
+                if is_dir or os.path.splitext(rel)[1].lower() not in VIDEO_EXT:
+                    continue
+                listing.append([r["id"], rel, size])
+                full = os.path.join(r["path"], rel)
+                real = os.path.realpath(full)
+                if real in unfinished or any(real.startswith(u + os.sep) for u in unfinished):
+                    continue
+                key = f"{r['id']}/{rel}"
+                with self.flock:
+                    known = key in self.facts
+                f = self._fresh_fact(r, rel, full, dsigs, scan=True)
+                if f is None:
+                    continue
+                if not known:
+                    n += 1
+                    if not first:
+                        new.append(key)
+                    if n % 200 == 0:
+                        self._save_facts()
+        keys = {f"{a}/{b}" for a, b, _ in listing}
+        with self.flock:
+            for k in [k for k in self.facts if k not in keys]:
+                del self.facts[k]
+            self.facts_list = listing
+            facts = dict(self.facts)
+        rpath = {r["id"]: r["path"] for r in roots}
+        groups = self._find_dupes([(k, os.path.join(rpath[f["root_id"]], f["rel"]), f) for k, f in facts.items()
+                                   if f["size"] >= MIN_SIZE and f["root_id"] in rpath])
+        with self.flock:
+            self.dupe_groups = groups
+            self.facts_at = time.time()
+        self._save_facts()
+        if n:
+            self.log(f"jobs scan: {n} new videos looked at, {len(listing)} in the library")
+        if new:
+            self._auto_new(new)
+
+    def _find_dupes(self, files, p=None):
+        """Groups of identical files among [(key, full, fact)]: the same size, then the same first and last 4 MB, then
+        two more samples from the middle (as plan_dupes). Hashes are kept in the facts while the file is unchanged."""
+        by_size = {}
+        for k, full, f in files:
+            by_size.setdefault(f["size"], []).append((k, full, f))
+        cands = []
+        for g in by_size.values():
+            seen, uniq = set(), []
+            for x in g:  # hard links and symlinks to the same data are not copies
+                ino = tuple(x[2].get("ino") or ()) or (x[1],)
+                if ino not in seen:
+                    seen.add(ino)
+                    uniq.append(x)
+            if len(uniq) > 1:
+                cands.append(uniq)
+        out = []
+        for n, g in enumerate(cands):
+            if p is not None:
+                p["progress"] = 30 + int(70 * n / max(len(cands), 1))
+                p["step"] = os.path.basename(g[0][1])
+            for which in ("hq", "hf"):
+                buckets = {}
+                for k, full, f in g:
+                    if not f.get(which):
+                        try:
+                            f[which] = _quick_hash(full, f["size"]) if which == "hq" else _mid_hash(full, f["size"])
+                        except OSError:
+                            continue
+                    buckets.setdefault(f[which], []).append((k, full, f))
+                g = max(buckets.values(), key=len) if buckets else []
+                if len(g) < 2:
+                    break
+            if len(g) >= 2:
+                out.append([k for k, _, _ in g])
+        return out
+
+    # ---- played videos (streamed from this server): "watched" for free up, "being watched" for subtitles
+
+    def note_played(self, path):
+        now = time.time()
+        with self.flock:
+            self.played[os.path.realpath(path)] = now
+            if now - self._played_saved < 300:
+                return
+            self._played_saved = now
+            cut = now - 400 * 86400
+            self.played = {k: v for k, v in self.played.items() if v > cut}
+            data = json.dumps(self.played, ensure_ascii=False)
+        tmp = self.played_path + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                f.write(data)
+            os.replace(tmp, self.played_path)
+        except OSError:
+            pass
+
+    def _last_played(self, real):
+        """When a file, or anything under a folder, was last streamed (epoch s), or None."""
+        with self.flock:
+            items = list(self.played.items())
+        best = None
+        for p, t in items:
+            if (p == real or p.startswith(real + os.sep)) and (best is None or t > best):
+                best = t
+        return best
+
+    def _watched_dirs(self):
+        cut = time.time() - WATCHING_DAYS * 86400
+        with self.flock:
+            return {os.path.dirname(p) for p, t in self.played.items() if t > cut}
+
+    # ---- settings of the task screens
+
+    def jobs_config(self):
+        return {"audio_fix_auto": bool(self.cfg.get("audio_fix_auto")), "subs_auto": self.cfg.get("subs_auto") or ""}
+
+    def set_jobs_config(self, b):
+        if "audio_fix_auto" in b:
+            self.cfg["audio_fix_auto"] = bool(b["audio_fix_auto"])
+        if "subs_auto" in b:
+            self.cfg["subs_auto"] = ",".join(_langs(b["subs_auto"] or ""))
+        self.save_cfg()
+        return self.jobs_config()
+
+    # ---- what a kind would do with one file (shared by the counters and the plans, so they agree)
+
+    def _cost(self, info, pr, to_h, enc, k=1.0):
+        """(estimated bytes, seconds of work or None) of encoding a video with `pr` at height `to_h` on `enc`."""
+        dur = info.get("duration") or 0
+        vk = pr["kbps"] * k * (to_h / (pr.get("height") or 1080)) ** 1.5
+        if enc == "gpu":
+            vk *= 1.2 if pr.get("codec") == "h264" else GPU_SIZE[((mp_media.hevc_info() or {}).get("gpu") or {}).get("bframes", False)]
+        ak = sum(_audio_kbps(a, pr["audio"]) for a in _audio_keep(info, pr["audio"]))
+        est = int(dur * (vk + ak) * 1000 / 8 * 1.02)
+        sp = self._speed(enc)
+        work = dur * to_h * to_h * 16 / 9 / sp if sp else None
+        if work is not None and pr.get("codec") == "h264" and enc == "cpu":
+            work *= 0.6  # x264 is quicker than x265
+        return est, work
+
+    def _pick(self, kind, f, full, o, ctx):
+        """One video for a kind: None (not for this task), {"pending"} (the background check hasn't reached it),
+        {"ok"} (checked, nothing to do), {"skip": reason, …} (would qualify, but can't or isn't worth it) or
+        {"item": extra item fields, "cost": e → (bytes, seconds), "pr", "to_h"}."""
+        info = f.get("info") or {}
+        v, dur, size = info.get("video") or {}, info.get("duration") or 0, f["size"]
+        if not v or not dur or size < MIN_SIZE:
+            return None
+        seeding = _in_torrent(f.get("real") or full, ctx["torrents"])
+        if kind == "audio_fix":
+            if is_old(v) or not any(a.get("codec") in AUDIO_SUSPECT for a in info.get("audio") or []):
+                return None
+            chk = ctx.get("check")
+            if chk is None:
+                bad = self._acheck_cached(f)
+            else:
+                try:
+                    bad = self.audio_check(full, info, None if chk is True else chk)
+                except OSError:
+                    return None
+            if bad is None:
+                return {"pending": True}
+            if not bad:
+                return {"ok": True}
+            if seeding:
+                return {"skip": _seeding_text()}
+            names = sorted({(a.get("codec") or "").upper() for a in info["audio"] if a["index"] in bad})
+            errs = self._acheck_errors(f)
+            return {"item": {"audio_fix": True, "broken": bad, "audio_codecs": names, "to_height": 0, "profile": "original",
+                             "aac": o.get("quality") or "standard", "errors": errs},
+                    "cost": lambda e: (size, size / (40 << 20))}
+        if kind == "modernize":
+            if not is_old(v):
+                return None
+            if seeding:
+                return {"skip": _seeding_text()}
+            pr = dict(MODERN, audio=AUDIO_MODES[o.get("audio") or "keep_if_ok"])
+            h = v.get("height") or 480
+            cost = lambda e: self._cost(info, pr, h, e)  # noqa: E731
+            if cost(ctx["enc"])[0] > size * OLD_GROWTH:
+                return {"skip": T("the result would be much bigger", "wynik byłby dużo większy"), "est": cost(ctx["enc"])[0]}
+            return {"item": {"modern": True, "old_format": True, "profile": "modern", "audio_mode": pr["audio"],
+                             "to_height": h - h % 2}, "cost": cost}
+        if kind == "downscale":
+            target = int(o["target"])
+            cls = _res_class(v)
+            if cls <= target * 1.05:
+                return None
+            if seeding:
+                return {"skip": _seeding_text()}
+            prof = TARGETS[target]
+            pr = PROFILES[prof]
+            h = int(round((v.get("height") or cls) * target / cls))
+            h -= h % 2
+            cost = lambda e: self._cost(info, pr, h, e)  # noqa: E731
+            if cost(ctx["enc"])[0] > size * (1 - MIN_SAVING):
+                return {"skip": T("already small, little to gain", "już mały, niewiele do zyskania"), "est": cost(ctx["enc"])[0]}
+            return {"item": {"profile": prof, "to_height": h}, "cost": cost}
+        if kind == "compress":
+            if is_old(v):
+                return None  # old pictures: "modernise old picture"
+            if o.get("skip_hevc_av1", True) and v.get("codec") in ("hevc", "av1"):
+                return None
+            if o.get("only_high_bitrate", True) and size / dur * 3600 < HIGH_BITRATE:
+                return None
+            if seeding:
+                return None if o.get("skip_seeding", True) else {"skip": _seeding_text()}
+            q = QUALITIES[o.get("quality") or "balanced"]
+            pr = dict(PROFILES["same"], crf=q["crf"], cq=q["cq"])
+            h = v.get("height") or 1080
+            h -= h % 2
+            cost = lambda e: self._cost(info, pr, h, e, q["k"])  # noqa: E731
+            if cost(ctx["enc"])[0] > size * (1 - MIN_SAVING):
+                return {"skip": T("already small, little to gain", "już mały, niewiele do zyskania"), "est": cost(ctx["enc"])[0]}
+            return {"item": {"profile": "same", "q": {"crf": q["crf"], "cq": q["cq"]}, "to_height": h}, "cost": cost}
+        raise TaskError(f"unknown kind {kind}")
+
+    def _acheck_cached(self, f):
+        with self.alock:
+            c = self.achecks.get(f.get("real") or "")
+        if c and c[0] == f["size"] and c[1] == f["mtime"]:
+            return c[2]
+        return None
+
+    def _acheck_errors(self, f):
+        """Damaged frames found in the sound (all tracks), or None for a check from before 1.16."""
+        with self.alock:
+            c = self.achecks.get(f.get("real") or "")
+        return sum(c[3].values()) if c and len(c) > 3 and isinstance(c[3], dict) else None
+
+    def _torrents_soft(self):
+        """The torrent list for counters: cached a minute; {} when the client doesn't answer."""
+        at, v = self._tcache
+        if time.time() - at < 60 and v is not None:
+            return v
+        try:
+            v = self._torrents()
+        except TaskError:
+            v = {}
+        self._tcache = (time.time(), v)
+        return v
+
+    def _matcher(self, scope):
+        return mp_scope.Matcher(scope, self.library.roots(), self.catalog)
+
+    def _plan_facts(self, m, p, probe=True):
+        """[(root, fact, full)] of the scope's videos, fresh, for a plan (the walk is the search's, cached minutes)."""
+        listing = []
+        for r in self._job_roots():
+            for rel, is_dir, size in self.library._names(r):
+                if not is_dir and os.path.splitext(rel)[1].lower() in VIDEO_EXT and m.match(r, rel):
+                    listing.append((r, rel))
+        out, dsigs = [], {}
+        for k, (r, rel) in enumerate(listing):
+            p["progress"] = int((100 if probe else 30) * k / max(len(listing), 1))
+            p["step"] = os.path.basename(rel)
+            full = os.path.join(r["path"], rel)
+            if probe:
+                f = self._fresh_fact(r, rel, full, dsigs)
+            else:
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    continue
+                with self.flock:
+                    f = self.facts.get(f"{r['id']}/{rel}")
+                if not f or f["size"] != st.st_size or f["mtime"] != int(st.st_mtime):
+                    f = {"root_id": r["id"], "rel": rel, "size": st.st_size, "mtime": int(st.st_mtime),
+                         "real": os.path.realpath(full), "ino": [st.st_dev, st.st_ino]}
+            if f:
+                out.append((r, f, full))
+        return out
+
+    def _encoder_choices(self):
+        return [e["id"] for e in self.encoders()]
+
+    def plan_job(self, kind, o, scope=None):
+        """audio_fix, modernize (with `audio`), downscale and compress (agent 1.16+): re-encodes in the scope, shown and
+        run like `shrink` (items with op "shrink"), but each kind on its own."""
+        if o.get("encoder") is not None and o["encoder"] not in ENCODERS:
+            raise TaskError(T("encoder must be auto, cpu or gpu", "koder to auto, cpu albo gpu"))
+        if kind == "audio_fix" and (o.get("quality") or "standard") not in AAC_QUALITIES:
+            raise TaskError(T("quality must be standard or high", "quality to standard albo high"))
+        if kind == "modernize" and o.get("audio") not in AUDIO_MODES:
+            raise TaskError(T("audio must be keep_if_ok or always_aac", "audio to keep_if_ok albo always_aac"))
+        if kind == "downscale":
+            try:
+                o["target"] = int(o.get("target"))
+            except (TypeError, ValueError):
+                o["target"] = None
+            if o["target"] not in TARGETS:
+                raise TaskError(T("target must be 1080, 720, 480 or 360", "target to 1080, 720, 480 albo 360"))
+            if o.get("remember"):
+                for x in (scope or {}).get("roots") or []:
+                    self.set_profile(x["root"], x["path"], TARGETS[o["target"]])
+        if kind == "compress" and (o.get("quality") or "balanced") not in QUALITIES:
+            raise TaskError(T("quality must be transparent, balanced or saving",
+                              "quality to transparent, balanced albo saving"))
+        m = self._matcher(scope)
+
+        def run(p):
+            mp_media.detect_hevc()
+            enc = self.resolve_encoder(o.get("encoder"))
+            choices = self._encoder_choices()
+            ctx = {"torrents": self._torrents(), "enc": enc,
+                   "check": time.time() + AUDIO_CHECK_BUDGET if kind == "audio_fix" else None}
+            items, skipped, unchecked = [], [], 0
+            est_by, work_by = {e: 0 for e in choices}, {e: 0.0 for e in choices}
+            for r, f, full in self._plan_facts(m, p):
+                c = self._pick(kind, f, full, o, ctx)
+                if not c or c.get("ok"):
+                    continue
+                if c.get("pending"):
+                    unchecked += 1
+                    continue
+                info = f["info"]
+                v, dur = info["video"], info["duration"]
+                base = {"op": "shrink", "root_id": r["id"], "root": r["index"], "root_name": r["name"], "path": f["rel"],
+                        "name": os.path.basename(f["rel"]), "size": f["size"]}
+                if c.get("skip"):
+                    skipped.append(dict(base, reason=c["skip"], **({"est": c["est"]} if c.get("est") else {})))
+                    continue
+                est = c["cost"](enc)[0]
+                items.append(dict(base, est=est, codec=v.get("codec"), height=v.get("height"), duration=dur,
+                                  bitrate=int(f["size"] * 8 / dur / 1000), **c["item"]))
+                for e in choices:
+                    b, w = c["cost"](e)
+                    est_by[e] += b
+                    work_by[e] = None if w is None or work_by[e] is None else work_by[e] + w
+            p["progress"] = 100
+            warnings = self._codec_warnings() if kind in ("downscale", "compress") else []
+            if unchecked:
+                warnings.insert(0, T(f"{unchecked} files haven't been checked for damaged sound yet: the server checks "
+                                     f"them in the background, a later preview will include them",
+                                     f"{unchecked} plików nie sprawdzono jeszcze pod kątem uszkodzonego dźwięku: serwer "
+                                     f"sprawdza je w tle, późniejszy podgląd je uwzględni"))
+            total = sum(i["size"] for i in items)
+            title = {"audio_fix": _title("Fix sound", "Napraw dźwięk"),
+                     "modernize": _title("Modernise old picture", "Unowocześnij stary obraz"),
+                     "downscale": _title(f"Downscale to {o.get('target')}p", f"Zmniejsz do {o.get('target')}p"),
+                     "compress": _title("Compression", "Kompresja")}[kind]
+            return {"kind": kind, **title, "items": items, "bytes": total, "est": sum(i["est"] for i in items),
+                    "saved": total - sum(i["est"] for i in items), "hours": round(sum(i["duration"] for i in items) / 3600, 1),
+                    "encoder": self.encoder_label(enc), "encoder_id": None if kind == "audio_fix" else enc,
+                    "encoders": [dict(e, est=est_by[e["id"]], saved=total - est_by[e["id"]],
+                                      work_hours=None if work_by[e["id"]] is None else round(work_by[e["id"]] / 3600, 1))
+                                 for e in self.encoders()],
+                    "warnings": warnings, "skipped": skipped[:100], "audio_unchecked": unchecked,
+                    "trash_days": self.trash_days(), "options": {k: o.get(k) for k in o}}
+        return self._plan(kind, run, m)
+
+    def _keep_order(self, keep, files, roots_by_id):
+        """The copy of a duplicate group that stays first: a seeding torrent's copy (it can't be deleted here), then by
+        `keep`: folder (a folder whose tag fits the title, any tagged folder), quality (height, size) or space (the disk
+        with the most free room)."""
+        def fits(x):
+            tags = set((roots_by_id.get(x["root_id"]) or {}).get("tags") or [])
+            it = x.get("title") or {}
+            want = "seriale" if it.get("kind") == "series" else "bajki" if it.get("kids") else "filmy"
+            return 2 if want in tags else 1 if tags else 0
+        free = {}
+
+        def room(x):
+            rid = x["root_id"]
+            if rid not in free:
+                try:
+                    free[rid] = shutil.disk_usage(roots_by_id[rid]["path"]).free
+                except (OSError, KeyError):
+                    free[rid] = 0
+            return free[rid]
+        if keep == "quality":
+            key = lambda x: (not x["torrent"], -(x.get("height") or 0), -x["size"], -fits(x))  # noqa: E731
+        elif keep == "space":
+            key = lambda x: (not x["torrent"], -room(x), -fits(x))  # noqa: E731
+        else:
+            key = lambda x: (not x["torrent"], -fits(x), x["path"].count("/"), x["path"].lower())  # noqa: E731
+        return sorted(files, key=key)
+
+    def _same_titles(self, m, roots_by_id):
+        """Catalog titles present more than once (the same IMDb id) in the scope: [[file dicts]]."""
+        by = {}
+        for key, it in m.items.items():
+            r = roots_by_id.get(it.get("root_id"))
+            if not r or not it.get("imdb") or not m.match(r, it["rel"]):
+                continue
+            by.setdefault(it["imdb"], []).append({
+                "root": r["index"], "root_id": r["id"], "root_name": r["name"], "path": it["rel"], "size": it["size"],
+                "height": (it.get("probe") or {}).get("height"), "title": it, "dir": bool(it.get("dir"))})
+        out = []
+        for g in by.values():
+            # one copy inside another (a film folder and its file) is not a second copy
+            g = [x for x in g if not any(y is not x and y["root_id"] == x["root_id"] and x["path"].startswith(y["path"] + "/")
+                                         for y in g)]
+            if len(g) > 1:
+                out.append(g)
+        return out
+
+    def plan_dupes2(self, what, keep, scope=None):
+        """Duplicates (agent 1.16+): `what` same_files (identical files) or same_title (the same catalog title in other
+        versions); `keep` folder / quality / space chooses the copy that stays and the others become trash items;
+        `manual` leaves the choice to the owner (groups only, as plan_dupes)."""
+        if what not in ("same_files", "same_title"):
+            raise TaskError(T("what must be same_files or same_title", "what to same_files albo same_title"))
+        if keep not in ("folder", "quality", "space", "manual"):
+            raise TaskError(T("keep must be folder, quality, space or manual", "keep to folder, quality, space albo manual"))
+        m = self._matcher(scope)
+
+        def run(p):
+            roots_by_id = {r["id"]: r for r in self._job_roots()}
+            torrents = self._torrents_soft()
+            if what == "same_files":
+                files = [(f"{r['id']}/{f['rel']}", full, f) for r, f, full in self._plan_facts(m, p, probe=False)
+                         if f["size"] >= MIN_SIZE]
+                info = {k: (f, full) for k, full, f in files}
+                groups = []
+                for g in self._find_dupes(files, p):
+                    gs = []
+                    for k in g:
+                        f, full = info[k]
+                        r = roots_by_id[f["root_id"]]
+                        gs.append({"root": r["index"], "root_id": r["id"], "root_name": r["name"], "path": f["rel"],
+                                   "size": f["size"], "height": ((f.get("info") or {}).get("video") or {}).get("height"),
+                                   "title": m.title(r["id"], f["rel"]), "dir": False})
+                    groups.append(gs)
+            else:
+                p["progress"] = 50
+                groups = self._same_titles(m, roots_by_id)
+            out, items, skipped = [], [], []
+            for g in groups:
+                for x in g:
+                    x["torrent"] = _in_torrent(os.path.realpath(os.path.join(roots_by_id[x["root_id"]]["path"], x["path"])),
+                                               torrents)
+                g = self._keep_order(keep, g, roots_by_id)
+                size = g[0]["size"]
+                pub = [{k: v for k, v in dict(x, keep=(n == 0 and keep != "manual")).items() if k not in ("title",)}
+                       for n, x in enumerate(g)]
+                out.append({"size": size, "files": pub, "wasted": sum(x["size"] for x in g[1:])})
+                if keep == "manual":
+                    continue
+                for x in g[1:]:
+                    full = os.path.join(roots_by_id[x["root_id"]]["path"], x["path"])
+                    item = {"op": "trash", "root_id": x["root_id"], "root": x["root"], "root_name": x["root_name"],
+                            "path": x["path"], "name": os.path.basename(x["path"]), "size": x["size"],
+                            "extra": companions(full) if not x["dir"] and os.path.isfile(full) else [],
+                            "kept": g[0]["path"]}
+                    if x["torrent"]:
+                        skipped.append(dict(item, reason=T("still in the torrent client: remove it there",
+                                                             "jest jeszcze w kliencie torrentów: usuń go tam")))
+                    else:
+                        items.append(item)
+            out.sort(key=lambda g: -g["wasted"])
+            p["progress"] = 100
+            return {"kind": "dupes", **_title("Duplicates", "Duplikaty"), "what": what, "keep": keep, "groups": out,
+                    "items": items, "bytes": sum(i["size"] for i in items), "wasted": sum(g["wasted"] for g in out),
+                    "skipped": skipped[:100], "trash_days": self.trash_days()}
+        return self._plan("dupes", run, m)
+
+    def plan_free_space(self, root_index, amount=None, to_percent=None, order="watched_oldest", skip_kept=True):
+        """Free up (agent 1.16+): deletes whole titles (top-level items) from the disk of library folder `root_index`
+        to the trash, `amount` bytes or until `to_percent` % of the disk is free (default 15). `order`: watched_oldest
+        (only what was streamed from this server, the longest ago first) or largest. `skip_kept`: what somebody
+        streamed in the last WATCHING_DAYS days stays. Moving and re-encoding are other tasks."""
+        if order not in ("watched_oldest", "largest"):
+            raise TaskError(T("order must be watched_oldest or largest", "order to watched_oldest albo largest"))
+
+        def run(p):
+            roots = self.library.roots()
+            if not 0 <= root_index < len(roots) or not roots[root_index]["exists"]:
+                raise TaskError(T("no such library folder", "nie ma takiego katalogu biblioteki"), 404)
+            dev = _dev(roots[root_index]["path"])
+            u = shutil.disk_usage(roots[root_index]["path"])
+            pct = to_percent if to_percent is not None else (None if amount else 15)
+            want = int(amount) if amount else max(int(u.total * float(pct) / 100) - u.free, 0)
+            torrents, now = self._torrents(), time.time()
+            cands, skipped = [], []
+            src = [r for r in self._job_roots() if _dev(r["path"]) == dev]
+            for k, r in enumerate(src):
+                p["progress"] = int(100 * k / max(len(src), 1))
+                p["step"] = r["name"]
+                try:
+                    names = sorted(os.listdir(r["path"]))
+                except OSError:
+                    continue
+                for name in names:
+                    full = os.path.join(r["path"], name)
+                    if name.startswith(".") or (os.path.isfile(full) and os.path.splitext(name)[1].lower() not in VIDEO_EXT):
+                        continue
+                    size, n = tree_size(full)
+                    extra = companions(full) if os.path.isfile(full) else []
+                    size += sum(tree_size(os.path.join(r["path"], e))[0] for e in extra)
+                    last = self._last_played(os.path.realpath(full))
+                    item = {"op": "trash", "root_id": r["id"], "root": r["index"], "root_name": r["name"], "path": name,
+                            "name": name, "size": size, "files": n, "extra": extra, "played": last}
+                    if self._inside(full, torrents):
+                        skipped.append(dict(item, reason=_seeding_text()))
+                        continue
+                    if skip_kept and last and now - last < WATCHING_DAYS * 86400:
+                        skipped.append(dict(item, reason=T("being watched", "jest właśnie oglądane")))
+                        continue
+                    if order == "watched_oldest" and not last:
+                        continue  # never streamed from here: nobody watched it (as far as this server knows)
+                    cands.append(item)
+            cands.sort(key=(lambda i: i["played"]) if order == "watched_oldest" else (lambda i: -i["size"]))
+            chosen, freed = [], 0
+            for i in cands:
+                if freed >= want:
+                    break
+                chosen.append(i)
+                freed += i["size"]
+            warnings = []
+            if not want:
+                warnings.append(T(f"This disk is already {round(100 * u.free / max(u.total, 1))}% free: nothing to do.",
+                                  f"Ten dysk ma już {round(100 * u.free / max(u.total, 1))}% wolnego: nie ma nic do zrobienia."))
+            elif order == "watched_oldest" and not cands:
+                warnings.append(T("Nothing qualifies: only titles streamed from this server count as watched, and none "
+                                  "was streamed yet (or all are being watched). Choose \"largest files\" instead.",
+                                  "Nic się nie kwalifikuje: za obejrzane liczą się tylko tytuły odtwarzane z tego serwera, "
+                                  "a żadnego jeszcze nie odtwarzano (albo wszystkie są właśnie oglądane). Wybierz raczej "
+                                  "\"największe pliki\"."))
+            elif freed < want:
+                warnings.append(T(f"Only {_size_text(freed)} of {_size_text(want)} can be freed this way.",
+                                  f"W ten sposób da się zwolnić tylko {_size_text(freed)} z {_size_text(want)}."))
+            if chosen and self.trash_days() > 0:
+                warnings.append(T(f"Deleted titles stay in the trash for {self.trash_days()} days: the space comes back "
+                                  f"when the trash is emptied.",
+                                  f"Usunięte tytuły leżą w koszu {self.trash_days()} dni: miejsce wróci po opróżnieniu kosza."))
+            name = roots[root_index]["name"]
+            return {"kind": "free", **_title(f"Free up {name}", f"Zwolnij {name}"), "need": want, "free_before": u.free,
+                    "free_after": u.free + freed, "total": u.total, "order": order, "items": chosen, "bytes": freed,
+                    "skipped": skipped[:50], "warnings": warnings, "trash_days": self.trash_days()}
+        return self._plan("free", run)
+
+    def plan_subs_get2(self, languages, which, order="recent", scope=None):
+        """Download missing subtitles (agent 1.16+): `which` no_subs (videos without any subtitles) or no_subs_in_lang
+        (missing any of `languages`), `order` recent (streamed lately, then newest files) or alpha; `new_only` stores
+        `subs_auto` instead: new files get them after the background scan finds them."""
+        langs = _langs(languages)
+        if not langs:
+            raise TaskError(T("give languages, e.g. pl,en", "podaj języki, np. pl,en"))
+        if which not in ("no_subs", "no_subs_in_lang", "new_only"):
+            raise TaskError(T("which must be no_subs, no_subs_in_lang or new_only", "which to no_subs, no_subs_in_lang albo new_only"))
+        if order not in ("recent", "alpha"):
+            raise TaskError(T("order must be recent or alpha", "order to recent albo alpha"))
+        m = self._matcher(scope)
+        if which == "new_only":
+            self.cfg["subs_auto"] = ",".join(langs)
+            self.save_cfg()
+
+        def run(p):
+            items, have = [], 0
+            if which != "new_only":
+                for r, f, full in self._plan_facts(m, p):
+                    if mp_ident.is_extra(f["rel"]):
+                        continue
+                    got, any_subs = _subs_langs(f)
+                    if which == "no_subs":
+                        if any_subs:
+                            have += 1
+                            continue
+                        missing = langs
+                    else:
+                        missing = [x for x in langs if x not in got]
+                        if not missing:
+                            have += 1
+                            continue
+                    items.append({"op": "subs_get", "root_id": r["id"], "root": r["index"], "root_name": r["name"],
+                                  "path": f["rel"], "name": os.path.basename(f["rel"]), "size": 1, "langs": missing,
+                                  "_played": self._last_played(f.get("real") or "") or 0, "_mtime": f["mtime"]})
+            if order == "recent":
+                items.sort(key=lambda i: (-i["_played"], -i["_mtime"]))
+            else:
+                items.sort(key=lambda i: i["path"].lower())
+            for i in items:
+                i.pop("_played")
+                i.pop("_mtime")
+            p["progress"] = 100
+            warnings = []
+            if which == "new_only":
+                warnings.append(T("New films get subtitles by themselves after they're added.",
+                                  "Nowe filmy dostaną napisy same, po dodaniu."))
+            return {"kind": "subs_get", **_title("Download missing subtitles", "Pobierz brakujące napisy"),
+                    "items": items, "skipped": [], "checked": have, "bytes": 0, "languages": langs, "which": which,
+                    "order": order, "minutes": len(items), "subs_auto": self.cfg.get("subs_auto") or "",
+                    "per_day": SUBS_PER_DAY, "days": -(-len(items) * len(langs) // SUBS_PER_DAY), "warnings": warnings}
+        return self._plan("subs_get", run, m)
+
+    def plan_subs2(self, which, sub_to_srt=True, mark_bad=False, queue_bad=False, scope=None):
+        """Fit subtitles (agent 1.16+): `which` unchecked / watched_now (unchecked ones next to what was streamed in the
+        last WATCHING_DAYS days) / all; `sub_to_srt` false leaves text .sub files out (fitting converts them);
+        `mark_bad` moves subtitles that don't fit aside to Subtitles/ (not deleted); `queue_bad` queues a download
+        task for their languages afterwards."""
+        import mp_subsync
+        if which not in ("unchecked", "watched_now", "all"):
+            raise TaskError(T("which must be unchecked, watched_now or all", "which to unchecked, watched_now albo all"))
+        m = self._matcher(scope)
+
+        def run(p):
+            if not mp_subsync.available():
+                raise TaskError(T("speech detection is not installed on this computer (numpy, webrtcvad)",
+                                  "na tym komputerze nie ma wykrywania mowy (numpy, webrtcvad)"))
+            torrents, cache, watched = self._torrents(), {}, self._watched_dirs()
+            items, checked = [], 0
+            for r, f, full in self._plan_facts(m, p):
+                if which == "watched_now" and os.path.dirname(f.get("real") or full) not in watched:
+                    continue
+                subs = []
+                for x in f.get("side") or []:
+                    if not x.get("fit") or (not sub_to_srt and x["name"].lower().endswith(".sub")):
+                        continue
+                    sp = os.path.join(os.path.dirname(full), x["name"])
+                    if which != "all" and self.subsync.get(sp):
+                        checked += 1
+                        continue
+                    subs.append({"name": x["name"], "lang": x.get("lang") or None,
+                                 "locked": self.torrent_owned(sp, torrents, cache)})
+                if not subs:
+                    continue
+                size = 0
+                for x in subs:
+                    try:
+                        size += os.path.getsize(os.path.join(os.path.dirname(full), x["name"]))
+                    except OSError:
+                        pass
+                items.append({"op": "subs", "root_id": r["id"], "root": r["index"], "root_name": r["name"],
+                              "path": f["rel"], "name": os.path.basename(f["rel"]), "size": size, "subs": subs,
+                              **({"mark_bad": True} if mark_bad else {}), **({"queue_bad": True} if queue_bad else {})})
+            p["progress"] = 100
+            return {"kind": "subs", **_title("Fit subtitles to the films", "Dopasuj napisy do filmów"),
+                    "items": items, "skipped": [], "checked": checked, "bytes": sum(i["size"] for i in items),
+                    "minutes": -(-len(items) // 2), "which": which}
+        return self._plan("subs", run, m)
+
+    # ---- counters for the task list (GET /api/library/jobs): only what the background scans know
+
+    def jobs(self, scope=None, languages="pl,en"):
+        m = self._matcher(scope)
+        roots = {r["id"]: r for r in self._job_roots()}
+        with self.flock:
+            facts = list(self.facts.items())
+            listing = list(self.facts_list or [])
+            groups = list(self.dupe_groups)
+            at = self.facts_at
+        inscope = [(k, roots[f["root_id"]], f) for k, f in facts if f["root_id"] in roots and m.match(roots[f["root_id"]], f["rel"])]
+        keys = {k for k, _, _ in inscope}
+        known = {k for k, _ in facts}
+        lst = [(a, b, s) for a, b, s in listing if a in roots and m.match(roots[a], b)]
+        pending = sum(1 for a, b, _ in lst if f"{a}/{b}" not in known)
+        torrents = self._torrents_soft()
+        enc = self.resolve_encoder(None)
+        choices = self._encoder_choices()
+        ctx = {"torrents": torrents, "enc": enc, "check": None}
+        hours = lambda s: None if s is None else int(s)  # noqa: E731
+        jobs = {}
+
+        def count(kind, o, examples=None):
+            n = size = saving = 0
+            work = {e: 0.0 for e in choices}
+            waiting = 0
+            for k, r, f in inscope:
+                full = os.path.join(r["path"], f["rel"])
+                c = self._pick(kind, f, full, o, ctx)
+                if not c or c.get("ok") or c.get("skip"):
+                    continue
+                if c.get("pending"):
+                    waiting += 1
+                    continue
+                n += 1
+                size += f["size"]
+                saving += f["size"] - c["cost"](enc)[0]
+                for e in choices:
+                    w = c["cost"](e)[1]
+                    work[e] = None if w is None or work[e] is None else work[e] + w
+                if examples is not None:
+                    examples.append((f, c))
+            return {"count": n, "size": size, "saving": max(saving, 0), "eta": hours(work.get(enc)),
+                    "eta_by": {e: hours(work[e]) for e in choices}, "waiting": waiting}
+
+        def job(applicable=True, count=0, size=0, saving=0, eta=0, why=None, pending=0, options=None):
+            return {"applicable": applicable, "count": count, "size": size, "saving": saving, "eta": eta,
+                    "why": why, "pending": pending, "options": options or {}}
+        whole_only = T("whole disks only: on the list for the whole computer", "tylko całe dyski: na liście dla całego komputera")
+
+        # free up: whole disks
+        if not m.whole:
+            jobs["free"] = job(False, why=whole_only)
+        else:
+            low, need, seen = 0, 0, set()
+            for r in roots.values():
+                d = _dev(r["path"])
+                if d in seen:
+                    continue
+                seen.add(d)
+                try:
+                    u = shutil.disk_usage(r["path"])
+                except OSError:
+                    continue
+                if u.free < u.total * 0.15:
+                    low += 1
+                    need += int(u.total * 0.15) - u.free
+            jobs["free"] = job(count=low, size=need, saving=need,
+                               why=None if low else T("every disk has more than 15% free", "każdy dysk ma ponad 15% wolnego"))
+
+        # duplicates
+        sf_groups, sf_saving, seeding = 0, 0, 0
+        size_of = {k: f for k, _, f in inscope}
+        for g in groups:
+            g = [k for k in g if k in keys]
+            if len(g) < 2:
+                continue
+            sf_groups += 1
+            sf_saving += size_of[g[0]]["size"] * (len(g) - 1)
+            seeding += sum(1 for k in g if _in_torrent(size_of[k].get("real") or "", torrents))
+        st = self._same_titles(m, roots)
+        st_saving = sum(sum(x["size"] for x in g) - max(x["size"] for x in g) for g in st)
+        jobs["dupes"] = job(count=sf_groups, size=sf_saving, saving=sf_saving, pending=pending,
+                            why=None if sf_groups else T("no identical files found", "nie znaleziono identycznych plików"),
+                            options={"same_files": {"groups": sf_groups, "saving": sf_saving},
+                                     "same_title": {"titles": len(st), "saving": st_saving}, "seeding": seeding})
+
+        # fix sound
+        ex = []
+        c = count("audio_fix", {}, ex)
+        suspect = [f for _, _, f in inscope if (f.get("info") or {}).get("video") and (f["info"].get("duration") or 0)
+                   and f["size"] >= MIN_SIZE and not is_old(f["info"]["video"])
+                   and any(a.get("codec") in AUDIO_SUSPECT for a in f["info"].get("audio") or [])]
+        checked = sum(1 for f in suspect if self._acheck_cached(f) is not None)
+        jobs["audio_fix"] = job(count=c["count"], size=c["size"], saving=0, eta=c["eta"] if c["count"] else 0,
+                                pending=len(suspect) - checked + pending,
+                                why=None if c["count"] else (T("still being checked in the background", "jeszcze sprawdzane w tle")
+                                                             if len(suspect) > checked else T("no damaged sound found", "nie znaleziono uszkodzonego dźwięku")),
+                                options={"checked": checked, "total": len(suspect),
+                                         "examples": [{"name": os.path.basename(f["rel"]), "codec": ", ".join(x["item"]["audio_codecs"]),
+                                                       "errors": x["item"]["errors"]} for f, x in ex[:3]]})
+
+        # old picture
+        ex = []
+        c = count("modernize", {"audio": "keep_if_ok"}, ex)
+        jobs["modernize"] = job(count=c["count"], size=c["size"], saving=c["saving"], eta=c["eta"] if c["count"] else 0,
+                                pending=pending, why=None if c["count"] else T("no old formats found", "nie znaleziono starych formatów"),
+                                options={"examples": [{"name": os.path.basename(f["rel"]), "format": _format_name(f["info"]["video"]),
+                                                       "size": f["size"]} for f, _ in ex[:3]],
+                                         "eta_gpu": c["eta_by"].get("gpu") if c["count"] else (0 if "gpu" in choices else None),
+                                         "eta_cpu": c["eta_by"].get("cpu") if c["count"] else 0})
+
+        # downscale: per target, and per folder
+        by_target, folders, sizes = {}, {}, {}
+        for t in TARGETS:
+            ex = []
+            c = count("downscale", {"target": t}, ex)
+            by_target[str(t)] = {"count": c["count"], "saving": c["saving"], "eta": c["eta"] if c["count"] else 0}
+            sizes[t] = c["size"]
+            for f, x in ex:
+                r = roots[f["root_id"]]
+                top = f["rel"].split("/", 1)[0] if "/" in f["rel"] else ""
+                d = folders.setdefault((r["index"], top), {"root": r["index"], "path": top, "name": top or r["name"],
+                                                          "files": {}, "saving_by_target": {str(x): 0 for x in TARGETS}})
+                d["saving_by_target"][str(t)] += max(f["size"] - x["cost"](enc)[0], 0)
+        for k, r, f in inscope:  # the resolution mix of the folders that have something to downscale
+            top = f["rel"].split("/", 1)[0] if "/" in f["rel"] else ""
+            d = folders.get((r["index"], top))
+            v = (f.get("info") or {}).get("video")
+            if d is not None and v:
+                cls = _res_label(_res_class(v))
+                d["files"][cls] = d["files"].get(cls, 0) + 1
+        flist = []
+        for d in sorted(folders.values(), key=lambda d: -max(d["saving_by_target"].values())):
+            order = sorted(d.pop("files").items(), key=lambda kv: -_RES_ORDER.get(kv[0], 0))
+            flist.append(dict(d, mix=" · ".join(f"{k} {n}" for k, n in order)))
+        top = by_target["1080"]
+        jobs["downscale"] = job(count=top["count"], size=sizes[1080], saving=top["saving"], eta=top["eta"], pending=pending,
+                                why=None if any(x["count"] for x in by_target.values()) else T("nothing bigger than 360p to downscale", "nic większego niż 360p do zmniejszenia"),
+                                options={"by_target": by_target, "folders": flist[:50]})
+
+        # compression (default filters)
+        by_q = {}
+        for q in QUALITIES:
+            c = count("compress", {"quality": q})
+            by_q[q] = {"count": c["count"], "saving": c["saving"], "eta": c["eta"] if c["count"] else 0, "size": c["size"],
+                       "need": None}
+        ex = []
+        bal = count("compress", {"quality": "balanced"}, ex)
+        need_free = sum(x["cost"](enc)[0] for _, x in ex)
+        for q in by_q.values():
+            q.pop("need")
+            q.pop("size")
+        jobs["compress"] = job(count=bal["count"], size=bal["size"], saving=bal["saving"], eta=bal["eta"] if bal["count"] else 0,
+                               pending=pending, why=None if bal["count"] else T("no big files to compress", "brak dużych plików do kompresji"),
+                               options={"by_quality": by_q, "need_free": need_free})
+
+        # download subtitles
+        langs = _langs(languages) or ["pl", "en"]
+        no_subs = no_lang = have = 0
+        for k, r, f in inscope:
+            if mp_ident.is_extra(f["rel"]) or "side" not in f:
+                continue
+            got, any_subs = _subs_langs(f)
+            no_subs += not any_subs
+            if all(x in got for x in langs):
+                have += 1
+            else:
+                no_lang += 1
+        subs_ok = self.subs_ok() if self.subs_ok else True
+        jobs["subs_get"] = job(applicable=subs_ok, count=no_lang, eta=no_lang * 60, pending=pending,
+                               why=(None if no_lang else T("every film has subtitles in these languages",
+                                                           "każdy film ma napisy w tych językach")) if subs_ok else
+                               T("subtitle search isn't installed on this computer", "na tym komputerze nie ma wyszukiwania napisów"),
+                               options={"no_subs": no_subs, "no_subs_in_lang": no_lang, "have": have, "per_day": SUBS_PER_DAY,
+                                        "languages": ",".join(langs)})
+
+        # fit subtitles
+        import mp_subsync
+        fit_ok = mp_subsync.available()
+        watched = self._watched_dirs()
+        unchecked = watched_now = every = fitted = 0
+        for k, r, f in inscope:
+            full = os.path.join(r["path"], f["rel"])
+            subs = [x for x in f.get("side") or [] if x.get("fit")]
+            if not subs:
+                continue
+            every += 1
+            done = [bool(self.subsync and self.subsync.get(os.path.join(os.path.dirname(full), x["name"]))) for x in subs]
+            fitted += sum(done)
+            if not all(done):
+                unchecked += 1
+                if os.path.dirname(f.get("real") or full) in watched:
+                    watched_now += 1
+        jobs["subs"] = job(applicable=fit_ok, count=unchecked, size=0, eta=unchecked * 30, pending=pending,
+                           why=(None if unchecked else T("every subtitle file was checked", "wszystkie napisy już sprawdzono"))
+                           if fit_ok else T("speech detection is not installed on this computer (numpy, webrtcvad)",
+                                            "na tym komputerze nie ma wykrywania mowy (numpy, webrtcvad)"),
+                           options={"unchecked": unchecked, "watched_now": watched_now, "all": every, "fitted_before": fitted})
+
+        # catalog check
+        total = recog = 0
+        for key, it in m.items.items():
+            r = roots.get(it.get("root_id"))
+            if not r or not m.match(r, it.get("file") or it["rel"]):
+                continue
+            total += 1
+            recog += bool(it.get("imdb"))
+        jobs["tags"] = job(count=total - recog, pending=0,
+                           why=None if total - recog else T("every title is recognised", "wszystkie tytuły rozpoznane"),
+                           options={"recognised": recog, "total": total})
+
+        # trash: whole disks
+        if not m.whole:
+            jobs["trash"] = job(False, why=whole_only, options={"days": self.trash_days()})
+        else:
+            at_t, tr = self._trash_cache
+            if time.time() - at_t > 60 or tr is None:
+                tr = self.trash()
+                self._trash_cache = (time.time(), tr)
+            tsize, tfiles = sum(x["size"] for x in tr), sum(x["files"] for x in tr)
+            jobs["trash"] = job(count=tfiles, size=tsize, saving=tsize, why=None if tfiles else T("the trash is empty", "kosz jest pusty"),
+                                options={"days": self.trash_days()})
+        return {"scope_label": m.label(mp_i18n.lang()), "files": len(lst) if listing else len(inscope),
+                "size": sum(s for _, _, s in lst) if listing else sum(f["size"] for _, _, f in inscope),
+                "checked_at": int(at) if at else None, "pending": pending, "jobs": jobs}
+
+    # ---- tasks created without a preview (the owner's "by itself" settings for new files)
+
+    def _auto_new(self, keys):
+        roots = {r["id"]: r for r in self._job_roots()}
+        with self.flock:
+            facts = [(k, self.facts.get(k)) for k in keys]
+        facts = [(roots[f["root_id"]], f) for k, f in facts if f and f["root_id"] in roots]
+        if self.cfg.get("audio_fix_auto"):
+            ctx = {"torrents": self._torrents_soft(), "enc": "cpu", "check": True}
+            items = []
+            for r, f in facts:
+                c = self._pick("audio_fix", f, os.path.join(r["path"], f["rel"]), {"quality": "standard"}, ctx)
+                if c and c.get("item"):
+                    info = f["info"]
+                    items.append({"op": "shrink", "root_id": r["id"], "root": r["index"], "root_name": r["name"],
+                                  "path": f["rel"], "name": os.path.basename(f["rel"]), "size": f["size"], "est": f["size"],
+                                  "codec": info["video"].get("codec"), "height": info["video"].get("height"),
+                                  "duration": info["duration"], "bitrate": int(f["size"] * 8 / info["duration"] / 1000),
+                                  **c["item"]})
+            if items:
+                self.log(f"jobs: fixing the sound of {len(items)} new files by itself")
+                self._add_task({"kind": "audio_fix", **_title("Fix sound (new files)", "Napraw dźwięk (nowe pliki)")}, items)
+        langs = _langs(self.cfg.get("subs_auto") or "")
+        if langs and self.fetch_subs:
+            items = []
+            for r, f in facts:
+                if mp_ident.is_extra(f["rel"]):
+                    continue
+                got, _ = _subs_langs(f)
+                missing = [x for x in langs if x not in got]
+                if missing:
+                    items.append({"op": "subs_get", "root_id": r["id"], "root": r["index"], "root_name": r["name"],
+                                  "path": f["rel"], "name": os.path.basename(f["rel"]), "size": 1, "langs": missing})
+            if items:
+                self.log(f"jobs: downloading subtitles for {len(items)} new files by itself")
+                self._add_task({"kind": "subs_get", **_title("Download subtitles (new files)", "Pobierz napisy (nowe pliki)")}, items)
 
 
     # ---- worker
@@ -1248,6 +2304,16 @@ class Tasks:
                 t["state"] = "done"
             t["finished"] = time.time()
             self._save()
+        if t.get("bad_subs") and t["state"] == "done":  # "add the ones that don't fit to Download missing" (1.16+)
+            want = {}
+            for rid, idx, rname, path, code in t.pop("bad_subs"):
+                want.setdefault((rid, idx, rname, path), [])
+                if code not in want[(rid, idx, rname, path)]:
+                    want[(rid, idx, rname, path)].append(code)
+            items = [{"op": "subs_get", "root_id": rid, "root": idx, "root_name": rname, "path": path,
+                      "name": os.path.basename(path), "size": 1, "langs": langs} for (rid, idx, rname, path), langs in want.items()]
+            self._add_task({"kind": "subs_get", **_title("Download subtitles that didn't fit",
+                                                         "Pobierz napisy, które nie pasowały")}, items)
         self.library.invalidate()
         try:
             self.replicate()
@@ -1477,7 +2543,7 @@ class Tasks:
                                   f"dysk zszedłby poniżej rezerwy {int(RESERVE * 100)}%, a żaden inny dysk biblioteki "
                                   f"nie ma miejsca na oryginał w koszu"))
         info = mp_media.probe(full)
-        pr = AUDIO_FIX if i.get("audio_fix") else PROFILES[i["profile"]]
+        pr = _item_profile(i)
         stem, ext = os.path.splitext(full)
         out_final = stem + ".mkv"
         part = os.path.join(os.path.dirname(full), f".{os.path.basename(stem)}.mp-shrink.part.mkv")
@@ -1506,7 +2572,8 @@ class Tasks:
                           if _audio_codec(a, pr["audio"]) == ["copy"] and _audio_damaged(full, a)}
             if broken:
                 self.log(f"shrink: {os.path.basename(full)}: audio track(s) {sorted(broken)} don't decode cleanly, re-encoded")
-            cmd = self._shrink_cmd(full, part, info, pr, enc, broken)
+            cmd = self._shrink_cmd(full, part, info, pr, enc, broken, to_h=i.get("to_height") if not pr.get("copy") else None,
+                                   aac=i.get("aac") or "standard")
             self.log("shrink:", os.path.basename(full), "sound only" if i.get("audio_fix") else i["profile"], enc)
             os.makedirs(self.encodes, exist_ok=True)
             p = mp_detached.Detached.start(self.encodes, cmd, {"part": part, "full": full, "enc": enc}, "shrink")
@@ -1580,7 +2647,7 @@ class Tasks:
             _rm(part)
             raise TaskError(T("the new sound doesn't decode cleanly either, the original was kept",
                               "nowy dźwięk też nie dekoduje się czysto, oryginał został"))
-        if not pr.get("copy"):
+        if not pr.get("copy") and pr.get("codec") != "h264":  # the speeds are the HEVC encoders'
             h = (ninfo.get("video") or {}).get("height") or 0
             self._learn_speed(enc, dur * h * h * 16 / 9, work[0])
         # a film being watched (or probed by a phone that plays its own copy) keeps its name until it's left alone:
@@ -1658,9 +2725,10 @@ class Tasks:
                 _signal(p, "SIGSTOP")
                 done.wait(SAME_DISK_DUTY[1])
 
-    def _shrink_cmd(self, full, out, info, pr, enc="cpu", broken=()):
+    def _shrink_cmd(self, full, out, info, pr, enc="cpu", broken=(), to_h=None, aac="standard"):
         v = info["video"]
-        h = min(v.get("height") or pr.get("height", 0), pr.get("height", 1 << 16))
+        h = to_h or min(v.get("height") or pr.get("height", 0), pr.get("height", 1 << 16))
+        h -= h % 2
         # even dimensions: old AVIs can be 351 px wide, and 4:2:0 HEVC/H.264 needs both even
         vf = f"scale=-2:{h}" if (v.get("height") or 0) > h else "scale=trunc(iw/2)*2:trunc(ih/2)*2"
         cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", full, "-map", "0:v:0"]
@@ -1670,6 +2738,16 @@ class Tasks:
         cmd += ["-map", "0:s?", "-map_chapters", "0"]
         if pr.get("copy"):
             cmd += ["-c:v", "copy"]
+        elif pr.get("codec") == "h264":  # old picture → H.264 (modernize, 1.16+)
+            hw = mp_media.detect_encoder() if enc == "gpu" else None
+            row = next((e for e in mp_media.ENCODERS if hw and e[0] == hw["encoder"] and hw.get("hw")), None)
+            if row:
+                name, _, pre, hvf, args = row
+                cmd[6:6] = pre
+                cmd += ["-vf", f"{vf},{hvf[len(mp_media._SCALE) + 1:]}", "-c:v", name, *args]  # its own scale left out
+            else:
+                cmd += ["-vf", f"{vf},format=yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", str(pr["crf"]),
+                        "-profile:v", "high"]
         elif enc == "gpu":
             pre, vfx, vargs = mp_media.hevc_cmd(mp_media.detect_hevc()["gpu"], pr["cq"])
             cmd[6:6] = pre  # input options (e.g. the VAAPI device) go before -i
@@ -1677,14 +2755,15 @@ class Tasks:
         else:
             cmd += ["-vf", f"{vf},format=yuv420p", "-c:v", "libx265", "-preset", self.cfg.get("shrink_preset", "fast"),
                     "-crf", str(pr["crf"]), "-x265-params", "log-level=error"]
-        if not pr.get("copy"):
+        if not pr.get("copy") and pr.get("codec") != "h264":
             cmd += ["-tag:v", "hvc1"]
         for n, a in enumerate(keep):
             how = _audio_codec(a, pr["audio"])
             if a["index"] in broken:
                 # re-encoded (AAC plays everywhere); the gaps of the skipped frames are filled so the sound stays in sync.
                 # 128k stereo: the damaged tracks are old MP3s of ~96-128k, and 192k grew the files by ~12 % for nothing
-                how = ["aac", "-b:a", "256k" if (a.get("channels") or 2) > 2 else "128k"]
+                multi = (a.get("channels") or 2) > 2
+                how = ["aac", "-b:a", ("384k" if multi else "192k") if aac == "high" else ("256k" if multi else "128k")]
                 cmd += [f"-filter:a:{n}", "aresample=async=1:first_pts=0"]
             cmd += [f"-c:a:{n}", *how]
         cmd += ["-c:s", "copy", "-max_muxing_queue_size", "4096", "-progress", "pipe:1", "-nostats", "-f", "matroska", out]
@@ -1703,9 +2782,13 @@ class Tasks:
             return c[2]
         if deadline is not None and time.time() > deadline:
             return None
-        bad = [a["index"] for a in info.get("audio") or [] if a.get("codec") in AUDIO_SUSPECT and _audio_damaged(full, a)]
+        errs = {}  # track index → damaged frames (1.16+: the counters show them)
+        for a in info.get("audio") or []:
+            if a.get("codec") in AUDIO_SUSPECT and (n := _audio_errors(full, a)):
+                errs[str(a["index"])] = n
+        bad = sorted(int(k) for k in errs)
         with self.alock:
-            self.achecks[key] = [st.st_size, int(st.st_mtime), bad]
+            self.achecks[key] = [st.st_size, int(st.st_mtime), bad, errs]
             tmp = self.achecks_path + ".tmp"
             with open(tmp, "w") as f:
                 json.dump(self.achecks, f, ensure_ascii=False)
@@ -1955,6 +3038,8 @@ def _read_bytes(pid):
 def _fit_text(x):
     """One subtitle file's outcome, for the task's item list."""
     who = x.get("lang") or x["name"]
+    if x["verdict"] == "bad" and x.get("aside"):
+        return T(f"{who}: doesn't fit this copy of the film, set aside", f"{who}: nie pasuje do tej wersji filmu, odłożone")
     if x["verdict"] == "bad":
         return T(f"{who}: doesn't fit this copy of the film", f"{who}: nie pasuje do tej wersji filmu")
     if x["verdict"] == "unsure":
@@ -2047,18 +3132,29 @@ def _lang2(code):
 
 def _audio_damaged(full, a):
     """The audio track `a` of `full` has frames its decoder rejects (a full decode of that track only)."""
+    return _audio_errors(full, a) > 0
+
+
+def _audio_errors(full, a):
+    """How many errors the decoder of audio track `a` reports over the whole file (0 = it decodes cleanly)."""
     try:
         r = subprocess.run(_nice(["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-i", full, "-map", f"0:a:{a['index']}",
                                   "-f", "null", "-"]), capture_output=True, text=True, timeout=3600)
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    return any(ln.startswith("[") and not ln.startswith("[null @") for ln in r.stderr.splitlines())
+        return 0
+    n = 0
+    for ln in r.stderr.splitlines():
+        if ln.startswith("[") and not ln.startswith("[null @"):
+            n += 1
+        elif m := re.match(r"\s*Last message repeated (\d+) times", ln):
+            n += int(m.group(1))
+    return n
 
 
 def _audio_keep(info, mode):
     """Audio tracks to keep: all for `keep`; for smaller profiles Polish, English, undefined and the default one."""
     audio = info.get("audio") or []
-    if mode == "keep" or len(audio) <= 1:  # "lean" (tidy) filters languages like the smaller profiles
+    if mode in ("keep", "aac") or len(audio) <= 1:  # "lean" (tidy) filters languages like the smaller profiles
         return audio
     keep = [a for a in audio if (a.get("lang") or "und") in ("pol", "pl", "eng", "en", "und") or a.get("default")]
     return keep or audio[:1]
@@ -2066,6 +3162,8 @@ def _audio_keep(info, mode):
 
 def _audio_codec(a, mode):
     c, ch = a.get("codec") or "", a.get("channels") or 2
+    if mode == "aac":  # "always AAC" (modernize, 1.16+): every track, 5.1 kept
+        return ["copy"] if c == "aac" else ["aac", "-b:a", "384k" if ch > 2 else "192k"]
     if mode in ("keep", "lean"):
         if c in LOSSLESS_AUDIO or c.startswith("pcm_") or c not in PLAYABLE_AUDIO:
             return ["eac3", "-b:a", "640k"] if ch > 2 else ["aac", "-b:a", "192k"]
@@ -2073,6 +3171,19 @@ def _audio_codec(a, mode):
     if mode == "stereo":
         return ["copy"] if c in ("aac", "opus") and ch <= 2 else ["aac", "-b:a", "160k", "-ac", "2"]
     return ["aac", "-b:a", "96k", "-ac", "2"]
+
+
+def _item_profile(i):
+    """The encode settings of a task item: the sound fix, the old-picture H.264 profile or a storage profile, with the
+    item's own overrides (compression quality, sound mode; agent 1.16+)."""
+    if i.get("audio_fix"):
+        return AUDIO_FIX
+    pr = MODERN if i.get("modern") else PROFILES[i["profile"]]
+    if i.get("q"):
+        pr = dict(pr, crf=i["q"]["crf"], cq=i["q"]["cq"])
+    if i.get("audio_mode"):
+        pr = dict(pr, audio=i["audio_mode"])
+    return pr
 
 
 def _audio_src_kbps(a):
@@ -2090,3 +3201,154 @@ def _audio_kbps(a, mode):
     if how[0] != "copy":
         return int(how[2].rstrip("k"))
     return _audio_src_kbps(a)
+
+
+# ---- jobs v2 helpers (agent 1.16+)
+
+def _size_text(b):
+    return f"{b / (1 << 30):.1f} GB" if b >= 1 << 30 else f"{max(b >> 20, 0)} MB"
+
+
+def _seeding_text():
+    return T("still seeding in the torrent client", "jeszcze seeduje w kliencie torrentów")
+
+
+def _in_torrent(real, torrents):
+    """Whether a file (real path) is a torrent's content or inside one."""
+    if not torrents or not real:
+        return False
+    return real in torrents or any(real.startswith(c + os.sep) for c in torrents)
+
+
+def _langs(text):
+    """"pl, EN,pl" → ["pl", "en"] (2-letter codes, order kept)."""
+    out = []
+    for x in str(text or "").split(","):
+        x = x.strip().lower()
+        if re.fullmatch(r"[a-z]{2}", x) and x not in out:
+            out.append(x)
+    return out
+
+
+def _subs_langs(f):
+    """(languages a video has subtitles in, whether it has any): files next to it and tracks inside it."""
+    got = {x.get("lang") for x in f.get("side") or [] if x.get("lang")}
+    emb = [_lang2(s.get("lang")) for s in ((f.get("info") or {}).get("subs") or [])]
+    got |= {x for x in emb if x}
+    return got, bool(f.get("side") or emb)
+
+
+def _dir_sig(d):
+    """A folder's mtime and those of its subtitle subfolders: the subtitles of its videos are listed again when it
+    changes."""
+    try:
+        sig = [int(os.stat(d).st_mtime)]
+        for n in sorted(os.listdir(d)):
+            if n.lower() in ("subs", "sub", "subtitles"):
+                try:
+                    sig.append(int(os.stat(os.path.join(d, n)).st_mtime))
+                except OSError:
+                    pass
+    except OSError:
+        return None
+    return sig
+
+
+def _side(full):
+    """Subtitle files of a video: [{"name" (relative to its folder), "lang" (2 letters, from the name or the text,
+    "" unknown), "fit" (SRT or text SUB: can be fitted)}]."""
+    import mp_subsync
+    out = []
+    for x in mp_library.sidecar_subs(full):
+        sp = os.path.join(os.path.dirname(full), x["name"])
+        code = _lang2(x.get("lang"))
+        if len(code) != 2:
+            code = mp_library.text_lang(sp)
+        ext = os.path.splitext(sp)[1].lower()
+        try:
+            fit = ext == ".srt" or (ext == ".sub" and mp_subsync.is_text_sub(sp))
+        except OSError:
+            fit = False
+        out.append({"name": x["name"], "lang": code or "", "fit": fit})
+    return out
+
+
+def _quick_hash(fp, sz):
+    import hashlib
+    h = hashlib.sha1()
+    with open(fp, "rb") as f:
+        h.update(f.read(4 << 20))
+        f.seek(max(sz - (4 << 20), 0))
+        h.update(f.read(4 << 20))
+    return h.hexdigest()
+
+
+def _mid_hash(fp, sz):
+    import hashlib
+    h = hashlib.sha1()
+    with open(fp, "rb") as f:
+        for frac in (1 / 3, 2 / 3):
+            f.seek(int(sz * frac))
+            h.update(f.read(4 << 20))
+    return h.hexdigest()
+
+
+def _res_class(v):
+    """A picture's resolution class: its height, or the height a 16:9 picture of its width would have (a 1920×800
+    film is 1080p)."""
+    h, w = v.get("height") or 0, v.get("width") or 0
+    return max(h, int(round(w * 9 / 16)))
+
+
+_RES_ORDER = {"4K": 2160, "1440p": 1440, "1080p": 1080, "720p": 720, "576p": 576, "480p": 480, "360p": 360, "SD": 0}
+
+
+def _res_label(cls):
+    for name, h in _RES_ORDER.items():
+        if cls >= h * 0.9:
+            return name
+    return "SD"
+
+
+_FORMATS = {"msmpeg4v1": "DivX 3", "msmpeg4v2": "DivX 3", "msmpeg4v3": "DivX 3", "wmv1": "WMV", "wmv2": "WMV",
+            "wmv3": "WMV 9", "vc1": "VC-1", "rv10": "RealVideo", "rv20": "RealVideo", "rv30": "RealVideo",
+            "rv40": "RealVideo", "flv1": "Flash", "vp6": "Flash (VP6)", "vp6f": "Flash (VP6)", "vp6a": "Flash (VP6)",
+            "theora": "Theora", "cinepak": "Cinepak", "svq1": "Sorenson", "svq3": "Sorenson", "mpeg1video": "MPEG-1",
+            "h261": "H.261", "mpeg4": "XviD/DivX"}
+
+
+def _format_name(v):
+    c = v.get("codec") or ""
+    if c == "h264":
+        return "H.264 10-bit" if (v.get("bits") or 8) > 8 else "H.264 4:2:2/4:4:4"
+    return _FORMATS.get(c, c.upper())
+
+
+def _scope_filter(res, m, roots):
+    """Drops a plan's items, skipped entries and duplicate files outside the scope (the old planners walk the whole
+    library), and recounts the totals."""
+    by_id = {r["id"]: r for r in roots}
+    by_index = {r["index"]: r for r in roots}
+
+    def inside(x):
+        r = by_id.get(x.get("root_id")) or by_index.get(x.get("root"))
+        return bool(r) and x.get("path") is not None and m.match(r, x["path"])
+    if isinstance(res.get("items"), list):
+        res["items"] = [i for i in res["items"] if inside(i)]
+        res["bytes"] = sum(i.get("size", 0) for i in res["items"]) if res.get("kind") != "subs_get" else 0
+        if "est" in res and all("est" in i for i in res["items"]):
+            res["est"] = sum(i["est"] for i in res["items"])
+            res["saved"] = res["bytes"] - res["est"]
+    if isinstance(res.get("skipped"), list):
+        res["skipped"] = [i for i in res["skipped"] if inside(i)]
+    if isinstance(res.get("groups"), list) and not res.get("what"):  # the new duplicates plan only looks in the scope
+        groups = []
+        for g in res["groups"]:
+            files = [x for x in g.get("files") or [] if inside(x)]
+            if len(files) > 1:
+                groups.append(dict(g, files=files))
+        res["groups"] = groups
+        if "wasted" in res and groups and "size" in groups[0]:
+            res["wasted"] = sum(g["size"] * (len(g["files"]) - 1) for g in groups)
+        elif "wasted" in res:
+            res["wasted"] = 0

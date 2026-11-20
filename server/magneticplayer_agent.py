@@ -38,6 +38,7 @@ import mp_access
 import mp_appupdate
 import mp_selfupdate
 import mp_tasks
+import mp_scope
 import mp_mcp
 import mp_i18n
 from mp_i18n import T, bind
@@ -48,6 +49,7 @@ from mp_devices import Devices
 from mp_jobs import AFTER, Jobs, magnet_name
 import mp_catalog
 import mp_ident
+import mp_episodes
 import mp_library
 from mp_library import Library, LibError, media_kind, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt
@@ -55,7 +57,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.15.3"
+VERSION = "1.16.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -940,6 +942,8 @@ class App:
         # the library as films and series (genres, age, languages, people, topics; Wikidata by IMDb id), shared wishlist
         self.catalog = mp_catalog.Catalog(os.path.join(CONFIG_DIR, "catalog.json"), cfg, self.library, self.ident, log)
         self.catalog.start()
+        # episode lists of series (Wikidata, IMDb datasets as fallback): missing seasons and episodes on the title page
+        self.episodes = mp_episodes.Episodes(os.path.join(os.path.dirname(mp_ident.cache_dir()), "episodes"), log)
         mp_library.ON_CHANGE.append(self.catalog.refresh)
         self.wishlist = mp_catalog.Wishlist(os.path.join(CONFIG_DIR, "wishlist.json"))
         self.installs = mp_install.Installs(log)  # installation on another computer (join code)
@@ -957,6 +961,9 @@ class App:
                                     self.renderers, log)
         self.tasks.subsync = self.subsync
         self.tasks.fetch_subs = self.fetch_best_subs
+        self.tasks.subs_ok = lambda: self.subs_available(wait=False)
+        self.tasks.catalog = self.catalog  # scopes by title, tag and age group (1.16+)
+        self.tasks.subsources = self.subsources
         self.agent_updates = mp_selfupdate.AgentUpdates(cfg, lambda: save_config(cfg), os.path.dirname(os.path.abspath(__file__)),
                                                         VERSION, cfg["port"], self.busy, log)
         self.agent_updates.start()
@@ -1104,6 +1111,40 @@ class App:
             pass
         return {"name": name, "manual": total}
 
+    def series_episodes(self, imdb):
+        """All seasons and episodes of a series, the ones on this server's disks marked with their file. Only the
+        copies the asking device may see; without online lookups just the own files (all in `other`)."""
+        if not re.fullmatch(r"tt\d+", imdb or ""):
+            raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
+        lang = mp_i18n.lang()
+        listing = None
+        if self.ident.online:
+            try:
+                listing = self.episodes.get(imdb, lang)
+            except Exception as e:  # noqa: BLE001 — a failed lookup still shows the own episodes
+                log("episodes:", e)
+        files = []
+        for c in self.catalog.public(lang)["items"]:
+            if c.get("imdb") != imdb or not c.get("dir"):
+                continue
+            try:
+                eps = self.library.episodes(c["root"], c["dir"])["episodes"]
+            except LibError:
+                continue
+            files += [(x["season"], x["episode"], f"{c['root']}:{x['path']}") for x in eps]
+        out = mp_episodes.Episodes.merge(listing, files)
+
+        def split(v):
+            root, rel = v.split(":", 1)
+            return {"root": int(root), "path": rel}
+        for s in out["seasons"]:
+            for e in s["episodes"]:
+                if e.get("path"):
+                    e.update(split(e["path"]))
+        out["other"] = [split(v) for v in out["other"]]
+        out["source"] = (listing or {}).get("source")
+        return out
+
     def busy(self):
         """Why a restart (self-update) should wait now, or None: a stream or upload in the last 5 minutes, a queued
         conversion, a copy or move. Running encodes are detached (mp_detached) and survive the restart."""
@@ -1184,6 +1225,10 @@ class App:
                 "library_moves": True,  # GET /api/library/moves?since= (agent 1.14+)
                 "convert_audio": True,  # POST /api/media/convert takes "audio" (agent 1.14+)
                 "library_modernize": True,  # POST /api/library/plan {"kind": "modernize"} (agent 1.8.2+)
+                # task scopes, GET /api/library/jobs, one plan kind per task, /api/config/jobs (agent 1.16+)
+                "jobs_v2": True,
+                "episode_lists": True,  # GET /api/catalog/episodes (agent 1.16+)
+                "jobs": ["free", "dupes", "audio_fix", "modernize", "downscale", "compress", "subs_get", "subs", "tags", "trash"],
                 "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
                 "library_profiles": list(mp_tasks.PROFILE_NAMES),
@@ -1888,29 +1933,60 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/library/plan" and method == "POST":
                 b = self.body()
                 kind = b.get("kind")
+                try:
+                    scope = mp_scope.parse(b.get("scope"))  # agent 1.16+: every kind takes a scope
+                except mp_scope.ScopeError as e:
+                    raise ApiError(str(e), 400) from None
+                m = a.tasks._matcher(scope) if scope else None
+                if kind == "free" and scope:
+                    raise ApiError(T("this task works on whole disks only", "to zadanie działa tylko na całych dyskach"), 400)
                 if kind == "free":
+                    if any(k in b for k in ("amount", "to_percent", "order", "skip_kept")):  # delete to the trash (1.16+)
+                        return self.send_json(a.tasks.plan_free_space(
+                            int(b["root"]), b.get("amount"), b.get("to_percent"), b.get("order") or "watched_oldest",
+                            bool(b.get("skip_kept", True))))
                     return self.send_json(a.tasks.plan_free(int(b["root"]), b.get("need")))
+                if kind in ("audio_fix", "downscale", "compress") or (kind == "modernize" and "audio" in b):
+                    opts = {k: b[k] for k in ("encoder", "quality", "audio", "target", "remember", "only_high_bitrate",
+                                              "skip_hevc_av1", "skip_seeding") if k in b}
+                    return self.send_json(a.tasks.plan_job(kind, opts, scope))
                 if kind == "shrink":
                     if b.get("profile"):  # choosing a profile for this folder/file is remembered (new files follow it)
                         a.tasks.set_profile(int(b["root"]), b.get("path", ""), b["profile"])
-                    return self.send_json(a.tasks.plan_shrink(int(b["root"]), b.get("path", ""), b.get("encoder")))
+                    return self.send_json(a.tasks.plan_shrink(int(b["root"]), b.get("path", ""), b.get("encoder"), m=m))
                 if kind == "modernize":  # old picture formats in the whole library (agent 1.8.2+)
-                    return self.send_json(a.tasks.plan_shrink(-1, "", b.get("encoder"), modernize=True))
+                    return self.send_json(a.tasks.plan_shrink(-1, "", b.get("encoder"), modernize=True, m=m))
                 if kind == "move":
-                    return self.send_json(a.tasks.plan_move(b.get("items") or []))
+                    return self.send_json(a.tasks.plan_move(b.get("items") or [], m=m))
                 if kind == "tidy":
-                    return self.send_json(a.tasks.plan_tidy(a.ident))
+                    return self.send_json(a.tasks.plan_tidy(a.ident, m=m))
                 if kind == "dupes":
-                    return self.send_json(a.tasks.plan_dupes())
+                    if "what" in b or "keep" in b:  # agent 1.16+
+                        return self.send_json(a.tasks.plan_dupes2(b.get("what") or "same_files", b.get("keep") or "manual", scope))
+                    return self.send_json(a.tasks.plan_dupes(m=m))
                 if kind == "subs_get":  # missing subtitles downloaded (agent 1.12.1+): library, a folder or a film
+                    if "which" in b or scope:  # agent 1.16+
+                        return self.send_json(a.tasks.plan_subs_get2(b.get("languages") or "", b.get("which") or "no_subs_in_lang",
+                                                                     b.get("order") or "recent", scope))
                     langs = str(b.get("languages") or "").split(",")
                     return self.send_json(a.tasks.plan_subs_get(langs, b.get("root"), b.get("path")))
                 if kind == "subs":  # subtitles fitted to the films (agent 1.9+)
+                    if "which" in b or scope:  # agent 1.16+
+                        return self.send_json(a.tasks.plan_subs2(b.get("which") or "unchecked", bool(b.get("sub_to_srt", True)),
+                                                                 bool(b.get("mark_bad")), bool(b.get("queue_bad")), scope))
                     return self.send_json(a.tasks.plan_subs(bool(b.get("every"))))
                 if kind == "trash":
-                    return self.send_json(a.tasks.plan_trash(b.get("items") or []))
-                raise ApiError(T("kind must be free, shrink, modernize, move, tidy, dupes, subs or trash",
-                                 "kind to free, shrink, modernize, move, tidy, dupes, subs albo trash"), 400)
+                    return self.send_json(a.tasks.plan_trash(b.get("items") or [], m=m))
+                raise ApiError(T("kind must be free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
+                                 "subs, subs_get or trash",
+                                 "kind to free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
+                                 "subs, subs_get albo trash"), 400)
+            if p == "/api/library/jobs" and method == "GET":  # counters of the task list for a scope (agent 1.16+)
+                try:
+                    scope = mp_scope.parse((q.get("scope") or [""])[0])
+                except mp_scope.ScopeError as e:
+                    raise ApiError(str(e), 400) from None
+                return self.send_json(a.tasks.jobs(scope, (q.get("languages") or ["pl,en"])[0]))
             if (m := re.fullmatch(r"/api/library/plan/([0-9a-f]{8})", p)) and method == "GET":
                 return self.send_json(a.tasks.plan_status(m.group(1)))
             if p == "/api/library/profile" and method == "POST":
@@ -2072,6 +2148,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(a.catalog.title(qd.get("imdb", ""), mp_i18n.lang()))
                 except ValueError:
                     raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
+            if p == "/api/catalog/episodes" and method == "GET":
+                return self.send_json(a.series_episodes(qd.get("imdb", "")))
             if p == "/api/catalog/person" and method == "GET":
                 try:
                     return self.send_json(a.catalog.person(qd.get("id", ""), mp_i18n.lang()))
@@ -2096,10 +2174,13 @@ class Handler(BaseHTTPRequestHandler):
                 eng = []
                 for e in (self.body().get("engines") or [])[:10]:
                     name, url = str(e.get("name") or "").strip()[:40], str(e.get("url") or "").strip()[:500]
-                    if not name or not re.match(r"https?://[^\s/]+", url) or not re.search(r"\{(title|imdb)\}", url):
-                        raise ApiError(T("each search needs a name and an http(s) address with {title} or {imdb}",
-                                         "każda wyszukiwarka potrzebuje nazwy i adresu http(s) z {title} albo {imdb}"), 400)
-                    eng.append({"name": name, "url": url})
+                    if not name or not re.match(r"https?://[^\s/]+", url) or not re.search(r"\{(title|imdb|q)\}", url):
+                        raise ApiError(T("each search needs a name and an http(s) address with {q}, {title} or {imdb}",
+                                         "każda wyszukiwarka potrzebuje nazwy i adresu http(s) z {q}, {title} albo {imdb}"), 400)
+                    # 1.16+: what the site finds (torrents / video / subtitles) and where the app opens it (app / browser)
+                    kind = e.get("kind") if e.get("kind") in ("torrents", "video", "subtitles") else "torrents"
+                    opens = e.get("open") if e.get("open") in ("app", "browser") else "browser"
+                    eng.append({"name": name, "url": url, "kind": kind, "open": opens})
                 a.cfg["search_engines"] = eng
                 save_config(a.cfg)
                 return self.send_json({"engines": eng})
@@ -2128,6 +2209,10 @@ class Handler(BaseHTTPRequestHandler):
                 if b.get("learn") and b.get("guess") and root["tags"]:
                     a.ident.learn(b["guess"], root["tags"][0])
                 return self.send_json(a.uploads.move(str(b.get("id") or ""), dest, root["name"]))
+            if p == "/api/config/jobs" and method == "GET":  # agent 1.16+
+                return self.send_json(a.tasks.jobs_config())
+            if p == "/api/config/jobs" and method == "POST":
+                return self.send_json(a.tasks.set_jobs_config(self.body()))
             if p == "/api/config/shrink" and method == "GET":
                 return self.send_json(a.tasks.shrink_config())
             if p == "/api/config/shrink" and method == "POST":
@@ -2222,6 +2307,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not head_only:
                         w["active"] -= 1
                         w["read"] = now
+                if not head_only:
+                    self.app.tasks.note_played(watch)  # "watched" for free up and subtitles (1.16+)
         return self._stream_dbg(full, head_only, pieces, refresh)
 
     def _stream_dbg(self, full, head_only, pieces=None, refresh=None):

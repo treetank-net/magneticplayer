@@ -56,7 +56,7 @@ class DownloadService : Service() {
             val old = OfflineStore.get(ctx, key)
             OfflineStore.put(ctx, (old ?: OfflineItem(key, ref, ref.title)).copy(
                 pinned = true, want = true, complete = false, error = null, created = if (old?.pinned == true) old.created else System.currentTimeMillis(),
-                policy = policy ?: old?.takeIf { it.pinned }?.policy ?: "watched"))
+                policy = policy ?: old?.takeIf { it.pinned }?.policy ?: PhoneCopies.defaultPolicy(ctx)))
             ContextCompat.startForegroundService(ctx, Intent(ctx, DownloadService::class.java))
         }
 

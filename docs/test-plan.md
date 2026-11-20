@@ -425,6 +425,135 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 Before building a screen, copy its element list from `plan-ux-tasks.md` here as unticked items; tick each element
 only after seeing it on the phone next to its board (EN and PL).
 
+### Stage 1 (agent 1.16.0 + the next app): element by element, next to the boards
+
+**A1. Disks and tidy-up: task list (replaces the actions in `DisksScreen`)**
+- [ ] header "Disks and tidy-up", back arrow;
+- [ ] scope bar "Scope: whole computer · Narrow…"; Narrow… opens a picker with three combinable filters (folder, category, age group) and a title search; applying it opens E2;
+- [ ] "Background work: N running, M waiting ›" row → C4;
+- [ ] disk bars (name, bar, "X free of Y");
+- [ ] headings with a one-line explanation: **Tidy up · move and delete**, **Renovation · changes files, original to the trash**, **Subtitles**, **Catalog · doesn't touch files**;
+- [ ] one row per task: name, one-line description, counter or state on the right in the accent colour ("2 to move", "39% / 42% free", "32 groups · 20 GB", "not needed" greyed, "14 files", "5 in 4K", "412 files", "9 files", "1113 items", "578", "11 to check" in the warning colour); a "Trash · originals after changes, 14 days · 12 GB" row;
+- [ ] "ADVANCED" label and the Re-encode row at the end of Renovation;
+- [ ] every row opens its own screen; none expands in place.
+
+**A4. Duplicates**
+- [ ] description: removes extra copies; at least one of each group stays;
+- [ ] "WHAT IS A DUPLICATE" chips with hint: same files / same film in other versions (from the catalog);
+- [ ] "WHICH COPY TO KEEP": in the fitting folder / better quality / on the disk with space / I'll choose;
+- [ ] found summary; "Seeding in the torrent client: N. Shown, but deleted in the client.";
+- [ ] "Checked in the background today at HH:MM · check now";
+- [ ] "Preview".
+
+**A5. Free up space**
+- [ ] description: deletes titles from a disk (to the trash); doesn't re-encode or move;
+- [ ] "DISK" chips with free percentage;
+- [ ] "HOW MUCH" chips 50 / 100 / 250 GB / to 15% free, with the "already X% free: nothing to do" warning;
+- [ ] "WHAT FIRST": watched by everyone, oldest first / largest files; skip "keep" and running series;
+- [ ] "INSTEAD OF DELETING" links with amounts to Downscale, Balance and Duplicates (links only), with the note that they are separate tasks;
+- [ ] "Preview".
+
+**B1. Fix sound**
+- [ ] description: tracks with damaged frames become AAC; the picture stays bit for bit;
+- [ ] "Found N files", background check status ("checked X of Y films; the rest tomorrow"), time and size estimate;
+- [ ] "FILES": first three with codec and error count, "… and N more";
+- [ ] "SETTINGS": AAC quality (128k stereo / 256k 5.1), "Fix new files by itself" switch;
+- [ ] "Originals: trash on the same disk, 14 days.";
+- [ ] "Preview · N files".
+
+**B2. Modernise old picture**
+- [ ] description: formats phones and TVs can't play (or play badly) become H.264; resolution unchanged;
+- [ ] "FOUND N FILES" with format and size per file; "Files the phone and Chromecast already play well are skipped.";
+- [ ] "ENCODER" chips with hint (graphics card fast / processor smaller but slow and loud) and total time;
+- [ ] "SOUND": unchanged if it works / always AAC;
+- [ ] "Preview · N files · time".
+
+**B3. Downscale**
+- [ ] description: files bigger than the target are reduced to it; smaller ones are never enlarged;
+- [ ] "TO" chips 1080p / 720p / 480p / 360p, each with a "how it looks" line;
+- [ ] "FOLDERS" list with checkboxes, each with its resolution mix and saving at the chosen target;
+- [ ] "Remember as the profile of these folders" switch with "New files in them will be downscaled too.";
+- [ ] summary "N files · −X GB · about T h on the graphics card" or "Nothing to do in the chosen folders";
+- [ ] "Preview".
+
+**B4. Compression**
+- [ ] description: same resolution, smaller file (H.265); downscale is a separate task;
+- [ ] "QUALITY" chips: no visible difference / balanced / saving, with hint and summary per choice;
+- [ ] "WHICH FILES": only high bitrate (over 3 GB per hour), skip H.265 and AV1, skip seeding torrents, folders picker;
+- [ ] "ENCODER": graphics card / processor, daytime;
+- [ ] summary and "The disk needs up to X GB free while working (originals in the trash).";
+- [ ] "Preview".
+
+**C1. Download missing subtitles**
+- [ ] description: searches, downloads and fits them to the film's sound; films unchanged;
+- [ ] "LANGUAGES" chips (multi-select);
+- [ ] "WHICH FILMS": no subtitles at all / none in this language / only new from today; folders picker;
+- [ ] "ORDER": recently added and watched / alphabetical;
+- [ ] summary: "N items · about N min of work", the OpenSubtitles daily limit and days needed, "M films already have subtitles in the chosen languages"; for "new only": "New films get subtitles by themselves after they're added";
+- [ ] "Preview".
+
+**C2. Fit subtitles to the film**
+- [ ] description: compares subtitles already next to the film with its speech and shifts them; downloads nothing;
+- [ ] "WHICH SUBTITLES": unchecked / only for what's being watched / all again; folders picker;
+- [ ] "ALONG THE WAY": text .sub to .srt; mark the ones that don't fit (don't delete); add the ones that don't fit to "Download missing"; "Original subtitles are set aside.";
+- [ ] summary and "N subtitle files fitted earlier, skipped";
+- [ ] "Preview".
+
+**E2. Optimise: tasks for a scope**
+- [ ] header "Optimise" ("Optymalizacja"), back to where it came from;
+- [ ] scope bar "Scope: <label>", "<N files · size · missing M>", "✕ whole computer" → A1;
+- [ ] the same headings and rows as A1, counters from F1 for the scope;
+- [ ] a task with nothing to do in the scope: greyed, "nothing to do", not hidden; disk-wide tasks (balance, free up, trash) replaced by the one-line note that they are on the whole-computer list;
+- [ ] opening a task keeps the scope (F6 scope bar instead of the folder picker); the created task carries the scope label (C4).
+
+**Where agent 1.16.0 differs from the boards (decide or fix later)**
+- "Watched" means streamed from this server since 1.16.0 (`played.json`, empty at first). The phones don't report what
+  was watched, so A5 "watched by everyone" has nothing to go on until a phone → agent watched-state sync exists.
+- A5 "skip keep and running series": there is no "keep" marker and no knowledge of running series yet; the agent
+  skips titles streamed in the last 14 days instead.
+- A5 deletes whole titles to the trash (14 days), as the board says; with a scope it answers 400 (disk-wide only).
+- B4 skips old formats (they belong to B2); counters on A1: B3 = files above 1080p, B4 = the balanced quality.
+- The background scan behind the counters ffprobes every video once (niced, ionice idle, ~5 files/s at most) and
+  waits while somebody watches from the same disk. The first pass on a large USB library takes a while; until then
+  the counters say how many files are still unchecked.
+- [ ] the first background scan on jmpc doesn't disturb a stream (watch something from a library disk during it).
+- [ ] `GET /api/catalog/episodes` (stage 5 data, agent side only for now): a series on jmpc gives its seasons with
+  the own episodes marked (checked locally with a public series and no files).
+
+### Stage 4 (the same app release): Settings, search sites, On the phone, title page from the phone
+
+**D3. Settings**
+- [ ] sections SERVERS, SEARCH ("Search sites ›" with count and kinds, "Subtitle languages"), ON THE PHONE ("Space
+  for copies" with "up to X · delete …", "Player"), OTHER ("Updates", "About", plus "Downloads" so older settings
+  stay reachable); back returns to the list.
+- Differences from the board: "Updates" shows only the app version (server updates stay in the server dialog);
+  "Player" lists buffer / screen / pausing (the settings that exist), not decoder / subtitles / next episode.
+
+**D4. Search sites**
+- [ ] full screen with intro and "where they appear"; cards (tap = edit, delete);
+- [ ] form: name, address with `{q}`, phrase rules, kind (torrents / video / subtitles), "In the app" / "In the
+  browser" with hints, "Check", "Save"; the kind and opening mode survive a round trip through the agent (1.16+);
+- [ ] reached from Settings, from the server dialog (marked "moved to Settings") and from a missing title
+  ("Set up search sites ›"); back returns to where it came from;
+- [ ] "In the app": a magnet goes to the server, a video file lands in the phone's Downloads (and reaches the
+  server only when the Downloads watcher is on).
+
+**D5. On the phone**
+- [ ] tile tap opens D6, ▶ plays, ⋮ quick actions (play from…, on a screen, get subtitles, fit subtitles, keep for
+  good, delete from phone, search subtitles on sites, details);
+- [ ] "Select"/"Done" and long press; bar "N selected · size", "All", "Watched", "Subtitles XX ▾", "Delete · N";
+  both the card and the compact view.
+- Simplifications: the subtitle filter looks at the first language only; an item without a catalog title plays.
+
+**D6. Title page from the phone**
+- [ ] the Library title page scrolled to the tapped episode with its season open; back returns to D5;
+- [ ] seasons badge, "▶ SxxEyy from m:ss", one "On a screen…" chooser, "server · disk · size" line;
+- [ ] card "On this phone": count and size, delete rule, "Download the next 3", "Keep for good", "Delete from
+  phone…" with confirmation; season line "subtitles: PL 2 · EN 1 · none 1"; ⋮ per episode; works offline.
+- Not done: the "← Library" breadcrumb text (arrow only). The season subtitle line costs one `/api/subs/list` per
+  episode, also in the normal Library: watch for slowness on long seasons.
+
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a

@@ -74,6 +74,9 @@ data class Server(
     val hasPlayerSubLang get() = features?.optBoolean("player_sub_lang", false) ?: false
     /** /api/player/open takes `audio`, the remembered audio choice (agent 1.13.3+) */
     val hasPlayerAudio get() = features?.optBoolean("player_audio", false) ?: false
+    /** Agent 1.16+: one screen per task, scopes and counters (`/api/library/jobs`, LibraryJobs.kt); without it the
+     *  old Disks screen stays. */
+    val hasJobsV2 get() = features?.optBoolean("jobs_v2", false) ?: false
     /** POST /api/tasks/<id>/remove (agent 1.12.1+) */
     val hasTaskRemove get() = features?.optBoolean("task_remove", false) ?: false
     /** agent 1.14.1+: `/api/tasks?brief=1` and the latest finish time in `/api/ping` */

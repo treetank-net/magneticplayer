@@ -105,6 +105,11 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     // disks and tidy-up, and a plan (preview) on top of whatever was open: its request body, or null
     var disks by rememberSaveable { mutableStateOf(false) }
     var plan by rememberSaveable { mutableStateOf<String?>(null) }
+    // agent 1.16+ (jobs_v2): the task list's scope (JobScope.encode(), null = whole computer), the open task screen
+    // (its kind) and "Background work"; kept here so they survive the preview on top
+    var jobScope by rememberSaveable { mutableStateOf<String?>(null) }
+    var job by rememberSaveable { mutableStateOf<String?>(null) }
+    var bgWork by rememberSaveable { mutableStateOf(false) }
     // the catalog (agent 1.8+): Discover / Browse / Folders and a stack of film screens on top of the folder view
     val srv = remember(online) { Servers.get(ctx, api.srv.key) ?: api.srv }
     var mode by rememberSaveable { mutableStateOf("discover") }
@@ -115,6 +120,15 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     if (shownSrv != api.srv.key) {
         shownSrv = api.srv.key
         LibraryNav.take(api.srv.key).let { root = it?.first; path = it?.second ?: "" }; disks = false; plan = null
+        jobScope = null; job = null; bgWork = false
+    }
+    // "Optimise" opened with a scope from elsewhere (JobsNav.openOptimise)
+    val pendingJobs = JobsNav.pending.value
+    LaunchedEffect(pendingJobs) {
+        if (pendingJobs != null && pendingJobs.first == api.srv.key) {
+            JobsNav.pending.value = null
+            jobScope = pendingJobs.second.encode(); job = null; bgWork = false; plan = null; disks = true
+        }
     }
     val pendingNext = CatalogNav.pending.value
     LaunchedEffect(pendingNext) {
@@ -127,13 +141,21 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     if (!online && !(offlineCatalog && root == null && plan == null && !disks)) return Hint(stringResource(offlineText))
     val r = root
     val p = plan
+    val jobsV2 = srv.hasJobsV2 || api.srv.hasJobsV2
     when {
         p != null -> {
             BackHandler { plan = null }
             PlanScreen(api, p, onBack = { plan = null }, onPlan = { plan = it }, onStarted = {
                 plan = null; disks = true
+                // the new task list shows the started task under "Background work"
+                if (jobsV2) { job = null; bgWork = true }
                 scope.launch { snack.showSnackbar(ctx.getString(R.string.lib_task_started)) }
             })
+        }
+        disks && jobsV2 -> {
+            BackHandler { disks = false; jobScope = null }
+            JobsArea(api, snack, jobScope, { jobScope = it }, job, { job = it }, bgWork, { bgWork = it },
+                onBack = { disks = false; jobScope = null; job = null; bgWork = false }) { plan = it }
         }
         disks -> {
             BackHandler { disks = false }

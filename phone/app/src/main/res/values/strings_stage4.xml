@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stage 4 texts: Settings (D3), Search engines (D4), On the phone (D5), title page from the phone (D6). English. -->
+<resources>
+    <!-- Settings (D3) -->
+    <string name="st4_section_search">SEARCH</string>
+    <string name="st4_section_phone">ON THE PHONE</string>
+    <string name="st4_section_other">OTHER</string>
+    <string name="st4_sub_langs">Subtitle languages</string>
+    <string name="st4_space">Space for copies</string>
+    <string name="st4_space_summary">up to %1$s · delete %2$s</string>
+    <string name="st4_space_desc">Copies on this phone may take up to %1$s. Now they take %2$s.</string>
+    <string name="st4_default_policy">Delete new copies</string>
+    <string name="st4_default_policy_desc">Used for every new download. You can change it for a single copy on its card.</string>
+    <string name="st4_player">Player</string>
+    <string name="st4_player_summary">buffer, screen, stopping</string>
+    <string name="st4_downloads">Downloads</string>
+    <string name="st4_downloads_summary">Deluge and new downloads</string>
+    <string name="st4_updates">Updates</string>
+    <string name="st4_updates_summary">app and servers</string>
+    <string name="st4_updates_desc">The app is updated by the servers. Server updates are in each server\'s settings.</string>
+    <string name="st4_about">About the app</string>
+    <string name="st4_app_version">Version %1$s</string>
+
+    <!-- Search engines (D4) -->
+    <string name="st4_engines">Search engines</string>
+    <string name="st4_engines_none">none yet</string>
+    <string name="st4_engines_unavailable">needs a newer server</string>
+    <plurals name="st4_engines_n">
+        <item quantity="one">%1$d site · %2$s</item>
+        <item quantity="other">%1$d sites · %2$s</item>
+    </plurals>
+    <string name="st4_kind_torrents">torrents</string>
+    <string name="st4_kind_video">video</string>
+    <string name="st4_kind_subtitles">subtitles</string>
+    <string name="st4_engines_intro">Your sites for finding torrents, videos or subtitles. The app only opens the address with the phrase; it downloads nothing by itself.</string>
+    <string name="st4_engines_where">The buttons show up on the page of a title you don\'t have, and in \"Download subtitles\" when no source found anything. Kept on %1$s.</string>
+    <string name="st4_engines_opens">Opens: %1$s</string>
+    <string name="st4_open_app">in the app</string>
+    <string name="st4_open_browser">in the browser</string>
+    <string name="st4_engines_new">New</string>
+    <string name="st4_engines_edit">Edit</string>
+    <string name="st4_engines_name">Name</string>
+    <string name="st4_engines_url">Address, {q} = phrase</string>
+    <string name="st4_engines_rules">Phrase: title + year · for an episode \"Title S02E05\" · for subtitles + language</string>
+    <string name="st4_engines_kind">Kind</string>
+    <string name="st4_in_app">In the app</string>
+    <string name="st4_in_app_hint">A tapped magnet goes straight to the server; a downloaded video file goes to the server like one from Downloads.</string>
+    <string name="st4_in_browser">In the browser</string>
+    <string name="st4_in_browser_hint">Opens your browser; share a magnet with the app to send it to the server.</string>
+    <string name="st4_check">Check</string>
+    <string name="st4_save">Save</string>
+    <string name="st4_set_up_engines">Set up search engines ›</string>
+    <string name="st4_moved_to_settings">moved to Settings</string>
+    <string name="st4_browser_download">Downloading %1$s</string>
+
+    <!-- On the phone (D5) and quick actions -->
+    <string name="st4_select">Select</string>
+    <string name="st4_done">Done</string>
+    <string name="st4_sel_all">All</string>
+    <string name="st4_sel_watched">Watched</string>
+    <string name="st4_sel_subs">Subtitles %1$s</string>
+    <string name="st4_sel_with">With %1$s subtitles</string>
+    <string name="st4_sel_without">Without %1$s subtitles</string>
+    <string name="st4_sel_delete">Delete · %1$d</string>
+    <string name="st4_play_now">Play now</string>
+    <string name="st4_more">More</string>
+    <string name="st4_play_from">Play from…</string>
+    <string name="st4_on_screen">On a screen…</string>
+    <string name="st4_download_subs">Download subtitles</string>
+    <string name="st4_fit_subs">Fit subtitles</string>
+    <string name="st4_keep">Keep for good</string>
+    <string name="st4_kept">Kept for good</string>
+    <string name="st4_delete_phone">Delete from the phone…</string>
+    <string name="st4_details">Details</string>
+    <string name="st4_resume_from">Resume from %1$s</string>
+    <string name="st4_from_start">From the start</string>
+    <string name="st4_delete_phone_text">Delete the copy of \"%1$s\" from this phone? It stays on the server.</string>
+    <string name="st4_delete_all_title">Delete from the phone?</string>
+    <plurals name="st4_delete_all_text">
+        <item quantity="one">%1$d copy (%2$s) will be deleted from this phone. It stays on the server.</item>
+        <item quantity="other">%1$d copies (%2$s) will be deleted from this phone. They stay on the server.</item>
+    </plurals>
+    <string name="st4_fit_running">Fitting subtitles…</string>
+    <string name="st4_fit_none">No subtitles to fit</string>
+    <string name="st4_fit_result">Fitted: %1$d · already fine: %2$d · could not fit: %3$d</string>
+    <string name="st4_search_subs">Search subtitles: %1$s</string>
+
+    <!-- Copy details -->
+    <string name="st4_det_server">Server</string>
+    <string name="st4_det_path">File</string>
+    <string name="st4_det_size">Size</string>
+    <string name="st4_det_length">Length</string>
+    <string name="st4_det_on_phone">On the phone</string>
+    <string name="st4_det_policy">Deleted</string>
+    <string name="st4_det_subs">Subtitles</string>
+    <string name="st4_det_buffer">buffer only</string>
+    <string name="st4_subs_none_short">none</string>
+
+    <!-- Title page from the phone (D6) -->
+    <string name="st4_on_this_phone">On this phone</string>
+    <plurals name="st4_phone_eps">
+        <item quantity="one">%1$d episode · %2$s</item>
+        <item quantity="other">%1$d episodes · %2$s</item>
+    </plurals>
+    <plurals name="st4_phone_copies">
+        <item quantity="one">%1$d copy · %2$s</item>
+        <item quantity="other">%1$d copies · %2$s</item>
+    </plurals>
+    <string name="st4_policy_text">Copies play without the server. They are deleted %1$s unless you keep them for good.</string>
+    <string name="st4_policy_manual">Copies play without the server. They stay until you delete them.</string>
+    <string name="st4_next3">Download the next 3</string>
+    <string name="st4_season_subs">subtitles: %1$s</string>
+    <string name="st4_play_ep_from">%1$s from %2$s</string>
+    <plurals name="st4_seasons">
+        <item quantity="one">%d season</item>
+        <item quantity="other">%d seasons</item>
+    </plurals>
+</resources>

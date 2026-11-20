@@ -66,17 +66,33 @@ data class WishItem(
     val at: Double, val have: Boolean, val id: String?, val where: String?,
 )
 
-/** A search engine set by the user on the server: `url` with `{title}`, `{year}`, `{imdb}`. */
-data class SearchEngine(val name: String, val url: String) {
+/**
+ * A search engine set by the user on the server: `url` with `{q}` (the phrase), `{title}`, `{year}`, `{imdb}`.
+ * [kind]: "torrents" / "video" / "subtitles"; [open]: "browser" or "app" (the in-app browser, where a magnet goes to the
+ * server). Agents that don't keep [kind] and [open] drop them: the phone then remembers them itself ([EngineExtras]).
+ */
+data class SearchEngine(val name: String, val url: String, val kind: String = "torrents", val open: String = "browser") {
     /** The address with the film's data URL-encoded into the template. */
     fun urlFor(title: String, year: Int?, imdb: String?): String = url
+        .replace("{q}", Uri.encode(listOfNotNull(title, year?.toString()).joinToString(" ")))
         .replace("{title}", Uri.encode(title)).replace("{year}", year?.toString() ?: "")
         .replace("{imdb}", imdb.orEmpty())
 
+    /** The address for a whole phrase ("Title 1927", "Title S02E05", "Title S01E03 pl"): `{q}` and `{title}` get the
+     *  phrase, `{year}` stays empty (the phrase has it). */
+    fun urlForPhrase(phrase: String, imdb: String? = null): String = url
+        .replace("{q}", Uri.encode(phrase.trim())).replace("{title}", Uri.encode(phrase.trim())).replace("{year}", "")
+        .replace("{imdb}", imdb.orEmpty())
+
+    /** What is sent to the agent: `{q}` becomes `{title}` (agents before stage 4 accept only `{title}`/`{imdb}`). */
+    fun forAgent() = copy(name = name.trim(), url = url.trim().replace("{q}", "{title}"))
+
     companion object {
-        /** Same rule as the agent: http(s) address with `{title}` or `{imdb}`. */
+        val KINDS = listOf("torrents", "video", "subtitles")
+
+        /** Same rule as the agent: http(s) address with `{title}` or `{imdb}` (or `{q}`, sent as `{title}`). */
         fun valid(name: String, url: String) = name.isNotBlank() && name.trim().length <= 40 &&
-            Regex("""^https?://[^\s/]+.*""").matches(url.trim()) && Regex("""\{(title|imdb)\}""").containsMatchIn(url) &&
+            Regex("""^https?://[^\s/]+.*""").matches(url.trim()) && Regex("""\{(title|imdb|q)\}""").containsMatchIn(url) &&
             url.trim().length <= 500
     }
 }
@@ -172,10 +188,23 @@ fun Api.wishAdd(imdb: String, title: String, year: Int?, genres: List<String>, w
         .put("year", year ?: JSONObject.NULL).put("genres", JSONArray(genres)).put("why", why.orEmpty()))))
 fun Api.wishRemove(imdb: String): List<WishItem> = wishes(JSONObject(request("POST", "/api/wishlist/remove", JSONObject().put("imdb", imdb))))
 
-private fun engines(o: JSONObject) = objects(o.optJSONArray("engines")).map { SearchEngine(it.optString("name"), it.optString("url")) }
+/** `kind` and `open` per engine: from the agent when it keeps them, else what this phone remembered (EngineExtras). */
+private fun Api.engines(o: JSONObject): List<SearchEngine> = objects(o.optJSONArray("engines")).map { e ->
+    val name = e.optString("name")
+    val url = e.optString("url")
+    val local = EngineExtras.get(s.ctx, name, url)
+    SearchEngine(name, url,
+        e.optString("kind").takeIf { it in SearchEngine.KINDS } ?: local?.first ?: "torrents",
+        e.optString("open").takeIf { it == "app" || it == "browser" } ?: local?.second ?: "browser")
+}
 fun Api.searchEngines(): List<SearchEngine> = engines(JSONObject(request("GET", "/api/config/search")))
-fun Api.setSearchEngines(list: List<SearchEngine>): List<SearchEngine> = engines(JSONObject(request("POST", "/api/config/search",
-    JSONObject().put("engines", JSONArray(list.map { JSONObject().put("name", it.name).put("url", it.url) })))))
+fun Api.setSearchEngines(list: List<SearchEngine>): List<SearchEngine> {
+    val sent = list.map { it.forAgent() }
+    sent.forEach { EngineExtras.put(s.ctx, it.name, it.url, it.kind, it.open) }
+    return engines(JSONObject(request("POST", "/api/config/search", JSONObject().put("engines", JSONArray(sent.map {
+        JSONObject().put("name", it.name).put("url", it.url).put("kind", it.kind).put("open", it.open)
+    })))))
+}
 
 fun Api.uploads(): PhoneUploads {
     val o = JSONObject(request("GET", "/api/uploads", timeout = 15000))

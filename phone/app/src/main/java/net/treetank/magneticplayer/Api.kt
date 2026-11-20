@@ -270,6 +270,8 @@ data class LibTask(
     val itemCount: Int = items.size, val itemsDone: Int = items.count { it.state == "done" },
     /** agent 1.14.2+: item errors grouped by reason, most frequent first (reason to count) */
     val errorGroups: List<Pair<String, Int>> = emptyList(),
+    /** agent 1.16+: the scope the task was made for ("Anime · 0+ and 7+"), localized; null = the whole computer */
+    val scopeLabel: String? = null,
 )
 /** An encoder for shrinking (agent 1.7+); label and note come localized from the agent. */
 data class ShrinkEncoder(val id: String, val label: String, val note: String, val bframes: Boolean)
@@ -784,7 +786,7 @@ class Api(val s: Settings, srv: Server) {
             o.optInt("item_count", arr.length()), o.optInt("items_done", -1).takeIf { it >= 0 }
                 ?: (0 until arr.length()).count { arr.getJSONObject(it).optString("state") == "done" },
             o.optJSONArray("error_groups")?.let { g -> List(g.length()) { g.getJSONObject(it).let { e -> e.optString("error") to e.optInt("count") } } }
-                ?: emptyList())
+                ?: emptyList(), o.optStr("scope_label"))
     }
 
     /** Saves a storage profile for a folder (`path` "") or a subfolder. */

@@ -180,15 +180,21 @@ _probes = {}
 _probe_lock = threading.Lock()
 
 
-def probe(path):
-    """Streams of the file (ffprobe), cached by (mtime, size)."""
+def probe(path, low=False):
+    """Streams of the file (ffprobe), cached by (mtime, size). `low`: at the lowest CPU and disk priority (the
+    background scan)."""
     st = os.stat(path)
     key = (path, st.st_mtime, st.st_size)
     with _probe_lock:
         if key in _probes:
             return _probes[key]
-    out = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", path],
-                         capture_output=True, text=True, timeout=60)
+    cmd = ["ffprobe", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", path]
+    if low and sys.platform != "win32":
+        if shutil.which("ionice"):
+            cmd = ["ionice", "-c", "3", *cmd]
+        if shutil.which("nice"):
+            cmd = ["nice", "-n", "19", *cmd]
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if out.returncode != 0:
         raise ValueError((out.stderr or T("ffprobe couldn't read the file", "ffprobe nie przeczytał pliku")).strip()[-300:])
     d = json.loads(out.stdout or "{}")
@@ -209,8 +215,9 @@ def probe(path):
     fmt = d.get("format") or {}
     res = {"container": fmt.get("format_name"), "duration": float(fmt.get("duration") or 0) or None,
            "video": video, "audio": audio, "subs": subs}
-    with _probe_lock:
-        _probes[key] = res
+    if not low:  # the background scan keeps its results in its own facts; the whole library here would only grow
+        with _probe_lock:
+            _probes[key] = res
     return res
 
 

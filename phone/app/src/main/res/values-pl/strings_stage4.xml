@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Teksty etapu 4: Ustawienia (D3), Wyszukiwarki (D4), Na telefonie (D5), strona tytułu z telefonu (D6). Polski. -->
+<resources>
+    <!-- Ustawienia (D3) -->
+    <string name="st4_section_search">SZUKANIE</string>
+    <string name="st4_section_phone">NA TELEFONIE</string>
+    <string name="st4_section_other">INNE</string>
+    <string name="st4_sub_langs">Języki napisów</string>
+    <string name="st4_space">Miejsce na kopie</string>
+    <string name="st4_space_summary">do %1$s · usuwaj %2$s</string>
+    <string name="st4_space_desc">Kopie na tym telefonie mogą zająć do %1$s. Teraz zajmują %2$s.</string>
+    <string name="st4_default_policy">Usuwaj nowe kopie</string>
+    <string name="st4_default_policy_desc">Dotyczy każdego nowego pobrania. Dla jednej kopii zmienisz to na jej kafelku.</string>
+    <string name="st4_player">Odtwarzacz</string>
+    <string name="st4_player_summary">bufor, ekran, zatrzymywanie</string>
+    <string name="st4_downloads">Pobieranie</string>
+    <string name="st4_downloads_summary">Deluge i nowe pobrania</string>
+    <string name="st4_updates">Aktualizacje</string>
+    <string name="st4_updates_summary">aplikacja i serwery</string>
+    <string name="st4_updates_desc">Aplikację aktualizują serwery. Aktualizacje serwera są w ustawieniach każdego serwera.</string>
+    <string name="st4_about">O aplikacji</string>
+    <string name="st4_app_version">Wersja %1$s</string>
+
+    <!-- Wyszukiwarki (D4) -->
+    <string name="st4_engines">Wyszukiwarki</string>
+    <string name="st4_engines_none">jeszcze brak</string>
+    <string name="st4_engines_unavailable">wymaga nowszego serwera</string>
+    <plurals name="st4_engines_n">
+        <item quantity="one">%1$d strona · %2$s</item>
+        <item quantity="few">%1$d strony · %2$s</item>
+        <item quantity="many">%1$d stron · %2$s</item>
+        <item quantity="other">%1$d strony · %2$s</item>
+    </plurals>
+    <string name="st4_kind_torrents">torrenty</string>
+    <string name="st4_kind_video">wideo</string>
+    <string name="st4_kind_subtitles">napisy</string>
+    <string name="st4_engines_intro">Twoje strony do szukania torrentów, wideo albo napisów. Aplikacja tylko otwiera adres z frazą; sama niczego nie pobiera.</string>
+    <string name="st4_engines_where">Przyciski pojawiają się na stronie tytułu, którego nie masz, i przy „Pobierz napisy”, gdy żadne źródło nic nie znalazło. Zapisane na serwerze %1$s.</string>
+    <string name="st4_engines_opens">Otwiera: %1$s</string>
+    <string name="st4_open_app">w aplikacji</string>
+    <string name="st4_open_browser">w przeglądarce</string>
+    <string name="st4_engines_new">Nowa</string>
+    <string name="st4_engines_edit">Edycja</string>
+    <string name="st4_engines_name">Nazwa</string>
+    <string name="st4_engines_url">Adres, {q} = fraza</string>
+    <string name="st4_engines_rules">Fraza: tytuł + rok · dla odcinka „Tytuł S02E05” · dla napisów + język</string>
+    <string name="st4_engines_kind">Rodzaj</string>
+    <string name="st4_in_app">W aplikacji</string>
+    <string name="st4_in_app_hint">Kliknięty magnet od razu trafia na serwer; pobrany plik wideo idzie na serwer jak z „Pobranych”.</string>
+    <string name="st4_in_browser">W przeglądarce</string>
+    <string name="st4_in_browser_hint">Otwiera przeglądarkę; magnet udostępnij aplikacji, żeby trafił na serwer.</string>
+    <string name="st4_check">Sprawdź</string>
+    <string name="st4_save">Zapisz</string>
+    <string name="st4_set_up_engines">Ustaw wyszukiwarki ›</string>
+    <string name="st4_moved_to_settings">przeniesione do Ustawień</string>
+    <string name="st4_browser_download">Pobieram %1$s</string>
+
+    <!-- Na telefonie (D5) i szybkie akcje -->
+    <string name="st4_select">Zaznacz</string>
+    <string name="st4_done">Gotowe</string>
+    <string name="st4_sel_all">Wszystkie</string>
+    <string name="st4_sel_watched">Obejrzane</string>
+    <string name="st4_sel_subs">Napisy %1$s</string>
+    <string name="st4_sel_with">Z napisami %1$s</string>
+    <string name="st4_sel_without">Bez napisów %1$s</string>
+    <string name="st4_sel_delete">Usuń · %1$d</string>
+    <string name="st4_play_now">Odtwórz teraz</string>
+    <string name="st4_more">Więcej</string>
+    <string name="st4_play_from">Odtwórz od…</string>
+    <string name="st4_on_screen">Na ekranie…</string>
+    <string name="st4_download_subs">Pobierz napisy</string>
+    <string name="st4_fit_subs">Dopasuj napisy</string>
+    <string name="st4_keep">Zostaw na stałe</string>
+    <string name="st4_kept">Zostanie na stałe</string>
+    <string name="st4_delete_phone">Usuń z telefonu…</string>
+    <string name="st4_details">Szczegóły</string>
+    <string name="st4_resume_from">Wznów od %1$s</string>
+    <string name="st4_from_start">Od początku</string>
+    <string name="st4_delete_phone_text">Usunąć kopię „%1$s” z tego telefonu? Na serwerze zostaje.</string>
+    <string name="st4_delete_all_title">Usunąć z telefonu?</string>
+    <plurals name="st4_delete_all_text">
+        <item quantity="one">%1$d kopia (%2$s) zniknie z tego telefonu. Na serwerze zostaje.</item>
+        <item quantity="few">%1$d kopie (%2$s) znikną z tego telefonu. Na serwerze zostają.</item>
+        <item quantity="many">%1$d kopii (%2$s) zniknie z tego telefonu. Na serwerze zostają.</item>
+        <item quantity="other">%1$d kopii (%2$s) zniknie z tego telefonu. Na serwerze zostają.</item>
+    </plurals>
+    <string name="st4_fit_running">Dopasowuję napisy…</string>
+    <string name="st4_fit_none">Brak napisów do dopasowania</string>
+    <string name="st4_fit_result">Dopasowane: %1$d · już dobre: %2$d · nie udało się: %3$d</string>
+    <string name="st4_search_subs">Szukaj napisów: %1$s</string>
+
+    <!-- Szczegóły kopii -->
+    <string name="st4_det_server">Serwer</string>
+    <string name="st4_det_path">Plik</string>
+    <string name="st4_det_size">Rozmiar</string>
+    <string name="st4_det_length">Długość</string>
+    <string name="st4_det_on_phone">Na telefonie</string>
+    <string name="st4_det_policy">Usuwanie</string>
+    <string name="st4_det_subs">Napisy</string>
+    <string name="st4_det_buffer">tylko bufor</string>
+    <string name="st4_subs_none_short">brak</string>
+
+    <!-- Strona tytułu z telefonu (D6) -->
+    <string name="st4_on_this_phone">Na tym telefonie</string>
+    <plurals name="st4_phone_eps">
+        <item quantity="one">%1$d odcinek · %2$s</item>
+        <item quantity="few">%1$d odcinki · %2$s</item>
+        <item quantity="many">%1$d odcinków · %2$s</item>
+        <item quantity="other">%1$d odcinka · %2$s</item>
+    </plurals>
+    <plurals name="st4_phone_copies">
+        <item quantity="one">%1$d kopia · %2$s</item>
+        <item quantity="few">%1$d kopie · %2$s</item>
+        <item quantity="many">%1$d kopii · %2$s</item>
+        <item quantity="other">%1$d kopii · %2$s</item>
+    </plurals>
+    <string name="st4_policy_text">Kopie grają bez serwera. Znikają %1$s, chyba że zostawisz je na stałe.</string>
+    <string name="st4_policy_manual">Kopie grają bez serwera. Zostają, dopóki ich nie usuniesz.</string>
+    <string name="st4_next3">Pobierz kolejne 3</string>
+    <string name="st4_season_subs">napisy: %1$s</string>
+    <string name="st4_play_ep_from">%1$s od %2$s</string>
+    <plurals name="st4_seasons">
+        <item quantity="one">%d sezon</item>
+        <item quantity="few">%d sezony</item>
+        <item quantity="many">%d sezonów</item>
+        <item quantity="other">%d sezonu</item>
+    </plurals>
+</resources>

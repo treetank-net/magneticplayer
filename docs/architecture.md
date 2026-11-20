@@ -36,7 +36,8 @@ pipe instead of a unix socket.
 | `mp_upload.py` | receiving videos from the phone (`/api/upload/<id>`): resumable chunks in `.mp-upload/`, free space, name collisions, the `upload_dir` folder or `Z telefonu` ("From phone") in the library; history of received files (`uploads.json`) with keep / move to a library folder |
 | `mp_catalog.py` | the library as films (agent 1.8+): `Catalog` groups library files into titles, recognises them (`mp_ident`), reads audio and subtitle languages, adds Wikidata details by IMDb id (cast, directors, topics, age) and answers title, person and "what next"; `Wishlist` is the shared want-to-watch list |
 | `mp_selfupdate.py` | the agent updates itself from signed GitHub releases (ECDSA P-256 verified in pure Python), at a quiet moment, through `self-update.sh` with a rollback |
-| `mp_tasks.py` | background file tasks with a preview: planners (free up a disk, tidy up by recognition, duplicates, shrinking by storage profiles, deleting to the trash) and one worker; moving through the torrent client when the torrent is still in it; `.mp-trash/` per library folder |
+| `mp_tasks.py` | background file tasks with a preview: planners (free up a disk, tidy up by recognition, duplicates, shrinking by storage profiles, deleting to the trash; 1.16+: sound fix, modernize, downscale, compress, task counters from a background scan) and one worker; moving through the torrent client when the torrent is still in it; `.mp-trash/` per library folder |
+| `mp_scope.py` | task scopes (agent 1.16+): parsing a scope, deciding which files it covers, its label |
 | `mp_mcp.py` | MCP server for an AI assistant in the LAN (Streamable HTTP, tools over the library and tasks) and the OAuth 2.1 endpoints whose approval is an access request on the phone |
 | `mp_i18n.py` | language of user-facing messages: `T("English", "Polski")` based on the current request's `Accept-Language` (a per-thread value set at the start of `dispatch`); `bind(fn)` carries the language into background threads; the CLI (`--pair`, `--join`) uses `LC_ALL`/`LC_MESSAGES`/`LANG`. Install scripts have their own `say`/`Say` (Polish with a Polish locale / Windows UI language) |
 | `mp_platform.py` | everything OS-specific: graphical session, unlocking, suspend, network interface, wake assessment, sending WoL, the mpv path (on Windows `mpv\mpv.exe` next to the agent). Another OS is added here; whatever it can't do, the agent doesn't report in `features`/`power` |
@@ -332,6 +333,23 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
 7. Subtitles (`kind: subs`, agent 1.9+): every video with SRT or text SUB files next to it, in every library folder
    except backups, files assessed before left out; each item fits its files (see Subtitles). It waits while somebody
    watches from the same disk, since the whole file is read for its sound.
+8. Task boards (agent 1.16+, `features.jobs_v2`, [api.md](api.md#task-scopes-counters-and-new-task-kinds-agent-116-featuresjobs_v2)):
+   every plan and the counters of `GET /api/library/jobs` take a **scope** (`mp_scope.py`: folders, single files, a
+   catalog title, a tag, age groups), parsed once into a `Matcher` that snapshots the catalog; old planners' results
+   are filtered by it afterwards, new ones apply it while walking. The counters never probe inside a request: a
+   background **facts scan** (`job-facts.json`; 60 s after start, then every 30 minutes and soon after a library
+   change) keeps per video its probe, sidecar subtitles (re-listed when the folder changes), inode, real path and
+   sampled hashes for duplicates; files of unfinished torrents count as `pending`. Counters and plans share one
+   selector (`Tasks._pick`), so a board's number is the size of the plan it opens. New kinds reuse the `shrink` item
+   with per-item overrides: `audio_fix` (damaged tracks only, AAC 128k/256k or 192k/384k), `modernize` with `audio`
+   (H.264 at the same resolution: the card's H.264 encoder or x264 `-preset medium`), `downscale` (H.265 to
+   1080/720/480/360, profiles `good`/`compact`/`tiny`/`mini`) and `compress` (H.265 at the same resolution, profile
+   `same`, three qualities). `dupes` with `what` also finds one catalog title in several copies and marks which copy
+   stays; `free` with `amount`/`to_percent`/`order` deletes whole titles to the trash instead of moving them.
+   "Watched" is `played.json`: the last time each video was streamed from this server (a GET, not a HEAD); a title
+   streamed in the last 14 days is "being watched" (kept when freeing space, `subs` `which: watched_now`). With
+   `audio_fix_auto` / `subs_auto` (`/api/config/jobs`) new files found by the scan get a task by themselves. A task
+   stores the scope's label in both languages and returns it as `scope_label`.
 
 ### Covers
 `mp_media.cover()`: a picture next to the video or in the folder first (Jellyfin/Kodi names), otherwise a frame of

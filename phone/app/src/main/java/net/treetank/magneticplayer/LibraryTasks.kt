@@ -229,6 +229,10 @@ fun ReplicaLine(rep: Replica?, modifier: Modifier = Modifier) {
 
 private val GB = 1L shl 30
 
+/** Plan and task kinds that re-encode files (agent 1.16+ splits "shrink" into the four after it): the same item
+ *  fields (codec, height, size, est), the encoder choice in the preview and "saved" on the task. */
+internal val ENCODE_KINDS = setOf("shrink", "audio_fix", "modernize", "downscale", "compress")
+
 /** Plan request bodies (JSON as a string, so it survives in rememberSaveable). */
 object PlanBody {
     fun free(root: Int, need: Long?) = JSONObject().put("kind", "free").put("root", root).apply { if (need != null) put("need", need) }.toString()
@@ -248,7 +252,7 @@ object PlanBody {
 // ---------------------------------------------------------------- disks and tasks
 
 @Composable
-private fun ScreenHeader(title: String, onBack: () -> Unit, onRefresh: (() -> Unit)? = null) {
+internal fun ScreenHeader(title: String, onBack: () -> Unit, onRefresh: (() -> Unit)? = null) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
         IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up)) }
         Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -492,7 +496,7 @@ private fun itemState(s: String) = when (s) {
 }
 
 @Composable
-private fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<TaskItem>?, onRemove: (() -> Unit)? = null, onCancel: () -> Unit) {
+internal fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<TaskItem>?, onRemove: (() -> Unit)? = null, onCancel: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     // the list comes without items (brief): an opened card reads its own, again only when the counts change
     var items by remember(t.id) { mutableStateOf(t.items) }
@@ -517,7 +521,9 @@ private fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<T
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(t.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    // the scope it was made for (agent 1.16+): "Compression · <title>", unless the title already says it
+                    val title = t.scopeLabel?.takeIf { it !in t.title }?.let { "${t.title} · $it" } ?: t.title
+                    Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(if (active && cancelling) stringResource(R.string.lib_task_cancelling) else taskState(t.state), style = MaterialTheme.typography.labelMedium,
                         color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     t.encoder?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -547,7 +553,7 @@ private fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<T
                     }
                 }
             }
-            if (t.kind == "shrink" && t.saved > 0) Text(stringResource(R.string.lib_task_saved, humanBytes(t.saved)),
+            if (t.kind in ENCODE_KINDS && t.saved > 0) Text(stringResource(R.string.lib_task_saved, humanBytes(t.saved)),
                 style = MaterialTheme.typography.bodySmall)
             if (t.kind == "subs" && (t.fixed > 0 || t.unfit > 0)) Text(stringResource(R.string.lib_task_subs, t.fixed, t.unfit),
                 style = MaterialTheme.typography.bodySmall)
@@ -647,6 +653,10 @@ private fun planKindTitle(kind: String) = when (kind) {
     "modernize" -> stringResource(R.string.lib_modernize)
     "subs" -> stringResource(R.string.lib_subs)
     "subs_get" -> stringResource(R.string.subs_get_title)
+    // agent 1.16+ (jobs_v2), one kind per task screen
+    "audio_fix" -> stringResource(R.string.job_audio)
+    "downscale" -> stringResource(R.string.job_down)
+    "compress" -> stringResource(R.string.job_comp)
     "trash" -> stringResource(R.string.lib_delete)
     else -> stringResource(R.string.lib_move)
 }
@@ -662,7 +672,7 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
     val kind = r.optString("kind")
     val items = remember(planId) { r.objects("items") }
     val skipped = remember(planId) { r.objects("skipped") }
-    val encoders = remember(planId) { if (kind == "shrink") r.objects("encoders") else emptyList() }
+    val encoders = remember(planId) { if (kind in ENCODE_KINDS) r.objects("encoders") else emptyList() }
     var picked by remember(planId) { mutableStateOf(items.indices.filter { !items[it].optBoolean("unsure") }.toSet()) }
     var showSkipped by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
@@ -719,6 +729,7 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
                 }, enabled = picked.isNotEmpty() && !starting) {
                     Text(when (kind) {
                         "shrink" -> stringResource(R.string.lib_shrink)
+                        "audio_fix", "modernize", "downscale", "compress" -> stringResource(R.string.job_start)
                         "subs" -> stringResource(R.string.lib_subs_go)
                         "subs_get" -> stringResource(R.string.subs_get_go)
                         "trash" -> stringResource(R.string.lib_delete)
@@ -745,7 +756,9 @@ private fun PlanSummary(r: JSONObject, count: Int) {
             else -> lines += pluralStringResource(R.plurals.lib_sum_checked, it, it)
         }
     }
-    if (kind == "shrink") {
+    // agent 1.16+: the scope the plan was made for
+    r.optStr("scope_label")?.let { lines += stringResource(R.string.job_scope, it) }
+    if (kind in ENCODE_KINDS) {
         lines += stringResource(R.string.lib_sum_shrink, humanBytes(r.optLong("bytes")), humanBytes(r.optLong("est")),
             humanBytes(r.optLong("saved")))
         lines += stringResource(R.string.lib_sum_hours, String.format(java.util.Locale.ROOT, "%.1f", r.optDouble("hours", 0.0)))
@@ -760,7 +773,7 @@ private fun PlanSummary(r: JSONObject, count: Int) {
         lines += stringResource(R.string.subs_get_hint)
     }
     if (r.has("trash_days")) r.optInt("trash_days").let {
-        lines += pluralStringResource(if (kind == "shrink") R.plurals.lib_sum_originals_kept else R.plurals.lib_sum_trash_kept, it, it)
+        lines += pluralStringResource(if (kind in ENCODE_KINDS) R.plurals.lib_sum_originals_kept else R.plurals.lib_sum_trash_kept, it, it)
     }
     val warnings = r.optJSONArray("warnings")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList()
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -825,7 +838,7 @@ private fun PlanItem(kind: String, it: JSONObject) {
     val name = it.optString("name").ifEmpty { it.optString("path").substringAfterLast('/') }
     Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
     when (kind) {
-        "shrink" -> if (it.optBoolean("audio_fix")) {
+        "shrink", "audio_fix", "modernize", "downscale", "compress" -> if (it.optBoolean("audio_fix") || kind == "audio_fix") {
             // damaged sound in a modern picture (agent 1.15.0+): only the sound is re-encoded
             val codecs = it.optJSONArray("audio_codecs")?.let { a -> List(a.length()) { k -> a.optString(k) } }.orEmpty()
             Text(stringResource(R.string.lib_item_audio_fix, codecs.joinToString().ifEmpty { "?" }) + " · " +
@@ -834,7 +847,9 @@ private fun PlanItem(kind: String, it: JSONObject) {
             val h = it.optInt("height"); val to = it.optInt("to_height")
             val codec = it.optString("codec").uppercase()
             val from = listOfNotNull(codec.ifEmpty { null }, h.takeIf { v -> v > 0 }?.let { v -> "${v}p" }).joinToString(" ")
-            Text("$from → HEVC" + (if (to > 0) " ${to}p" else "") + " · ${humanBytes(it.optLong("size"))} → ${humanBytes(it.optLong("est"))}",
+            // modernize re-encodes to H.264 (agent 1.16+ may name the target itself)
+            val toCodec = it.optString("to_codec").uppercase().ifEmpty { if (kind == "modernize") "H.264" else "HEVC" }
+            Text("$from → $toCodec" + (if (to > 0) " ${to}p" else "") + " · ${humanBytes(it.optLong("size"))} → ${humanBytes(it.optLong("est"))}",
                 style = small, color = dim)
         }
         "subs" -> {
@@ -873,7 +888,14 @@ private fun PlanItem(kind: String, it: JSONObject) {
 @Composable
 private fun DupesContent(r: JSONObject, onPlan: (String) -> Unit) {
     val groups = remember(r) { r.objects("groups") }
-    var sel by remember(r) { mutableStateOf<Set<Pair<Int, Int>>>(emptySet()) }
+    // agent 1.16+ with a "which copy to keep" rule: copies marked "keep": false start ticked (never a whole group)
+    var sel by remember(r) {
+        mutableStateOf(groups.flatMapIndexed { g, grp ->
+            val files = grp.objects("files")
+            val drop = files.indices.filter { i -> files[i].has("keep") && !files[i].optBoolean("keep") && !files[i].optBoolean("torrent") }
+            if (drop.size < files.size) drop.map { g to it } else emptyList()
+        }.toSet())
+    }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
             item {

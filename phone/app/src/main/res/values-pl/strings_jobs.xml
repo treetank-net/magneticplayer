@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lista zadań „Dyski i porządki” / „Optymalizacja” i ekran każdego zadania (agent 1.16+, jobs_v2). Polski. -->
+<resources>
+    <!-- lista (A1) i zakres (E2) -->
+    <string name="job_optimise">Optymalizacja</string>
+    <string name="job_scope_whole">Zakres: cały komputer</string>
+    <string name="job_scope_whole_sub">wszystkie dyski · liczniki dla całej biblioteki</string>
+    <string name="job_narrow">Zawęź: folder, kategoria, wiek…</string>
+    <string name="job_narrow_title">Zawęź zakres</string>
+    <string name="job_narrow_later">Kategoria, grupa wiekowa i tytuł dojdą w kolejnej wersji.</string>
+    <string name="job_apply">Zastosuj</string>
+    <string name="job_scope">Zakres: %1$s</string>
+    <string name="job_scope_clear">✕ cały komputer</string>
+    <string name="job_scope_clear_cd">Wróć do całego komputera</string>
+    <string name="job_bg_row">Praca w tle: %1$s</string>
+    <string name="job_bg_idle">Praca w tle: nic nie trwa</string>
+    <plurals name="job_bg_running">
+        <item quantity="one">%1$d zadanie trwa</item>
+        <item quantity="few">%1$d zadania trwają</item>
+        <item quantity="many">%1$d zadań trwa</item>
+        <item quantity="other">%1$d zadania trwa</item>
+    </plurals>
+    <plurals name="job_bg_waiting">
+        <item quantity="one">%1$d czeka</item>
+        <item quantity="few">%1$d czekają</item>
+        <item quantity="many">%1$d czeka</item>
+        <item quantity="other">%1$d czeka</item>
+    </plurals>
+    <string name="job_bg_title">Praca w tle</string>
+    <string name="job_bg_empty">Nic nie trwa ani nie czeka.</string>
+    <string name="job_grp_tidy">Porządki · przenoszą i usuwają</string>
+    <string name="job_grp_renovation">Renowacja · zmienia pliki, oryginał do kosza</string>
+    <string name="job_grp_subs">Napisy</string>
+    <string name="job_grp_catalog">Katalog · nie rusza plików</string>
+    <string name="job_disk_wide_note">Zadania tylko dla całych dysków (Rozkład na dyski, Zwolnij miejsce, Kosz) są na liście całego komputera.</string>
+    <string name="job_not_needed">niepotrzebne</string>
+    <string name="job_nothing">nic do zrobienia</string>
+    <string name="job_checking">sprawdzam…</string>
+    <string name="job_trash_empty">pusty</string>
+    <plurals name="job_trash_row">
+        <item quantity="one">Oryginały po zmianach, %1$d dzień</item>
+        <item quantity="few">Oryginały po zmianach, %1$d dni</item>
+        <item quantity="many">Oryginały po zmianach, %1$d dni</item>
+        <item quantity="other">Oryginały po zmianach, %1$d dnia</item>
+    </plurals>
+    <plurals name="job_n_groups">
+        <item quantity="one">%1$d grupa · %2$s</item>
+        <item quantity="few">%1$d grupy · %2$s</item>
+        <item quantity="many">%1$d grup · %2$s</item>
+        <item quantity="other">%1$d grupy · %2$s</item>
+    </plurals>
+    <plurals name="job_n_titles_size">
+        <item quantity="one">%1$d tytuł · %2$s</item>
+        <item quantity="few">%1$d tytuły · %2$s</item>
+        <item quantity="many">%1$d tytułów · %2$s</item>
+        <item quantity="other">%1$d tytułu · %2$s</item>
+    </plurals>
+    <plurals name="job_n_in4k">
+        <item quantity="one">%1$d w 4K</item>
+        <item quantity="few">%1$d w 4K</item>
+        <item quantity="many">%1$d w 4K</item>
+        <item quantity="other">%1$d w 4K</item>
+    </plurals>
+    <plurals name="job_n_to_check">
+        <item quantity="one">%1$d do sprawdzenia</item>
+        <item quantity="few">%1$d do sprawdzenia</item>
+        <item quantity="many">%1$d do sprawdzenia</item>
+        <item quantity="other">%1$d do sprawdzenia</item>
+    </plurals>
+    <!-- nazwy zadań i ich jednolinijkowe opisy na liście -->
+    <string name="job_dupes_row">Te same pliki i ten sam film w kilku wersjach</string>
+    <string name="job_free_row">Usuwa obejrzane, gdy dysk się zapełnia</string>
+    <string name="job_audio">Napraw dźwięk</string>
+    <string name="job_audio_row">Uszkodzone MP3, telefon na nich staje</string>
+    <string name="job_modern">Unowocześnij stary obraz</string>
+    <string name="job_modern_row">DivX, XviD, MPEG-2, WMV → H.264</string>
+    <string name="job_down">Zmniejsz rozdzielczość</string>
+    <string name="job_down_row">4K → 1080p, archiwum do 480p lub 360p</string>
+    <string name="job_comp">Kompresja</string>
+    <string name="job_comp_row">Ta sama rozdzielczość, mniejszy plik (H.265)</string>
+    <string name="job_subsget">Pobierz brakujące</string>
+    <string name="job_subsget_row">Z OpenSubtitles i innych, bez kont</string>
+    <string name="job_subs">Dopasuj do filmu</string>
+    <string name="job_subs_row">Przesuwa napisy do Twojej wersji</string>
+    <string name="job_tags">Katalog i tagi</string>
+    <string name="job_tags_row">Rozpoznanie, gatunek, wiek, kategorie</string>
+    <!-- wspólne na ekranach zadań -->
+    <string name="job_start">Uruchom</string>
+    <string name="job_save">Zapisz</string>
+    <string name="job_saved">Zapisano</string>
+    <string name="job_folders">Foldery</string>
+    <string name="job_folders_all">wszystkie</string>
+    <string name="job_files">Pliki</string>
+    <string name="job_settings">Ustawienia</string>
+    <string name="job_encoder">Koder</string>
+    <string name="job_enc_gpu">Karta graficzna</string>
+    <string name="job_enc_cpu">Procesor</string>
+    <string name="job_enc_cpu_day">Procesor, w dzień</string>
+    <string name="job_enc_gpu_hint">Szybko; pliki trochę większe.</string>
+    <string name="job_enc_cpu_hint">Mniejsze pliki, ale wolno i głośno.</string>
+    <string name="job_total_time">Razem ok. %1$s.</string>
+    <string name="job_nothing_folders">W wybranych folderach nie ma nic do zrobienia</string>
+    <string name="job_checked_at">Sprawdzone w tle %1$s · </string>
+    <string name="job_today_at">dziś o %1$s</string>
+    <string name="job_not_checked">Jeszcze nie sprawdzone w tle · </string>
+    <string name="job_check_now">sprawdź teraz</string>
+    <plurals name="job_and_more">
+        <item quantity="one">… i %1$d więcej</item>
+        <item quantity="few">… i %1$d więcej</item>
+        <item quantity="many">… i %1$d więcej</item>
+        <item quantity="other">… i %1$d więcej</item>
+    </plurals>
+    <plurals name="job_found_files">
+        <item quantity="one">Znaleziono %1$d plik</item>
+        <item quantity="few">Znaleziono %1$d pliki</item>
+        <item quantity="many">Znaleziono %1$d plików</item>
+        <item quantity="other">Znaleziono %1$d pliku</item>
+    </plurals>
+    <plurals name="job_preview_n">
+        <item quantity="one">Podgląd · %1$d plik</item>
+        <item quantity="few">Podgląd · %1$d pliki</item>
+        <item quantity="many">Podgląd · %1$d plików</item>
+        <item quantity="other">Podgląd · %1$d pliku</item>
+    </plurals>
+    <plurals name="job_preview_n_time">
+        <item quantity="one">Podgląd · %1$d plik · %2$s</item>
+        <item quantity="few">Podgląd · %1$d pliki · %2$s</item>
+        <item quantity="many">Podgląd · %1$d plików · %2$s</item>
+        <item quantity="other">Podgląd · %1$d pliku · %2$s</item>
+    </plurals>
+    <plurals name="job_summary_files">
+        <item quantity="one">%1$d plik · −%2$s · ok. %3$s</item>
+        <item quantity="few">%1$d pliki · −%2$s · ok. %3$s</item>
+        <item quantity="many">%1$d plików · −%2$s · ok. %3$s</item>
+        <item quantity="other">%1$d pliku · −%2$s · ok. %3$s</item>
+    </plurals>
+    <plurals name="job_originals_trash">
+        <item quantity="one">Oryginały: kosz na tym samym dysku, %1$d dzień.</item>
+        <item quantity="few">Oryginały: kosz na tym samym dysku, %1$d dni.</item>
+        <item quantity="many">Oryginały: kosz na tym samym dysku, %1$d dni.</item>
+        <item quantity="other">Oryginały: kosz na tym samym dysku, %1$d dnia.</item>
+    </plurals>
+    <!-- A4 Duplikaty -->
+    <string name="job_dupes_desc">Usuwa zbędne kopie. Z każdej grupy zawsze zostaje co najmniej jedna.</string>
+    <string name="job_dupes_what">Co jest duplikatem</string>
+    <string name="job_dupes_same_files">Te same pliki</string>
+    <string name="job_dupes_same_title">Ten sam film w innych wersjach</string>
+    <string name="job_dupes_same_files_hint">Identyczna zawartość, bajt w bajt, w różnych miejscach.</string>
+    <string name="job_dupes_same_title_hint">Rozpoznane w katalogu jako ten sam film, np. 720p i 1080p.</string>
+    <string name="job_dupes_keep">Którą kopię zostawić</string>
+    <string name="job_keep_folder">W folderze, który pasuje</string>
+    <string name="job_keep_quality">Lepszą jakość</string>
+    <string name="job_keep_space">Na dysku z miejscem</string>
+    <string name="job_keep_manual">Wybiorę sam</string>
+    <plurals name="job_dupes_found_groups">
+        <item quantity="one">Znaleziono %1$d grupę · %2$s do odzyskania</item>
+        <item quantity="few">Znaleziono %1$d grupy · %2$s do odzyskania</item>
+        <item quantity="many">Znaleziono %1$d grup · %2$s do odzyskania</item>
+        <item quantity="other">Znaleziono %1$d grupy · %2$s do odzyskania</item>
+    </plurals>
+    <plurals name="job_dupes_found_titles">
+        <item quantity="one">Znaleziono %1$d tytuł w kilku wersjach · %2$s do odzyskania</item>
+        <item quantity="few">Znaleziono %1$d tytuły w kilku wersjach · %2$s do odzyskania</item>
+        <item quantity="many">Znaleziono %1$d tytułów w kilku wersjach · %2$s do odzyskania</item>
+        <item quantity="other">Znaleziono %1$d tytułu w kilku wersjach · %2$s do odzyskania</item>
+    </plurals>
+    <string name="job_dupes_seeding">Seedowane w kliencie torrentów: %1$d. Takie kopie pokazujemy, ale usuwa się je w kliencie.</string>
+    <!-- A5 Zwolnij miejsce -->
+    <string name="job_free_desc">Usuwa tytuły z dysku (do kosza). Nie przekodowuje i nie przenosi.</string>
+    <string name="job_disk">Dysk</string>
+    <string name="job_disk_chip">%1$s · %2$d%% wolne</string>
+    <string name="job_how_much">Ile</string>
+    <string name="job_free_to15" formatted="false">do 15% wolnego</string>
+    <string name="job_free_already">Już %1$d%% wolnego: nic do zrobienia.</string>
+    <string name="job_what_first">Co najpierw</string>
+    <string name="job_free_watched">Obejrzane przez wszystkich, najdawniej</string>
+    <string name="job_free_largest">Największe pliki</string>
+    <string name="job_free_skip_kept">Pomijaj „Chcę zachować” i trwające seriale</string>
+    <string name="job_instead">Zamiast usuwać</string>
+    <string name="job_instead_down">Zmniejsz rozdzielczość: ok. %1$s</string>
+    <string name="job_instead_dupes">Duplikaty: %1$s</string>
+    <string name="job_instead_note">To osobne zadania; tu tylko odnośniki.</string>
+    <!-- Kosz -->
+    <string name="job_trash_desc">Tu czekają oryginały po zmianach i usunięte tytuły, potem znikają na dobre.</string>
+    <!-- B1 Napraw dźwięk -->
+    <string name="job_audio_desc">Ścieżki z uszkodzonymi ramkami (telefon staje, trzaski) zamienia na AAC. Obraz zostaje bit w bit.</string>
+    <string name="job_audio_checked">Serwer dekoduje dźwięk w tle, raz dziennie. Sprawdzono %1$d z %2$d filmów; reszta jutro.</string>
+    <string name="job_audio_checked_all">Serwer dekoduje dźwięk w tle, raz dziennie. Sprawdzono wszystkie filmy (%1$d).</string>
+    <string name="job_audio_eta">ok. %1$s na plik · ok. %2$s razem · rozmiar prawie bez zmian</string>
+    <plurals name="job_audio_errors">
+        <item quantity="one">%1$s · %2$d błąd ramki</item>
+        <item quantity="few">%1$s · %2$d błędy ramek</item>
+        <item quantity="many">%1$s · %2$d błędów ramek</item>
+        <item quantity="other">%1$s · %2$d błędu ramek</item>
+    </plurals>
+    <string name="job_aac_quality">Jakość AAC</string>
+    <string name="job_aac_standard">128k stereo / 256k 5.1</string>
+    <string name="job_aac_high">192k stereo / 384k 5.1</string>
+    <string name="job_audio_auto">Naprawiaj sam nowe pliki</string>
+    <!-- B2 Unowocześnij stary obraz -->
+    <string name="job_modern_desc">Formaty, których telefony i telewizory nie odtwarzają albo odtwarzają źle, zamienia na H.264. Rozdzielczość zostaje.</string>
+    <string name="job_modern_skip">Pomijamy pliki, które telefon i Chromecast już odtwarzają dobrze.</string>
+    <string name="job_sound">Dźwięk</string>
+    <string name="job_sound_keep">Bez zmian, jeśli działa</string>
+    <string name="job_sound_aac">Zawsze AAC</string>
+    <!-- B3 Zmniejsz rozdzielczość -->
+    <string name="job_down_desc">Pliki większe niż wybrana rozdzielczość zmniejsza do niej. Mniejszych nie powiększa.</string>
+    <string name="job_to">Do</string>
+    <string name="job_down_look_1080">Full HD: nadal ostre na dużym telewizorze</string>
+    <string name="job_down_look_720">HD: dobre na telefonie i średnim telewizorze</string>
+    <string name="job_down_look_480">Jakość DVD: wystarczy na archiwum starych seriali</string>
+    <string name="job_down_look_360">Na telefon: na telewizorze miękkie, pliki bardzo małe</string>
+    <string name="job_down_remember">Zapamiętaj jako profil tych folderów</string>
+    <string name="job_down_remember_sub">Nowe pliki w nich też będą zmniejszane.</string>
+    <!-- B4 Kompresja -->
+    <string name="job_comp_desc">Ta sama rozdzielczość, mniejszy plik: przekodowanie do H.265. Do zmiany rozdzielczości jest osobne zadanie.</string>
+    <string name="job_quality">Jakość</string>
+    <string name="job_q_transparent">Bez widocznej różnicy</string>
+    <string name="job_q_balanced">Zrównoważona</string>
+    <string name="job_q_saving">Oszczędna</string>
+    <string name="job_q_transparent_hint">Trudno odróżnić od oryginału nawet na dużym telewizorze.</string>
+    <string name="job_q_balanced_hint">Drobne straty na dużym telewizorze, na telefonie niewidoczne.</string>
+    <string name="job_q_saving_hint">Najmniejsze pliki; na dużym telewizorze to widać.</string>
+    <string name="job_which_files">Które pliki</string>
+    <string name="job_comp_high">Tylko z dużą przepływnością (ponad 3 GB na godzinę)</string>
+    <string name="job_comp_skip_hevc">Pomijaj H.265 i AV1</string>
+    <string name="job_comp_skip_seed">Pomijaj seedowane torrenty</string>
+    <string name="job_comp_filters_note">Liczby są dla domyślnych filtrów; dokładną listę pokaże Podgląd.</string>
+    <string name="job_comp_need_free">Na czas pracy dysk potrzebuje do %1$s wolnego (oryginały w koszu).</string>
+    <!-- C1 Pobierz brakujące napisy -->
+    <string name="job_subsget_desc">Szuka, pobiera i od razu dopasowuje do dźwięku filmu. Pliki filmów zostają bez zmian.</string>
+    <string name="job_languages">Języki</string>
+    <string name="job_which_films">Które filmy</string>
+    <string name="job_sg_no_subs">Bez żadnych napisów</string>
+    <string name="job_sg_no_lang">Bez napisów w tym języku</string>
+    <string name="job_sg_new">Tylko nowe, od dziś</string>
+    <string name="job_order">Kolejność</string>
+    <string name="job_order_recent">Ostatnio dodane i oglądane</string>
+    <string name="job_order_alpha">Alfabetycznie</string>
+    <plurals name="job_sg_summary">
+        <item quantity="one">%1$d pozycja · ok. %2$s pracy</item>
+        <item quantity="few">%1$d pozycje · ok. %2$s pracy</item>
+        <item quantity="many">%1$d pozycji · ok. %2$s pracy</item>
+        <item quantity="other">%1$d pozycji · ok. %2$s pracy</item>
+    </plurals>
+    <plurals name="job_sg_days">
+        <item quantity="one">Ok. %1$d dziennie (limit OpenSubtitles) · ok. %2$d dzień</item>
+        <item quantity="few">Ok. %1$d dziennie (limit OpenSubtitles) · ok. %2$d dni</item>
+        <item quantity="many">Ok. %1$d dziennie (limit OpenSubtitles) · ok. %2$d dni</item>
+        <item quantity="other">Ok. %1$d dziennie (limit OpenSubtitles) · ok. %2$d dnia</item>
+    </plurals>
+    <plurals name="job_sg_have">
+        <item quantity="one">%1$d film już ma napisy w wybranych językach.</item>
+        <item quantity="few">%1$d filmy już mają napisy w wybranych językach.</item>
+        <item quantity="many">%1$d filmów już ma napisy w wybranych językach.</item>
+        <item quantity="other">%1$d filmu już ma napisy w wybranych językach.</item>
+    </plurals>
+    <string name="job_sg_new_note">Nowe filmy dostaną napisy same, po dodaniu.</string>
+    <!-- C2 Dopasuj napisy do filmu -->
+    <string name="job_subs_title">Dopasuj napisy do filmu</string>
+    <string name="job_subs_desc">Porównuje napisy, które już leżą obok filmu, z mową i przesuwa je do Twojej wersji (inny początek, inna liczba klatek). Niczego nie pobiera.</string>
+    <string name="job_which_subs">Które napisy</string>
+    <string name="job_subs_unchecked">Niesprawdzone</string>
+    <string name="job_subs_watched">Tylko do tego, co się ogląda</string>
+    <string name="job_subs_all">Wszystkie od nowa</string>
+    <string name="job_along">Przy okazji</string>
+    <string name="job_subs_srt">Tekstowe .sub zamień na .srt</string>
+    <string name="job_subs_mark">Niepasujące oznacz (nie usuwaj)</string>
+    <string name="job_subs_queue">Dla niepasujących dodaj do „Pobierz brakujące”</string>
+    <string name="job_subs_orig">Oryginały napisów odkłada na bok.</string>
+    <plurals name="job_subs_summary">
+        <item quantity="one">%1$d plik napisów · ok. %2$s</item>
+        <item quantity="few">%1$d pliki napisów · ok. %2$s</item>
+        <item quantity="many">%1$d plików napisów · ok. %2$s</item>
+        <item quantity="other">%1$d pliku napisów · ok. %2$s</item>
+    </plurals>
+    <plurals name="job_subs_before">
+        <item quantity="one">%1$d plik napisów dopasowany wcześniej, pominięty.</item>
+        <item quantity="few">%1$d pliki napisów dopasowane wcześniej, pominięte.</item>
+        <item quantity="many">%1$d plików napisów dopasowanych wcześniej, pominiętych.</item>
+        <item quantity="other">%1$d pliku napisów dopasowanego wcześniej, pominiętego.</item>
+    </plurals>
+    <!-- C3 Katalog i tagi (na razie tylko liczniki) -->
+    <string name="job_tags_desc">Tagi z IMDb/Wikidata, na których opierają się kategorie w Bibliotece i „Układ folderów”. Pliki zostają, gdzie są.</string>
+    <string name="job_tags_recognised">%1$d z %2$d tytułów rozpoznanych</string>
+    <string name="job_tags_to_check">Do sprawdzenia: %1$d</string>
+    <string name="job_tags_later">Wybór właściwego dopasowania dla każdego z nich dojdzie w kolejnej wersji.</string>
+</resources>

@@ -83,6 +83,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -117,6 +119,8 @@ object Nav {
     fun next(imdb: String, ended: Boolean = false) = JSONObject().put("k", "next").put("imdb", imdb).put("ended", ended)
     fun results(conds: List<String>, sort: String = "rating") = JSONObject().put("k", "results").put("conds", JSONArray(conds)).put("sort", sort)
     fun wishlist() = JSONObject().put("k", "wishlist")
+    /** Settings › Search engines (D4) opened from a missing title's page: Back returns there */
+    fun engines() = JSONObject().put("k", "engines")
 }
 
 fun tagKey(srv: String, root: Int) = "$srv|$root"
@@ -236,19 +240,7 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
     val top = entries.lastOrNull()
     if (top != null) {
         BackHandler { pop() }
-        androidx.compose.runtime.key(entries.size) {
-            when (top.optString("k")) {
-                "title" -> cat?.byId(top.optString("id"))?.let { TitleScreen(c, it) }
-                    ?: if (cat == null) Hint(stringResource(R.string.media_loading)) else Hint(stringResource(R.string.cat_gone))
-                "missing" -> MissingScreen(c, top.optString("imdb"), top.optString("why").ifEmpty { null })
-                "person" -> PersonScreen(c, top.optString("q"))
-                "next" -> NextScreen(c, top.optString("imdb"), top.optBoolean("ended"))
-                "results" -> ResultsScreen(c, top.optJSONArray("conds")?.let { a -> List(a.length()) { a.getString(it) } } ?: emptyList(),
-                    top.optString("sort", "rating"))
-                "wishlist" -> WishlistScreen(c)
-                else -> pop()
-            }
-        }
+        androidx.compose.runtime.key(entries.size) { CatalogStackScreen(c, top) }
         return
     }
     Column(Modifier.fillMaxSize()) {
@@ -275,6 +267,64 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
                 mode == "browse" -> BrowseScreen(c, cat)
                 else -> DiscoverScreen(c, cat)
             }
+        }
+    }
+}
+
+/** The screen on top of the Library's stack. [focusPath]/[fromPhone]: a title page opened from "On the phone" (D6). */
+@Composable
+private fun CatalogStackScreen(c: CatCtx, top: JSONObject, focusPath: String? = null, fromPhone: Boolean = false) {
+    val cat = c.cat
+    when (top.optString("k")) {
+        "title" -> cat?.byId(top.optString("id"))?.let { TitleScreen(c, it, focusPath, fromPhone) }
+            ?: if (cat == null) Hint(stringResource(R.string.media_loading)) else Hint(stringResource(R.string.cat_gone))
+        "missing" -> MissingScreen(c, top.optString("imdb"), top.optString("why").ifEmpty { null })
+        "person" -> PersonScreen(c, top.optString("q"))
+        "next" -> NextScreen(c, top.optString("imdb"), top.optBoolean("ended"))
+        "results" -> ResultsScreen(c, top.optJSONArray("conds")?.let { a -> List(a.length()) { a.getString(it) } } ?: emptyList(),
+            top.optString("sort", "rating"))
+        "wishlist" -> WishlistScreen(c)
+        "engines" -> SearchEnginesScreen(c.api, c.pop)
+        else -> c.pop()
+    }
+}
+
+/**
+ * D6: the Library's title page opened from "On the phone": the same [TitleScreen], scrolled to the tapped episode
+ * ([focusPath]); its own small stack (a person, similar titles…), and Back from the title returns to the list
+ * ([onBack]). Works without the server from this phone's copy of the catalog and of the series' episode list.
+ */
+@Composable
+fun PhoneTitlePage(srvKey: String, itemId: String, focusPath: String?, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
+                   onOpenFolder: (String, Int, String) -> Unit, onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    val api = remember(srvKey) { Api.of(ctx, srvKey) }
+    if (api == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+    val scope = rememberCoroutineScope()
+    val cat by produceState(CatalogCache.peek(srvKey), srvKey) { value = withContext(Dispatchers.IO) { CatalogCache.cached(ctx, srvKey) } }
+    var stack by rememberSaveable(srvKey, itemId) { mutableStateOf(JSONArray().put(Nav.title(itemId)).toString()) }
+    var wish by remember(srvKey) { mutableStateOf<List<WishItem>?>(null) }
+    LaunchedEffect(srvKey) { wish = withContext(Dispatchers.IO) { runCatching { api.wishlist() }.getOrNull() } }
+    var rootTags by remember(srvKey) { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    LaunchedEffect(srvKey) {
+        rootTags = withContext(Dispatchers.IO) {
+            runCatching { api.libraryRoots().associate { tagKey(srvKey, it.index) to it.tags } }.getOrDefault(emptyMap())
+        }
+    }
+    val entries = remember(stack) { runCatching { JSONArray(stack) }.getOrDefault(JSONArray()).let { a -> List(a.length()) { a.getJSONObject(it) } } }
+    fun push(o: JSONObject) { stack = JSONArray(entries + o).toString() }
+    fun pop() { if (entries.size <= 1) onBack() else stack = JSONArray(entries.dropLast(1)).toString() }
+    val coverApi = remember(srvKey) { (Servers.get(ctx, srvKey) ?: api.srv).let { if (it.libraryCovers) Api(api.s, it) else null } }
+    val c = CatCtx(api, snack, onPlayingOnPc, cat, wish, rootTags, ::push, ::pop, { root, path -> onOpenFolder(srvKey, root, path) },
+        scope, { wish = it })
+    val top = entries.lastOrNull() ?: return onBack()
+    BackHandler { pop() }
+    androidx.compose.runtime.CompositionLocalProvider(LocalCoverApi provides coverApi) {
+        androidx.compose.runtime.key(entries.size) {
+            CatalogStackScreen(c, top, focusPath.takeIf { entries.size == 1 }, fromPhone = entries.size == 1)
         }
     }
 }
@@ -704,7 +754,7 @@ private fun CopiesOnServers(c: CatCtx, x: CatItem, plays: CatItem) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TitleScreen(c: CatCtx, x: CatItem) {
+private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPhone: Boolean = false) {
     val cat = c.cat ?: return
     val ctx = LocalContext.current
     // the copy that plays, with its server: this one, or in "All" the copy of the title watched last (positions are
@@ -720,7 +770,16 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
     val settings = remember { Settings(ctx) }
     val list = eps?.episodes.orEmpty()
     val cont = remember(eps, back) { if (list.isEmpty()) -1 else continueIndex(settings, xs, px.root, list) }
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    var phoneTick by remember { mutableStateOf(0) }  // a copy on the phone changed (the card, an episode's ⋮)
+    // D6: opened from "On the phone", scrolled to the tapped episode (item 2 = the episode list, then the row's offset)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var focusY by remember { mutableStateOf<Int?>(null) }
+    var scrolled by remember(x.id) { mutableStateOf(false) }
+    if (focusPath != null && list.isNotEmpty() && !scrolled) LaunchedEffect(list.size, focusY) {
+        val y = focusY
+        if (y == null) listState.scrollToItem(2) else { listState.scrollToItem(2, (y - 120).coerceAtLeast(0)); scrolled = true }
+    }
+    LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Box(Modifier.fillMaxWidth().height(300.dp)) {
                 SyntheticCover(x.title, null, x.genres, Modifier.fillMaxSize(), titleSize = 34.sp, corner = 0.dp, padding = 20.dp, art = x.art(), wide = true, artSrv = x.srv)
@@ -736,17 +795,24 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     x.age?.let { AgeBadge(it) }
                     qualityText(x.height)?.let { InfoBadge(it) }
+                    val seasons = list.mapNotNull { it.season }.distinct().size
+                    if (x.series && seasons > 1) InfoBadge(pluralStringResource(R.plurals.st4_seasons, seasons, seasons))
                     if (x.series && x.episodes > 0) InfoBadge(pluralStringResource(R.plurals.cat_episodes, x.episodes, x.episodes))
                 }
                 Spacer(Modifier.height(4.dp))
                 if (cont >= 0) {
                     val e = list[cont]
-                    val started = settings.position(MediaRef.InLibrary(px.root, e.path, xs).key()) > 0
+                    val pos = settings.position(MediaRef.InLibrary(px.root, e.path, xs).key())
+                    val label = e.label.ifEmpty { (cont + 1).toString() }
+                    // "▶ S1 E3 from 9:12" (D6, E1)
                     MediaActions(xa, MediaRef.InLibrary(px.root, e.path, xs), c.snack, c.onPlayingOnPc, big = true, subsFolder = px.dir,
                         onPlay = { playEpisode(ctx, xs, px.root, list, cont) },
-                        playLabel = stringResource(if (started) R.string.cat_play_resume_ep else R.string.cat_play_ep,
-                            e.label.ifEmpty { (cont + 1).toString() }))
-                } else MediaActions(xa, px.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
+                        playLabel = if (pos > 0) stringResource(R.string.st4_play_ep_from, label, clock(pos / 1000.0))
+                            else stringResource(R.string.cat_play_ep, label), oneChooser = fromPhone)
+                } else MediaActions(xa, px.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true,
+                    oneChooser = fromPhone)
+                // D6 "On this phone": shown whenever the phone holds copies of this title
+                OnThisPhoneCard(xs, px, list, cont, phoneTick + back) { phoneTick++ }
                 // "All": where the copies are; another copy plays from its server (it opens its own title screen)
                 // only with a choice to make: one copy says nothing ("Available" says where it is)
                 if (x.srv.isNotEmpty() && x.alsoOn.isNotEmpty()) CopiesOnServers(c, x, px)
@@ -758,7 +824,10 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 if (x.audio.isNotEmpty()) MetaRow(stringResource(R.string.cat_audio)) { Text(x.audio.distinct().map { langName(it) }.joinToString()) }
                 if (x.subs.isNotEmpty()) MetaRow(stringResource(R.string.cat_subtitles)) { Text(x.subs.distinct().map { langName(it) }.joinToString()) }
                 if (x.directors.isNotEmpty()) MetaRow(stringResource(R.string.cat_directed)) { PeopleLinks(x.directors.map { it to cat.person(it) }, c) }
-                MetaRow(stringResource(R.string.cat_where)) { Text(x.rootName + " · " + humanBytes(x.size)) }
+                // which server and disk (D6)
+                MetaRow(stringResource(R.string.cat_where)) {
+                    Text(listOfNotNull(Servers.get(ctx, xs)?.name, px.rootName, humanBytes(x.size)).joinToString(" · "))
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (x.dir != null) OutlinedButton({ c.onOpenFolder(x.root, x.dir) }) {
                         Text(stringResource(if (x.series) R.string.cat_episodes_open else R.string.cat_open_folder))
@@ -767,7 +836,10 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 }
             }
         }
-        if (list.isNotEmpty()) item { EpisodeList(c, px, list, eps?.extras.orEmpty(), cont, settings, back) }
+        if (list.isNotEmpty()) item {
+            EpisodeList(c, px, list, eps?.extras.orEmpty(), cont, settings, back + phoneTick, focusPath, xa, x.title,
+                onFocusY = { if (focusY == null) focusY = it }) { phoneTick++ }
+        }
         if (x.cast.isNotEmpty()) item {
             SectionTitle(stringResource(R.string.cat_cast))
             Spacer(Modifier.height(8.dp))
@@ -825,11 +897,16 @@ private fun BackOnCover(onBack: () -> Unit) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List<Episode>, cont: Int, settings: Settings, back: Int) {
+private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List<Episode>, cont: Int, settings: Settings, back: Int,
+                        focusPath: String? = null, api: Api? = null, title: String = x.title, onFocusY: (Int) -> Unit = {},
+                        onChanged: () -> Unit = {}) {
     val ctx = LocalContext.current
     val seasons = remember(list) { list.map { it.season }.distinct() }
     var season by rememberSaveable(x.id) { mutableStateOf<Int?>(null) }
-    val shown = season ?: list.getOrNull(cont.coerceAtLeast(0))?.season ?: seasons.first()
+    // the season of the episode tapped on "On the phone" (D6), else the one watching continues in
+    val focus = list.firstOrNull { it.path == focusPath }
+    val shown = season ?: focus?.season ?: list.getOrNull(cont.coerceAtLeast(0))?.season ?: seasons.first()
+    val subsLang = remember { settings.subLanguages.split(',').map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: "" }
     var showExtras by rememberSaveable(x.id) { mutableStateOf(false) }
     var download by remember { mutableStateOf(false) }
     var dlTick by remember { mutableStateOf(0) }
@@ -850,15 +927,21 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
                 FilterChip(s == shown, { season = s }, { Text(s?.let { stringResource(R.string.cat_season_n, it) } ?: stringResource(R.string.cat_season_other)) })
             }
         }
+        // "subtitles: PL 2 · EN 1 · none 1" for the season shown (D6)
+        val seasonSubs = rememberEpisodeSubs(api, c.srvOf(x), x.root, list.filter { it.season == shown })
+        SeasonSubsLine(seasonSubs)
         list.forEachIndexed { i, e ->
             if (e.season != shown) return@forEachIndexed
             val k = MediaRef.InLibrary(x.root, e.path, c.srvOf(x)).key()
             val pos = remember(k, back) { settings.position(k) }
             val watched = remember(k, back) { settings.watchedAt(k) > 0 && pos <= 0 }
             val total = remember(k, back) { OfflineStore.get(ctx, k)?.durationMs ?: 0L }
-            Row(Modifier.fillMaxWidth().clickable { playEpisode(ctx, c.srvOf(x), x.root, list, i) }
-                .background(if (i == cont) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else Color.Transparent)
-                .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            val focused = e.path == focusPath
+            Row(Modifier.fillMaxWidth()
+                .then(if (focused) Modifier.onGloballyPositioned { onFocusY(it.positionInParent().y.toInt()) } else Modifier)
+                .clickable { playEpisode(ctx, c.srvOf(x), x.root, list, i) }
+                .background(if (i == cont || focused) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else Color.Transparent)
+                .padding(start = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.PlayArrow, null, Modifier.size(20.dp),
                     tint = if (i == cont) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                 Spacer(Modifier.width(12.dp))
@@ -885,6 +968,12 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
                         color = MaterialTheme.colorScheme.primary)
                 }
                 if (watched) Text("✓", Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.primary)
+                // ⋮ (D6): play, subtitles (server and the phone's copy), keep for good, delete from the phone, details
+                val code = if (e.season != null && e.episode != null) String.format(Locale.ROOT, "S%02dE%02d", e.season, e.episode) else e.label
+                CopyMenuButton(MediaRef.InLibrary(x.root, e.path, c.srvOf(x)), e.shortName,
+                    onPlay = { playEpisode(ctx, c.srvOf(x), x.root, list, i) }, onScreen = null, onChanged = onChanged,
+                    searchPhrase = listOf(title, code, subsLang).filter { it.isNotEmpty() }.joinToString(" "),
+                    noSubs = seasonSubs[e.path]?.isEmpty() == true)
             }
         }
         if (extras.isNotEmpty()) {
@@ -933,7 +1022,6 @@ private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
     var info by remember(imdb) { mutableStateOf<TitleInfo?>(null) }
     var error by remember(imdb) { mutableStateOf<String?>(null) }
     var engines by remember { mutableStateOf<List<SearchEngine>>(emptyList()) }
-    var chooser by remember { mutableStateOf(false) }
     LaunchedEffect(imdb) {
         try { info = withContext(Dispatchers.IO) { c.api.catalogTitle(imdb) } } catch (e: ApiException) { error = e.message }
     }
@@ -974,15 +1062,10 @@ private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
                 } else Button({ toggle() }, Modifier.fillMaxWidth().height(48.dp)) {
                     Icon(Icons.Filled.BookmarkBorder, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.cat_want_add))
                 }
+                // D2: one button per engine with the phrase "Title Year", then "Set up search engines ›" (D4, Back returns here)
+                Text(stringResource(R.string.cat_search).uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelLarge)
+                EngineButtons(engines, listOfNotNull(t.title, t.year?.toString()).joinToString(" "), t.imdb, onSetUp = { c.push(Nav.engines()) })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (engines.isNotEmpty()) Box(Modifier.weight(1f)) {
-                        OutlinedButton({ if (engines.size == 1) openSearch(ctx, engines[0], t) else chooser = true }, Modifier.fillMaxWidth()) {
-                            Icon(Icons.Filled.Search, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.cat_search))
-                        }
-                        DropdownMenu(chooser, { chooser = false }) {
-                            engines.forEach { e -> DropdownMenuItem({ Text(e.name) }, { chooser = false; openSearch(ctx, e, t) }) }
-                        }
-                    }
                     OutlinedButton({
                         if (!pasteMagnet(ctx)) c.scopeSnack(ctx.getString(R.string.main_no_magnet_in_clipboard))
                     }, Modifier.weight(1f)) {
@@ -1007,10 +1090,6 @@ private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
             Spacer(Modifier.height(24.dp))
         }
     }
-}
-
-private fun openSearch(ctx: Context, e: SearchEngine, t: TitleInfo) {
-    runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(e.urlFor(t.title, t.year, t.imdb)))) }
 }
 
 /** The first magnet in the clipboard goes to MagnetActivity (the usual flow); false when there is none. */
@@ -1220,78 +1299,4 @@ private fun WishlistScreen(c: CatCtx) {
             }
         }
     }
-}
-
-// ---------------------------------------------------------------- search engines (server settings)
-
-/**
- * Search engines for titles that are not on the disks (`/api/config/search`): set by the user, none by default. The app
- * only opens the address in the browser; it never queries anything itself and suggests no sites.
- */
-@Composable
-fun SearchEnginesDialog(api: Api, onDismiss: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var list by remember { mutableStateOf<List<SearchEngine>?>(null) }
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        try { list = withContext(Dispatchers.IO) { api.searchEngines() } } catch (e: ApiException) { error = e.message; list = emptyList() }
-    }
-    fun save(new: List<SearchEngine>, after: () -> Unit = {}) {
-        busy = true
-        scope.launch {
-            try {
-                list = withContext(Dispatchers.IO) { api.setSearchEngines(new).also { runCatching { api.info() } } }
-                error = null
-                after()
-            } catch (e: ApiException) {
-                error = e.message
-            } finally {
-                busy = false
-            }
-        }
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.cat_searches)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.cat_searches_intro, api.srv.name), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val l = list
-                if (l == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else if (l.isEmpty()) Text(stringResource(R.string.cat_searches_empty), style = MaterialTheme.typography.bodyMedium)
-                else l.forEachIndexed { i, e ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(e.name, style = MaterialTheme.typography.bodyMedium)
-                            Text(e.url, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                        IconButton({ save(l.filterIndexed { j, _ -> j != i }) }, enabled = !busy) {
-                            Icon(Icons.Filled.Delete, stringResource(R.string.media_remove))
-                        }
-                    }
-                }
-                HorizontalDivider()
-                Text(stringResource(R.string.cat_searches_add), style = MaterialTheme.typography.titleSmall)
-                OutlinedTextField(name, { name = it.take(40) }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text(stringResource(R.string.cat_searches_name)) },
-                    placeholder = { Text(stringResource(R.string.cat_searches_name_hint)) })
-                OutlinedTextField(url, { url = it.take(500) }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text(stringResource(R.string.cat_searches_url)) },
-                    placeholder = { Text("https://example.org/search?q={title} {year}") },
-                    isError = url.isNotBlank() && !SearchEngine.valid("x", url))
-                Text(stringResource(R.string.cat_searches_vars), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val ok = SearchEngine.valid(name, url) && (list?.size ?: 0) < 10
-                FilledTonalButton({ save(list.orEmpty() + SearchEngine(name.trim(), url.trim())) { name = ""; url = "" } },
-                    enabled = ok && !busy && list != null) { Text(stringResource(R.string.cat_searches_add)) }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            }
-        },
-        confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.media_close)) } },
-    )
 }

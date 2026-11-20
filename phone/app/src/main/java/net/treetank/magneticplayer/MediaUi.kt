@@ -76,7 +76,9 @@ import kotlinx.coroutines.withContext
 fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
                  imdb: String? = null, big: Boolean = false, onPlay: (() -> Unit)? = null, playLabel: String? = null,
                  /** "Download missing subtitles" for this folder (a series) instead of the one file */
-                 subsFolder: String? = null) {
+                 subsFolder: String? = null,
+                 /** [big] on a title page opened from "On the phone" (D6): "On a screen…" opens one chooser for every screen */
+                 oneChooser: Boolean = false) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
@@ -141,16 +143,23 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
             Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp))
             Text(playLabel ?: stringResource(R.string.cat_play), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
-        if (screens.isNotEmpty()) androidx.compose.material3.FilledTonalIconButton(::onScreen, Modifier.size(48.dp)) {
-            Icon(Icons.Filled.Computer, stringResource(R.string.cat_cd_on_computer))
+        if (oneChooser) {
+            androidx.compose.material3.OutlinedButton({ chooser = true }, Modifier.height(48.dp)) {
+                Icon(Icons.Filled.Cast, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.st4_on_screen))
+            }
+            moreMenu(withDownload = true)
+        } else {
+            if (screens.isNotEmpty()) androidx.compose.material3.FilledTonalIconButton(::onScreen, Modifier.size(48.dp)) {
+                Icon(Icons.Filled.Computer, stringResource(R.string.cat_cd_on_computer))
+            }
+            androidx.compose.material3.FilledTonalIconButton({ chooser = true }, Modifier.size(48.dp)) {
+                Icon(Icons.Filled.Cast, stringResource(R.string.media_cd_cast))
+            }
+            androidx.compose.material3.FilledTonalIconButton(::download, Modifier.size(48.dp)) {
+                Icon(Icons.Filled.DownloadForOffline, stringResource(R.string.media_download_to_phone))
+            }
+            moreMenu(withDownload = false)
         }
-        androidx.compose.material3.FilledTonalIconButton({ chooser = true }, Modifier.size(48.dp)) {
-            Icon(Icons.Filled.Cast, stringResource(R.string.media_cd_cast))
-        }
-        androidx.compose.material3.FilledTonalIconButton(::download, Modifier.size(48.dp)) {
-            Icon(Icons.Filled.DownloadForOffline, stringResource(R.string.media_download_to_phone))
-        }
-        moreMenu(withDownload = false)
     } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         FilledTonalButton({ ctx.startActivity(PlayerActivity.intent(ctx, ref, imdb)) }) {
             Icon(Icons.Filled.Smartphone, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.media_phone_button))

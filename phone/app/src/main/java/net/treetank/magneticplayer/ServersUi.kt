@@ -581,7 +581,6 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
     var revoke by remember { mutableStateOf<JSONObject?>(null) }
     var invite by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
-    var searches by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
         try {
             withContext(Dispatchers.IO) {
@@ -673,8 +672,10 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                     }
                 }
                 if (s.shrinkEncoder != null && !s.isGuest) ShrinkSettings(s, snack, reload) { server = Servers.get(ctx, key) }
-                // search engines for titles that are not on the disks (agent 1.8+): the user's own, none by default
-                if (s.hasCatalog && !s.isGuest) Row(Modifier.fillMaxWidth().clickable { searches = true }.padding(vertical = 4.dp),
+                // search engines (agent 1.8+): moved to Settings › Search engines (D4); this link opens that screen
+                if (s.hasCatalog && !s.isGuest) Row(Modifier.fillMaxWidth().clickable {
+                    SettingsNav.openEngines(key); onDismiss()
+                }.padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(R.string.cat_searches), style = MaterialTheme.typography.bodyMedium)
@@ -682,10 +683,9 @@ private fun ServerDetailsDialog(key: String, snack: SnackbarHostState, onChanged
                             else pluralStringResource(R.plurals.cat_searches_n, s.searchEngines, s.searchEngines),
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(stringResource(R.string.cat_searches_edit), color = MaterialTheme.colorScheme.primary,
+                    Text(stringResource(R.string.st4_moved_to_settings), color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelLarge)
                 }
-                if (searches) SearchEnginesDialog(Api(Settings(ctx), s)) { searches = false; server = Servers.get(ctx, key) }
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.srv_name_in_app)) }, singleLine = true)
                 HorizontalDivider()
                 Text(stringResource(R.string.srv_paired_devices), style = MaterialTheme.typography.titleSmall)

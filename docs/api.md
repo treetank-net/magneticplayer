@@ -148,8 +148,80 @@ chosen ones in the background (one at a time, persisted in `tasks.json`, continu
 | `GET /api/tasks` | newest first: `id`, `kind`, `title` (in the language of the request; tasks created before 1.8.1 keep the language they were made in), `state` (`queued`/`running`/`done`/`cancelled`), `created`, `started`, `finished`, `total`, `done_bytes`, `pct`, `current`, `saved`, `errors`, `paused` (the encode is stopped: somebody streams with `shrink_while_watching: "pause"`, or a conversion runs; `HEAD` probes don't count), `encoder` (label, shrink tasks from 1.7), `note` (1.7+, localized: why it is slower, stopped or waiting to swap a film that is being watched), `items` (with `state`: `pending`/`running`/`done`/`error`/`skipped`, `error`, `saved`), `item_count`, `items_done` (1.14.1+). `?brief=1` (1.14.1+, `features.tasks_brief`) leaves `items` out: a finished task with hundreds of files is ~400 kB; `GET /api/tasks/<id>` still has them; agent 1.14.2+: `error_groups` `[{"error", "count"}]`, item errors grouped by reason (up to 5, most frequent first; a full disk reads "no space left on the disk" instead of ffmpeg's tail) |
 | `GET /api/tasks/<id>`, `POST /api/tasks/<id>/cancel` | one task; stop it (the current item stays as it was) |
 | `POST /api/tasks/<id>/remove` | agent 1.13+ (`features.task_remove`): a finished or cancelled task off the list; 409 for a queued or running one |
-| `POST /api/library/profile` | `{"root", "path", "profile": "original"\|"tidy"\|"good"\|"compact"\|"tiny"}` (`path` empty = the whole folder) |
+| `POST /api/library/profile` | `{"root", "path", "profile": "original"\|"tidy"\|"good"\|"compact"\|"tiny"}` (`path` empty = the whole folder); agent 1.16+ also `"mini"` (360p) and `"same"` (H.265 at the same resolution) |
 | `POST /api/library/trash/empty` | delete everything in the trash now → `{"freed"}` |
+
+### Task scopes, counters and new task kinds (agent 1.16+, `features.jobs_v2`)
+
+`features.jobs_v2: true` means everything in this section exists; `features.jobs` lists the kinds the counters cover
+(`free`, `dupes`, `audio_fix`, `modernize`, `downscale`, `compress`, `subs_get`, `subs`, `tags`, `trash`). Older
+apps keep using the kinds and parameters above, which work as before. All of it is for household members only.
+
+**Scope.** Every plan body and `GET /api/library/jobs` take an optional `scope` (a JSON object in the body, URL-encoded
+JSON text in a query string); absent or `{}` is the whole machine (all library folders except backups and hidden ones):
+
+```json
+{"roots": [{"root": 0, "path": "Series/Pioneer One"}],
+ "files": [{"root": 0, "path": "Movies/Sintel (2010)/Sintel.2010.mkv"}],
+ "imdb": "tt1727587",
+ "tag": "animation",
+ "age": [0, 7]}
+```
+
+`roots` (folders by library folder index; `path` `""` = the whole library folder; several are ORed), `tag` and `age`
+are filters combined with AND; `files` and `imdb` are exact sets, intersected with the filters when both are given.
+`tag` matches a folder tag, the catalog title's grouping folder or one of its genres (case ignored); `age` is a list
+of the groups 0, 7, 12, 16 and 18 (a catalog age rating under 6 is 0, under 12 is 7 and so on; a kids' title without a
+rating counts as 0). A file without a catalog title never matches `imdb` or `age`. Malformed scopes → 400 with a
+localized `error`. See `mp_scope.py`.
+
+| method and path | description |
+|---|---|
+| `GET /api/library/jobs?scope=&languages=pl,en` | counters for the task boards, from the background scan (below), never probing files inside the request: `scope_label` (localized, null for the whole machine), `files` and `size` (videos in the scope), `checked_at` (when the scan last finished, null before the first one), `pending` (videos not scanned yet: new ones and files of unfinished torrents), `jobs` = `{kind: {"applicable", "count", "size", "saving", "eta" (seconds of work, null while the encoder speed is unknown), "why" (localized, when not applicable or nothing to do), "pending", "options"}}`. `options` per kind: `free` none (not applicable in a scope; `count` = disks under 15% free); `dupes` `same_files` `{groups, saving}`, `same_title` `{titles, saving}`, `seeding`; `audio_fix` `checked`, `total`, `examples` (up to 3: `name`, `codec`, `errors`); `modernize` `examples` (`name`, `format`, `size`), `eta_gpu`, `eta_cpu`; `downscale` `by_target` (`"1080"`/`"720"`/`"480"`/`"360"`: `count`, `saving`, `eta`; the top-level numbers are the 1080 target) and `folders` (`root`, `path`, `name`, `mix` like "4K 2 · 1080p 12", `saving_by_target`); `compress` `by_quality` (`transparent`/`balanced`/`saving`: `count`, `saving`, `eta`; top level = balanced, default filters) and `need_free`; `subs_get` `no_subs`, `no_subs_in_lang`, `have`, `per_day` (20), `languages`; `subs` `unchecked`, `watched_now`, `all`, `fitted_before`; `tags` (titles the catalog didn't recognise) `recognised`, `total`; `trash` (not applicable in a scope; `count` files, `size` bytes in the trash) `days` |
+| `GET /api/config/jobs`, `POST /api/config/jobs` | `{"audio_fix_auto": bool, "subs_auto": "pl,en"\|""}`: new files found by the background scan get a "Fix sound (new files)" task when their sound is damaged, and a "Download subtitles (new files)" task for the missing languages. `POST` takes either field and returns both |
+
+New plan kinds and parameters for `POST /api/library/plan` (each also takes `scope`; the old forms of `free`,
+`modernize`, `dupes`, `subs_get` and `subs` are used when none of the new parameters below is present, and the old
+kinds `shrink`, `tidy`, `trash` and `move` take a `scope` too, which filters their items). Every result carries
+`scope_label` (in the language of the request); a task made from it keeps the label and `/api/tasks` returns
+`scope_label` (string or null) and `kind`.
+
+- `{"kind": "audio_fix", "quality": "standard"|"high"}`: videos whose MP3/MP2/AC3 sound has damaged frames; only those
+  tracks become AAC (standard: 128k stereo / 256k 5.1, high: 192k / 384k), the picture is copied. The result has the
+  shape of a `shrink` plan (`encoders`, `est`, `saved`, `hours`) plus `options`; items have `audio_fix: true`,
+  `broken`, `audio_codecs`. Files the background check hasn't reached are checked while planning.
+- `{"kind": "modernize", "encoder"?, "audio": "keep_if_ok"|"always_aac"}`: old picture formats (DivX 3, WMV,
+  RealVideo, Flash, Theora, MPEG-4 ASP…) re-encoded to H.264 at the same resolution (so every phone and TV plays them),
+  as `.mkv`; `keep_if_ok` copies sound phones play and converts the rest to AAC, `always_aac` converts all of it.
+- `{"kind": "downscale", "target": 1080|720|480|360, "encoder"?, "remember"?: bool}`: H.265 at the target height,
+  never enlarging; files already at or under it are left out. `remember` saves the matching profile (`good`,
+  `compact`, `tiny`, `mini`) for the folders in `scope.roots`.
+- `{"kind": "compress", "quality": "transparent"|"balanced"|"saving", "only_high_bitrate"?: true,
+  "skip_hevc_av1"?: true, "skip_seeding"?: true, "encoder"?}`: H.265 at the same resolution (profile `same`); "high
+  bitrate" is over 3 GB per hour. Files a torrent still seeds can't be re-encoded: with `skip_seeding: false` they are
+  listed in `skipped`. Old formats are left to `modernize`.
+- `{"kind": "dupes", "what": "same_files"|"same_title", "keep": "folder"|"quality"|"space"|"manual"}`: `same_files` are
+  identical files (sampled hashes, hard links not counted), `same_title` the files of one catalog title (one film,
+  one episode) in several copies. The result is kind `dupes` with `groups` (`files` carry `keep: true` on the copy that
+  stays: a copy a torrent still seeds first, then the one in a folder whose tag fits the title for `folder`, the best
+  picture for `quality`, the one on the disk with the most free room for `space`; none for `manual`) and `items` = the other copies, with op `trash`.
+- `{"kind": "free", "root", "amount"?: bytes, "to_percent"?: 15, "order": "watched_oldest"|"largest",
+  "skip_kept"?: true}`: deletes whole titles on the disk of `root` to the trash (not a move) until `amount` bytes or
+  `to_percent` % free. `watched_oldest` takes only titles streamed from this server, the longest ago first; `skip_kept`
+  leaves out titles streamed in the last 14 days (`skipped`, reason "being watched"). The space only comes back when
+  the trash is emptied (`warnings`, `trash_days`). Not available in a scope (400).
+- `{"kind": "subs_get", "languages": "pl,en", "which": "no_subs"|"no_subs_in_lang"|"new_only", "order": "recent"|"alpha"}`:
+  `no_subs` = videos with no subtitles at all, `no_subs_in_lang` = missing one of the languages; `recent` puts the
+  recently added and streamed first. `new_only` stores `subs_auto` (as `POST /api/config/jobs`) and returns a result
+  with no items.
+- `{"kind": "subs", "which": "unchecked"|"watched_now"|"all", "sub_to_srt"?: true, "mark_bad"?: false,
+  "queue_bad"?: false}`: `watched_now` = unchecked subtitles in folders streamed in the last 14 days; `sub_to_srt:
+  false` leaves out `.sub` files; `mark_bad` moves a default subtitle that doesn't fit to `Subtitles/` (the item's
+  `result` says `aside`); `queue_bad` queues a "Download subtitles that didn't fit" task for those languages when the
+  task finishes.
+
+Played titles: the agent remembers when each video was last streamed from it (`played.json`, a `GET` of `/lib/…`;
+`HEAD` probes don't count), which is what "watched" means above.
 
 ## Catalog: films instead of folders (agent 1.8+, `features.catalog`)
 
@@ -162,13 +234,14 @@ Wikidata by IMDb id (cast in billing order with roles, directors, main subjects,
 |---|---|
 | `GET /api/catalog?since=<version>` | `{"version", "same": true}` when nothing changed since `version`; otherwise `version`, `scanning`, `done`, `total` (walk progress), `last` (time of the last walk), `items`, `people` (`{Wikidata id: name}`), `topics` (`{Wikidata id: label}`). Item: `id` (stable key), `root`, `root_name`, `path` (main video, relative to the folder; a series: its first episode), `dir` (the title's folder or null), `title` (original), `title_pl` (only when the film has Polish audio or subtitles), `year`, `kind` (`movie`/`series`), `imdb`, `genres` (IMDb, English names), `rating` (IMDb, 0–10), `votes`, `minutes`, `height`, `audio`, `subs` (2-letter languages; `?` = a subtitle file of unknown language), `size`, `added` (time), `kids`, `episodes`, `age` (minimum age from FSK/MPAA, 0 for kids' folders, null = unknown), `cast`, `roles` (same order as `cast`), `directors`, `topics` (Wikidata ids). Newest first |
 | `GET /api/catalog/title?imdb=tt…` | a title, also one that is not on the disks: the IMDb index row (`title`, `year`, `kind`, `genres`, `rating`, `votes`, `minutes`) + `have`, `copies` (catalog items with this id), `cast` (`[id, name, role]`), `directors` (`[id, name]`), `topics` (`[id, label]`), `age` |
+| `GET /api/catalog/episodes?imdb=tt…` | agent 1.16+ (`features.episode_lists`): every season and episode of a series, the ones on this server marked. `seasons: [{season, episodes: [{season, episode, title, imdb, aired, year, have, state, root, path}], have, missing, upcoming, total}]`, the same four counts for the whole series, `other` (own videos that match no episode: `[{root, path}]`), `source` (`wikidata`, `imdb` or null), `running`, `pending` (an IMDb datasets pass is still queued). `state`: `have`, `missing` or `upcoming`. Sources: Wikidata first, IMDb datasets (a niced weekly pass) when Wikidata is incomplete; no API keys. The first request for a series waits for Wikidata (up to 30 s); later ones answer from the cache. Without online lookups (`ident_online: false`) only the own files, all in `other` |
 | `GET /api/catalog/person?id=Q…` | `id`, `name`, `role` (`director` when Wikidata lists more films they directed than acted in, otherwise `actor`), `films` (catalog items with `role` and `as_director`), `missing` (up to 20 best known films with this person that are not on the disks: `imdb`, `title`, `year`, `genres`, `rating`, `votes`, `minutes`, `have: false`) |
 | `GET /api/catalog/next?imdb=tt…` | "what next": `items` (up to 24), titles from the collection first (`have: true` with `id`, `root`, `path`, `audio`, `subs`, `title_pl`?) then ones that are not on the disks (`have: false`); each with `reason` (`actor`/`topic`/`genre`) and `why` (text: "też Cary Grant", "Mystery, Romance"). Wikidata queries are cached for a day; the first answer may take ~10 s |
 | `GET /api/wishlist` | `items`: the shared "want to watch" list: `imdb`, `title`, `year`, `genres`, `why`, `by` (device name), `at`, `have` (+ `id`, `root`, `path`, `where` when the film is on a disk now) |
 | `POST /api/wishlist` | `{"imdb", "title", "year"?, "genres"?, "why"?}` adds (no duplicates) → the list |
 | `POST /api/wishlist/remove` | `{"imdb"}` → the list |
 | `GET /api/config/search` | `engines`: `[{"name", "url"}]` set by the user, empty by default. The app shows "Search" for a film that is not on the disks only when there is at least one, and opens `url` in the browser with `{title}`, `{year}` and `{imdb}` filled in. The agent never queries them and the project ships none |
-| `POST /api/config/search` | `{"engines": [{"name", "url"}]}` (up to 10; `url` is http(s) with `{title}` or `{imdb}`) → the saved list; `features.search_engines` is their number |
+| `POST /api/config/search` | `{"engines": [{"name", "url", "kind", "open"}]}` (up to 10; `url` is http(s) with `{q}`, `{title}` or `{imdb}`; agent 1.16+ keeps `kind`: `torrents` (default), `video` or `subtitles`, and `open`: `browser` (default) or `app`, the app's own browser that sends magnets to the server) → the saved list; `features.search_engines` is their number |
 
 ## Files sent from phones (agent 1.8+)
 
