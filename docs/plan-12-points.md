@@ -11,21 +11,25 @@ Results and tick marks live in `test-plan.md`; this file says what to do and in 
 | # | point | state (2026-11-20) |
 |---|---|---|
 | 1 | Playback from "On the phone" without Wi-Fi | done, verified (also a cold start) |
-| 2 | Library without the computer | episode lists, Continue watching and playback verified offline; "on the phone" marks fixed, to verify |
+| 2 | Library without the computer | episode lists, Continue watching and playback verified offline; "on the phone" marks verified (v1.261120.1000) |
 | 3 | Season download | done |
 | 4 | List view | done |
-| 5 | "All servers" | verified on the Pixel; fixes below |
+| 5 | "All servers" | verified on the Pixel, fixes below built and mostly verified |
 | 6 | Screens on the Remote | done |
 | 7 | Because you watched | done |
 | 8 | Audio panel; mpv and Chromecast get the same choice | mpv done; Chromecast converts with the chosen audio (API) |
 | 9 | Magnet re-recognition | done |
-| 10 | Folder view menus | menu and move dialog verified |
+| 10 | Folder view menus | menu and move dialog verified, free space per target too |
 | 11 | Continue watching | done |
 | 12 | Re-encode of one series' season 2 extras (old-format run) | done 2026-11-20 (agent 1.14.4: the decode check no longer rejects results for the copied audio's old damage) |
 
 ## Approved fixes, in order
 
 Numbers in brackets are the review numbers (2026-11-20).
+
+State (2026-11-20): 1-19 are built (agent 1.14.2-1.14.4, app v1.261120.0945 and v1.261120.1000). What was
+seen on the Pixel and what wasn't is ticked in `test-plan.md`; not yet seen on hardware: 13 (Chromecast), 15 (needs
+a title on two servers), the "Sleep…" list of 1, the reserve guard of 3 on a real disk. 20 waits for the owner's yes.
 
 ### First: errors and risk
 
