@@ -175,6 +175,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       files). Now the ping carries the latest finish time and the list is read (without items, `?brief=1`) only when
       it changes; the disks screen reads the brief list every 2 s and an opened task card fetches its own items.
       Check: the notification still comes when a task finishes; the items of a task show when opened.
+      [x] 2026-11-20: jmpc agent 1.14.1, `?brief=1` 1.9 kB instead of 459 kB; Pixel v1.261120.0804: the disks screen
+      shows the item counts ("644 pozycje"), an opened card lists its items with their errors.
 - [ ] Following tasks (the user's wish, 2026-11-20): a task started on this phone shows an ongoing progress
       notification ("45% · <item>", the bar), updated once a minute with the app in the background and every 15 s on
       screen; when it ends, the "finished" notification replaces it. Another phone gets nothing unless it taps
@@ -182,20 +184,30 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       unreachable, trying again every minute", gives up after about an hour.
 - [ ] Library offline, continued: a series' episode list opened once online opens offline too (kept per server);
       covers of titles with a complete copy on the phone get a "downloaded" mark (a series: any episode).
-- [ ] Folders: a folder's ⋮ menu has "Move to another library folder…" (the other library folders, the same tag
+- [~] Folders: a folder's ⋮ menu has "Move to another library folder…" (the other library folders, the same tag
       first; it shows the move preview and starts a task) and "Delete to the trash…" (the trash preview).
+      [x] 2026-11-20, Pixel, v1.261120.0804: the menu on a film folder, the dialog lists the other folders with tags,
+      the "filmy" ones first (cancelled; the previews not opened).
 - [ ] Chromecast and the audio choice (agent 1.14.0, `convert_audio`): "Prepare" for a dual-audio film converts with
       the audio track picked last (the folder's choice first), not always the Polish/first one; the variant then plays
       on the Chromecast with that language.
+      [x] 2026-11-20, jmpc, agent 1.14.1 via the API: a synthetic MKV (English AC3 440 Hz default, Japanese AC3
+      1760 Hz) converted with `audio: "|ja"` gives a variant with one AAC track tagged jpn at 1760 Hz. [ ] From the app.
 
 ## "All servers" (two or more servers with files)
 
 - [ ] The top switcher has "All servers" at the top; picked, the header says "All servers ▾" with "N of M servers
       on". Picking one server leaves All. "Wake all" when two or more are asleep with a known MAC.
+      [x] 2026-11-20, Pixel, v1.261120.0804 (jmpc + the laptop): the row with its subtitle, the header "Wszystkie
+      serwery ▾ / Działa 2 z 2 serwerów", Downloads chips (jmpc, Laptop) switch the list and All stays on.
+      Found: the merged catalog counted 387 films / 35 series against 404 / 40 on jmpc alone: copies of one title on
+      the same server were folded too. Fixed after it (only other servers' copies fold). [ ] Check the counts again.
 - [ ] Library in All: Discover/Browse/search over all servers at once; a title on two servers shows once (the better
       copy: resolution, Polish audio), the cover says the server and "+1", the title screen lists "On servers" with
       each copy's quality, playing picks the copy's server. Continue watching and positions stay per server.
-- [ ] Downloads and Folders in All: a row of server chips on top, one server's list at a time.
+- [ ] Downloads in All: a row of server chips on top, one server's list at a time. Folders in All: every server's
+      library folders in one list, each server under its name; opening another server's folder keeps All on (the
+      user, 2026-11-20: chips there made no sense with "All" picked).
 - [ ] With the active server asleep and another one on, Library in All doesn't show the asleep pane.
 
 ## Noted wishes
@@ -257,3 +269,14 @@ Written down as seen, also when unsure whether it is a problem at all.
   the merged cover may open the other copy from zero. Flagged in the prototype as a simplification.
 - "All servers" in Downloads and Folders is a chip row, not a merged list: it reads like a filter, while Library
   really merges. Could confuse; check with the user.
+- 2026-11-20, "All servers", Continue watching: the server prefix cuts the next-episode label to "jmpc · Dalej: S1 …"
+  (with one server it read "Dalej: S1 E3"); with several servers the prefix may matter less than the episode.
+- 2026-11-20, "All servers": "Uśpij" (suspend) in the header acts on the active server only, while the header says
+  "All servers"; it disappears when the Downloads chip picks the laptop (no power control), which hints at the hidden
+  active server.
+- 2026-11-20, folder ⋮ "Move to…": the target list shows names and tags but not the free space of each disk, so
+  picking where a big folder fits needs a trip to "Disks".
+- 2026-11-20, Downloads: "Odłożone w tym tygodniu" lists the test files `mp-test-*.avi/.mkv` ("left in downloads");
+  test leftovers from an earlier session, to be removed from the server's downloads with the user's yes.
+- 2026-11-20, Discover: the hero still says "Nowe na twoich dyskach" (new on your disks); item 7 added "Because you
+  watched" as a row, the hero kept its old role. Unclear whether the hero should also change.

@@ -93,7 +93,7 @@ object LibraryNav {
  */
 @Composable
 fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnPc: () -> Unit,
-               connecting: Boolean = false, all: List<String>? = null, onPickServer: (String) -> Unit = {},
+               connecting: Boolean = false, all: List<String>? = null,
                onSwitchServer: (String, Int) -> Unit = { _, _ -> }) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -106,6 +106,13 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     val srv = remember(online) { Servers.get(ctx, api.srv.key) ?: api.srv }
     var mode by rememberSaveable { mutableStateOf("discover") }
     var stack by rememberSaveable { mutableStateOf("[]") }
+    // "All": the tab stays when another server becomes active (a folder of another server opened, a chip in
+    // Downloads): the open folder belonged to the previous one, so start from that server's folder or the list
+    var shownSrv by rememberSaveable { mutableStateOf(api.srv.key) }
+    if (shownSrv != api.srv.key) {
+        shownSrv = api.srv.key
+        root = LibraryNav.take(api.srv.key); path = ""; disks = false; plan = null
+    }
     val pendingNext = CatalogNav.pending.value
     LaunchedEffect(pendingNext) {
         if (pendingNext != null && pendingNext.first == api.srv.key) { root = null; path = ""; disks = false; plan = null }
@@ -131,13 +138,11 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
         }
         r == null && srv.hasCatalog -> CatalogArea(api, snack, onPlayingOnPc, mode, { mode = it }, stack, { stack = it },
             onOpenFolder = { r0, p0 -> if (online) { root = r0; path = p0 } }, offline = !online && !connecting, all = all) {
-            // "All": the folders of one server, picked in a row on top
-            if (all != null) ServerChips(all, api.srv.key, onPickServer)
-            if (!online) Hint(stringResource(offlineText)) else RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
+            if (!online) Hint(stringResource(offlineText)) else RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, all != null, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
                 root = r0; path = p0
             }
         }
-        r == null -> RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
+        r == null -> RootsScreen(api, snack, onPlayingOnPc, onSwitchServer, all != null, onDisks = { disks = true }, onPlan = { plan = it }) { r0, p0 ->
             root = r0; path = p0
         }
         else -> {
@@ -152,6 +157,7 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
 
 @Composable
 private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onSwitchServer: (String, Int) -> Unit,
+                        allMode: Boolean,
                         onDisks: () -> Unit, onPlan: (String) -> Unit, onOpen: (Int, String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -218,6 +224,11 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
         if (list == null) Hint(stringResource(R.string.media_loading))
         else if (list.isEmpty() && others.isEmpty()) Hint(stringResource(if (tagFilter == null) R.string.media_lib_no_roots else R.string.lib_tag_none))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // "All": every server's folders in one list, this one under its name too
+            if (allMode && others.isNotEmpty() && list.isNotEmpty()) item(key = "srv/self") {
+                Text(stringResource(R.string.lib_on_server, srv.name), style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp, start = 4.dp))
+            }
             if (tasks && tagFilter == null) item(key = "disks") { DisksCard(fullest, onDisks) }
             items(list, key = { it.index }) { r ->
                 Card(Modifier.fillMaxWidth().clickable(enabled = r.exists && r.open) { onOpen(r.index, "") }) {

@@ -279,12 +279,19 @@ data class Resume(val item: CatItem, val path: String, val posMs: Long, val at: 
 fun mergeCatalogs(parts: List<Pair<String, CatalogData>>): CatalogData {
     val all = parts.flatMap { (k, c) -> c.items.map { it.copy(srv = k, id = "$k/${it.id}") } }
     val groups = all.filter { it.imdb != null }.groupBy { it.imdb }
+    // only copies on other servers fold into the best one: two copies on one server stay two items, as without "All"
     val best = groups.mapValues { (_, g) ->
         val b = g.maxWith(compareBy<CatItem>({ it.height ?: 0 }, { if (it.plAudio || it.plSubs) 1 else 0 }))
-        b.copy(alsoOn = g.filter { it !== b })
+        b to g.filter { it.srv != b.srv }
     }
-    val seen = mutableSetOf<String>()
-    val items = all.mapNotNull { x -> if (x.imdb == null) x else if (seen.add(x.imdb)) best[x.imdb] else null }
+    val items = all.mapNotNull { x ->
+        val (b, others) = best[x.imdb ?: return@mapNotNull x]!!
+        when {
+            x === b -> b.copy(alsoOn = others)
+            x.srv == b.srv -> x
+            else -> null
+        }
+    }
     return CatalogData(parts.joinToString(",") { (k, c) -> "$k:${c.version}" }, parts.any { it.second.scanning },
         parts.sumOf { it.second.done }, parts.sumOf { it.second.total }, items,
         parts.fold(emptyMap()) { m, p -> m + p.second.people }, parts.fold(emptyMap()) { m, p -> m + p.second.topics })

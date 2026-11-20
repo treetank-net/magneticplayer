@@ -224,6 +224,6 @@
     <string name="srv_shrink_while_watching_on">Other disks at full speed, the same disk slower; a film being watched is swapped after it ends</string>
     <string name="srv_shrink_while_watching_off">Shrinking pauses while someone watches</string>
     <string name="srv_all_servers">All servers</string>
-    <string name="srv_all_servers_sub">One library from all of them; downloads and folders one server at a time</string>
+    <string name="srv_all_servers_sub">Library and folders from all of them; downloads one server at a time</string>
     <string name="srv_wake_all">Wake all</string>
 </resources>

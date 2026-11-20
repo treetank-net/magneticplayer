@@ -445,9 +445,9 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                             Box(Modifier.weight(1f)) { TorrentsTab(api, srv, online == true, snack, onPlaying) }
                         }
                         TAB_LIBRARY -> LibraryTab(api, if (allMode) anyUp else online == true, snack, onPlaying,
-                            connecting = online == null && !(allMode && anyUp), all = if (allMode) fileKeys else null,
-                            onPickServer = { Servers.setActive(ctx, it); changed() }) { key, root ->
-                            LibraryNav.openAfterSwitch(key, root); Servers.setActive(ctx, key); Servers.setAll(ctx, false); changed()
+                            connecting = online == null && !(allMode && anyUp), all = if (allMode) fileKeys else null) { key, root ->
+                            // a folder of another server: it becomes active; "All" stays on
+                            LibraryNav.openAfterSwitch(key, root); Servers.setActive(ctx, key); changed()
                         }
                         TAB_REMOTE -> PilotTab(screenApi, snack, onPickScreen = { Servers.setScreen(ctx, it); screenKey = it }) { wake(it) }
                         TAB_OFFLINE -> OfflineTab(onPlaying)
