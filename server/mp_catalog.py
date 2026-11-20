@@ -518,7 +518,71 @@ class Catalog:
                    cast=[[q, self.label(q), self._role(r, lang)] for q, r in d.get("cast") or []],
                    directors=[[q, self.label(q)] for q in d.get("dir") or []],
                    topics=[[q, self.label(q, lang)] for q in self._topics(d)], age=d.get("age"))
+        if not have and d.get("qid"):
+            about = self._about(d["qid"], lang)  # agent 1.16.1+: a title you don't have gets its description
+            if about:
+                out["about"], out["about_source"] = about
         return out
+
+    def _about(self, qid, lang):
+        """The lead of the title's Wikipedia article (Polish for a Polish phone when there is one, else English), as
+        (text, "Wikipedia"), or None. Asked only for a title page the user opened; kept for a day like other lookups."""
+        if not self.ident.online or not re.fullmatch(r"Q\d+", qid):
+            return None
+
+        def fetch():
+            sites = ["plwiki", "enwiki"] if lang == "pl" else ["enwiki", "plwiki"]
+            e = mp_ident._wd({"action": "wbgetentities", "ids": qid, "props": "sitelinks",
+                              "sitefilter": "|".join(sites)}).get("entities", {}).get(qid, {})
+            links = e.get("sitelinks") or {}
+            for site in sites:
+                title = (links.get(site) or {}).get("title")
+                if not title:
+                    continue
+                u = (f"https://{site[:2]}.wikipedia.org/api/rest_v1/page/summary/"
+                     + urllib.parse.quote(title.replace(" ", "_"), safe=""))
+                with urllib.request.urlopen(urllib.request.Request(u, headers=mp_ident.UA), timeout=8) as r:
+                    text = (json.load(r).get("extract") or "").strip()
+                if text:
+                    return [text[:1500]]
+            return []
+        hit = self._ext.get(("about", qid, lang))
+        if hit and time.time() - hit[0] < 86400:
+            res = hit[1]
+        else:
+            try:
+                res = fetch()
+            except Exception as e:  # noqa: BLE001 (network: the page shows the rest)
+                self.log("catalog: Wikipedia failed:", e)
+                self._ext[("about", qid, lang)] = (time.time() - 86400 + 300, [])  # retried after 5 minutes
+                return None
+            self._ext[("about", qid, lang)] = (time.time(), res)
+        return (res[0], "Wikipedia") if res else None
+
+    def search(self, query, limit=20):
+        """Titles from the local IMDb index matching `query` (agent 1.16.1+), each marked `have` when one of the
+        library's visible titles has the same IMDb id (with its catalog `id`). No network: the index is on disk."""
+        query = str(query or "").strip()[:100]
+        with self.ident.lock:
+            index = self.ident.index
+        if not query or not index.db:
+            return {"items": [], "index": bool(index.db)}
+        try:
+            limit = max(1, min(int(limit), 50))
+        except (TypeError, ValueError):
+            limit = 20
+        mine = {}
+        for key, it, _ in self._visible():
+            if it.get("imdb"):
+                mine.setdefault(it["imdb"], key)
+        out = []
+        for r in index.search(query, limit):
+            x = {k: r.get(k) for k in ("imdb", "title", "year", "end", "kind", "genres", "rating", "votes", "minutes")}
+            x["have"] = r["imdb"] in mine
+            if x["have"]:
+                x["id"] = mine[r["imdb"]]
+            out.append(x)
+        return {"items": out, "index": True}
 
     def person(self, qid, lang="en"):
         """Films with this person in the collection (with roles) and the best known ones that are not on the disks."""

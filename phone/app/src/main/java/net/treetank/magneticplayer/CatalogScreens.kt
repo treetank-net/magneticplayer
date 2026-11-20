@@ -193,6 +193,8 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
     }
     val cat = catState.value
     var error by remember { mutableStateOf<String?>(null) }
+    // D1: one query for every Library tab, kept while a title opened from the results is on top
+    val searchQ = rememberSaveable { mutableStateOf("") }
     LaunchedEffect(srvKey, all) {
         while (true) {
             MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
@@ -259,13 +261,20 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
             }
         }
         when (mode) {
-            "folders" -> folders()
+            "folders" -> androidx.compose.runtime.CompositionLocalProvider(LocalCatSearch provides CatSearch(c, searchQ)) { folders() }
             else -> when {
                 cat == null -> Hint(error ?: stringResource(R.string.media_loading))
                 cat.items.isEmpty() -> Hint(if (cat.scanning) stringResource(R.string.cat_building, cat.done, cat.total)
                     else stringResource(R.string.cat_empty))
-                mode == "browse" -> BrowseScreen(c, cat)
-                else -> DiscoverScreen(c, cat)
+                else -> Column(Modifier.fillMaxSize()) {
+                    LibrarySearchField(searchQ.value, { searchQ.value = it })
+                    val q = searchQ.value.trim()
+                    when {
+                        q.length >= 2 -> CatalogSearchResults(c, cat, q)
+                        mode == "browse" -> BrowseScreen(c, cat)
+                        else -> DiscoverScreen(c, cat)
+                    }
+                }
             }
         }
     }
@@ -524,18 +533,8 @@ private val AGE_TILES = listOf(0 to Color(0xFF1B8BD0), 7 to Color(0xFF2E8B57), 1
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BrowseScreen(c: CatCtx, cat: CatalogData) {
-    var query by rememberSaveable { mutableStateOf("") }
+    // the search field is above the tab (D1: the same on every Library tab, CatalogSearch.kt)
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            placeholder = { Text(stringResource(R.string.cat_search_hint)) }, singleLine = true,
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
-            trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.media_cancel)) } })
-        if (query.trim().length >= 2) {
-            val hits = remember(cat, query) { cat.items.filter { Cond.search(it, cat, query.trim()) } }
-            if (hits.isEmpty()) Hint(stringResource(R.string.cat_results_none))
-            else CoverGrid(c, hits)
-            return@Column
-        }
         val counts = remember(cat, c.rootTags) { BrowseCounts.of(cat, c::tagsOf) }
         LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { SectionTitle(stringResource(R.string.cat_who_watches)) }
@@ -1015,79 +1014,120 @@ private fun PeopleLinks(people: List<Pair<String, String>>, c: CatCtx) {
 
 // ---------------------------------------------------------------- Missing title
 
-/** A title that is not on the disks: the wishlist, the user's own search engines, pasting a magnet. */
+/**
+ * D2: a title that is not on the disks (opened from the library search, a person, "What next", the wishlist): cover and
+ * facts, "SEARCH" with the household's search sites (phrase "Title Year"), "Want to watch" and "Paste magnet", the
+ * description, similar titles marked "on disk" / "you don't have". A title that turns out to be on the disks offers
+ * its page instead.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
     val ctx = LocalContext.current
     var info by remember(imdb) { mutableStateOf<TitleInfo?>(null) }
     var error by remember(imdb) { mutableStateOf<String?>(null) }
     var engines by remember { mutableStateOf<List<SearchEngine>>(emptyList()) }
+    var similar by remember(imdb) { mutableStateOf<List<CatCard>?>(null) }
     LaunchedEffect(imdb) {
         try { info = withContext(Dispatchers.IO) { c.api.catalogTitle(imdb) } } catch (e: ApiException) { error = e.message }
     }
     LaunchedEffect(Unit) { engines = withContext(Dispatchers.IO) { runCatching { c.api.searchEngines() }.getOrDefault(emptyList()) } }
-    val t = info ?: return Column {
-        Row { BackOnCover(c.pop) }
-        Hint(error ?: stringResource(R.string.media_loading))
-    }
+    // "What next" for this title: the ones on the disks first (Wikidata, the first answer may take ~10 s)
+    LaunchedEffect(imdb) { similar = withContext(Dispatchers.IO) { runCatching { c.api.catalogNext(imdb) }.getOrDefault(emptyList()) } }
+    val t = info
     val cat = c.cat
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Box(Modifier.fillMaxWidth().height(240.dp)) {
-            SyntheticCover(t.title, null, t.genres, Modifier.fillMaxSize(), missing = !t.have, titleSize = 30.sp, corner = 0.dp, padding = 20.dp)
-            BackOnCover(c.pop)
+    Column(Modifier.fillMaxSize()) {
+        // header: ← and what this page is about
+        Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(c.pop) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up)) }
+            if (t != null) Text(stringResource(if (t.have) R.string.cat_on_disks else R.string.d2_header_missing),
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (t.have) {
-                InfoBadge(stringResource(R.string.cat_on_disks).uppercase(Locale.getDefault()))
-            } else {
-                Text(stringResource(R.string.cat_not_on_disks).uppercase(Locale.getDefault()),
-                    Modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 8.dp, vertical = 3.dp),
-                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        if (t == null) {
+            Hint(error ?: stringResource(R.string.media_loading))
+            return@Column
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // cover beside title, "2001 · 108 min · ★ 7.2", "animation · anime · 12+", "dir. …"
+            Row {
+                SyntheticCover(t.title, t.year, t.genres, Modifier.width(110.dp).height(160.dp), missing = !t.have, titleSize = 14.sp,
+                    corner = 10.dp, padding = 8.dp)
+                Spacer(Modifier.width(14.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(t.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(ratingLine(t.year, t.minutes, t.rating, null), style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val g = listOfNotNull(if (t.kind == "series") stringResource(R.string.srch_series) else null) +
+                        t.genres.map { genreLabel(ctx, it).lowercase(Locale.getDefault()) } + listOfNotNull(t.age?.let { "$it+" })
+                    if (g.isNotEmpty()) Text(g.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (t.directors.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        t.directors.forEachIndexed { i, (q, name) ->
+                            Text(if (i == 0) stringResource(R.string.d2_dir, name) else name, Modifier.clickable { c.push(Nav.person(q)) },
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
             }
-            Text(t.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(ratingLine(t.year, t.minutes, t.rating, t.votes), style = MaterialTheme.typography.bodyMedium)
-            val g = listOfNotNull(t.genres.joinToString(", ") { genreLabel(ctx, it).lowercase(Locale.getDefault()) }.ifEmpty { null }, t.age?.let { "$it+" })
-            if (g.isNotEmpty()) Text(g.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
             if (t.have) {
                 val copy = t.copies.firstOrNull()
                 if (copy != null) Button({ c.open(cat?.byId(copy.id) ?: copy) }, Modifier.fillMaxWidth().height(48.dp)) {
                     Text(stringResource(R.string.cat_open_title))
                 }
             } else {
-                val listed = c.listed(imdb)
-                val toggle = { c.toggleWish(ctx, imdb, t.title, t.year, t.genres, why) }
-                if (listed) FilledTonalButton({ toggle() }, Modifier.fillMaxWidth().height(48.dp)) {
-                    Icon(Icons.Filled.Bookmark, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.cat_want_on))
-                } else Button({ toggle() }, Modifier.fillMaxWidth().height(48.dp)) {
-                    Icon(Icons.Filled.BookmarkBorder, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.cat_want_add))
+                // SEARCH: one button per site and "Set up search sites ›" (D4, Back returns here); no site: only the link
+                val phrase = listOfNotNull(t.title, t.year?.toString()).joinToString(" ")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.cat_search).uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    EngineRow(engines, phrase, t.imdb, onSetUp = { c.push(Nav.engines()) })
+                    if (engines.isNotEmpty()) Text(stringResource(R.string.d2_phrase, phrase), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                // D2: one button per engine with the phrase "Title Year", then "Set up search engines ›" (D4, Back returns here)
-                Text(stringResource(R.string.cat_search).uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelLarge)
-                EngineButtons(engines, listOfNotNull(t.title, t.year?.toString()).joinToString(" "), t.imdb, onSetUp = { c.push(Nav.engines()) })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val listed = c.listed(imdb)
+                    val toggle = { c.toggleWish(ctx, imdb, t.title, t.year, t.genres, why) }
+                    if (listed) FilledTonalButton({ toggle() }, Modifier.weight(1f).height(48.dp)) {
+                        Icon(Icons.Filled.Bookmark, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.cat_want_on), maxLines = 1)
+                    } else Button({ toggle() }, Modifier.weight(1f).height(48.dp)) {
+                        Text(stringResource(R.string.cat_want_add), maxLines = 1)
+                    }
                     OutlinedButton({
                         if (!pasteMagnet(ctx)) c.scopeSnack(ctx.getString(R.string.main_no_magnet_in_clipboard))
-                    }, Modifier.weight(1f)) {
-                        Icon(Icons.Filled.ContentPaste, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.main_paste_magnet))
+                    }, Modifier.weight(1f).height(48.dp)) { Text(stringResource(R.string.main_paste_magnet), maxLines = 1) }
+                }
+            }
+            // the description (agent 1.16.1+: the lead of the Wikipedia article)
+            t.about?.let { about ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(about, style = MaterialTheme.typography.bodyMedium)
+                    t.aboutSource?.let { Text(stringResource(R.string.d2_source, it), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            }
+            // SIMILAR · YOU HAVE N: covers marked "on disk" / "you don't have"
+            val sim = similar.orEmpty().distinctBy { it.imdb }.sortedByDescending { it.have }.take(12)
+            if (sim.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.d2_similar, sim.count { it.have }), style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(sim, key = { it.imdb }) { s ->
+                        val mine = s.id?.let { cat?.byId(it) }
+                        Column(Modifier.width(80.dp).clickable {
+                            if (mine != null) c.open(mine) else if (!s.have) c.push(Nav.missing(s.imdb, s.why.ifEmpty { null }))
+                        }) {
+                            SyntheticCover(s.title, null, s.genres, Modifier.width(80.dp).height(116.dp), missing = !s.have, titleSize = 10.sp,
+                                corner = 8.dp, padding = 6.dp, art = mine?.art(), artSrv = mine?.srv ?: "")
+                            Spacer(Modifier.height(4.dp))
+                            Text(listOfNotNull(s.title, s.year?.toString()).joinToString(" "), style = MaterialTheme.typography.labelMedium,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(stringResource(if (s.have) R.string.d2_on_disk else R.string.d2_not_have), style = MaterialTheme.typography.labelSmall,
+                                color = if (s.have) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
-                Text(stringResource(if (engines.isEmpty()) R.string.cat_missing_hint_no_search else R.string.cat_missing_hint),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (t.directors.isNotEmpty()) MetaRow(stringResource(R.string.cat_directed)) { PeopleLinks(t.directors, c) }
-            if (why != null) MetaRow(stringResource(R.string.cat_why)) { Text(why) }
-        }
-        if (t.cast.isNotEmpty()) {
-            SectionTitle(stringResource(R.string.cat_cast))
-            Spacer(Modifier.height(8.dp))
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(t.cast.take(20), key = { it.first }) { (q, name, role) ->
-                    val n = cat?.items?.count { q in it.cast } ?: 0
-                    PersonTile(name, if (n > 0) stringResource(R.string.cat_in_collection_n, n) else role) { c.push(Nav.person(q)) }
-                }
-            }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }

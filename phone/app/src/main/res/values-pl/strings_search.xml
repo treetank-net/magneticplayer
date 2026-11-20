@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Etap 4: szukanie w Bibliotece, „mam” i „nie mam” (D1), tytuł, którego nie masz (D2). Polski. -->
+<resources>
+    <!-- D1: szukanie -->
+    <string name="srch_field">Szukaj tytułu, aktora, reżysera</string>
+    <string name="srch_hint">Szuka na dyskach i w bazie filmów (Wikidata/IMDb).</string>
+    <string name="srch_have">NA TWOICH DYSKACH · %1$d</string>
+    <string name="srch_missing">NIE MASZ · Z BAZY FILMÓW</string>
+    <string name="srch_people">LUDZIE</string>
+    <string name="srch_play">Odtwórz</string>
+    <string name="srch_want_tag">chcę</string>
+    <string name="srch_series">serial</string>
+    <string name="srch_missing_loading">Szukam w bazie filmów…</string>
+    <string name="srch_missing_none">Nic więcej w bazie filmów.</string>
+    <string name="srch_no_index">Serwer nie ma jeszcze bazy filmów (pobiera się w tle).</string>
+    <string name="srch_have_none">Nic na twoich dyskach.</string>
+    <plurals name="srch_person_films">
+        <item quantity="one">%1$d film na dyskach</item>
+        <item quantity="few">%1$d filmy na dyskach</item>
+        <item quantity="many">%1$d filmów na dyskach</item>
+        <item quantity="other">%1$d filmu na dyskach</item>
+    </plurals>
+
+    <!-- D2: tytuł, którego nie masz -->
+    <string name="d2_header_missing">Nie masz go na dyskach</string>
+    <string name="d2_dir">reż. %1$s</string>
+    <string name="d2_phrase">Fraza: „%1$s”. Wybierz wynik w przeglądarce, a magnet wróci do aplikacji i trafi do tego tytułu (właściwy folder z tagów).</string>
+    <string name="d2_similar">PODOBNE · MASZ %1$d</string>
+    <string name="d2_on_disk">na dysku</string>
+    <string name="d2_not_have">nie masz</string>
+    <string name="d2_source">Źródło: %1$s</string>
+</resources>

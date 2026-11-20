@@ -564,6 +564,43 @@ jmpc). Typing fast into text fields loses characters on the emulator (slow typin
 - Not done: the "← Library" breadcrumb text (arrow only). The season subtitle line costs one `/api/subs/list` per
   episode, also in the normal Library: watch for slowness on long seasons.
 
+**D1. Search: have and don't have** (agent 1.16.1, `features.catalog_search`; boards Szukaj)
+- [ ] the search field under the Discover / Browse / Folders switch on every tab, placeholder "Search a title, actor,
+  director"; one query shared by the three tabs, kept after opening a result and coming back;
+- [ ] the line under the field while typing: "Searches your disks and the film database (Wikidata/IMDb)";
+- [ ] "ON YOUR DISKS · N" (Discover, Browse): cover, title, "year · length · folder" (+ server in "All"), "Play"
+  (a film plays on the phone, a series opens its page); a row tap opens the title page;
+- [ ] Folders: "ON YOUR DISKS · N" over the file and folder results (as before), the "don't have" group below them;
+- [ ] "YOU DON'T HAVE IT · FROM THE FILM DATABASE": titles from the agent's IMDb index (films and series), greyed
+  cover, title, "year · kind (genre or "series") · minutes · ★", "want" when on the wishlist; nothing the catalog has;
+  a spinner while it loads, "Nothing else in the film database." when empty, a note when the server has no index yet;
+- [ ] a "don't have" row opens D2; back returns to the results with the query;
+- [ ] "PEOPLE" (Discover, Browse): name · actor/director · "N films on your disks", tap opens the person;
+- [ ] an agent before 1.16.1: no "don't have" group at all, the rest works;
+- [ ] Polish: "NA TWOICH DYSKACH · N", "NIE MASZ · Z BAZY FILMÓW", "LUDZIE", "Odtwórz", "chcę".
+- Differences from the board: people show no "M others" count (it needs a Wikidata query per person; the person page
+  has them); the "don't have" group matches titles that *start* with the query (original or primary IMDb title, no
+  Polish titles); the board's "On every Library tab:" prefix of the hint is a design note, not shown.
+
+**D2. A title you don't have** (boards BrakTytulu)
+- [ ] header "← You don't have it on your disks"; back returns where it came from (search, person, what next, list);
+- [ ] cover beside the title, "year · minutes · ★ rating", "kind · genres · age+", "dir. <name>" (opens the person);
+- [ ] "SEARCH": one button per household search site, every kind (subtitle sites too), "Set up search sites ›" in
+  the same row (opens D4, back returns here); with no site only the link;
+- [ ] the phrase line "Phrase: „Title Year”. Pick a result in the browser; the magnet comes back to the app and lands
+  in this title (right folder from tags)." / „Fraza: „Tytuł Rok”. Wybierz wynik w przeglądarce, a magnet wróci…”
+  (only with sites); each site opens per its setting ("In the app": in-app browser, "In the browser": the system
+  browser), all with the same phrase "Title Year";
+- [ ] "Want to watch" (filled; "On your list" once added, tap again removes) and "Paste magnet" side by side;
+- [ ] the description: the lead of the Wikipedia article (Polish phone: the Polish article when there is one) with
+  "Source: Wikipedia"; absent offline or without an article (agent 1.16.1+);
+- [ ] "SIMILAR · YOU HAVE N": covers marked "on disk" / "you don't have", on-disk ones first; tap opens the title
+  page or another D2 (appears after "What next" answers, up to ~10 s the first time);
+- [ ] a title that is on the disks after all: header "On your disks" and "Open" instead of the search block.
+- [ ] nothing below "Similar": no cast row, no "Why" line (not on the board).
+- Differences from the board: the cover is the drawn one (no poster images are fetched); the board's second note
+  (how "Set up search sites" behaves) is a design note, not shown.
+
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same

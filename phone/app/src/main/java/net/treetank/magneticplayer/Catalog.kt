@@ -55,6 +55,8 @@ data class TitleInfo(
     val votes: Int?, val minutes: Int?, val have: Boolean, val copies: List<CatItem>,
     val cast: List<Triple<String, String, String?>>, val directors: List<Pair<String, String>>,
     val topics: List<Pair<String, String>>, val age: Int?,
+    /** Agent 1.16.1+, a title not on the disks: the lead of its Wikipedia article and where it comes from. */
+    val about: String? = null, val aboutSource: String? = null,
 )
 
 data class PersonFilm(val item: CatItem, val role: String?, val asDirector: Boolean)
@@ -163,7 +165,7 @@ fun Api.catalogTitle(imdb: String): TitleInfo {
         o.optBoolean("have"), objects(o.optJSONArray("copies")).map(::catItem),
         pairs("cast").map { Triple(it.optString(0), it.optString(1), if (it.isNull(2)) null else it.optString(2).ifEmpty { null }) },
         pairs("directors").map { it.optString(0) to it.optString(1) },
-        pairs("topics").map { it.optString(0) to it.optString(1) }, o.optIntOrNull("age"))
+        pairs("topics").map { it.optString(0) to it.optString(1) }, o.optIntOrNull("age"), o.optStr("about"), o.optStr("about_source"))
 }
 
 fun Api.catalogPerson(qid: String): PersonInfo {
