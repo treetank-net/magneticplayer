@@ -212,11 +212,13 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         TaskWatch.appVisible = true
+        MainVisible.state.value = true
         TaskWatch.ensure(this)  // a followed task still running: its progress notification (the service may have been stopped)
     }
 
     override fun onStop() {
         TaskWatch.appVisible = false
+        MainVisible.state.value = false
         super.onStop()
     }
 
@@ -670,6 +672,7 @@ private fun FilesScreen(api: Api, torrentId: String, t: Torrent?, snack: Snackba
 
     LaunchedEffect(torrentId) {
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             try {
                 files = withContext(Dispatchers.IO) { api.files(torrentId) }
             } catch (e: ApiException) {
@@ -786,6 +789,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
     LaunchedEffect(Unit) {
         var n = 0
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             if (n++ % 3 == 0 && Cast.session(ctx) == null) {
                 CastNet.refresh()  // what is playing on Chromecasts (any sender)
                 if (CastNet.playing().isEmpty()) Pilot.refreshAgentCast(ctx)  // zapas: agent
@@ -798,6 +802,7 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
     var tvs by remember { mutableStateOf<List<DlnaTarget>>(emptyList()) }
     LaunchedEffect(Unit) {
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             tvs = withContext(Dispatchers.IO) { runCatching { Dlna.discover() }.getOrDefault(emptyList()) }
             delay(30_000)
         }
@@ -910,6 +915,7 @@ private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) ->
     var running by remember(api) { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(api) {
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             val r = runCatching { remote.status() }
             running = r.getOrNull() != null
             reachable = r.isSuccess || withContext(Dispatchers.IO) { api.ping() }
@@ -954,6 +960,7 @@ private fun RemoteView(remote: Remote, snack: SnackbarHostState, onGone: () -> U
     LaunchedEffect(remote) {
         var misses = 0
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             val s = runCatching { remote.status() }.getOrNull()
             if (s != null) { st = s; misses = 0 } else if (++misses >= 3) { st = null; onGone() }
             repeat(4) { delay(250); tick++ }  // position advances between reads

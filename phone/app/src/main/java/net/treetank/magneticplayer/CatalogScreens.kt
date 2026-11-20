@@ -190,6 +190,7 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(srvKey, all) {
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             val c = try {
                 withContext(Dispatchers.IO) {
                     all.orEmpty().filter { it != srvKey }.forEach { k -> apiFor(k)?.let { runCatching { CatalogCache.refresh(ctx, it) } } }
@@ -205,6 +206,7 @@ private fun CatalogAreaBody(api: Api, snack: SnackbarHostState, onPlayingOnPc: (
     // shared with the other phones: re-read now and then, and whenever the screen changes
     LaunchedEffect(srvKey, stack) {
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             withContext(Dispatchers.IO) { runCatching { api.wishlist() }.getOrNull() }?.let { wish = it }
             delay(30_000)
         }

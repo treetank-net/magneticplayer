@@ -19,7 +19,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+/** Whether MainActivity is on screen; its polling loops wait here while it is not. */
+object MainVisible {
+    val state = MutableStateFlow(false)
+    suspend fun await() { state.first { it } }
+}
 
 /**
  * Library tasks this phone follows: the ones it started, and ones picked with "Monitor" on a task card. Only these get a

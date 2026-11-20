@@ -291,6 +291,7 @@ private fun CastFormat(ref: MediaRef) {
     var err by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tick) {
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             probe = withContext(Dispatchers.IO) { runCatching { if (api.ping(1500)) api.mediaProbe(ref) else null }.getOrNull() }
             val st = probe?.optJSONObject("job")?.optString("state")
             if (st != "queued" && st != "running") break

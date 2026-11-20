@@ -262,6 +262,7 @@ fun DisksScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit, onPlan: 
     LaunchedEffect(Unit) {
         var finished = -1
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             runCatching { withContext(Dispatchers.IO) { api.tasks(brief = true) } }.getOrNull()?.let { list ->
                 tasks = list
                 val n = list.count { it.state == "done" || it.state == "cancelled" }

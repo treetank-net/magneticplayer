@@ -182,6 +182,13 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       screen; when it ends, the "finished" notification replaces it. Another phone gets nothing unless it taps
       "Monitor" on the task card (then the same notification; "Stop monitoring" ends it). Server asleep: "Server
       unreachable, trying again every minute", gives up after about an hour.
+      [x] 2026-11-20, Pixel, v1.261120.0826: "Monitor" on the running move (another device started it) turns into
+      "Stop monitoring"; the notification "Zwolnij Filmy – archiwum (TOSHIBA)", "39% · ANIME", bar 39/100, "jmpc";
+      in the background the service reads `/api/tasks?brief=1` once a minute (08:49:24, 08:50:25 in the journal).
+      Found with it: the screens' own polling loops (disks screen every 2 s, catalog and moves every minute, wish
+      list every 30 s, and the Remote, Chromecast, DLNA, torrent files) kept running in the background while a
+      service kept the process alive. Fixed after it: they all wait until the app is on screen again.
+      [ ] Check: with the app in the background only the service's minute reads reach the server.
 - [ ] Library offline, continued: a series' episode list opened once online opens offline too (kept per server);
       covers of titles with a complete copy on the phone get a "downloaded" mark (a series: any episode).
 - [~] Folders: a folder's ⋮ menu has "Move to another library folder…" (the other library folders, the same tag
@@ -205,6 +212,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Library in All: Discover/Browse/search over all servers at once; a title on two servers shows once (the better
       copy: resolution, Polish audio), the cover says the server and "+1", the title screen lists "On servers" with
       each copy's quality, playing picks the copy's server. Continue watching and positions stay per server.
+- [x] 2026-11-20, Pixel, v1.261120.0826: the counts are right (404 films · 41 series = jmpc + the laptop's one);
+      Folders without chips, "Na jmpc" / "Na Laptop" sections, the laptop's folder opens and All stays on.
 - [ ] Downloads in All: a row of server chips on top, one server's list at a time. Folders in All: every server's
       library folders in one list, each server under its name; opening another server's folder keeps All on (the
       user, 2026-11-20: chips there made no sense with "All" picked).
@@ -280,3 +289,8 @@ Written down as seen, also when unsure whether it is a problem at all.
   test leftovers from an earlier session, to be removed from the server's downloads with the user's yes.
 - 2026-11-20, Discover: the hero still says "Nowe na twoich dyskach" (new on your disks); item 7 added "Because you
   watched" as a row, the hero kept its old role. Unclear whether the hero should also change.
+- 2026-11-20, "All servers", Folders: the server whose folder was opened last moves to the top of the list (it
+  becomes the active one), so the sections swap places between visits; inside a folder nothing says which server
+  it is on (the path shows "/").
+- 2026-11-20, task card: "Monitor" sits right next to "Cancel" on a running task; a slip cancels a five-hour move
+  (cancel has no confirmation).

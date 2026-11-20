@@ -102,6 +102,7 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     }
     LaunchedEffect(refresh) {
         while (true) {
+            MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
             rows = withContext(Dispatchers.IO) {
                 val cache = MediaCache.get(ctx)
                 OfflineStore.all(ctx).map { i ->
