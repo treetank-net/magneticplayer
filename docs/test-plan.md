@@ -363,10 +363,18 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       above. [x] 2026-11-20, emulator, v1.261120.1625 against jmpc's agent 1.15.2 (a 6 MB synthetic test file in the
       phone-uploads folder, removed afterwards): a copy made by v1.261119.2356 (no stamp), file unchanged → one HEAD
       after the catalog refresh, no download; after `touch` on the server → downloaded again ("Whole video on phone");
-      `touch` once more (now with a stamp) → downloaded again. [ ] The Pixel's broken copy fixed by itself.
+      `touch` once more (now with a stamp) → downloaded again. [x] The Pixel's broken copy (2026-11-20,
+      Pixel, v1.261120.1625): after the install one HEAD, no download; with Wi-Fi off the copy says "Whole film on the
+      phone · works offline" and plays at 90% (paused frame looked at). Whether it was re-downloaded by itself or was
+      already whole before the fix isn't known.
 - [ ] Damaged sound fix on jmpc's real files: 9 MP3 files, 0 errors (2026-11-20, agent 1.15.1, API); the files grew by
       ~386 MB in total (AAC came out larger than the damaged MP3). [x] 2026-11-20, jmpc: all 9 have AAC, the audio
-      decodes with 0 errors, lengths as before. [ ] Played on the Pixel with sound.
+      decodes with 0 errors, lengths as before. [x] Played on the Pixel with sound (2026-11-20, v1.261120.1625): AAC
+      stereo through the speaker, picture fine, the user confirmed the sound is clean.
+- [ ] Phone copies of files that vanished on the server: test files deleted on jmpc still show under Torrents →
+      "Set aside this week" as "left in downloads", and copies of library `.avi` files converted to `.mkv` by an
+      old-formats task now get 404 (the path changed). Wish: drop or re-link such entries/copies (seen 2026-11-20,
+      Pixel, v1.261120.1625).
 - [ ] Damaged sound re-encoded at 128k stereo / 256k multichannel instead of 192k / 384k (agent 1.15.3): the fixed
       files no longer grow (the sources are MP3s of ~96-128k).
 - [ ] "Tidy up" no longer proposes moving films to the series folder (agent 1.15.3, catalog items re-identified): a
