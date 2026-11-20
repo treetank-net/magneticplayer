@@ -87,6 +87,7 @@ class Catalog:
         self.items = d.get("items") or {}     # key "<root id>/<rel>" → item
         self.wd = d.get("wd") or {}           # imdb → details
         self.labels = d.get("labels") or {}   # Wikidata id → {"en", "pl"}
+        self._relabelled = False              # names left empty retried once per start (enrich)
         self.version = d.get("version") or 0
         self.state = {"scanning": False, "done": 0, "total": 0, "last": d.get("last")}
         self._ext = {}                         # (kind, key) → (time, result): on-demand Wikidata queries
@@ -293,6 +294,15 @@ class Catalog:
             self._fetch(ids[k:k + WD_BATCH])
             self.version += 1
             self._save()
+        # names left empty: Wikidata keeps many well-known people's names only as "mul" (one label for every
+        # language), which agents before 1.14.6 didn't ask for; once per start, also for titles not refreshed above
+        if not self._relabelled:
+            self._relabelled = True
+            with self.lock:
+                empty = [q for q, v in self.labels.items() if not v]
+            if empty and self._labels(empty):
+                self.version += 1
+                self._save()
 
     def _fetch(self, ids):
         rows = _sparql("SELECT ?imdb ?film WHERE { VALUES ?imdb { %s } ?film wdt:P345 ?imdb }"
@@ -305,7 +315,7 @@ class Catalog:
         qs = list(qid.values())
         for k in range(0, len(qs), 50):
             ents.update(mp_ident._wd({"action": "wbgetentities", "ids": "|".join(qs[k:k + 50]),
-                                      "props": "claims|labels", "languages": "pl|en"}, timeout=30).get("entities", {}))
+                                      "props": "claims|labels", "languages": "pl|en|mul"}, timeout=30).get("entities", {}))
         need = set()
         for imdb in ids:
             e = ents.get(qid.get(imdb) or "", {})
@@ -329,7 +339,7 @@ class Catalog:
             d = {"at": now, "qid": qid.get(imdb), "cast": cast, "dir": [x for x in items("P57") if x][:3],
                  "topics": [x for x in items("P921") if x][:8], "age": max(ages) if ages else None,
                  "pl": (e.get("labels", {}).get("pl") or {}).get("value"),
-                 "en": (e.get("labels", {}).get("en") or {}).get("value")}
+                 "en": (e.get("labels", {}).get("en") or e.get("labels", {}).get("mul") or {}).get("value")}
             need.update(p for p, _ in cast)
             need.update(d["dir"] + d["topics"])
             with self.lock:
@@ -337,14 +347,20 @@ class Catalog:
         self._labels(need)
 
     def _labels(self, ids):
-        ids = [i for i in ids if i and i not in self.labels]
+        """Names of Wikidata items not known yet (or known without one); "mul" counts as English. The number named."""
+        ids = [i for i in ids if i and not self.labels.get(i)]
+        named = 0
         for k in range(0, len(ids), 50):
             ents = mp_ident._wd({"action": "wbgetentities", "ids": "|".join(ids[k:k + 50]), "props": "labels",
-                                 "languages": "en|pl"}, timeout=30).get("entities", {})
+                                 "languages": "en|pl|mul"}, timeout=30).get("entities", {})
             with self.lock:
                 for q, e in ents.items():
-                    lb = e.get("labels", {})
-                    self.labels[q] = {x: lb[x]["value"] for x in ("en", "pl") if x in lb}
+                    lb = {x: v["value"] for x, v in e.get("labels", {}).items()}
+                    if "en" not in lb and "mul" in lb:
+                        lb["en"] = lb["mul"]
+                    self.labels[q] = {x: lb[x] for x in ("en", "pl") if x in lb}
+                    named += bool(self.labels[q])
+        return named
 
     def label(self, q, lang="en"):
         lb = self.labels.get(q) or {}

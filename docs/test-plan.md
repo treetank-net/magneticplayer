@@ -239,11 +239,13 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       result's picture decoded clean, the only line was "[mp3float] Header missing" from the copied MP3 audio (already
       damaged in the original). The first failing line is now logged. [x] Rerun of the 4 items on jmpc
       (2026-11-20, agent 1.14.4): 4 done, 0 errors, 1033 → 657 MB; a frame at 20:00 matches the original, same length. Also the 2 files of an older run rejected the same way: done, 0 errors, 676 MB saved.
-- [ ] Shrink: an item that would leave its disk under the 5 % reserve, with no other disk able to take the original,
+- [x] Shrink: an item that would leave its disk under the 5 % reserve, with no other disk able to take the original,
       isn't started: "dysk zszedłby poniżej rezerwy 5%…" in the task's errors (agent 1.14.3). Unit check on the laptop (fake disk
-      usage, 2026-11-20): refused with no other disk, passes when another disk has room. [ ] On jmpc.
+      usage, 2026-11-20): refused with no other disk, passes when another disk has room. [x] Real disks (2026-11-20,
+      laptop, two 1 GB ext4 loop images via udisks, a throwaway agent 1.14.5): with only disk A in the library the item
+      was refused with that error; with disk B added it ran, the original went to A's own trash. Not on jmpc's disks.
 - [x] "All servers" header: Wake / Sleep name the server they act on ("Obudź jmpc"; several asleep: "Obudź wszystkie";
-      several awake: "Uśpij…" opens a list), no longer the hidden active server only. (2026-11-20, Pixel, v1.261120.1000) Seen: "Uśpij jmpc" with the laptop active; offline "Obudź wszystkie". The "Uśpij…" list (two awake servers with power control) not exercised: only jmpc has it.
+      several awake: "Uśpij…" opens a list), no longer the hidden active server only. (2026-11-20, Pixel, v1.261120.1000) Seen: "Uśpij jmpc" with the laptop active; offline "Obudź wszystkie". The "Uśpij…" list (two awake servers with power control) (2026-11-20, Pixel, v1.261120.1336): laptop power control switched on for the test, "Uśpij…" opened a list "jmpc / Laptop" (nothing picked; setting restored).
 - [x] Cancelling a running task asks first ("Przerwać …?", "Niech działa"); "Monitoruj" moved under the progress,
       with a bell icon. The shrink preview says the space comes back only after the trash days. (2026-11-20, Pixel, v1.261120.1000) Dialog seen, "Niech działa" kept the task running; Monitoruj with a bell under the progress.
 - [x] Offline, a video with nothing of it on the phone: a dialog "Nie ma go na telefonie" (not downloaded, the server
@@ -261,7 +263,7 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       inside a folder a line above the path says "jmpc: Seriale (disk)". (2026-11-20, Pixel, v1.261120.1000) Order kept after opening the laptop's folder; "Laptop: Videos" and "jmpc: Filmy (<disk>)" above the path.
 - [x] Remote / jmpc screen: a library video shows its recognised name ("Series · S2 E3", "Film (1968)") instead of the
       release's file name (agent 1.14.2). (2026-11-20, Pixel, v1.261120.1000) Remote and player/status: the film's recognised title with its year (agent 1.14.4).
-- [x] A title's screen: "Na serwerach" only with two or more copies. (2026-11-20, Pixel, v1.261120.1000) Single-copy title: no row. Two copies not exercised (no such title found).
+- [x] A title's screen: "Na serwerach" only with two or more copies. (2026-11-20, Pixel, v1.261120.1000) Single-copy title: no row. (2026-11-20, Pixel, v1.261120.1336) Two copies (a 10-minute cut of a public-domain film copied to the laptop's library for the test): both rows shown.
 - [ ] Chromecast version and audio (agent 1.14.2): for a file with two or more audio tracks the cast sheet says the
       version's sound ("Dźwięk w niej: angielski") and, when the language picked since differs, offers "Przygotuj
       ponownie: japoński" (removes the old version, prepares one with the new track).
@@ -275,28 +277,42 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       video keeps its notification.
 - [x] Discover hero: a carousel of a few slides ("Nowe na twoich dyskach" ×2, "Podobne do „…”", "Najwyżej oceniany",
       "Na chybił trafił"), in a random order each time, turning every 8 s, swipeable, dots below. (2026-11-20, Pixel, v1.261120.1000) Turns by itself, dots, random first slide. UX note below: it can turn right under a tap.
-- [ ] "All servers", a title on two servers: "Play" on the hero / title screen and the episode list use the copy this
-      phone watched last (its server and position), not always the first copy.
+- [x] "All servers", a title on two servers: "Play" on the hero / title screen and the episode list use the copy this
+      phone watched last (its server and position), not always the first copy. (2026-11-20, Pixel, v1.261120.1336) Watched the laptop copy to
+      1:56, reopened the merged title: "Odtwórz" resumed the laptop copy at ~2:00. The mark under "Na serwerach" stayed
+      on the other copy: fixed below. Episode list not exercised (no series on two servers).
 - [x] Downloads in "All servers": with one server that has a torrent client (the usual case) its list shows without
       server chips; chips only with two or more such servers. A true merged list is deferred (each client has its own
       actions and settings). (2026-11-20, Pixel, v1.261120.1000) No chips (only jmpc has a torrent client).
 
 ## Since v1.261120.1000 (agent 1.14.5 + the next app)
 
-- [ ] Shrink: a copied audio track that doesn't decode cleanly (damaged MP3 frames from an old AVI) is re-encoded to
-      AAC instead of copied (agent 1.14.5; the phone's MP3 decoder stops on such frames). [ ] On jmpc with a real run.
+- [x] Shrink: a copied audio track that doesn't decode cleanly (damaged MP3 frames from an old AVI) is re-encoded to
+      AAC instead of copied (agent 1.14.5; the phone's MP3 decoder stops on such frames). (2026-11-20, laptop, throwaway
+      agent on a test disk) An AVI with bytes overwritten in its MP3 ("Header missing" ×3), profile `good` (copies
+      MP3): "audio track(s) [0] don't decode cleanly, re-encoded", the result has AAC, 0 decoder lines, same length.
+      [ ] On jmpc with a real run.
 - [ ] Recognition: "<Collection 2> - 03 - <Title>" style names give the film's own title, not the collection's
       (agent 1.14.5, `ITEM_V` 4 re-identifies the catalog). Checked on names only; [ ] covers and years in the app.
-- [ ] Player: a damaged audio track no longer shows "the phone can't show this picture (HEVC)": a dialog "Telefon
+- [x] Player: a damaged audio track no longer shows "the phone can't show this picture (HEVC)": a dialog "Telefon
       nie odtworzy tego dźwięku" with "Bez dźwięku" (picture only, same position), VLC, Cancel. Reproduce with the
-      season 2 extra whose MP3 audio is damaged in the original.
-- [ ] Player title: the recognised name ("Series · S2 E3", "Film (1968)") from the cached catalog, not the file name.
-- [ ] Settings → "Okładki na telefonie": none (always from the server), tiny (~1 KB each, blurred, like a message
+      season 2 extra whose MP3 audio is damaged in the original. (2026-11-20, Pixel, v1.261120.1336) That extra: the dialog "(MP3)"; "Bez dźwięku"
+      plays the picture (239 frames / 10 s, clean frame).
+- [x] Player title: the recognised name ("Series · S2 E3", "Film (1968)") from the cached catalog, not the file name.
+      (2026-11-20, Pixel, v1.261120.1336) A film: "Title (1956)"; a series extra (no episode number): the series' name.
+- [x] Settings → "Okładki na telefonie": none (always from the server), tiny (~1 KB each, blurred, like a message
       preview), full; the usage line; switching to none deletes them, to tiny shrinks them. Offline cold start shows
-      kept covers.
-- [ ] Discover hero: a touch holds the carousel for 15 s; a dark scrim under the text; the label is white on a dark chip.
+      kept covers. (2026-11-20, Pixel, v1.261120.1336) "Miniatury": 223 covers / 203 KB after ~3 min; Wi-Fi off + cold start: blurred covers
+      in every row. Switching back to none not exercised yet.
+- [x] Discover hero: a touch holds the carousel for 15 s; a dark scrim under the text; the label is white on a dark chip.
+      (2026-11-20, Pixel, v1.261120.1336) Screenshots every 3 s: the slide stood ~21-24 s after a touch, then turned every ~8 s; scrim and chip seen.
 - [ ] "Play on jmpc" from a folder switches to the Remote (the launch no longer dies with the folder screen).
-- [ ] Server picker: "Wszystkie serwery" reads "Biblioteka, foldery i pobierania ze wszystkich".
+- [x] Server picker: "Wszystkie serwery" reads "Biblioteka, foldery i pobierania ze wszystkich". (2026-11-20, Pixel, v1.261120.1336)
+- [ ] People's names: well-known actors and directors showed as Wikidata ids ("Reżyseria Q25191"): Wikidata keeps
+      their names only as `mul` (one label for all languages). Agent 1.14.6 asks for `mul` and retries empty names
+      once per start: on jmpc 26 unnamed → 0 (API). [ ] In the app.
+- [ ] "All servers": the "Podobne do „X”" slide/row no longer offers X itself (another server's copy, same IMDb id).
+- [ ] "Na serwerach": the mark is on the copy "Odtwórz" will use (the one watched last), refreshed after the player.
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same

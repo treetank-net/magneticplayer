@@ -679,9 +679,10 @@ private fun CoverGrid(c: CatCtx, list: List<CatItem>) {
 
 // ---------------------------------------------------------------- Title
 
-/** "On servers": this copy and the same title's copies on the other servers (a merged catalog, "All"). */
+/** "On servers": this copy and the same title's copies on the other servers (a merged catalog, "All"); the mark is on
+ * the copy "Play" uses (the one watched last, [lastWatchedCopy]). */
 @Composable
-private fun CopiesOnServers(c: CatCtx, x: CatItem) {
+private fun CopiesOnServers(c: CatCtx, x: CatItem, plays: CatItem) {
     val ctx = LocalContext.current
     val copies = listOf(x) + x.alsoOn
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -691,11 +692,11 @@ private fun CopiesOnServers(c: CatCtx, x: CatItem) {
             Row(Modifier.fillMaxWidth().clickable(enabled = y !== x) { c.open(y) }.padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(name, fontWeight = if (y === x) FontWeight.Bold else null)
+                    Text(name, fontWeight = if (y.id == plays.id) FontWeight.Bold else null)
                     Text(listOfNotNull(y.rootName, qualityText(y.height), plBadge(y.audio, y.subs)).joinToString(" · "),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (y === x) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
+                if (y.id == plays.id) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -708,14 +709,14 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
     val ctx = LocalContext.current
     // the copy that plays, with its server: this one, or in "All" the copy of the title watched last (positions are
     // per server and file); the screen still shows the title as merged
-    val (px, xs) = remember(x) { lastWatchedCopy(ctx, x, c.srvOf(x)) }
+    val back = rememberResumedTick()  // back from the player: the copy watched last may have changed
+    val (px, xs) = remember(x, back) { lastWatchedCopy(ctx, x, c.srvOf(x)) }
     val xa = Api.of(ctx, xs) ?: c.apiOf(x)
     val similar = remember(cat, x) { similar(ctx, cat, x) }
     // a series: its episodes in order (agent 1.10+), where this phone left off, extras apart
     val canEps = x.series && px.dir != null && (Servers.get(ctx, xs) ?: xa.srv).libraryEpisodes
     var eps by remember(x.id) { mutableStateOf<Episodes?>(null) }
     if (canEps) LaunchedEffect(x.id) { eps = withContext(Dispatchers.IO) { runCatching { xa.episodes(px.root, px.dir!!) }.getOrNull() } }
-    val back = rememberResumedTick()
     val settings = remember { Settings(ctx) }
     val list = eps?.episodes.orEmpty()
     val cont = remember(eps, back) { if (list.isEmpty()) -1 else continueIndex(settings, xs, px.root, list) }
@@ -748,7 +749,7 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                 } else MediaActions(xa, px.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
                 // "All": where the copies are; another copy plays from its server (it opens its own title screen)
                 // only with a choice to make: one copy says nothing ("Available" says where it is)
-                if (x.srv.isNotEmpty() && x.alsoOn.isNotEmpty()) CopiesOnServers(c, x)
+                if (x.srv.isNotEmpty() && x.alsoOn.isNotEmpty()) CopiesOnServers(c, x, px)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     x.genres.forEach { g -> AssistChip({ c.push(Nav.results(listOf("genre:$g"))) }, { Text(genreLabel(g)) }) }
                     x.topics.forEach { q -> cat.topics[q]?.let { t -> AssistChip({ c.push(Nav.results(listOf("topic:$q"))) }, { Text(t) }) } }
@@ -787,7 +788,8 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
 /** Shared actors and directors count most, then topics, then genres. Genres alone need two specific ones in common
  *  ("Drama" says little), and kids' titles stay with kids' titles. The reason is the strongest link. */
 private fun similar(ctx: android.content.Context, cat: CatalogData, x: CatItem): List<Pair<CatItem, String>> =
-    cat.items.asSequence().filter { it.id != x.id && it.kids == x.kids }.mapNotNull { y ->
+    // (another server's copy of the same title is not "similar": the same IMDb id is left out too)
+    cat.items.asSequence().filter { it.id != x.id && (x.imdb == null || it.imdb != x.imdb) && it.kids == x.kids }.mapNotNull { y ->
         val actors = x.cast.take(8).filter { it in y.cast }
         val directors = x.directors.filter { it in y.directors }
         val topics = x.topics.filter { it in y.topics }
