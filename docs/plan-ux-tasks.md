@@ -52,7 +52,7 @@ Out of scope: remote access from outside the home; anything not on a board or in
 | pause / queue order | — | missing (cancel only, with confirmation) |
 | series episodes | `/api/library/episodes` | files on disk only; the catalog (`mp_catalog.py`, Wikidata) has no episode lists |
 | search engines | `cfg.search_engines` on the agent, `SearchEnginesDialog`, opened from server settings (`ServersUi.kt`) | URL placeholders `{title}`, `{imdb}` |
-| missing title | `CatalogScreens.kt` `MissingScreen` | reached from Person / Next / Wishlist; from the library search since agent 1.16.1 (D1, `CatalogSearch.kt`) |
+| missing title | `CatalogScreens.kt` `MissingScreen` | reached from Person / Next / Wishlist; from the library search since agent 1.17 (D1, `CatalogSearch.kt`) |
 | On the phone | `OfflineTab.kt` | `OfflineCard` tap does nothing unless selecting; `OfflineLine` tap plays |
 | phone copies | `Offline.kt` policy `watched / days:2 / days:7 / days:30` | exists; D6 only shows it |
 

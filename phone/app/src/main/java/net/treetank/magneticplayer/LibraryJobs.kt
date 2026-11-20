@@ -143,10 +143,12 @@ data class JobInfo(val applicable: Boolean, val count: Int, val size: Long, val 
 data class JobsInfo(val scopeLabel: String?, val files: Int, val size: Long, val checkedAt: Long?, val jobs: Map<String, JobInfo>)
 
 /** Counters for [scope] (null = the whole computer); cheap on the agent (cached background scans). */
-fun Api.jobs(scope: JSONObject?, languages: String? = null): JobsInfo {
+fun Api.jobs(scope: JSONObject?, languages: String? = null, levels: String? = null): JobsInfo {
     val q = buildList {
         if (scope != null && scope.length() > 0) add("scope=" + Uri.encode(scope.toString()))
         if (!languages.isNullOrEmpty()) add("languages=" + Uri.encode(languages))
+        // agent 1.17+: the folder layout counter for these levels ("kind,age"), not the saved ones
+        if (!levels.isNullOrEmpty()) add("levels=" + Uri.encode(levels))
     }
     val o = JSONObject(request("GET", "/api/library/jobs" + if (q.isEmpty()) "" else "?" + q.joinToString("&"), timeout = 20000))
     val j = o.optJSONObject("jobs") ?: JSONObject()
@@ -163,17 +165,17 @@ fun Api.jobs(scope: JSONObject?, languages: String? = null): JobsInfo {
 fun Api.jobsConfig(): JSONObject = JSONObject(request("GET", "/api/config/jobs"))
 fun Api.setJobsConfig(o: JSONObject) { request("POST", "/api/config/jobs", o) }
 
-private class JobsLoad(val info: JobsInfo?, val error: String?)
+internal class JobsLoad(val info: JobsInfo?, val error: String?)
 
-/** Counters for [scope], read again when it, [languages] or [reload] change; the old ones stay while loading. */
+/** Counters for [scope], read again when it, [languages], [levels] or [reload] change; the old ones stay while loading. */
 @Composable
-private fun loadJobs(api: Api, scope: JSONObject?, languages: String? = null, reload: Int = 0): JobsLoad {
+internal fun loadJobs(api: Api, scope: JSONObject?, languages: String? = null, reload: Int = 0, levels: String? = null): JobsLoad {
     val ctx = LocalContext.current
     val key = scope?.toString()
     var state by remember { mutableStateOf(JobsLoad(null, null)) }
-    LaunchedEffect(key, languages, reload) {
+    LaunchedEffect(key, languages, reload, levels) {
         state = try {
-            JobsLoad(withContext(Dispatchers.IO) { api.jobs(scope, languages) }, null)
+            JobsLoad(withContext(Dispatchers.IO) { api.jobs(scope, languages, levels) }, null)
         } catch (e: ApiException) {
             JobsLoad(state.info, e.message ?: ctx.getString(R.string.media_error))
         }
@@ -199,7 +201,7 @@ private class Choice<T : Any>(val key: String, val default: T) : MutableState<T>
 }
 
 @Composable
-private fun <T : Any> choice(key: String, default: T): MutableState<T> = remember(key) { Choice(key, default) }
+internal fun <T : Any> choice(key: String, default: T): MutableState<T> = remember(key) { Choice(key, default) }
 
 // ---------------------------------------------------------------- the area: list, task screens, background work
 
@@ -214,7 +216,9 @@ fun JobsArea(api: Api, snack: SnackbarHostState, scopeStr: String?, onScope: (St
     when {
         bgWork -> {
             BackHandler { onBgWork(false) }
-            BackgroundWorkScreen(api, snack) { onBgWork(false) }
+            // agent 1.17+: pause, resume and queue order (C4, LibraryJobs2.kt); older ones keep the task cards
+            if (api.srv.hasTaskQueue) BackgroundWork2(api, snack) { onBgWork(false) }
+            else BackgroundWorkScreen(api, snack) { onBgWork(false) }
         }
         job != null -> {
             BackHandler { onJob(null) }
@@ -230,10 +234,12 @@ fun JobsArea(api: Api, snack: SnackbarHostState, scopeStr: String?, onScope: (St
     }
 }
 
-// Rows of the list, by group. Hidden until their screens exist: "layout" (A2), "balance" (A3), "cast_ready" (B5)
-// in plan stage 2, "reencode" (B6, under "Advanced") in stage 6.
-private val TIDY = listOf("dupes", "free")
-private val RENOVATION = listOf("audio_fix", "modernize", "downscale", "compress")
+// Rows of the list, by group. "layout" (A2), "balance" (A3) and "cast_ready" (B5) are plan stage 2 (agent 1.17+,
+// screens in LibraryJobs2.kt); "reencode" (B6, under "Advanced") comes in stage 6.
+private val TIDY = listOf("layout", "balance", "dupes", "free")
+private val RENOVATION = listOf("audio_fix", "modernize", "downscale", "compress", "cast_ready")
+/** Shown only when the agent lists them in `features.jobs` (an older agent's counters lack them anyway). */
+private val STAGE2 = setOf("layout", "balance", "cast_ready")
 private val SUBTITLES = listOf("subs_get", "subs")
 private val CATALOG = listOf("tags")
 /** Whole disks only: not on the scoped list, replaced there by one note. */
@@ -253,6 +259,9 @@ private fun jobName(kind: String) = when (kind) {
     "subs_get" -> stringResource(R.string.job_subsget)
     "subs" -> stringResource(R.string.job_subs)
     "tags" -> stringResource(R.string.job_tags)
+    "layout" -> stringResource(R.string.j2_layout)
+    "balance" -> stringResource(R.string.j2_balance)
+    "cast_ready" -> stringResource(R.string.j2_cast)
     else -> kind
 }
 
@@ -267,6 +276,9 @@ private fun jobRowText(kind: String) = when (kind) {
     "subs_get" -> stringResource(R.string.job_subsget_row)
     "subs" -> stringResource(R.string.job_subs_row)
     "tags" -> stringResource(R.string.job_tags_row)
+    "layout" -> stringResource(R.string.j2_layout_row)
+    "balance" -> stringResource(R.string.j2_balance_row)
+    "cast_ready" -> stringResource(R.string.j2_cast_row)
     else -> ""
 }
 
@@ -274,6 +286,12 @@ private fun jobRowText(kind: String) = when (kind) {
 @Composable
 private fun jobCounter(kind: String, j: JobInfo?): Pair<String?, Tone> {
     j ?: return null to Tone.DIM
+    // balance: the free share of each disk ("39% / 42% free"), also when nothing would move
+    if (kind == "balance" && j.applicable) {
+        val pcts = j.options.list("disks").map { "${it.optInt("pct")}%" }
+        if (pcts.size >= 2) return stringResource(R.string.j2_bal_counter, pcts.joinToString(" / ")) to
+            (if (j.count > 0) Tone.ACCENT else Tone.DIM)
+    }
     if (!j.applicable || (j.count == 0 && j.pending == 0))
         return stringResource(if (kind == "free") R.string.job_not_needed else R.string.job_nothing) to Tone.DIM
     if (j.count == 0) return stringResource(R.string.job_checking) to Tone.DIM
@@ -292,6 +310,7 @@ private fun jobCounter(kind: String, j: JobInfo?): Pair<String?, Tone> {
         "subs_get" -> pluralStringResource(R.plurals.lib_items, n, n)
         "subs" -> n.toString()
         "tags" -> return pluralStringResource(R.plurals.job_n_to_check, n, n) to Tone.WARN
+        "layout" -> pluralStringResource(R.plurals.j2_n_to_move, n, n)
         else -> pluralStringResource(R.plurals.lib_files, n, n)
     } to Tone.ACCENT
 }
@@ -359,7 +378,8 @@ private fun JobsListScreen(api: Api, snack: SnackbarHostState, scope: JobScope?,
                 Text(stringResource(R.string.media_loading), Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 // without counters (an error) the rows of this stage still lead to their screens
-                fun shown(k: String) = (info == null || k in info.jobs) && (scope == null || k !in DISK_WIDE)
+                fun shown(k: String) = (k !in STAGE2 || k in api.srv.jobKinds) && (info == null || k in info.jobs) &&
+                    (scope == null || k !in DISK_WIDE)
                 val groups = buildList {
                     val tidy = R.string.job_grp_tidy to TIDY.filter(::shown)
                     val renovation = R.string.job_grp_renovation to RENOVATION.filter(::shown)
@@ -442,7 +462,6 @@ private fun BackgroundRow(tasks: List<LibTask>?, onClick: () -> Unit) {
         if (running > 0) add(pluralStringResource(R.plurals.job_bg_running, running, running))
         if (waiting > 0) add(pluralStringResource(R.plurals.job_bg_waiting, waiting, waiting))
     }
-    // TODO(plan stage 2, C4): its own screen with pause, resume and queue order; for now the task cards
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(Modifier.padding(16.dp, 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (parts.isEmpty()) stringResource(R.string.job_bg_idle) else stringResource(R.string.job_bg_row, parts.joinToString(", ")),
@@ -468,7 +487,7 @@ private fun DiskBar(disk: Disk) {
 }
 
 @Composable
-private fun GroupHeading(text: String) {
+internal fun GroupHeading(text: String) {
     Text(text.uppercase(Locale.getDefault()), Modifier.padding(start = 4.dp, top = 12.dp), style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
 }
@@ -548,12 +567,12 @@ private fun FoldersPicker(api: Api, picked: Set<Pair<Int, String>>, names: Map<I
 
 // ---------------------------------------------------------------- the task screen template (F6)
 
-private class JobCtx(val api: Api, val snack: SnackbarHostState, val scope: JobScope?, val onBack: () -> Unit,
+internal class JobCtx(val api: Api, val snack: SnackbarHostState, val scope: JobScope?, val onBack: () -> Unit,
                      val onClearScope: () -> Unit, val onPlan: (String) -> Unit, val onOpenJob: (String) -> Unit) {
     val scopeJson: JSONObject? get() = scope?.toJson()
 }
 
-private fun planBody(kind: String, scope: JSONObject?, fill: JSONObject.() -> Unit = {}): String =
+internal fun planBody(kind: String, scope: JSONObject?, fill: JSONObject.() -> Unit = {}): String =
     JSONObject().put("kind", kind).apply(fill).apply { if (scope != null) put("scope", scope) }.toString()
 
 /**
@@ -561,7 +580,7 @@ private fun planBody(kind: String, scope: JSONObject?, fill: JSONObject.() -> Un
  * folder picker), the task's sections, and the primary button ("Preview") at the bottom.
  */
 @Composable
-private fun JobFrame(c: JobCtx, title: String, description: String, scopeLabel: String?, primary: String?,
+internal fun JobFrame(c: JobCtx, title: String, description: String, scopeLabel: String?, primary: String?,
                      primaryEnabled: Boolean = true, onPrimary: () -> Unit = {}, onRefresh: (() -> Unit)? = null,
                      content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize()) {
@@ -587,7 +606,7 @@ private fun JobFrame(c: JobCtx, title: String, description: String, scopeLabel: 
 }
 
 @Composable
-private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary)
@@ -597,19 +616,19 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun <T> Chips(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+internal fun <T> Chips(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { (v, l) -> FilterChip(selected == v, { onSelect(v) }, label = { Text(l) }) }
     }
 }
 
 @Composable
-private fun Note(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+internal fun Note(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = color)
 }
 
 @Composable
-private fun SwitchRow(text: String, checked: Boolean, sub: String? = null, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(text: String, checked: Boolean, sub: String? = null, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!checked) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(text, style = MaterialTheme.typography.bodyMedium)
@@ -620,7 +639,7 @@ private fun SwitchRow(text: String, checked: Boolean, sub: String? = null, enabl
 }
 
 @Composable
-private fun RadioRow(text: String, selected: Boolean, sub: String? = null, onClick: () -> Unit) {
+internal fun RadioRow(text: String, selected: Boolean, sub: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         RadioButton(selected, onClick)
         Column(Modifier.weight(1f)) {
@@ -632,7 +651,7 @@ private fun RadioRow(text: String, selected: Boolean, sub: String? = null, onCli
 
 /** The summary card: what the background check found for this task and the settings above. */
 @Composable
-private fun Summary(content: @Composable ColumnScope.() -> Unit) {
+internal fun Summary(content: @Composable ColumnScope.() -> Unit) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp), content = content)
     }
@@ -640,7 +659,7 @@ private fun Summary(content: @Composable ColumnScope.() -> Unit) {
 
 /** First examples with "… and N more". */
 @Composable
-private fun Examples(list: List<JSONObject>, total: Int, line: @Composable (JSONObject) -> String) {
+internal fun Examples(list: List<JSONObject>, total: Int, line: @Composable (JSONObject) -> String) {
     list.forEach { x ->
         Column {
             Text(x.optString("name"), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -654,13 +673,13 @@ private fun JSONObject.list(k: String): List<JSONObject> =
     optJSONArray(k)?.let { a -> List(a.length()) { a.optJSONObject(it) ?: JSONObject() } } ?: emptyList()
 
 /** "about 1 h 20 min" style time, or "" for none. */
-private fun eta(sec: Long) = humanTime(sec).ifEmpty { "?" }
+internal fun eta(sec: Long) = humanTime(sec).ifEmpty { "?" }
 
 /** The trash keeps originals this many days (from the trash counters, 14 when unknown). */
-private fun trashDays(info: JobsInfo?) = info?.jobs?.get("trash")?.options?.optInt("days", 14) ?: 14
+internal fun trashDays(info: JobsInfo?) = info?.jobs?.get("trash")?.options?.optInt("days", 14) ?: 14
 
 @Composable
-private fun checkedLine(at: Long?): String {
+internal fun checkedLine(at: Long?): String {
     val ctx = LocalContext.current
     at ?: return stringResource(R.string.job_not_checked)
     val d = java.util.Date(at * 1000)
@@ -683,6 +702,9 @@ private fun JobScreen(c: JobCtx, kind: String) {
         "subs_get" -> SubsGetJob(c)
         "subs" -> SubsFitJob(c)
         "tags" -> TagsJob(c)
+        "layout" -> LayoutJob(c)
+        "balance" -> BalanceJob(c)
+        "cast_ready" -> CastReadyJob(c)
         else -> LaunchedEffect(kind) { c.onBack() }
     }
 }
@@ -768,8 +790,10 @@ private fun FreeJob(c: JobCtx) {
         val jobs = load.info?.jobs
         val down = jobs?.get("downscale")?.saving ?: 0L
         val dupes = jobs?.get("dupes")?.saving ?: 0L
-        // TODO(plan stage 2, A3): "Balance: move X GB" once the agent has the "balance" task
-        if (down > 0 || dupes > 0) Section(stringResource(R.string.job_instead)) {
+        // agent 1.17+: what "Balance between disks" would move to the emptier disk
+        val bal = jobs?.get("balance")?.takeIf { it.applicable && it.count > 0 && "balance" in c.api.srv.jobKinds }
+        if (down > 0 || dupes > 0 || bal != null) Section(stringResource(R.string.job_instead)) {
+            if (bal != null) LinkRow(stringResource(R.string.j2_instead_balance, humanBytes(bal.size))) { c.onOpenJob("balance") }
             if (down > 0) LinkRow(stringResource(R.string.job_instead_down, humanBytes(down))) { c.onOpenJob("downscale") }
             if (dupes > 0) LinkRow(stringResource(R.string.job_instead_dupes, humanBytes(dupes))) { c.onOpenJob("dupes") }
             Note(stringResource(R.string.job_instead_note))
@@ -778,7 +802,7 @@ private fun FreeJob(c: JobCtx) {
 }
 
 @Composable
-private fun LinkRow(text: String, onClick: () -> Unit) {
+internal fun LinkRow(text: String, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
@@ -1171,7 +1195,7 @@ private fun TagsJob(c: JobCtx) {
     }
 }
 
-// ---------------------------------------------------------------- Background work (C4 comes in plan stage 2)
+// ---------------------------------------------------------------- Background work (agents before 1.17; C4 is in LibraryJobs2.kt)
 
 @Composable
 private fun BackgroundWorkScreen(api: Api, snack: SnackbarHostState, onBack: () -> Unit) {

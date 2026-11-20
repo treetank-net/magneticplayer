@@ -223,6 +223,78 @@ kinds `shrink`, `tidy`, `trash` and `move` take a `scope` too, which filters the
 Played titles: the agent remembers when each video was last streamed from it (`played.json`, a `GET` of `/lib/…`;
 `HEAD` probes don't count), which is what "watched" means above.
 
+### Folder layout, balance, For Chromecast, pause and queue order (agent 1.17+)
+
+`features.jobs` adds `layout`, `balance` and `cast_ready`; `features.task_queue: true` means the task routes below
+exist. Apps show these screens only when the agent lists them.
+
+New plan kinds for `POST /api/library/plan`:
+
+- `{"kind": "layout", "levels"?: ["kind", "age", "category", "genre", "collection", "decade"], "ages"?: {"0": "kids",
+  "7": "kids", "12": "teens", "16": "films", "18": "films"}, "keep"?: [{"root", "path"}], "keep_unsure"?: true,
+  "seeding"?: "move"|"skip", "remember"?: false}` (A2): moves whole titles into folders by catalog tags, inside the
+  same disk (into the library folder there whose tag fits the kind: films, series, kids). `levels` in order are the
+  folder levels: `kind` picks the library folder, `age` puts films under `Kids/` / `Teens/` (by the `ages` mapping,
+  `films` = no folder), `category` the grouping folder (`Anime/`), `genre` the first catalog genre, `collection` the
+  film series (`Blender Open Movies/`), `decade` `1960–1969/`. Without `levels`/`ages` the saved ones are used
+  (`layout_levels`, `layout_ages` in `/api/config/jobs`; `remember: true` saves the given ones). `keep` = the folders
+  arranged by hand that stay as they are: given once, it is saved as `layout_keep` (confirmed); never confirmed, every
+  detected hand folder is kept. `keep_unsure: false` lists titles without a sure catalog match as `unsure` items (the
+  app leaves them unticked). `seeding: "move"` moves a seeding torrent through its client, whole (a torrent holding
+  several titles moves only when they all belong in the same folder, else it is skipped with reason "together");
+  `skip` leaves seeding torrents alone. A title another queued or running task still works on is skipped ("busy").
+  Result: `items` (op `move` with `to_root`, `to_name`, `to_sub`, `torrent`, `titles` = titles in that torrent,
+  `unsure`, `why` = the destination, `prune` = empty folders left behind are removed, `same_disk: true`), `levels`,
+  `ages`, `confirmed`, `hand_folders`, `stats` (`unsure`, `seeding`, `kept`), `skipped`, `eta`. A task with only
+  same-disk moves is quick: it runs between the files of a running encode instead of waiting.
+- `{"kind": "balance", "goal": "even"|"kind_per_disk"|"fill_newer", "rules"?: {"skip_watching": true, "seeding":
+  true, "backup": false}}` (A3), the whole machine only (400 with a scope; an error with one disk): whole titles move
+  to the folder with the same tag on another disk, same subfolder. `even` evens out the free share, `kind_per_disk`
+  gathers the series on the disk holding most of them and moves films and the rest to the others, `fill_newer` fills the largest disk first (leaving
+  10% free). A series always moves whole; no move leaves a disk under 5% free. `skip_watching` leaves what was
+  streamed in the last 14 days or is watched now; `seeding: false` leaves seeding torrents (true: moved whole by the
+  client, which keeps seeding); `backup: true` never moves a title of a replicated folder onto its replica's disk.
+  Result: `items` (op `move`, `why` = destination), `disks` (`name`, `total`, `free`, `free_after`, `pct`,
+  `pct_after`), `goal`, `rules`, `skipped`, `eta` (copy time).
+- `{"kind": "cast_ready", "add_aac"?: true, "subs_to_srt"?: true, "avi_to_mkv"?: true}` (B5): videos whose picture a
+  Chromecast plays (H.264 8-bit up to 1080p, HEVC 8-bit) but whose sound it doesn't (DTS, AC3, E-AC3, TrueHD…), with
+  text subtitle tracks, or in AVI. Running an item writes the text subtitle tracks next to the video as `.<lang>.srt`
+  and remuxes it to `.mkv` with an AAC stereo track (192k) first and default, the original tracks kept; the picture is
+  copied, never re-encoded. The original goes to the trash. A file a torrent still seeds only gets its subtitles
+  written next to it. Items: `why` (localized reasons), `est` (size after), `add_aac`, `aac_from`, `aac_lang`,
+  `audio_codec`, `subs` `[{n, lang}]`, `avi`, `seeding`, `title`, `series`; result: `est`, `saved` (negative: the
+  files grow), `eta`, `by_title`, `warnings` (files whose subtitle codecs weren't probed yet).
+
+Counters in `GET /api/library/jobs` (also `?levels=kind,age` for the layout counter with other levels than the saved
+ones): `layout` `count` titles to move, `options` `levels`, `ages`, `confirmed`, `hand_folders` (`root`, `root_id`,
+`root_name`, `path`, `name`, `titles`, `size`, `keep`), `unsure`, `seeding`, `kept`, `tree` (`[{path, titles}]`, the
+destination folders, e.g. `Films/Kids`); `balance` (not applicable in a scope or with one disk; top-level numbers for
+`even`) `options` `disks` (as in the result, now) and `by_goal` `{goal: {count, size, eta, disks}}`; `cast_ready`
+`count` files, `saving` (negative: growth), `eta`, `pending` (files whose subtitle codecs aren't known yet),
+`options` `by_title` (top 3: `title`, `series`, `files`, `why`, `size`), `more_files`, `by_reason` `{aac, subs, avi}`,
+`growth`. `GET /api/config/jobs` also returns `layout_levels`, `layout_ages` and `layout_keep` (`[{root, path}]`, null
+= never confirmed); `POST` takes them (`layout_keep: null` forgets the confirmation).
+
+Task routes (`features.task_queue`):
+
+| method and path | description |
+|---|---|
+| `POST /api/tasks/<id>/pause` | a person pauses a queued or running task (`held`): a running one stops at the next file boundary, or its detached encode is suspended (SIGSTOP; on Windows it finishes the file); it goes back to `queued` and keeps its place. Survives an agent restart → the task |
+| `POST /api/tasks/<id>/resume` | continues it (a suspended encode is resumed and re-attached) → the task |
+| `POST /api/tasks/<id>/move` | `{"to": "up"\|"down"\|"top"}`: a queued task in the queue → `{"queue": [ids]}` |
+| `POST /api/tasks/order` | `{"ids": [...]}`: the queued tasks in this order (others keep theirs after them) → `{"queue": [ids]}` |
+| `POST /api/tasks/<id>/retry` | a new task with the failed items of a finished or cancelled one (after emptying the trash) → the new task |
+
+`/api/tasks` adds per task: `held`, `paused` (true also when held), `quick`, `queue` (1-based place of a queued task),
+`eta` (seconds left of a running task, without paused time, or of work for a queued one; null when unknown),
+`estimate` (localized, for a queued task: "Quick: starts in a break between files", the OpenSubtitles daily limit);
+`error_groups` items of a finished task that ran out of space carry `fix: "empty_trash_retry"`, `trash` (bytes in the
+trash) and `disk`. `POST /api/tasks/<id>/remove` also takes a queued task (it leaves the queue).
+
+The catalog (`/api/catalog/*` entries) adds `series` (up to two film-series Wikidata ids, P179) and their labels;
+entries cached before are fetched again once. Folders named like the layout's own (`Films/`, `Kids/`, `Teens/`, a
+decade) are looked into: their subfolders are titles, as at the top of a library folder.
+
 ## Catalog: films instead of folders (agent 1.8+, `features.catalog`)
 
 The agent walks the library in the background and keeps every film and series as a title: identification (local IMDb
@@ -233,8 +305,8 @@ Wikidata by IMDb id (cast in billing order with roles, directors, main subjects,
 | request | answer |
 |---|---|
 | `GET /api/catalog?since=<version>` | `{"version", "same": true}` when nothing changed since `version`; otherwise `version`, `scanning`, `done`, `total` (walk progress), `last` (time of the last walk), `items`, `people` (`{Wikidata id: name}`), `topics` (`{Wikidata id: label}`). Item: `id` (stable key), `root`, `root_name`, `path` (main video, relative to the folder; a series: its first episode), `dir` (the title's folder or null), `title` (original), `title_pl` (only when the film has Polish audio or subtitles), `year`, `kind` (`movie`/`series`), `imdb`, `genres` (IMDb, English names), `rating` (IMDb, 0–10), `votes`, `minutes`, `height`, `audio`, `subs` (2-letter languages; `?` = a subtitle file of unknown language), `size`, `added` (time), `kids`, `episodes`, `age` (minimum age from FSK/MPAA, 0 for kids' folders, null = unknown), `cast`, `roles` (same order as `cast`), `directors`, `topics` (Wikidata ids). Newest first |
-| `GET /api/catalog/title?imdb=tt…` | a title, also one that is not on the disks: the IMDb index row (`title`, `year`, `kind`, `genres`, `rating`, `votes`, `minutes`) + `have`, `copies` (catalog items with this id), `cast` (`[id, name, role]`), `directors` (`[id, name]`), `topics` (`[id, label]`), `age`. Agent 1.16.1+ (`features.catalog_search`): a title that is not on the disks also has `about` (the lead of its Wikipedia article, Polish for `Accept-Language: pl` when there is one, else English; up to 1500 characters) and `about_source` (`"Wikipedia"`), when Wikidata links an article; fetched when the page is opened, cached for a day, left out offline |
-| `GET /api/catalog/search?q=<text>&limit=20` | agent 1.16.1+ (`features.catalog_search`): titles from the local IMDb index (films and series with 300+ votes) whose original or primary title starts with `q` (case, accents, punctuation and the words the/a/an/and ignored; under 3 characters only whole titles), an exact title first, then the most voted; a trailing year ("Metropolis 1927") ranks that year first. `items: [{imdb, title, year, end, kind, genres, rating, votes, minutes, have, id?}]` (`have`: a title this device sees in the catalog has the same IMDb id, `id` is its catalog key), `index` (false while there is no index yet). `limit` 1–50. No network: one indexed lookup |
+| `GET /api/catalog/title?imdb=tt…` | a title, also one that is not on the disks: the IMDb index row (`title`, `year`, `kind`, `genres`, `rating`, `votes`, `minutes`) + `have`, `copies` (catalog items with this id), `cast` (`[id, name, role]`), `directors` (`[id, name]`), `topics` (`[id, label]`), `age`. Agent 1.17+ (`features.catalog_search`): a title that is not on the disks also has `about` (the lead of its Wikipedia article, Polish for `Accept-Language: pl` when there is one, else English; up to 1500 characters) and `about_source` (`"Wikipedia"`), when Wikidata links an article; fetched when the page is opened, cached for a day, left out offline |
+| `GET /api/catalog/search?q=<text>&limit=20` | agent 1.17+ (`features.catalog_search`): titles from the local IMDb index (films and series with 300+ votes) whose original or primary title starts with `q` (case, accents, punctuation and the words the/a/an/and ignored; under 3 characters only whole titles), an exact title first, then the most voted; a trailing year ("Metropolis 1927") ranks that year first. `items: [{imdb, title, year, end, kind, genres, rating, votes, minutes, have, id?}]` (`have`: a title this device sees in the catalog has the same IMDb id, `id` is its catalog key), `index` (false while there is no index yet). `limit` 1–50. No network: one indexed lookup |
 | `GET /api/catalog/episodes?imdb=tt…` | agent 1.16+ (`features.episode_lists`): every season and episode of a series, the ones on this server marked. `seasons: [{season, episodes: [{season, episode, title, imdb, aired, year, have, state, root, path}], have, missing, upcoming, total}]`, the same four counts for the whole series, `other` (own videos that match no episode: `[{root, path}]`), `source` (`wikidata`, `imdb` or null), `running`, `pending` (an IMDb datasets pass is still queued). `state`: `have`, `missing` or `upcoming`. Sources: Wikidata first, IMDb datasets (a niced weekly pass) when Wikidata is incomplete; no API keys. The first request for a series waits for Wikidata (up to 30 s); later ones answer from the cache. Without online lookups (`ident_online: false`) only the own files, all in `other` |
 | `GET /api/catalog/person?id=Q…` | `id`, `name`, `role` (`director` when Wikidata lists more films they directed than acted in, otherwise `actor`), `films` (catalog items with `role` and `as_director`), `missing` (up to 20 best known films with this person that are not on the disks: `imdb`, `title`, `year`, `genres`, `rating`, `votes`, `minutes`, `have: false`) |
 | `GET /api/catalog/next?imdb=tt…` | "what next": `items` (up to 24), titles from the collection first (`have: true` with `id`, `root`, `path`, `audio`, `subs`, `title_pl`?) then ones that are not on the disks (`have: false`); each with `reason` (`actor`/`topic`/`genre`) and `why` (text: "też Cary Grant", "Mystery, Romance"). Wikidata queries are cached for a day; the first answer may take ~10 s |

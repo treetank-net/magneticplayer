@@ -52,10 +52,10 @@ import org.json.JSONObject
 import java.util.Locale
 
 // D1 of docs/plan-ux-tasks.md: the Library's search on every tab (Discover, Browse, Folders) in groups: "on your
-// disks", "you don't have it · from the film database" (the agent's local IMDb index, agent 1.16.1+,
+// disks", "you don't have it · from the film database" (the agent's local IMDb index, agent 1.17+,
 // `features.catalog_search`) and people. A "don't have" row opens the missing title's page (D2, CatalogScreens.kt).
 
-/** Agent 1.16.1+: `GET /api/catalog/search` and `about` on a missing title's page. */
+/** Agent 1.17+: `GET /api/catalog/search` and `about` on a missing title's page. */
 val Server.hasCatalogSearch: Boolean get() = info?.optJSONObject("features")?.optBoolean("catalog_search", false) ?: false
 
 /** A title from the agent's IMDb index (`/api/catalog/search` item). */
@@ -172,7 +172,7 @@ private fun HaveRow(c: CatCtx, x: CatItem) {
 
 /**
  * "YOU DON'T HAVE IT · FROM THE FILM DATABASE": titles from the agent's IMDb index matching [query] that are not in the
- * catalog, each opening the missing title's page (D2). Nothing at all when the agent is older than 1.16.1.
+ * catalog, each opening the missing title's page (D2). Nothing at all when the agent is older than 1.17.
  */
 @Composable
 fun MissingTitles(c: CatCtx, query: String) {

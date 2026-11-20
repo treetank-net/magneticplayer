@@ -658,6 +658,10 @@ private fun planKindTitle(kind: String) = when (kind) {
     "downscale" -> stringResource(R.string.job_down)
     "compress" -> stringResource(R.string.job_comp)
     "trash" -> stringResource(R.string.lib_delete)
+    // agent 1.17+ (plan stage 2)
+    "layout" -> stringResource(R.string.j2_layout)
+    "balance" -> stringResource(R.string.j2_balance)
+    "cast_ready" -> stringResource(R.string.j2_cast)
     else -> stringResource(R.string.lib_move)
 }
 
@@ -730,7 +734,7 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
                 }, enabled = picked.isNotEmpty() && !starting) {
                     Text(when (kind) {
                         "shrink" -> stringResource(R.string.lib_shrink)
-                        "audio_fix", "modernize", "downscale", "compress" -> stringResource(R.string.job_start)
+                        "audio_fix", "modernize", "downscale", "compress", "cast_ready" -> stringResource(R.string.job_start)
                         "subs" -> stringResource(R.string.lib_subs_go)
                         "subs_get" -> stringResource(R.string.subs_get_go)
                         "trash" -> stringResource(R.string.lib_delete)
@@ -775,8 +779,17 @@ private fun PlanSummary(r: JSONObject, count: Int) {
         lines += stringResource(R.string.lib_sum_subs_time, r.optInt("minutes"))
         lines += stringResource(R.string.subs_get_hint)
     }
-    if (r.has("trash_days")) r.optInt("trash_days").let {
-        lines += pluralStringResource(if (kind in ENCODE_KINDS) R.plurals.lib_sum_originals_kept else R.plurals.lib_sum_trash_kept, it, it)
+    // agent 1.17+: balance shows each disk before and after, For Chromecast how much the files grow
+    if (kind == "balance") r.objects("disks").forEach { d ->
+        lines += d.optString("name") + ": " + stringResource(R.string.j2_bal_pct, d.optInt("pct"), d.optInt("pct_after"))
+    }
+    if (kind == "cast_ready" && r.optLong("est") > r.optLong("bytes"))
+        lines += stringResource(R.string.j2_sum_grow, humanBytes(r.optLong("est") - r.optLong("bytes")))
+    if (kind in setOf("layout", "balance", "cast_ready") && r.optLong("eta") > 0)
+        lines += stringResource(R.string.j2_sum_work, humanTime(r.optLong("eta")))
+    if (r.has("trash_days") && kind != "layout") r.optInt("trash_days").let {
+        lines += pluralStringResource(if (kind in ENCODE_KINDS || kind == "cast_ready") R.plurals.lib_sum_originals_kept
+            else R.plurals.lib_sum_trash_kept, it, it)
     }
     val warnings = r.optJSONArray("warnings")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList()
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -869,6 +882,9 @@ private fun PlanItem(kind: String, it: JSONObject) {
                 it.optString("path").substringBeforeLast('/', it.optString("root_name")),
                 style = small, color = dim, maxLines = 2, overflow = TextOverflow.StartEllipsis)
         }
+        // agent 1.17+: what the file gets ("DTS 5.1 sound · subtitles in the file") and its size after
+        "cast_ready" -> Text(it.optString("why") + " · " + humanBytes(it.optLong("size")) + " → " + humanBytes(it.optLong("est")),
+            style = small, color = dim, maxLines = 2, overflow = TextOverflow.Ellipsis)
         "trash" -> Text(listOf(it.optString("root_name"), it.optString("path").substringBeforeLast('/', "")).filter { s -> s.isNotEmpty() }
             .joinToString(" / ") + " · " + humanBytes(it.optLong("size")), style = small, color = dim, maxLines = 2, overflow = TextOverflow.StartEllipsis)
         else -> {
@@ -877,6 +893,10 @@ private fun PlanItem(kind: String, it: JSONObject) {
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (it.has("torrent") && !it.isNull("torrent")) Text(stringResource(R.string.lib_via_torrent), style = small,
                 color = MaterialTheme.colorScheme.tertiary)
+            // layout / balance (agent 1.17+): a torrent holding several titles moves together
+            it.optInt("titles").takeIf { n -> n > 1 }?.let { n ->
+                Text(pluralStringResource(R.plurals.j2_together, n, n), style = small, color = MaterialTheme.colorScheme.tertiary)
+            }
             it.optJSONObject("guess")?.let { g ->
                 val what = listOfNotNull(g.optStr("kind")?.let { k -> guessKind(k) }, g.optStr("title"),
                     g.optInt("year", 0).takeIf { y -> y > 0 }?.let { y -> "($y)" }).joinToString(" ")

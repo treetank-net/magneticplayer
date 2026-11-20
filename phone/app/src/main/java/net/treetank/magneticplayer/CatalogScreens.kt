@@ -1148,7 +1148,7 @@ private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
                     }, Modifier.weight(1f).height(48.dp)) { Text(stringResource(R.string.main_paste_magnet), maxLines = 1) }
                 }
             }
-            // the description (agent 1.16.1+: the lead of the Wikipedia article)
+            // the description (agent 1.17+: the lead of the Wikipedia article)
             t.about?.let { about ->
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(about, style = MaterialTheme.typography.bodyMedium)

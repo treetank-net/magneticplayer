@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plan stage 2 (agent 1.17+, docs/plan-ux-tasks.md): Folder layout (A2), Balance between disks (A3), For Chromecast (B5),
+     Background work (C4); LibraryJobs2.kt. English. -->
+<resources>
+    <!-- rows on A1 / E2 -->
+    <string name="j2_layout">Folder layout</string>
+    <string name="j2_layout_row">Films, series, kids, age, genre</string>
+    <string name="j2_balance">Balance between disks</string>
+    <string name="j2_balance_row">Evens out free space between the disks</string>
+    <string name="j2_cast">For Chromecast</string>
+    <string name="j2_cast_row">AAC sound next to DTS/AC3, for good</string>
+    <plurals name="j2_n_to_move">
+        <item quantity="one">%1$d to move</item>
+        <item quantity="other">%1$d to move</item>
+    </plurals>
+    <string name="j2_bal_counter">%1$s free</string>
+    <string name="j2_instead_balance">Balance between disks: move %1$s to the emptier disk</string>
+
+    <!-- A2 Folder layout -->
+    <string name="j2_layout_desc">Moves titles into folders by the catalog\'s tags (IMDb/Wikidata), wherever they are now.</string>
+    <string name="j2_layout_levels">Arrange by (levels in order)</string>
+    <string name="j2_layout_levels_hint">Tap in the order of the levels; tap again to take one off.</string>
+    <string name="j2_lv_kind">Kind: film, series</string>
+    <string name="j2_lv_age">Age group</string>
+    <string name="j2_lv_category">Category (anime…)</string>
+    <string name="j2_lv_genre">Genre</string>
+    <string name="j2_lv_collection">Film series</string>
+    <string name="j2_lv_decade">Decade</string>
+    <string name="j2_layout_tree">It will look like</string>
+    <string name="j2_layout_tree_none">Nothing would move.</string>
+    <string name="j2_layout_ages">Age groups</string>
+    <string name="j2_layout_ages_hint">Tap to change which folder an age group goes to.</string>
+    <string name="j2_age_chip">%1$s → %2$s</string>
+    <string name="j2_and">and</string>
+    <string name="j2_bucket_kids">Kids</string>
+    <string name="j2_bucket_teens">Teens</string>
+    <string name="j2_bucket_films">Films</string>
+    <string name="j2_layout_keep">Don\'t touch</string>
+    <string name="j2_keep_hand">Folders I arranged myself (%1$s)</string>
+    <string name="j2_keep_hand_none">Folders I arranged myself (none found)</string>
+    <string name="j2_keep_hand_unconfirmed">Not confirmed yet: the list comes up before the first preview.</string>
+    <string name="j2_keep_unsure">Titles without a sure match (%1$d)</string>
+    <string name="j2_keep_seeding">Seeding torrents</string>
+    <string name="j2_keep_seeding_sub">Unticked: moved whole through the torrent client, which keeps seeding; a torrent holding several titles stays together.</string>
+    <string name="j2_layout_note">Every title stays on its disk; moving between disks is “Balance between disks”.</string>
+    <plurals name="j2_layout_cta">
+        <item quantity="one">Preview · about %1$d move</item>
+        <item quantity="other">Preview · about %1$d moves</item>
+    </plurals>
+    <string name="j2_hand_title">Folders you arranged yourself?</string>
+    <string name="j2_hand_text">These folders hold several titles and aren\'t the layout\'s own. Ticked ones stay as they are.</string>
+    <string name="j2_hand_ok">Confirm</string>
+    <plurals name="j2_n_titles">
+        <item quantity="one">%1$d title</item>
+        <item quantity="other">%1$d titles</item>
+    </plurals>
+    <plurals name="j2_together">
+        <item quantity="one">%1$d title in one torrent: moves together</item>
+        <item quantity="other">%1$d titles in one torrent: they move together</item>
+    </plurals>
+
+    <!-- A3 Balance between disks -->
+    <string name="j2_bal_desc">Moves whole titles between disks. The folder layout on each disk stays the same.</string>
+    <string name="j2_bal_goal">Goal</string>
+    <string name="j2_goal_even">Even free space</string>
+    <string name="j2_goal_even_hint">The same share free on every disk.</string>
+    <string name="j2_goal_kind">One kind per disk</string>
+    <string name="j2_goal_kind_hint">E.g. series on one, films and kids on the other (by folder tags).</string>
+    <string name="j2_goal_fill">Fill the newer disk first</string>
+    <string name="j2_goal_fill_hint">The older disk rests and can be unplugged.</string>
+    <string name="j2_bal_now_after">Now → after</string>
+    <string name="j2_bal_pct">%1$d%% → %2$d%% free</string>
+    <string name="j2_bal_moves">To move: %1$s</string>
+    <string name="j2_bal_nothing">Nothing to move for this goal.</string>
+    <string name="j2_bal_default_rules">Counted with the default rules; the preview uses the ones below.</string>
+    <string name="j2_bal_rules">Rules</string>
+    <string name="j2_rule_series">A series stays whole on one disk</string>
+    <string name="j2_rule_watching">Don\'t move what someone is watching now</string>
+    <string name="j2_rule_seeding">A seeding torrent moves whole through the torrent client and keeps seeding</string>
+    <string name="j2_rule_seeding_off">Unticked: seeding torrents stay where they are.</string>
+    <string name="j2_rule_backup">Backup copy: the folder on both disks</string>
+    <string name="j2_rule_backup_sub">A title of a folder copied to another disk never moves onto the disk with its copy.</string>
+    <string name="j2_about">about %1$s</string>
+
+    <!-- B5 For Chromecast -->
+    <string name="j2_cast_desc">Today “Prepare” makes a Chromecast version at every showing. This task does it once, for good, in the file itself.</string>
+    <plurals name="j2_cast_found">
+        <item quantity="one">Found %1$d file</item>
+        <item quantity="other">Found %1$d files</item>
+    </plurals>
+    <string name="j2_cast_series">%1$s, %2$s</string>
+    <plurals name="j2_n_episodes">
+        <item quantity="one">%1$d episode</item>
+        <item quantity="other">%1$d episodes</item>
+    </plurals>
+    <plurals name="j2_cast_pending">
+        <item quantity="one">%1$d more file is still being checked in the background.</item>
+        <item quantity="other">%1$d more files are still being checked in the background.</item>
+    </plurals>
+    <string name="j2_cast_what">What it does</string>
+    <string name="j2_cast_aac">Add an AAC stereo track, the original stays</string>
+    <string name="j2_cast_subs">Save subtitles from the file next to it as .srt</string>
+    <string name="j2_cast_avi">Repack AVI to MKV (no re-encoding)</string>
+    <string name="j2_cast_note">Picture not re-encoded. Files grow about 2–4%%. About %1$s per file.</string>
+    <plurals name="j2_cast_cta">
+        <item quantity="one">Preview · %1$d file</item>
+        <item quantity="other">Preview · %1$d files</item>
+    </plurals>
+
+    <!-- preview (PlanScreen) -->
+    <string name="j2_sum_grow">Files grow by about %1$s</string>
+    <string name="j2_sum_work">About %1$s of work</string>
+
+    <!-- C4 Background work -->
+    <string name="j2_bg_running">Running</string>
+    <string name="j2_bg_queued">Queued</string>
+    <string name="j2_bg_recent">Recently</string>
+    <string name="j2_state_running">running</string>
+    <string name="j2_state_paused">paused</string>
+    <string name="j2_files_of">%1$d of %2$d files</string>
+    <string name="j2_saved_so_far">−%1$s so far</string>
+    <string name="j2_now">Now: %1$s</string>
+    <string name="j2_left">about %1$s left</string>
+    <string name="j2_pause">Pause</string>
+    <string name="j2_resume">Resume</string>
+    <string name="j2_cancel">Cancel…</string>
+    <string name="j2_cancel_q">Stop “%1$s”? %2$d finished files stay, the current one returns to the original, %3$d won\'t be done.</string>
+    <string name="j2_cancel_q_between">Stop “%1$s”? %2$d finished files stay, %3$d won\'t be done.</string>
+    <string name="j2_no">No</string>
+    <string name="j2_stop">Stop</string>
+    <string name="j2_up">Move up</string>
+    <string name="j2_remove_q">Remove from the queue</string>
+    <string name="j2_today">Today</string>
+    <string name="j2_yesterday">Yesterday</string>
+    <string name="j2_recent_cancelled">cancelled</string>
+    <plurals name="j2_recent_ok">
+        <item quantity="one">%1$d file, no errors</item>
+        <item quantity="other">%1$d files, no errors</item>
+    </plurals>
+    <plurals name="j2_recent_failed">
+        <item quantity="one">%1$d file not done</item>
+        <item quantity="other">%1$d files not done</item>
+    </plurals>
+    <string name="j2_fix_space">No space on %1$s (trash %2$s)</string>
+    <string name="j2_fix_link">Empty the trash and retry</string>
+    <string name="j2_fix_q">Empty the trash (%1$s)?</string>
+    <plurals name="j2_fix_text">
+        <item quantity="one">The originals kept in the trash are deleted for good. Then %1$d file goes back to the queue.</item>
+        <item quantity="other">The originals kept in the trash are deleted for good. Then %1$d files go back to the queue.</item>
+    </plurals>
+    <string name="j2_fix_done">Trash emptied (%1$s), the files are queued again</string>
+</resources>

@@ -36,8 +36,9 @@ pipe instead of a unix socket.
 | `mp_upload.py` | receiving videos from the phone (`/api/upload/<id>`): resumable chunks in `.mp-upload/`, free space, name collisions, the `upload_dir` folder or `Z telefonu` ("From phone") in the library; history of received files (`uploads.json`) with keep / move to a library folder |
 | `mp_catalog.py` | the library as films (agent 1.8+): `Catalog` groups library files into titles, recognises them (`mp_ident`), reads audio and subtitle languages, adds Wikidata details by IMDb id (cast, directors, topics, age) and answers title, person and "what next"; `Wishlist` is the shared want-to-watch list |
 | `mp_selfupdate.py` | the agent updates itself from signed GitHub releases (ECDSA P-256 verified in pure Python), at a quiet moment, through `self-update.sh` with a rollback |
-| `mp_tasks.py` | background file tasks with a preview: planners (free up a disk, tidy up by recognition, duplicates, shrinking by storage profiles, deleting to the trash; 1.16+: sound fix, modernize, downscale, compress, task counters from a background scan) and one worker; moving through the torrent client when the torrent is still in it; `.mp-trash/` per library folder |
+| `mp_tasks.py` | background file tasks with a preview: planners (free up a disk, tidy up by recognition, duplicates, shrinking by storage profiles, deleting to the trash; 1.16+: sound fix, modernize, downscale, compress, task counters from a background scan; 1.17+: folder layout, balance between disks, For Chromecast, pause, resume and queue order) and one worker; moving through the torrent client when the torrent is still in it; `.mp-trash/` per library folder |
 | `mp_scope.py` | task scopes (agent 1.16+): parsing a scope, deciding which files it covers, its label |
+| `mp_arrange.py` | folder layout and balance between disks (agent 1.17+): whole-title units, hand-arranged folders, destinations by levels, moves for a balance goal |
 | `mp_mcp.py` | MCP server for an AI assistant in the LAN (Streamable HTTP, tools over the library and tasks) and the OAuth 2.1 endpoints whose approval is an access request on the phone |
 | `mp_i18n.py` | language of user-facing messages: `T("English", "Polski")` based on the current request's `Accept-Language` (a per-thread value set at the start of `dispatch`); `bind(fn)` carries the language into background threads; the CLI (`--pair`, `--join`) uses `LC_ALL`/`LC_MESSAGES`/`LANG`. Install scripts have their own `say`/`Say` (Polish with a Polish locale / Windows UI language) |
 | `mp_platform.py` | everything OS-specific: graphical session, unlocking, suspend, network interface, wake assessment, sending WoL, the mpv path (on Windows `mpv\mpv.exe` next to the agent). Another OS is added here; whatever it can't do, the agent doesn't report in `features`/`power` |
@@ -350,6 +351,28 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    streamed in the last 14 days is "being watched" (kept when freeing space, `subs` `which: watched_now`). With
    `audio_fix_auto` / `subs_auto` (`/api/config/jobs`) new files found by the scan get a task by themselves. A task
    stores the scope's label in both languages and returns it as `scope_label`.
+9. Folder layout, balance and For Chromecast (agent 1.17+, `mp_arrange.py`,
+   [api.md](api.md#folder-layout-balance-for-chromecast-pause-and-queue-order-agent-117)). Both arrangers work on
+   **units**, whole titles from the catalog (a film's file in a folder of its own counts as that folder, so subtitles and
+   covers move with it), marked with their torrent and whether another queued or running task still uses their files
+   (`busy`, skipped). `layout` turns the chosen levels (kind, age group via an editable age → Kids/Teens/Films mapping,
+   category, genre, film series, decade) into a destination on the same disk: the library folder whose tag fits the
+   kind, then subfolders; folders the owner arranged by hand (two or more titles under a name that isn't the layout's)
+   are detected and stay as they are once confirmed (`layout_keep`). Its moves are same-disk renames, so the task is
+   **quick**: it runs between two files of a running encode instead of waiting behind it, and removes the folders it
+   empties. The catalog looks into the layout's own folders (`Films/`, `Kids/`, a decade) and into decade folders, so
+   a title keeps being a title after it moved there. `balance` moves whole titles between disks into the folder with
+   the same tag on the other disk (same subfolder, so the layout survives), for one of three goals, never below 5%
+   free; seeding torrents move whole through the client (decision 13), titles watched lately stay. `cast_ready` writes
+   text subtitle tracks as `.srt` and remuxes to `.mkv` with an AAC stereo track first, picture copied, original to
+   the trash; the facts scan (`FACTS_V` 2) now keeps subtitle codecs, so its counter can tell text from picture
+   subtitles.
+10. Pause, resume and queue order (agent 1.17+, `features.task_queue`): a task paused by a person is `held` (persisted
+   in `tasks.json`). The worker skips held queued tasks; a running one stops at the next file boundary, or its
+   detached encode is stopped with SIGSTOP and the task goes back to `queued` keeping the encode's job, so resuming
+   (even after an agent restart) re-attaches to the same ffmpeg and continues; an encode left stopped is killed when
+   its file changed or vanished. Tasks can be moved up or down the queue or re-ordered as a whole; a finished task
+   whose files failed for lack of space can be retried as a new task after emptying the trash.
 
 ### Covers
 `mp_media.cover()`: a picture next to the video or in the folder first (Jellyfin/Kodi names), otherwise a frame of
@@ -515,11 +538,12 @@ agent errors come back in the same language.
 | `TvQueue.kt` | a series sent to a screen, TV or Chromecast: the following episodes (from the agent, or saved with a downloaded copy), intro and credits; Remote shows "Skip intro" and "Next episode", from the credits (or the last 10 s) a 10 s countdown in Remote and in a notification starts the next episode on the same target; `RemoteSessionService` feeds it the target's state every 1.5 s (also the Cast SDK's Chromecast) and a CPU lock keeps it running near the end with the phone locked; from halfway the next episode's subtitles are fetched ahead. `Screens` (`ServersUi.kt`) puts the subtitles picked last first (or none on for "Off", `sub_lang` for mpv) and, since a screen cannot add subtitles later, downloads missing ones before sending: in the same series on its own, elsewhere after a question (`SubsAsk`) |
 | `Offline.kt` | downloaded copies (`OfflineStore`) and `OfflineSync`: besides the bytes a copy keeps the agent's subtitles as they are now (fitted, shifted, the version in use), intro and credits and the series' episodes, saved when the download starts and completes and after the subtitles change, so the phone can play it or feed a TV without the computer |
 | `LibraryTab.kt` | the library (folders of every server, tag filter, search, covers), folder settings (tags, visibility, storage profile, "Also copy to") and picking a folder on the computer |
+| `LibraryJobs2.kt` | agent 1.17+ (plan stage 2): the Folder layout (levels in tap order, tree preview, age mapping, hand-arranged folders confirmed before the first preview), Balance between disks (goal, now → after per disk, rules) and For Chromecast screens on the F6 template of `LibraryJobs.kt`, and Background work (C4: running cards with pause/resume and the inline cancel confirmation, queue with ↑ and ✕, recent tasks with "Empty the trash and retry") |
 | `LibraryTasks.kt` | agent 1.6+: "Disks and tidy-up" (disks with the library vs other files, trash, tasks with progress and cancel), the plan preview with checkboxes (free up space, move, tidy, shrink, duplicates, delete), profile choice, covers (`Covers`, `CoverThumb`) |
 | `Catalog.kt` | agent 1.8+: catalog models and requests (`/api/catalog*`, wishlist, search engines, `/api/uploads`), `CatalogCache` (per server, in memory, refreshed with `?since=<version>`), "continue watching" from local positions, filter conditions (`Cond`) |
 | `CatalogUi.kt` | covers: the agent's picture (a poster as it is, a frame with the title over a dark fade; agent 1.6+), a drawn one while it loads and when there is none (gradient by first genre, title in heavy type, greyscale when not on the disks); cover cards and rows, people, genre names, badges; series: `continueIndex` (where this phone left off), `playEpisode`, `playItem` |
 | `CatalogScreens.kt` | the Library on a server with a catalog: Discover / Browse / Folders switch (Folders is the folder view above), results with combinable filters, title, missing title (want to watch, the user's own search engines, paste magnet), person, "What next?" (also opened by the player after a film ends), want-to-watch list, the search engines dialog; screens are a saveable stack inside the Library tab |
-| `CatalogSearch.kt` | D1: the search field shared by the Library's tabs, results in groups "on your disks", "you don't have it · from the film database" (`/api/catalog/search`, the agent's IMDb index, agent 1.16.1+) and people; the search sites row of a missing title's page (D2) |
+| `CatalogSearch.kt` | D1: the search field shared by the Library's tabs, results in groups "on your disks", "you don't have it · from the film database" (`/api/catalog/search`, the agent's IMDb index, agent 1.17+) and people; the search sites row of a missing title's page (D2) |
 | `UploadsUi.kt` | "Sent from phones" in the Downloading tab: files waiting to be put away (Move, Other folder…, Keep here), moving progress, "Put away this week", the badge on the tab |
 | `Tasks.kt` | the "finished" notification of a followed file task (checked with `Access` while the app is on screen, when the ping says a task finished) |
 | `TaskWatch.kt` | tasks this phone follows (started here or "Monitor") and the service with their progress notification |

@@ -55,7 +55,7 @@ data class TitleInfo(
     val votes: Int?, val minutes: Int?, val have: Boolean, val copies: List<CatItem>,
     val cast: List<Triple<String, String, String?>>, val directors: List<Pair<String, String>>,
     val topics: List<Pair<String, String>>, val age: Int?,
-    /** Agent 1.16.1+, a title not on the disks: the lead of its Wikipedia article and where it comes from. */
+    /** Agent 1.17+, a title not on the disks: the lead of its Wikipedia article and where it comes from. */
     val about: String? = null, val aboutSource: String? = null,
 )
 

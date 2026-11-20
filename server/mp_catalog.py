@@ -26,6 +26,7 @@ import time
 import urllib.parse
 import urllib.request
 
+import mp_arrange
 import mp_ident
 from mp_library import HIDDEN_TAGS, SUB_EXT, VIDEO_EXT, can_see, current_viewer, excluded, sidecar_subs
 
@@ -156,22 +157,34 @@ class Catalog:
     def _units(self, r):
         """Titles under a library folder: [(rel of the title, [(rel file, size)], is_dir, group)]; `group` is the name of
         a grouping folder (_group_of) the title sits in, else None."""
+        fs = [(p, size) for p, is_dir, size in self.library._names(r)  # cached walk, shared with the search
+              if not is_dir and os.path.splitext(p)[1].lower() in VIDEO_EXT and "sample" not in p.lower()]
+        return self._units_in("", fs, r, None)
+
+    def _units_in(self, base, fs, r, group):
+        """_units for the files `fs` under folder `base` ("" = the library folder). A folder named like the folder
+        layout's own ones ("Films/", "Kids/", "1960–1969/", agent 1.17+) is looked into: its subfolders are titles
+        as at the top, with the layout folder as their group."""
         files = {}
-        for p, is_dir, size in self.library._names(r):  # cached walk, shared with the search
-            if is_dir or os.path.splitext(p)[1].lower() not in VIDEO_EXT or "sample" in p.lower():
-                continue
-            files.setdefault(p.split("/", 1)[0], []).append((p, size))
+        cut = len(base) + 1 if base else 0
+        for p, size in fs:
+            files.setdefault(p[cut:].split("/", 1)[0], []).append((p, size))
         out = []
-        for top, fs in files.items():
+        for name, fs in files.items():
+            top = f"{base}/{name}" if base else name
             if len(fs) == 1 and fs[0][0] == top:
-                out.append((top, fs, False, None))
+                out.append((top, fs, False, group))
                 continue
-            subs = _group_of(top, fs)
+            if name.lower() in mp_arrange.own_names() or mp_arrange.DECADE.fullmatch(name):
+                out += self._units_in(top, fs, r, group if mp_arrange.DECADE.fullmatch(name) else name)
+                continue
+            rel = [(p[cut:], s) for p, s in fs]  # _group_of and content() look at paths from this level
+            subs = _group_of(name, rel)
             if subs is not None:
                 # a grouping folder ("Anime/" with a folder per series): every subfolder and every loose video is a title
-                for name, sfs in subs.items():
-                    out.append((f"{top}/{name}", sfs, True, top))
-                out += [(p, [(p, sz)], False, top) for p, sz in fs if p.count("/") == 1]
+                for sub, sfs in subs.items():
+                    out.append((f"{top}/{sub}", [(base + "/" + p if base else p, s) for p, s in sfs], True, name))
+                out += [(p, [(p, sz)], False, name) for p, sz in fs if p[cut:].count("/") == 1]
                 continue
             c = mp_ident.content(fs)
             biggest = max(s for _, s in fs)
@@ -179,9 +192,9 @@ class Catalog:
             if c.get("videos", 0) >= 3 and c.get("episodes", 0) < 2 and "seriale" not in r["tags"]:
                 # a folder of films (a category or a collection): every big video is a title
                 for p, s in big:
-                    out.append((p, [(p, s)], False, None))
+                    out.append((p, [(p, s)], False, group))
             else:
-                out.append((top, fs, True, None))
+                out.append((top, fs, True, group))
         return out
 
     def title_for(self, full):
@@ -328,7 +341,8 @@ class Catalog:
         if ids is None:
             with self.lock:
                 ids = sorted({i["imdb"] for i in self.items.values() if i.get("imdb")})
-            ids = [i for i in ids if now - (self.wd.get(i) or {}).get("at", 0) > WD_TTL]
+            # agent 1.17+: entries fetched before the film series (P179, folder layout) was asked for are fetched again
+            ids = [i for i in ids if now - (self.wd.get(i) or {}).get("at", 0) > WD_TTL or "series" not in (self.wd.get(i) or {})]
         for k in range(0, len(ids), WD_BATCH):
             self._fetch(ids[k:k + WD_BATCH])
             self.version += 1
@@ -377,10 +391,11 @@ class Catalog:
             ages = [mp_ident.WD_AGE[a] for a in items("P1657") + items("P1981") if a in mp_ident.WD_AGE]
             d = {"at": now, "qid": qid.get(imdb), "cast": cast, "dir": [x for x in items("P57") if x][:3],
                  "topics": [x for x in items("P921") if x][:8], "age": max(ages) if ages else None,
+                 "series": [x for x in items("P179") if x][:2],  # film series ("part of the series"), 1.17+
                  "pl": (e.get("labels", {}).get("pl") or {}).get("value"),
                  "en": (e.get("labels", {}).get("en") or e.get("labels", {}).get("mul") or {}).get("value")}
             need.update(p for p, _ in cast)
-            need.update(d["dir"] + d["topics"])
+            need.update(d["dir"] + d["topics"] + d["series"])
             with self.lock:
                 self.wd[imdb] = d
         self._labels(need)
@@ -519,7 +534,7 @@ class Catalog:
                    directors=[[q, self.label(q)] for q in d.get("dir") or []],
                    topics=[[q, self.label(q, lang)] for q in self._topics(d)], age=d.get("age"))
         if not have and d.get("qid"):
-            about = self._about(d["qid"], lang)  # agent 1.16.1+: a title you don't have gets its description
+            about = self._about(d["qid"], lang)  # agent 1.17+: a title you don't have gets its description
             if about:
                 out["about"], out["about_source"] = about
         return out
@@ -560,7 +575,7 @@ class Catalog:
         return (res[0], "Wikipedia") if res else None
 
     def search(self, query, limit=20):
-        """Titles from the local IMDb index matching `query` (agent 1.16.1+), each marked `have` when one of the
+        """Titles from the local IMDb index matching `query` (agent 1.17+), each marked `have` when one of the
         library's visible titles has the same IMDb id (with its catalog `id`). No network: the index is on disk."""
         query = str(query or "").strip()[:100]
         with self.ident.lock:
