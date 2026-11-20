@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Etapy 3 i 5 docs/plan-ux-tasks.md: wejścia do „Optymalizacji” (zakresy) i strona serialu ze wszystkimi odcinkami (E1). -->
+<resources>
+    <!-- wejścia -->
+    <string name="s35_optimise_folder">Optymalizacja folderu</string>
+    <string name="s35_optimise_season">Optymalizacja sezonu</string>
+    <string name="s35_optimise_file">Optymalizacja…</string>
+    <string name="s35_optimise_n">✨ Optymalizacja · %1$d ›</string>
+    <string name="s35_selected_n">Zaznaczono %1$d</string>
+    <string name="s35_selected_label">%1$s, zaznaczone</string>
+    <string name="s35_select">Zaznacz</string>
+    <string name="s35_done">Gotowe</string>
+    <string name="s35_missing_n">brakuje %1$d</string>
+    <!-- A1 „Zawęź…” -->
+    <string name="s35_narrow_folder">FOLDER</string>
+    <string name="s35_narrow_category">KATEGORIA</string>
+    <string name="s35_narrow_age">GRUPA WIEKOWA</string>
+    <string name="s35_narrow_title">TYTUŁ</string>
+    <string name="s35_narrow_title_hint">Szukaj tytułu</string>
+    <string name="s35_narrow_and">Wszystko, co wybierzesz, musi pasować naraz: folder, kategoria, grupa wiekowa i tytuł.</string>
+    <!-- E1 -->
+    <string name="s35_crumb_series">Biblioteka › Seriale</string>
+    <string name="s35_crumb_film">Biblioteka › Filmy</string>
+    <string name="s35_crumb_select">Zaznacz odcinki</string>
+    <string name="s35_have_of">Masz %1$d z %2$d</string>
+    <string name="s35_season_year">Sezon %1$d · %2$d</string>
+    <string name="s35_season_have">%1$d z %2$d</string>
+    <string name="s35_season_missing">brak %1$s</string>
+    <string name="s35_season_upcoming">jeszcze nie wyszło: %1$d</string>
+    <string name="s35_season_none">nie masz · %1$d odc.</string>
+    <string name="s35_season_future">jeszcze nie wyszedł · %1$d odc.</string>
+    <string name="s35_search_season">Szukaj całego sezonu</string>
+    <string name="s35_no_date">bez daty</string>
+    <string name="s35_other_files">Inne filmy w folderze · %1$d</string>
+    <string name="s35_ep_watched">obejrzany</string>
+    <string name="s35_ep_subs">napisy %1$s</string>
+    <string name="s35_ep_no_subs">bez napisów</string>
+    <string name="s35_sheet_title">Szukaj: %1$s</string>
+    <string name="s35_sheet_phrase">Fraza</string>
+    <string name="s35_sheet_note">Fraza do poprawienia. Magnet z wyniku trafi do folderu %1$s, odcinek od razu pojawi się na tej stronie.</string>
+    <string name="s35_sheet_note_nodir">Fraza do poprawienia.</string>
+</resources>

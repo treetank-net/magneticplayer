@@ -125,6 +125,8 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
                 dest = guess?.let { g -> g.pick?.let { g.targets.getOrNull(it) } }
                 if (guess?.let { it.confidence == "low" || dest == null } == true) autoClose = false
             }
+            // found from a series page (E1 search sheet): its folder, when the magnet carries the series' title
+            MagnetHint.target(ctx, api.srv.key, magnet, guess?.title)?.let { dest = it }
             status = ctx.getString(R.string.media_magnet_sending, api.srv.name)
             tid = api.addMagnetRetrying(magnet, sequential, after, dest, guess?.raw) { status = it }
             phase = Phase.Done

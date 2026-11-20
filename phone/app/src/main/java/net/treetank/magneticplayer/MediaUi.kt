@@ -58,6 +58,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.mutableIntStateOf
@@ -135,6 +136,11 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
             if (withDownload) DropdownMenuItem({ Text(stringResource(R.string.media_download_to_phone)) }, {
                 menu = false; download()
             }, leadingIcon = { Icon(Icons.Filled.DownloadForOffline, null) })
+            // "Optimise…" (E2 with this one file as the scope, plan stage 3); a title page has its own Optimise button
+            if (ref is MediaRef.InLibrary && !big && canOptimise(ctx, api.srv.key)) DropdownMenuItem({ Text(stringResource(R.string.s35_optimise_file)) }, {
+                menu = false
+                JobsNav.openOptimise(api.srv.key, Scopes.files(listOf(ref.root to ref.path), ref.path.substringAfterLast('/')))
+            }, leadingIcon = { Icon(Icons.Filled.AutoFixHigh, null) })
         }
     }
     if (big) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {

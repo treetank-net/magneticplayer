@@ -125,8 +125,9 @@ data class JobScope(
 }
 
 /**
- * Opening "Optimise" (E2) with a scope from elsewhere: the Library tab of [srvKey] picks it up and shows the scoped
- * task list. The entry points (folder ⋮, title page, selection bar…) come in plan stage 3.
+ * Opening "Optimise" (E2) with a scope from elsewhere: MainActivity switches to the Library of [srvKey], whose tab picks
+ * it up and shows the scoped task list. Entry points (plan stage 3, Stage35.kt): folder ⋮, a library filter, a title
+ * page, a season, a file ⋮, a selection.
  */
 object JobsNav {
     val pending = mutableStateOf<Pair<String, JobScope>?>(null)
@@ -331,6 +332,15 @@ private fun JobsListScreen(api: Api, snack: SnackbarHostState, scope: JobScope?,
     }
     LaunchedEffect(load.error) { load.error?.let { snack.showSnackbar(it) } }
     val info = load.info
+    // a series as the scope: "missing M" episodes from the catalog (agent 1.16+, `episode_lists`)
+    val ctx = LocalContext.current
+    var missing by remember { mutableStateOf<Int?>(null) }
+    val imdb = scope?.imdb
+    LaunchedEffect(imdb) {
+        missing = if (imdb != null && (Servers.get(ctx, api.srv.key) ?: api.srv).hasEpisodeLists)
+            withContext(Dispatchers.IO) { runCatching { api.catalogEpisodes(imdb) }.getOrNull() }?.takeIf { it.total > 0 }?.missing
+        else null
+    }
     Column(Modifier.fillMaxSize()) {
         if (scope == null) ScreenHeader(stringResource(R.string.lib_disks_title), onBack) { reload++ }
         else OptimiseHeader(onBack) { reload++ }
@@ -338,7 +348,8 @@ private fun JobsListScreen(api: Api, snack: SnackbarHostState, scope: JobScope?,
             item(key = "scope") {
                 if (scope == null) WholeScopeBar { narrow = true }
                 else ScopeBar(info?.scopeLabel ?: scope.label ?: "…",
-                    info?.let { pluralStringResource(R.plurals.lib_files, it.files, it.files) + " · " + humanBytes(it.size) }) { onScope(null) }
+                    info?.let { pluralStringResource(R.plurals.lib_files, it.files, it.files) + " · " + humanBytes(it.size) +
+                        (missing?.takeIf { m -> m > 0 }?.let { m -> " · " + stringResource(R.string.s35_missing_n, m) } ?: "") }) { onScope(null) }
             }
             item(key = "bg") { BackgroundRow(tasks, onBackground) }
             if (scope == null) disks?.disks?.filter { it.roots.isNotEmpty() }?.let { list ->
@@ -417,7 +428,6 @@ private fun ScopeBar(label: String, stats: String?, onClear: () -> Unit) {
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
             Text(stringResource(R.string.job_scope, label), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            // TODO(plan stage 5, F5): "missing M" episodes once the catalog has episode lists
             stats?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             TextButton(onClear, contentPadding = PaddingValues(horizontal = 0.dp)) { Text(stringResource(R.string.job_scope_clear)) }
         }
@@ -514,16 +524,9 @@ private fun RootsDialog(api: Api, title: String, picked: Set<Int>, extra: String
     )
 }
 
-/** A1 "Narrow…": library folders for now. */
+/** A1 "Narrow…": folders, a category, age groups and a title, combined (Stage35.kt). */
 @Composable
-private fun NarrowDialog(api: Api, onDismiss: () -> Unit, onScope: (JobScope) -> Unit) {
-    // TODO(plan stage 3): category, age group (combined with the folders, all must match) and a title search
-    RootsDialog(api, stringResource(R.string.job_narrow_title), emptySet(), stringResource(R.string.job_narrow_later),
-        stringResource(R.string.job_apply), onDismiss) { picked ->
-        if (picked.isEmpty()) onDismiss()
-        else onScope(JobScope(roots = picked.map { it.index to "" }, label = picked.joinToString(", ") { it.name }, fromList = true))
-    }
-}
+private fun NarrowDialog(api: Api, onDismiss: () -> Unit, onScope: (JobScope) -> Unit) = NarrowScopeDialog(api, onDismiss, onScope)
 
 /** "Folders: all ▾" on a task screen (whole computer); a scope replaces it with the scope bar. */
 @Composable

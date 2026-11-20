@@ -466,7 +466,9 @@ fun SeasonSubsLine(subs: Map<String, List<String>?>) {
  */
 @Composable
 fun CopyMenuButton(ref: MediaRef, title: String, onPlay: () -> Unit, onScreen: (() -> Unit)?, onChanged: () -> Unit,
-                   details: Boolean = true, searchPhrase: String? = null, noSubs: Boolean = false) {
+                   details: Boolean = true, searchPhrase: String? = null, noSubs: Boolean = false,
+                   /** "Optimise…" (E2 with this file as the scope, plan stage 3); null = not offered */
+                   onOptimise: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
@@ -500,6 +502,7 @@ fun CopyMenuButton(ref: MediaRef, title: String, onPlay: () -> Unit, onScreen: (
                 DropdownMenuItem({ Text(stringResource(R.string.st4_search_subs, e.name)) }, { menu = false; openEngine(ctx, e, searchPhrase) })
             }
             if (details && item != null) DropdownMenuItem({ Text(stringResource(R.string.st4_details)) }, { menu = false; info = true })
+            if (onOptimise != null) DropdownMenuItem({ Text(stringResource(R.string.s35_optimise_file)) }, { menu = false; onOptimise() })
         }
     }
     if (playFrom) PlayFromDialog(ref, { playFrom = false }) { fromStart ->

@@ -7,7 +7,6 @@
     <string name="job_scope_whole_sub">all disks · counters for the whole library</string>
     <string name="job_narrow">Narrow: folder, category, age…</string>
     <string name="job_narrow_title">Narrow the scope</string>
-    <string name="job_narrow_later">Category, age group and title come in a later version.</string>
     <string name="job_apply">Apply</string>
     <string name="job_scope">Scope: %1$s</string>
     <string name="job_scope_clear">✕ whole computer</string>

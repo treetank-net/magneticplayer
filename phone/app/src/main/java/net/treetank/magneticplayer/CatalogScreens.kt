@@ -1,5 +1,6 @@
 package net.treetank.magneticplayer
 
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.DownloadDone
@@ -694,6 +695,15 @@ private fun ResultsScreen(c: CatCtx, conds: List<String>, sort0: String) {
                 Text(stringResource(R.string.cat_count_of, list.size, cat.items.size), style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // a category (genre, tag) and/or an age group: the icon makes the filter the scope of "Optimise" (stage 3)
+            val ctx = LocalContext.current
+            val fs = remember(active) { filterScope(active) }
+            if (fs != null && canOptimise(ctx, c.srv)) {
+                val label = chips.filter { it in active }.map { condLabel(it, cat) }.joinToString(" · ")
+                IconButton({ JobsNav.openOptimise(c.srv, fs.copy(label = label)) }) {
+                    Icon(Icons.Filled.AutoFixHigh, stringResource(R.string.job_optimise))
+                }
+            }
             TextButton({ sort = sorts[(sorts.indexOfFirst { it.first == sort } + 1) % sorts.size].first }) {
                 Icon(Icons.Filled.Sort, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
                 Text(stringResource(sorts.firstOrNull { it.first == sort }?.second ?: R.string.cat_sort_rating))
@@ -707,6 +717,25 @@ private fun ResultsScreen(c: CatCtx, conds: List<String>, sort0: String) {
         }
         if (list.isEmpty()) Hint(stringResource(R.string.cat_results_none)) else CoverGrid(c, list)
     }
+}
+
+/**
+ * The Results filter as an "Optimise" scope when it is only a category (`genre:`/`tag:`, one of them) and age groups
+ * (`age:N` = the groups up to N; the agent's `tag` matches folder tags and genres); null for anything else.
+ */
+private fun filterScope(active: Set<String>): JobScope? {
+    var tag: String? = null
+    var upTo: Int? = null
+    for (c in active) {
+        val v = c.substringAfter(':', "")
+        when (c.substringBefore(':')) {
+            "genre", "tag" -> { if (tag != null || v.isEmpty()) return null; tag = v }
+            "age" -> { val n = v.toIntOrNull() ?: return null; upTo = minOf(upTo ?: n, n) }
+            else -> return null
+        }
+    }
+    if (tag == null && upTo == null) return null
+    return JobScope(tag = tag, age = upTo?.let { Scopes.ageUpTo(it) } ?: emptyList())
 }
 
 /** Three columns of covers with "year · minutes · ★" under each. */
@@ -764,9 +793,25 @@ private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPh
     val xa = Api.of(ctx, xs) ?: c.apiOf(x)
     val similar = remember(cat, x) { similar(ctx, cat, x) }
     // a series: its episodes in order (agent 1.10+), where this phone left off, extras apart
-    val canEps = x.series && px.dir != null && (Servers.get(ctx, xs) ?: xa.srv).libraryEpisodes
+    val xsSrv = Servers.get(ctx, xs) ?: xa.srv
+    val canEps = x.series && px.dir != null && xsSrv.libraryEpisodes
+    // E1 (agent 1.16+, plan stage 5): every season and episode from the catalog; both lists are read again when the
+    // app comes back (from a search site: a new episode shows up)
+    val lists = x.series && x.imdb != null && xsSrv.hasEpisodeLists
     var eps by remember(x.id) { mutableStateOf<Episodes?>(null) }
-    if (canEps) LaunchedEffect(x.id) { eps = withContext(Dispatchers.IO) { runCatching { xa.episodes(px.root, px.dir!!) }.getOrNull() } }
+    if (canEps) LaunchedEffect(x.id, if (lists) back else 0) {
+        eps = withContext(Dispatchers.IO) { runCatching { xa.episodes(px.root, px.dir!!) }.getOrNull() } ?: eps
+    }
+    var seriesEps by remember(x.id) { mutableStateOf<SeriesEpisodes?>(null) }
+    if (lists) LaunchedEffect(x.id, back) {
+        withContext(Dispatchers.IO) { runCatching { xa.catalogEpisodes(x.imdb!!) }.getOrNull() }?.let { seriesEps = it }
+    }
+    // "Optimise" (E2) for the title, a season, a file, a selection (plan stage 3)
+    val jobs = canOptimise(ctx, xs)
+    var selecting by remember(x.id) { mutableStateOf(false) }
+    var selected by remember(x.id) { mutableStateOf(setOf<Pair<Int, String>>()) }
+    if (selecting) BackHandler { selecting = false; selected = emptySet() }
+    val onSelect: (Pair<Int, String>, Boolean) -> Unit = { p, on -> selected = if (on) selected + p else selected - p }
     val settings = remember { Settings(ctx) }
     val list = eps?.episodes.orEmpty()
     val cont = remember(eps, back) { if (list.isEmpty()) -1 else continueIndex(settings, xs, px.root, list) }
@@ -779,11 +824,29 @@ private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPh
         val y = focusY
         if (y == null) listState.scrollToItem(2) else { listState.scrollToItem(2, (y - 120).coerceAtLeast(0)); scrolled = true }
     }
-    LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val se = seriesEps?.takeIf { it.seasons.isNotEmpty() }
+    Box(Modifier.fillMaxSize()) {
+    LazyColumn(state = listState, contentPadding = PaddingValues(bottom = if (selecting) 88.dp else 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Box(Modifier.fillMaxWidth().height(300.dp)) {
                 SyntheticCover(x.title, null, x.genres, Modifier.fillMaxSize(), titleSize = 34.sp, corner = 0.dp, padding = 20.dp, art = x.art(), wide = true, artSrv = x.srv)
-                BackOnCover(c.pop)
+                // header (E1): back, breadcrumb, "Select" / "Done" for the episodes on the disk
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    BackOnCover(c.pop)
+                    Box(Modifier.weight(1f)) {
+                        Text(stringResource(when {
+                            selecting -> R.string.s35_crumb_select
+                            x.series -> R.string.s35_crumb_series
+                            else -> R.string.s35_crumb_film
+                        }), Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.35f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp), color = Color.White, style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (jobs && list.isNotEmpty()) TextButton({ selecting = !selecting; selected = emptySet() },
+                        Modifier.padding(end = 8.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.35f))) {
+                        Text(stringResource(if (selecting) R.string.s35_done else R.string.s35_select), color = Color.White)
+                    }
+                }
             }
         }
         item {
@@ -795,22 +858,29 @@ private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPh
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     x.age?.let { AgeBadge(it) }
                     qualityText(x.height)?.let { InfoBadge(it) }
-                    val seasons = list.mapNotNull { it.season }.distinct().size
+                    val seasons = se?.seasons?.size ?: list.mapNotNull { it.season }.distinct().size
+                    val episodes = se?.total ?: x.episodes
                     if (x.series && seasons > 1) InfoBadge(pluralStringResource(R.plurals.st4_seasons, seasons, seasons))
-                    if (x.series && x.episodes > 0) InfoBadge(pluralStringResource(R.plurals.cat_episodes, x.episodes, x.episodes))
+                    if (x.series && episodes > 0) InfoBadge(pluralStringResource(R.plurals.cat_episodes, episodes, episodes))
                 }
+                // "You have 5 of 12 · 9.8 GB · disk" (E1)
+                if (se != null) Text(listOfNotNull(stringResource(R.string.s35_have_of, se.have, se.total), humanBytes(x.size), px.rootName)
+                    .joinToString(" · "), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
-                if (cont >= 0) {
-                    val e = list[cont]
-                    val pos = settings.position(MediaRef.InLibrary(px.root, e.path, xs).key())
-                    val label = e.label.ifEmpty { (cont + 1).toString() }
-                    // "▶ S1 E3 from 9:12" (D6, E1)
-                    MediaActions(xa, MediaRef.InLibrary(px.root, e.path, xs), c.snack, c.onPlayingOnPc, big = true, subsFolder = px.dir,
-                        onPlay = { playEpisode(ctx, xs, px.root, list, cont) },
-                        playLabel = if (pos > 0) stringResource(R.string.st4_play_ep_from, label, clock(pos / 1000.0))
-                            else stringResource(R.string.cat_play_ep, label), oneChooser = fromPhone)
-                } else MediaActions(xa, px.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true,
-                    oneChooser = fromPhone)
+                // ▶ and the Optimise button (→ E2 with the title as the scope)
+                WithOptimise(jobs, { JobsNav.openOptimise(xs, Scopes.title(px)) }) {
+                    if (cont >= 0) {
+                        val e = list[cont]
+                        val pos = settings.position(MediaRef.InLibrary(px.root, e.path, xs).key())
+                        val label = e.label.ifEmpty { (cont + 1).toString() }
+                        // "▶ S1 E3 from 9:12" (D6, E1)
+                        MediaActions(xa, MediaRef.InLibrary(px.root, e.path, xs), c.snack, c.onPlayingOnPc, big = true, subsFolder = px.dir,
+                            onPlay = { playEpisode(ctx, xs, px.root, list, cont) },
+                            playLabel = if (pos > 0) stringResource(R.string.st4_play_ep_from, label, clock(pos / 1000.0))
+                                else stringResource(R.string.cat_play_ep, label), oneChooser = fromPhone)
+                    } else MediaActions(xa, px.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true,
+                        oneChooser = fromPhone)
+                }
                 // D6 "On this phone": shown whenever the phone holds copies of this title
                 OnThisPhoneCard(xs, px, list, cont, phoneTick + back) { phoneTick++ }
                 // "All": where the copies are; another copy plays from its server (it opens its own title screen)
@@ -836,9 +906,13 @@ private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPh
                 }
             }
         }
-        if (list.isNotEmpty()) item {
+        if (se != null) item {
+            SeriesSeasonsList(c, px, x.title, se, list, eps?.extras.orEmpty(), cont, settings, back + phoneTick, focusPath, xa, jobs,
+                selecting, selected, onSelect, onFocusY = { if (focusY == null) focusY = it }) { phoneTick++ }
+        } else if (list.isNotEmpty()) item {
             EpisodeList(c, px, list, eps?.extras.orEmpty(), cont, settings, back + phoneTick, focusPath, xa, x.title,
-                onFocusY = { if (focusY == null) focusY = it }) { phoneTick++ }
+                onFocusY = { if (focusY == null) focusY = it }, onChanged = { phoneTick++ }, jobs = jobs, selecting = selecting,
+                selected = selected, onSelect = onSelect)
         }
         if (x.cast.isNotEmpty()) item {
             SectionTitle(stringResource(R.string.cat_cast))
@@ -854,6 +928,11 @@ private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPh
                 CoverCard(y, why, width = 100.dp) { c.open(y) }
             }
         }
+    }
+    if (selecting) SelectionBar(selected.size, Modifier.align(Alignment.BottomCenter)) {
+        JobsNav.openOptimise(xs, Scopes.files(selected.toList(), ctx.getString(R.string.s35_selected_label, x.title)))
+        selecting = false; selected = emptySet()
+    }
     }
 }
 
@@ -899,7 +978,8 @@ private fun BackOnCover(onBack: () -> Unit) {
 @Composable
 private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List<Episode>, cont: Int, settings: Settings, back: Int,
                         focusPath: String? = null, api: Api? = null, title: String = x.title, onFocusY: (Int) -> Unit = {},
-                        onChanged: () -> Unit = {}) {
+                        onChanged: () -> Unit = {}, jobs: Boolean = false, selecting: Boolean = false,
+                        selected: Set<Pair<Int, String>> = emptySet(), onSelect: (Pair<Int, String>, Boolean) -> Unit = { _, _ -> }) {
     val ctx = LocalContext.current
     val seasons = remember(list) { list.map { it.season }.distinct() }
     var season by rememberSaveable(x.id) { mutableStateOf<Int?>(null) }
@@ -918,6 +998,11 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { SectionTitle(stringResource(R.string.cat_episodes_title)) }
+            // "Optimise this season" (plan stage 3): the files of the season shown
+            if (jobs) IconButton({
+                JobsNav.openOptimise(c.srvOf(x), Scopes.files(list.filter { it.season == shown }.map { x.root to it.path },
+                    listOfNotNull(title, shown?.let { String.format(Locale.ROOT, "S%02d", it) }).joinToString(" ")))
+            }) { Icon(Icons.Filled.AutoFixHigh, stringResource(R.string.s35_optimise_season)) }
             IconButton({ download = true }, Modifier.padding(end = 4.dp)) {
                 Icon(Icons.Filled.DownloadForOffline, stringResource(R.string.ser_dl_title))
             }
@@ -932,49 +1017,14 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
         SeasonSubsLine(seasonSubs)
         list.forEachIndexed { i, e ->
             if (e.season != shown) return@forEachIndexed
-            val k = MediaRef.InLibrary(x.root, e.path, c.srvOf(x)).key()
-            val pos = remember(k, back) { settings.position(k) }
-            val watched = remember(k, back) { settings.watchedAt(k) > 0 && pos <= 0 }
-            val total = remember(k, back) { OfflineStore.get(ctx, k)?.durationMs ?: 0L }
-            val focused = e.path == focusPath
-            Row(Modifier.fillMaxWidth()
-                .then(if (focused) Modifier.onGloballyPositioned { onFocusY(it.positionInParent().y.toInt()) } else Modifier)
-                .clickable { playEpisode(ctx, c.srvOf(x), x.root, list, i) }
-                .background(if (i == cont || focused) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else Color.Transparent)
-                .padding(start = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.PlayArrow, null, Modifier.size(20.dp),
-                    tint = if (i == cont) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(listOf(e.episode?.let { "E$it" } ?: e.label, e.shortName).filter { it.isNotEmpty() }.joinToString(" · "),
-                        style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        color = if (watched) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified)
-                    // what of it is on the phone, in words (a grey icon at the end read as "watched")
-                    val mark = remember(k, back, dlTick) { offlineMark(ctx, MediaRef.InLibrary(x.root, e.path, c.srvOf(x)), e.size) }
-                    val part = remember(k, back, dlTick, mark) { if (mark == null) offlinePart(ctx, MediaRef.InLibrary(x.root, e.path, c.srvOf(x)), e.size) else 0 }
-                    if (mark != null || part > 0) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (mark == "downloading") Icons.Filled.Downloading else Icons.Filled.DownloadDone, null,
-                            Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(4.dp))
-                        Text(when {
-                            mark == "complete" -> stringResource(R.string.ser_dl_on_phone)
-                            mark == "downloading" -> stringResource(R.string.ser_dl_downloading)
-                            else -> stringResource(R.string.ser_dl_on_phone_part, part)
-                        }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                    if (pos > 0 && total > 0) LinearProgressIndicator(progress = { (pos.toFloat() / total).coerceIn(0f, 1f) },
-                        Modifier.padding(top = 4.dp).fillMaxWidth().height(3.dp))
-                    else if (pos > 0) Text(stringResource(R.string.cat_ep_at, pos / 60_000), style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary)
-                }
-                if (watched) Text("✓", Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.primary)
-                // ⋮ (D6): play, subtitles (server and the phone's copy), keep for good, delete from the phone, details
-                val code = if (e.season != null && e.episode != null) String.format(Locale.ROOT, "S%02dE%02d", e.season, e.episode) else e.label
-                CopyMenuButton(MediaRef.InLibrary(x.root, e.path, c.srvOf(x)), e.shortName,
-                    onPlay = { playEpisode(ctx, c.srvOf(x), x.root, list, i) }, onScreen = null, onChanged = onChanged,
-                    searchPhrase = listOf(title, code, subsLang).filter { it.isNotEmpty() }.joinToString(" "),
-                    noSubs = seasonSubs[e.path]?.isEmpty() == true)
-            }
+            val code = if (e.season != null && e.episode != null) String.format(Locale.ROOT, "S%02dE%02d", e.season, e.episode) else e.label
+            OwnedEpisodeRow(c.srvOf(x), x.root, e, listOf(e.episode?.let { "E$it" } ?: e.label, e.shortName).filter { it.isNotEmpty() }.joinToString(" · "),
+                current = i == cont, focused = e.path == focusPath, settings = settings, back = back, dlTick = dlTick,
+                searchPhrase = listOf(title, code, subsLang).filter { it.isNotEmpty() }.joinToString(" "),
+                noSubs = seasonSubs[e.path]?.isEmpty() == true, onPlay = { playEpisode(ctx, c.srvOf(x), x.root, list, i) },
+                onChanged = onChanged, onFocusY = onFocusY, selecting = selecting, selected = (x.root to e.path) in selected,
+                onSelect = { onSelect(x.root to e.path, it) },
+                onOptimise = if (jobs) ({ JobsNav.openOptimise(c.srvOf(x), Scopes.files(listOf(x.root to e.path), "$title $code".trim())) }) else null)
         }
         if (extras.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().clickable { showExtras = !showExtras }.padding(horizontal = 16.dp, vertical = 10.dp),
