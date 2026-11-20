@@ -312,7 +312,8 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    Agent 1.14.2+ guards a disk going full (a run once filled one: hundreds of "no space left"): a disk under its
    reserve (5 %) sends the replaced original to the trash of a library folder on another disk with room
    (`<other folder>/.mp-trash/<date>/<source folder name>/…`), and before an encode that would leave the disk under
-   the reserve, its older trash days move to such a disk first. Nothing is deleted early; the purge after
+   the reserve, its older trash days move to such a disk first. If the disk would still go under the reserve and no
+   other disk has room for the original, the item isn't started (its error says so). Nothing is deleted early; the purge after
    `trash_days` covers every disk's trash.
 5. Only the phone that started a task follows it (another one can pick "Monitor" on the task card): an ongoing
    progress notification, like a download (`TaskWatchService`, read once a minute in the background, every 15 s while

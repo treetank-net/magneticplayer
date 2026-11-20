@@ -234,6 +234,8 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       (`.mp-trash/<date>/<source folder name>/…`) and moves its own older trash days there before an encode.
       [x] 2026-11-20, laptop, unit check with a faked full disk (scratchpad vs ~/.cache): original moved, own trash
       used when there is room, an old trash day moved to make room. [ ] On jmpc with a real run.
+- [ ] Shrink: an item that would leave its disk under the 5 % reserve, with no other disk able to take the original,
+      isn't started: "dysk zszedłby poniżej rezerwy 5%…" in the task's errors (agent 1.14.3).
 - [ ] "All servers" header: Wake / Sleep name the server they act on ("Obudź jmpc"; several asleep: "Obudź wszystkie";
       several awake: "Uśpij…" opens a list), no longer the hidden active server only.
 - [ ] Cancelling a running task asks first ("Przerwać …?", "Niech działa"); "Monitoruj" moved under the progress,

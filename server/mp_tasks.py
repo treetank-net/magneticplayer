@@ -1401,6 +1401,15 @@ class Tasks:
                                   f"(the trash of its library folders may hold old originals)",
                                   f"za mało miejsca na dysku: potrzeba ok. {need >> 20} MB, wolne {free >> 20} MB "
                                   f"(kosz folderów biblioteki może trzymać stare oryginały)"))
+            # the reserve: an item that would leave the disk under it starts only when the original can go to another
+            # disk's trash afterwards (otherwise a long run creeps the disk towards full, item by item)
+            u = shutil.disk_usage(os.path.dirname(full))
+            if self.trash_days() > 0 and u.free - need < int(u.total * RESERVE) \
+                    and self._spare_disk(_dev(root), st.st_size) is None:
+                raise TaskError(T(f"the disk would go under its {int(RESERVE * 100)}% reserve and no other library disk "
+                                  f"has room for the original in its trash",
+                                  f"dysk zszedłby poniżej rezerwy {int(RESERVE * 100)}%, a żaden inny dysk biblioteki "
+                                  f"nie ma miejsca na oryginał w koszu"))
         info = mp_media.probe(full)
         pr = PROFILES[i["profile"]]
         stem, ext = os.path.splitext(full)
