@@ -336,13 +336,31 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
 - [ ] Catalog groups (agent 1.15.0): a top folder holding several series (`ANIME/<series>/…`) gives one title per
       series, each with `group`; "Show - 01" / "Show.01." numbering counts as episodes in series folders; "Show.1-25"
       folder names lose the range. [x] 2026-11-20, jmpc via the API: 8 series from the anime folder, 7 recognised;
-      no other folder of the library taken for a group. [ ] In the app (Discover/Browse, player title).
+      no other folder of the library taken for a group. [x] 2026-11-20, Pixel, v1.261120.1530: Browse search finds a
+      series from the anime folder with its own title, year, cover and "24 episodes". [ ] Player title.
 - [ ] Covers: blurred kept thumbnails (and missing ones) load once the server answers again, without restarting the
       app (one ping per server every 5 s at most, retries 5 s → 60 s). [x] 2026-11-20, Pixel, v1.261120.1530: cold
       start with Wi-Fi off shows the kept "Thumbnails" covers, after Wi-Fi returns the same covers, sharp. The blurred →
       sharp swap itself not caught on screen yet.
 - [ ] Covers: picking "Thumbnails" / "Full" in Settings starts saving at once for every server with a cached catalog
       (before, only the next catalog refresh in the Library saved them). Compiled only.
+
+## Since v1.261120.1530 (agent 1.15.2 + the next app)
+- [ ] A film downloaded to the phone while its torrent was still downloading into the library: the copy waits for the
+      missing pieces ("Czeka na komputer") instead of taking zeros (agent 1.15.2 serves `/lib/` of a torrent in
+      progress like `/media/`). Found 2026-11-20 on the Pixel: a 720p film copied in 34 s while the torrent finished
+      1.5 min later; "Cały film na telefonie", offline it played to ~80% and then stood black with a spinner (online it
+      played, the player falls back to the server on a parse error). [x] 2026-11-20, jmpc, agent 1.15.2, API: a
+      public-domain test torrent downloading into a hidden test folder of a library folder: `/lib/` HEAD said
+      `X-Ready-End` 37 of 129 MB, `X-Downloading: 1`, `Last-Modified`; a read near the end waited ~4 s for the pieces;
+      finished: `X-Ready-End` = size, no `X-Downloading`, a newer `Last-Modified`. Torrent and folder removed.
+      [ ] The app's download of a torrent in progress.
+- [ ] Stale copies on the phone: a downloaded copy keeps the file's `Last-Modified`; when the file changed on the
+      server (torrent finished after the copy, re-encode, fixed sound), the next catalog refresh drops the copy's bytes
+      and downloads it again (copies from before: when the file is newer than the download). Covers the broken copy
+      above.
+- [ ] Damaged sound fix on jmpc's real files: 9 MP3 files, 0 errors (2026-11-20, agent 1.15.1, API); the files grew by
+      ~386 MB in total (AAC came out larger than the damaged MP3). [ ] Played on the Pixel with sound.
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same

@@ -244,6 +244,7 @@ object CatalogCache {
             synced[key] = System.currentTimeMillis()
             runCatching { f.setLastModified(synced[key]!!) }
             CoverStore.sync(ctx, api, old!!)
+            runCatching { OfflineSync.verify(ctx, api) }
             return old
         }
         val (fresh, raw) = got
@@ -257,6 +258,7 @@ object CatalogCache {
         }
         version.value++
         CoverStore.sync(ctx, api, fresh)
+        runCatching { OfflineSync.verify(ctx, api) }
         return fresh
     }
 

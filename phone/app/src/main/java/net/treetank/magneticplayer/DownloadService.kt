@@ -158,7 +158,11 @@ class DownloadService : Service() {
             try {
                 if (!subsDone) subsDone = runCatching { OfflineSync.save(this, api, key) }.isSuccess
                 val size = headProbe(url, 0).first
-                OfflineStore.update(this, key) { it.copy(size = size) }
+                // the file changed on the server since the bytes already here were taken: start over
+                val (stamp, busy) = fileStamp(url)
+                val had = OfflineStore.get(this, key)?.stamp ?: 0
+                if (!busy && had > 0 && stamp != had) runCatching { cache.removeResource(key) }
+                OfflineStore.update(this, key) { it.copy(size = size, stamp = if (busy) 0 else stamp) }
                 MediaCache.setLength(this, key, size)
                 if (!spaceChecked) {
                     val missing = size - cache.getCachedBytes(key, 0, size)
@@ -186,6 +190,19 @@ class DownloadService : Service() {
                 }
                 if (key in cancelled) return
                 if (at >= size) {
+                    // the file was replaced while we copied (a re-encode, fixed sound): the copy may mix both versions,
+                    // so it is taken again. A file that was still downloading at the start (stamp 0) needs nothing: the
+                    // agent sent only downloaded pieces (X-Ready-End), and those don't change.
+                    val (end, endBusy) = fileStamp(url)
+                    val began = OfflineStore.get(this, key)?.stamp ?: 0
+                    if (endBusy) { setStatus(key, getString(R.string.media_dl_waiting_pc)); delay(15_000); continue }
+                    if (began > 0 && end != began) {
+                        runCatching { cache.removeResource(key) }
+                        MediaCache.setLength(this, key, size)
+                        OfflineStore.update(this, key) { it.copy(stamp = end) }
+                        continue
+                    }
+                    OfflineStore.update(this, key) { it.copy(stamp = end) }
                     // subtitles fitted meanwhile, intro and credits found meanwhile
                     runCatching { OfflineSync.save(this, api, key) }
                     OfflineStore.update(this, key) { it.copy(complete = true, want = false, error = null) }

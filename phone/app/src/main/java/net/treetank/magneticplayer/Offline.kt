@@ -49,6 +49,9 @@ data class OfflineItem(
     val creditsAt: Long? = null,
     /** the series folder's episodes in watching order (paths like [MediaRef.InLibrary.path]); null = not known */
     val episodes: List<String>? = null,
+    /** the server file's Last-Modified (ms) the copy was taken from; 0 = unknown (older copies, or the file was still
+     *  downloading on the server). A different one later = the copy is stale and gets downloaded again. */
+    val stamp: Long = 0,
 ) {
     fun json(): JSONObject = JSONObject().put("key", key).put("ref", ref.encode()).put("title", title)
         .put("size", size).put("dur", durationMs).put("pinned", pinned).put("policy", policy).put("want", want)
@@ -60,6 +63,7 @@ data class OfflineItem(
             intro?.let { put("intro", JSONArray().put(it.first).put(it.second)) }
             creditsAt?.let { put("credits", it) }
             episodes?.let { put("episodes", JSONArray(it)) }
+            if (stamp > 0) put("stamp", stamp)
         }
 
     companion object {
@@ -77,6 +81,7 @@ data class OfflineItem(
                 o.optJSONArray("intro")?.takeIf { it.length() == 2 }?.let { it.getLong(0) to it.getLong(1) },
                 o.optLong("credits", -1).takeIf { it > 0 },
                 o.optJSONArray("episodes")?.let { e -> List(e.length()) { e.getString(it) } },
+                o.optLong("stamp"),
             )
         }
     }
@@ -159,6 +164,40 @@ object OfflineSync {
         OfflineStore.update(ctx, key) { it.copy(subs = saved, intro = intro, creditsAt = credits, episodes = episodes) }
     }
 
+    private val verified = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /**
+     * Blocking, at a sync point (the catalog of `api`'s server refreshed): downloaded copies whose file changed on the
+     * server since (a torrent that finished after the copy was taken, a re-encode, fixed sound) are stale: their bytes go,
+     * and a download asked for by the user starts again. Copies made before stamps were kept count as stale when the file
+     * is newer than the download (that is how a copy of a torrent still downloading looked: zeros where pieces were
+     * missing, "whole" on the phone). At most every 10 minutes per server.
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    fun verify(ctx: Context, api: Api) {
+        val now = System.currentTimeMillis()
+        if (now - (verified[api.srv.key] ?: 0) < 10 * 60_000) return
+        verified[api.srv.key] = now
+        val cache = MediaCache.get(ctx)
+        for (item in OfflineStore.all(ctx)) {
+            if (item.want && !item.complete) continue
+            if (runCatching { Api.forRef(ctx, item.ref).srv.key }.getOrNull() != api.srv.key) continue
+            val (stamp, busy) = runCatching { fileStamp(api.mediaUrl(item.ref)) }.getOrNull() ?: continue
+            if (busy || stamp <= 0) continue
+            val stale = if (item.stamp > 0) stamp != item.stamp else stamp > item.created
+            if (!stale) {
+                if (item.stamp == 0L && item.complete) OfflineStore.update(ctx, item.key) { it.copy(stamp = stamp) }
+                continue
+            }
+            if (runCatching { cache.getCachedBytes(item.key, 0, item.size.coerceAtLeast(1)) }.getOrDefault(0) <= 0) continue
+            runCatching { cache.removeResource(item.key) }
+            OfflineStore.update(ctx, item.key) { it.copy(complete = false, stamp = 0, error = null) }
+            // a whole copy is downloaded again; a paused one waits for the user. Starting the service from the
+            // background can be refused: the item stays wanted and the next download run takes it.
+            if (item.pinned && item.complete) runCatching { DownloadService.start(ctx, item.ref) }
+        }
+    }
+
     /** After the subtitles of `ref` changed: a downloaded copy gets them too (in the background, when the agent answers). */
     fun refreshLater(ctx: Context, ref: MediaRef) {
         val app = ctx.applicationContext
@@ -180,6 +219,20 @@ fun headProbe(url: String, from: Long): Pair<Long, Long> {
             ?: c.getHeaderField("Content-Length")?.toLongOrNull() ?: throw IOException("missing size")
         val ready = c.getHeaderField("X-Ready-End")?.toLongOrNull() ?: size
         return size to ready
+    } finally {
+        c.disconnect()
+    }
+}
+
+/** HEAD on the agent's stream: the file's Last-Modified (ms, 0 = the agent doesn't say) and whether it is part of a
+ *  torrent still downloading (X-Downloading, agent 1.15.2+), when it will still change. */
+fun fileStamp(url: String): Pair<Long, Boolean> {
+    val c = URL(url).openConnection() as HttpURLConnection
+    try {
+        c.requestMethod = "HEAD"
+        c.connectTimeout = 8_000; c.readTimeout = 8_000
+        if (c.responseCode !in 200..299) throw IOException("HTTP ${c.responseCode}")
+        return c.lastModified to (c.getHeaderField("X-Downloading") == "1")
     } finally {
         c.disconnect()
     }

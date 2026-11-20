@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from email.utils import formatdate
 from http.cookiejar import CookieJar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -54,7 +55,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.15.1"
+VERSION = "1.15.2"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -1332,6 +1333,33 @@ class App:
         elif action == "poweroff":
             poweroff(self.guard)
 
+    def downloading_part(self, full):
+        """A library file that belongs to a torrent still downloading: (torrent id, file index), else None. /lib/
+        then serves only downloaded pieces, as /media/ does: Deluge keeps undownloaded parts as zeros (sparse files),
+        and a phone that copied them kept a "whole" film with a broken end. The list of unfinished torrents is cached
+        for a few seconds (phones probe /lib/ every 1.5-3 s)."""
+        now = time.time()
+        cached = getattr(self, "_dl_parts", None)
+        if not cached or now - cached[0] > 5:
+            try:
+                parts = [(t["id"], os.path.realpath(os.path.join(t["save_path"], t["name"])))
+                         for t in self.backend.list() if t.get("progress", 100) < 100 and t.get("save_path")]
+            except Exception:
+                parts = []  # client not answering: serve as before rather than fail the stream
+            cached = self._dl_parts = (now, parts)
+        real = os.path.realpath(full)
+        for tid, top in cached[1]:
+            if real == top or real.startswith(top + os.sep):
+                try:
+                    save_path, files = self.backend.files(tid)
+                except Exception:
+                    return None
+                base = os.path.realpath(save_path)
+                for f in files:
+                    if os.path.realpath(os.path.join(base, f["path"])) == real and f.get("ready", 0) < f.get("size", 0):
+                        return tid, f["index"]
+        return None
+
     def resolve_file(self, tid, index):
         save_path, files = self.backend.files(tid)
         f = next((f for f in files if f["index"] == index), None)
@@ -1936,6 +1964,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.caption_header(q, f"root={int(m.group(1))}&path={urllib.parse.quote(urllib.parse.unquote(m.group(2)))}")
                 if qd0.get("v") == "cast" and mp_media.variant(full):
                     return self.stream(mp_media.variant(full), method == "HEAD", watch=full)
+                part = a.downloading_part(full)
+                if part:  # a torrent still downloading into the library: downloaded pieces only (see /media/)
+                    tid, idx = part
+                    return self.stream(full, method == "HEAD", a.resolve_file(tid, idx)[1].get("_pieces"),
+                                       lambda: a.resolve_file(tid, idx)[1].get("_pieces"), watch=full)
                 return self.stream(full, method == "HEAD", watch=full)
             # ---- subtitles
             if p == "/api/subs/list" and method == "GET":
@@ -2236,10 +2269,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(length))
+        # the phone keeps it with a downloaded copy: a later change (torrent finished, file re-encoded) means the copy
+        # is stale
+        self.send_header("Last-Modified", formatdate(os.path.getmtime(full), usegmt=True))
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         # up to which byte we can read from `start` without waiting (the app's on-disk buffer fetches only that much)
         self.send_header("X-Ready-End", str(ready_end(pieces, start, size)))
+        if pieces is not None and pieces[2] is not None:  # part of a torrent still downloading: the file will change
+            self.send_header("X-Downloading", "1")
         if dlna:  # without this, DLNA TVs can get stuck in TRANSITIONING
             self.send_header("transferMode.dlna.org", "Streaming")
             self.send_header("contentFeatures.dlna.org", DLNA_FEATURES)

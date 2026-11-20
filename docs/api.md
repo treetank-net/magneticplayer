@@ -131,7 +131,7 @@ From the console: `magneticplayer_agent.py --pair` (code + QR in the terminal), 
 | `GET /api/library/segments?root=&path=` | (agent 1.11+, `features.segments`, guests too) intro and end credits of an episode, found by comparing its sound with the neighbouring episodes of its folder: `{"state": "pending"}` while that runs (5–10 s; the next episode is queued too), then `{"state": "done", "intro": [start, end] or null, "credits": start or null}` in seconds; `unavailable` without ffmpeg/numpy |
 | `GET /api/library/episodes?root=&path=` | (agent 1.10+, `features.library_episodes`, guests too) a series folder: `episodes` in watching order and `extras`, each `path` (relative to the library folder), `name`, `season`, `episode` (null when the name has none), `size` |
 | `GET /api/fs?path=` | subfolders for choosing a new folder (`parent`, `dirs`) |
-| `GET /lib/<root>/<path>` | stream of a library file (Range) |
+| `GET /lib/<root>/<path>` | stream of a library file (Range). Agent 1.15.2+: a file of a torrent still downloading into the library is served like `/media/` (downloaded pieces only, `X-Ready-End`); before, the undownloaded parts went out as zeros and a phone kept them as a "whole" copy. Every stream (`/lib`, `/media`) also sends `Last-Modified` (the file's mtime) and, for a torrent still downloading, `X-Downloading: 1`: the app keeps the stamp with a downloaded copy and takes the copy again when the file changes |
 
 ## Disks, background tasks, storage profiles (agent 1.6+, `features.library_tasks`)
 
