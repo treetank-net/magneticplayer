@@ -29,6 +29,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
@@ -475,7 +477,18 @@ private fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<T
     }
     // the agent finishes the current item before the task becomes "cancelled": show that the tap was taken
     var cancelling by remember(t.id) { mutableStateOf(false) }
+    // a running task may take hours: cancelling asks first (it sat next to "Monitor", one slip away)
+    var confirmCancel by remember(t.id) { mutableStateOf(false) }
+    val ctx = LocalContext.current
     val active = t.state == "queued" || t.state == "running"
+    if (confirmCancel) AlertDialog(
+        onDismissRequest = { confirmCancel = false },
+        title = { Text(stringResource(R.string.lib_task_cancel_q, t.title)) },
+        text = { Text(stringResource(R.string.lib_task_cancel_text)) },
+        confirmButton = { TextButton({ confirmCancel = false; cancelling = true; onCancel() }) {
+            Text(stringResource(R.string.lib_task_cancel_yes), color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton({ confirmCancel = false }) { Text(stringResource(R.string.lib_task_cancel_no)) } },
+    )
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -486,16 +499,7 @@ private fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<T
                     t.encoder?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-                if (active && !cancelling) {
-                    // a task started elsewhere (another phone, the web page): follow it here too, with the notification
-                    val ctx = LocalContext.current
-                    val wv by TaskWatch.version.collectAsState()
-                    val watched = remember(wv, t.id) { TaskWatch.isWatched(ctx, srvKey, t.id) }
-                    TextButton({ if (watched) TaskWatch.unwatch(ctx, srvKey, t.id) else TaskWatch.watch(ctx, srvKey, t.id) }) {
-                        Text(stringResource(if (watched) R.string.lib_task_unwatch else R.string.lib_task_watch))
-                    }
-                    TextButton({ cancelling = true; onCancel() }) { Text(stringResource(R.string.media_cancel)) }
-                }
+                if (active && !cancelling) TextButton({ confirmCancel = true }) { Text(stringResource(R.string.media_cancel)) }
                 if (!active && onRemove != null) TextButton(onRemove) { Text(stringResource(R.string.lib_task_remove)) }
             }
             if (active) {
@@ -506,6 +510,18 @@ private fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<T
                 (t.note ?: if (t.paused) stringResource(R.string.lib_task_paused) else null)?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                 }
+                if (!cancelling) {
+                    // a task started elsewhere (another phone, the web page): follow it here too, with the notification;
+                    // under the progress, away from "Cancel"
+                    val wv by TaskWatch.version.collectAsState()
+                    val watched = remember(wv, t.id) { TaskWatch.isWatched(ctx, srvKey, t.id) }
+                    TextButton({ if (watched) TaskWatch.unwatch(ctx, srvKey, t.id) else TaskWatch.watch(ctx, srvKey, t.id) },
+                        contentPadding = PaddingValues(horizontal = 0.dp)) {
+                        Icon(if (watched) Icons.Filled.NotificationsOff else Icons.Filled.NotificationsActive, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(if (watched) R.string.lib_task_unwatch else R.string.lib_task_watch))
+                    }
+                }
             }
             if (t.kind == "shrink" && t.saved > 0) Text(stringResource(R.string.lib_task_saved, humanBytes(t.saved)),
                 style = MaterialTheme.typography.bodySmall)
@@ -513,6 +529,11 @@ private fun TaskCard(t: LibTask, srvKey: String, loadItems: suspend () -> List<T
                 style = MaterialTheme.typography.bodySmall)
             if (t.errors > 0) Text(pluralStringResource(R.plurals.lib_errors, t.errors, t.errors), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error)
+            // why, once per reason (agent 1.14.2+), instead of the same error on every file of the list
+            t.errorGroups.forEach { (e, n) ->
+                Text(if (n > 1) "$n × $e" else e, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
             if (t.itemCount > 0) {
                 Row(Modifier.clickable { open = !open }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, Modifier.size(18.dp))

@@ -309,6 +309,11 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    smaller; then the original goes to `<library folder>/.mp-trash/<date>/` and the `.mkv` result takes its place.
    The trash is purged after `trash_days` (default 14). Before encoding, the item needs room for the result next
    to the original (its estimate + 256 MB): the trash is on the same disk, so a big run frees nothing for 14 days.
+   Agent 1.14.2+ guards a disk going full (a run once filled one: hundreds of "no space left"): a disk under its
+   reserve (5 %) sends the replaced original to the trash of a library folder on another disk with room
+   (`<other folder>/.mp-trash/<date>/<source folder name>/…`), and before an encode that would leave the disk under
+   the reserve, its older trash days move to such a disk first. Nothing is deleted early; the purge after
+   `trash_days` covers every disk's trash.
 5. Only the phone that started a task follows it (another one can pick "Monitor" on the task card): an ongoing
    progress notification, like a download (`TaskWatchService`, read once a minute in the background, every 15 s while
    the app is on screen), then one "finished" notification. Other phones don't hear about it.

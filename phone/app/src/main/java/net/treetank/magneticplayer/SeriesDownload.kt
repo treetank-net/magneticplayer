@@ -112,3 +112,12 @@ fun offlineMark(ctx: android.content.Context, ref: MediaRef, size: Long = 0): St
     if (len > 0 && runCatching { MediaCache.get(ctx).getCachedBytes(it.key, 0, len) }.getOrDefault(0) >= len) return "complete"
     return if (it.pinned && it.want) "downloading" else null
 }
+
+/** How much of a video (percent, from its start) a watching buffer holds: it plays offline up to there. 0 = nothing. */
+fun offlinePart(ctx: android.content.Context, ref: MediaRef, size: Long = 0): Int {
+    val it = OfflineStore.get(ctx, ref.key()) ?: return 0
+    val len = size.takeIf { s -> s > 0 } ?: it.size
+    if (len <= 0) return 0
+    val have = runCatching { MediaCache.get(ctx).getCachedBytes(it.key, 0, len) }.getOrDefault(0L)
+    return (have * 100 / len).toInt().coerceIn(0, 99)
+}

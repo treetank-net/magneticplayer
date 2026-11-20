@@ -12,6 +12,8 @@
     <string name="main_status_asleep">● śpi albo wyłączony</string>
     <string name="main_wake">Obudź</string>
     <string name="main_sleep">Uśpij</string>
+    <string name="main_wake_named">Obudź %1$s</string>
+    <string name="main_sleep_named">Uśpij %1$s</string>
     <string name="main_screen_on_unlock">Włącz i odblokuj ekran</string>
     <string name="main_switch_server">Zmień serwer</string>
     <string name="main_servers_pairing">Serwery i parowanie</string>

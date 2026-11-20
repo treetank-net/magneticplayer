@@ -261,6 +261,8 @@ data class LibTask(
     val fixed: Int = 0, val unfit: Int = 0,
     /** item counts; with `?brief=1` (agent 1.14.1+) [items] is empty and only these say how many there are */
     val itemCount: Int = items.size, val itemsDone: Int = items.count { it.state == "done" },
+    /** agent 1.14.2+: item errors grouped by reason, most frequent first (reason to count) */
+    val errorGroups: List<Pair<String, Int>> = emptyList(),
 )
 /** An encoder for shrinking (agent 1.7+); label and note come localized from the agent. */
 data class ShrinkEncoder(val id: String, val label: String, val note: String, val bframes: Boolean)
@@ -773,7 +775,9 @@ class Api(val s: Settings, srv: Server) {
                     x.optLong("size"), x.optString("state"), x.optStr("error"), x.optLong("saved"), x.optStr("note"))
             }, o.optStr("encoder"), o.optStr("note"), o.optInt("fixed"), o.optInt("unfit"),
             o.optInt("item_count", arr.length()), o.optInt("items_done", -1).takeIf { it >= 0 }
-                ?: (0 until arr.length()).count { arr.getJSONObject(it).optString("state") == "done" })
+                ?: (0 until arr.length()).count { arr.getJSONObject(it).optString("state") == "done" },
+            o.optJSONArray("error_groups")?.let { g -> List(g.length()) { g.getJSONObject(it).let { e -> e.optString("error") to e.optInt("count") } } }
+                ?: emptyList())
     }
 
     /** Saves a storage profile for a folder (`path` "") or a subfolder. */

@@ -271,7 +271,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     var infoVer by remember { mutableIntStateOf(0) }
     var waking by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
-    var confirmSuspend by remember { mutableStateOf(false) }
+    var suspendSrv by remember { mutableStateOf<Server?>(null) }
+    var sleepMenu by remember { mutableStateOf(false) }
     var sheet by remember { mutableStateOf(false) }
     var addServer by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<AppUpdate?>(null) }
@@ -331,6 +332,11 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         }
     }
     val anyUp = online == true || allUp.values.any { it }
+    // "All": the header's Wake / Sleep name the servers they act on (they used to act on the hidden active one)
+    val allSrv = if (allMode) fileKeys.mapNotNull { Servers.get(ctx, it) } else emptyList()
+    fun upOf(k: String) = if (k == api.srv.key) online else allUp[k]
+    val downSrv = allSrv.filter { upOf(it.key) == false && it.mac.isNotBlank() }
+    val sleepSrv = allSrv.filter { upOf(it.key) == true && it.canSuspend }
 
     fun wake(key: String = api.srv.key) = scope.launch {
         val a = Api.of(ctx, key) ?: return@launch
@@ -370,11 +376,26 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                     }
                 },
                 actions = {
-                    if (online == false && !wrong && waking == null && srv.mac.isNotBlank()) {
+                    if (allMode) {
+                        if (waking == null && downSrv.isNotEmpty()) TextButton({ downSrv.forEach { wake(it.key) } }) {
+                            Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(4.dp))
+                            Text(if (downSrv.size > 1) stringResource(R.string.srv_wake_all) else stringResource(R.string.main_wake_named, downSrv[0].name),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } else if (waking == null && sleepSrv.isNotEmpty()) Box {
+                            TextButton({ if (sleepSrv.size == 1) suspendSrv = sleepSrv[0] else sleepMenu = true }) {
+                                Icon(Icons.Filled.Bedtime, null); Spacer(Modifier.width(4.dp))
+                                Text(if (sleepSrv.size == 1) stringResource(R.string.main_sleep_named, sleepSrv[0].name) else stringResource(R.string.main_sleep) + "…",
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            DropdownMenu(sleepMenu, { sleepMenu = false }) {
+                                sleepSrv.forEach { s -> DropdownMenuItem({ Text(s.name) }, { sleepMenu = false; suspendSrv = s }) }
+                            }
+                        }
+                    } else if (online == false && !wrong && waking == null && srv.mac.isNotBlank()) {
                         TextButton({ wake() }) { Icon(Icons.Filled.PowerSettingsNew, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.main_wake)) }
                     }
-                    if (online == true && waking == null && srv.canSuspend) {
-                        TextButton({ confirmSuspend = true }) { Icon(Icons.Filled.Bedtime, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.main_sleep)) }
+                    if (!allMode && online == true && waking == null && srv.canSuspend) {
+                        TextButton({ suspendSrv = srv }) { Icon(Icons.Filled.Bedtime, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.main_sleep)) }
                     }
                     if (servers.isNotEmpty()) Box {
                         IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "menu") }
@@ -435,15 +456,19 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) &&
                     !(t == TAB_LIBRARY && waking == null && srv.hasCatalog && CatalogCache.hasCopy(ctx, srv.key)) &&
                     !(t == TAB_LIBRARY && allMode && anyUp && waking == null) ->
-                    AsleepPane(srv, waking, wrong) { wake() }
+                    AsleepPane(srv, waking, wrong) { if (allMode && downSrv.isNotEmpty()) downSrv.forEach { wake(it.key) } else wake() }
                 t == TAB_TORRENTS && !srv.hasTorrent && !srv.hasCatalog ->
                     Hint(stringResource(R.string.main_hint_no_torrent, srv.name))
                 t == TAB_LIBRARY && !srv.hasLibrary -> Hint(stringResource(R.string.main_hint_no_library, srv.name))
                 else -> key(if (allMode && t == TAB_LIBRARY) "*" else api.srv.key) {
                     when (t) {
                         TAB_TORRENTS -> Column(Modifier.fillMaxSize()) {
-                            // "All": one server's downloads at a time, picked here (each has its own list and actions)
-                            if (allMode) ServerChips(fileKeys, api.srv.key) { Servers.setActive(ctx, it); changed() }
+                            // "All": downloads of the servers with a torrent client; with one such server (the usual
+                            // case: the others only serve files) it is simply shown, without server chips that read like
+                            // a filter. Several: one server's downloads at a time, picked here.
+                            val dl = remember(ver) { if (allMode) fileKeys.filter { Servers.get(ctx, it)?.hasTorrent == true } else emptyList() }
+                            if (allMode && dl.size == 1 && dl[0] != api.srv.key) LaunchedEffect(dl) { Servers.setActive(ctx, dl[0]); changed() }
+                            if (allMode && dl.size > 1) ServerChips(dl, api.srv.key) { Servers.setActive(ctx, it); changed() }
                             Box(Modifier.weight(1f)) { TorrentsTab(api, srv, online == true, snack, onPlaying) }
                         }
                         TAB_LIBRARY -> LibraryTab(api, if (allMode) anyUp else online == true, snack, onPlaying,
@@ -471,11 +496,14 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         onManage = { sheet = false; tab.intValue = TAB_SETTINGS },
     ) { sheet = false }
 
-    if (confirmSuspend) SuspendDialog(srv, onConfirm = {
-        confirmSuspend = false
-        scope.io(ctx, snack) { api.suspendPc(); delay(3000) }
-        online = false
-    }) { confirmSuspend = false }
+    suspendSrv?.let { s ->
+        SuspendDialog(s, onConfirm = {
+            suspendSrv = null
+            val a = if (s.key == api.srv.key) api else Api.of(ctx, s.key)
+            if (a != null) scope.io(ctx, snack) { a.suspendPc(); delay(3000) }
+            if (s.key == api.srv.key) online = false else allUp[s.key] = false
+        }) { suspendSrv = null }
+    }
 }
 
 // ---------------------------------------------------------------- Torrents

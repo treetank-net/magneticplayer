@@ -80,6 +80,7 @@
     <string name="lib_profile_tiny_short">mała (480p)</string>
     <string name="lib_shrink_now">Zmniejsz teraz…</string>
     <string name="lib_folder_more">Więcej</string>
+    <string name="lib_move_free">wolne %1$s</string>
     <string name="lib_move_folder">Przenieś do innego folderu biblioteki…</string>
     <string name="lib_move_title">Przenieś „%1$s” do</string>
     <string name="lib_trash_folder">Usuń do kosza…</string>
@@ -155,10 +156,10 @@
         <item quantity="other">Sprawdzono %1$d folderu</item>
     </plurals>
     <plurals name="lib_sum_originals_kept">
-        <item quantity="one">Oryginały zostają w koszu przez %1$d dzień.</item>
-        <item quantity="few">Oryginały zostają w koszu przez %1$d dni.</item>
-        <item quantity="many">Oryginały zostają w koszu przez %1$d dni.</item>
-        <item quantity="other">Oryginały zostają w koszu przez %1$d dnia.</item>
+        <item quantity="one">Oryginały zostają w koszu przez %1$d dzień: zaoszczędzone miejsce wróci dopiero wtedy (albo po opróżnieniu kosza). Gdy na ich dysku zabraknie miejsca, trafią do kosza na innym dysku.</item>
+        <item quantity="few">Oryginały zostają w koszu przez %1$d dni: zaoszczędzone miejsce wróci dopiero wtedy (albo po opróżnieniu kosza). Gdy na ich dysku zabraknie miejsca, trafią do kosza na innym dysku.</item>
+        <item quantity="many">Oryginały zostają w koszu przez %1$d dni: zaoszczędzone miejsce wróci dopiero wtedy (albo po opróżnieniu kosza). Gdy na ich dysku zabraknie miejsca, trafią do kosza na innym dysku.</item>
+        <item quantity="other">Oryginały zostają w koszu przez %1$d dnia: zaoszczędzone miejsce wróci dopiero wtedy (albo po opróżnieniu kosza). Gdy na ich dysku zabraknie miejsca, trafią do kosza na innym dysku.</item>
     </plurals>
     <plurals name="lib_sum_trash_kept">
         <item quantity="one">Pliki trafią do kosza i zostaną w nim przez %1$d dzień.</item>
@@ -219,6 +220,10 @@
     <string name="lib_watch_checking">Sprawdzam zadania…</string>
     <string name="lib_watch_unreachable">Serwer niedostępny, ponawiam co minutę</string>
     <string name="lib_watch_more">i jeszcze %1$d</string>
+    <string name="lib_task_cancel_q">Przerwać „%1$s”?</string>
+    <string name="lib_task_cancel_text">To, co zrobione, zostaje. Plik, nad którym teraz trwa praca, zostaje bez zmian, a reszta się nie wykona.</string>
+    <string name="lib_task_cancel_yes">Przerwij zadanie</string>
+    <string name="lib_task_cancel_no">Niech działa</string>
     <string name="lib_task_watch">Monitoruj</string>
     <string name="lib_task_unwatch">Nie monitoruj</string>
 </resources>

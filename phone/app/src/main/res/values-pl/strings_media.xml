@@ -159,6 +159,10 @@
     <string name="media_which_screen">Na którym ekranie?</string>
     <string name="media_opening_on">Otwieram na %1$s…</string>
     <string name="media_playing_on">Gra na %1$s</string>
+    <string name="media_player_not_on_phone_title">Nie ma go na telefonie</string>
+    <string name="media_player_not_on_phone">Nie jest pobrany na ten telefon, a %1$s nie odpowiada. Obudź serwer albo połącz się z siecią domową.</string>
+    <string name="media_player_the_server">serwer</string>
+    <string name="media_offline_free">wolne na telefonie %1$s</string>
     <string name="media_player_whole">Cały film na telefonie · działa bez sieci</string>
     <string name="media_player_to_end">Na telefonie do końca filmu</string>
     <string name="media_player_no_video_title">Telefon nie pokaże tego obrazu</string>

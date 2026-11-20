@@ -27,13 +27,15 @@ Shrinking (`op: shrink`), storage profiles set per library folder or per subfold
   watched (or probed by a phone that plays its own copy) is swapped only once nobody has touched it for a minute;
   `pause` = the old behaviour, any stream pauses the encode;
 - the result is checked (duration, a full decode, really smaller) and only then replaces the original; the original
-  goes to `<library folder>/.mp-trash/` for `trash_days` days (default 14, 0 = delete right away).
+  goes to `<library folder>/.mp-trash/` for `trash_days` days (default 14, 0 = delete right away); a disk under its
+  reserve sends it (and, before an encode, its older trash days) to the trash of another disk with room (1.14.2).
 
 Replication (decision 5): a library folder with `replicate_to` = another folder's id gets its top-level items copied
 there quietly (every 30 minutes and after each task): new or changed items only, never deletions (a copy, not a
 mirror), not while a torrent is unfinished, and the round stops when somebody starts streaming.
 """
 import json
+import collections
 import os
 import re
 import secrets
@@ -85,6 +87,7 @@ def is_old(v):
 OLD_GROWTH = 1.25  # an old-format file may come out up to this much bigger (it then plays, which is the point)
 MIN_SIZE = 50 << 20  # smaller videos (samples, extras) aren't worth shrinking
 TRASH = ".mp-trash"
+RESERVE = 0.05  # of a disk kept free; under it a shrink's originals go to the trash of another disk
 ENCODERS = ("auto", "cpu", "gpu")
 WATCH_MODES = ("continue", "pause")
 GPU_SIZE = {True: 1.1, False: 1.3}  # video size from a graphics card vs x265 at the same quality (rough guesses)
@@ -215,6 +218,10 @@ class Tasks:
         files is ~400 kB, and phones read the list often."""
         out = {k: v for k, v in t.items() if k not in ("items", "hold", "enc", "titles")} | {
             "item_count": len(t["items"]), "items_done": sum(1 for i in t["items"] if i.get("state") == "done")}
+        # the same reason once with a count (a full disk once listed 457 identical errors, one per file)
+        reasons = collections.Counter(_reason(i["error"]) for i in t["items"] if i.get("state") == "error" and i.get("error"))
+        if reasons:
+            out["error_groups"] = [{"error": e, "count": n} for e, n in reasons.most_common(5)]
         if not brief:
             out["items"] = [{k: v for k, v in i.items() if not k.startswith("_")} for i in t["items"]]
         if t.get("titles"):
@@ -1384,8 +1391,11 @@ class Tasks:
         if not mp_detached.Detached.find(self.encodes, i.get("job")):
             # the new file is written next to the old one before the old one goes to the trash (on the same disk):
             # without room, ffmpeg dies at the end with ENOSPC, file after file (457 such errors on a full disk)
-            free = shutil.disk_usage(os.path.dirname(full)).free
             need = int(i.get("est") or st.st_size) + (256 << 20)
+            u = shutil.disk_usage(os.path.dirname(full))
+            if u.free - need < int(u.total * RESERVE):
+                self._relieve(root, need + int(u.total * RESERVE) - u.free)
+            free = shutil.disk_usage(os.path.dirname(full)).free
             if free < need:
                 raise TaskError(T(f"not enough room on the disk: about {need >> 20} MB needed, {free >> 20} MB free "
                                   f"(the trash of its library folders may hold old originals)",
@@ -1458,7 +1468,7 @@ class Tasks:
             _rm(part)
             if p.returncode == -1:
                 raise TaskError(T("the encode was interrupted (the computer restarted?)", "kodowanie zostało przerwane (restart komputera?)"))
-            raise TaskError(T("ffmpeg failed: ", "ffmpeg się nie udał: ") + " ".join(err_tail)[-200:])
+            raise TaskError(_ffmpeg_reason(err_tail))
         new = os.path.getsize(part)
         try:
             ninfo = mp_media.probe(part)
@@ -1494,11 +1504,10 @@ class Tasks:
                 _rm(part)
                 raise _Cancelled()
         t["hold"] = None
-        # swap: the original to the trash (same disk: a rename), the result in its place
-        trash = os.path.join(root, TRASH, time.strftime("%Y-%m-%d"), os.path.dirname(i["path"]))
-        os.makedirs(trash, exist_ok=True)
+        # swap: the original to the trash (its own disk's: a rename, or another disk's when this one runs short),
+        # the result in its place
         if self.trash_days() > 0:
-            os.rename(full, os.path.join(trash, os.path.basename(full)))
+            self._to_trash(full, root, i)
         else:
             os.remove(full)
         os.rename(part, out_final)
@@ -1589,6 +1598,75 @@ class Tasks:
 
     # ---- trash
 
+    def _spare_disk(self, avoid_dev, size):
+        """A library folder on another disk with `size` to spare above its reserve (the most room first): a trash that
+        doesn't fit on its own disk goes there. None when no disk has the room."""
+        best = None
+        for r in self.library.roots():
+            d = _dev(r["path"]) if r["exists"] else None
+            if d is None or d == avoid_dev:
+                continue
+            try:
+                u = shutil.disk_usage(r["path"])
+            except OSError:
+                continue
+            room = u.free - int(u.total * RESERVE) - size
+            if room > 0 and (best is None or room > best[0]):
+                best = (room, r)
+        return best[1] if best else None
+
+    def _trash_name(self, root):
+        """The folder for one library folder's originals inside another disk's trash day."""
+        r = next((x for x in self.library.roots() if x["path"] == root), None)
+        return ((r or {}).get("name") or os.path.basename(root)).replace("/", "_")
+
+    def _to_trash(self, full, root, i):
+        """A replaced original to the trash. On its own disk that's a rename, but the disk then keeps the original and
+        the new file both: a big run filled a disk that way (hundreds of "no space left"). When the disk would stay
+        under its reserve, the original goes to the trash of a library folder on another disk with room instead."""
+        day, rel_dir = time.strftime("%Y-%m-%d"), os.path.dirname(i["path"])
+        u = shutil.disk_usage(root)
+        size = os.path.getsize(full)
+        other = self._spare_disk(_dev(root), size) if u.free < int(u.total * RESERVE) else None
+        if other is None:
+            dest = os.path.join(root, TRASH, day, rel_dir)
+            os.makedirs(dest, exist_ok=True)
+            os.rename(full, os.path.join(dest, os.path.basename(full)))
+            return
+        dest = os.path.join(other["path"], TRASH, day, self._trash_name(root), rel_dir)
+        os.makedirs(dest, exist_ok=True)
+        shutil.move(full, os.path.join(dest, os.path.basename(full)))
+        i["trash_on"] = other["name"]
+        self.log(f"trash: {os.path.basename(full)} to the trash of {other['name']} (its disk is short of room)")
+
+    def _relieve(self, root, need):
+        """Make `need` bytes on the disk of `root` by moving its trash (oldest days first) to another disk with room.
+        Nothing is deleted. Returns the bytes moved."""
+        dev, moved = _dev(root), 0
+        days = []
+        for r in self.library.roots():
+            d = os.path.join(r["path"], TRASH)
+            if r["exists"] and _dev(r["path"]) == dev and os.path.isdir(d):
+                days += [(day, r["path"]) for day in os.listdir(d) if os.path.isdir(os.path.join(d, day))]
+        for day, rpath in sorted(days):
+            if moved >= need:
+                break
+            src = os.path.join(rpath, TRASH, day)
+            size = tree_size(src)[0]
+            other = self._spare_disk(dev, size)
+            if other is None:
+                continue
+            dest = os.path.join(other["path"], TRASH, day, self._trash_name(rpath))
+            try:
+                shutil.copytree(src, dest, dirs_exist_ok=True)
+                shutil.rmtree(src)
+            except OSError as e:
+                self.log("trash: moving", src, "failed:", e)
+                continue
+            moved += size
+            self.log(f"trash: {day} of {self._trash_name(rpath)} ({size >> 20} MB) moved to {other['name']} for room")
+        return moved
+
     def trash(self):
         out = []
         for r in self.library.roots():
@@ -1624,6 +1702,30 @@ class Tasks:
 
 class _Cancelled(Exception):
     pass
+
+
+def _no_space():
+    return T("no space left on the disk", "brak miejsca na dysku")
+
+
+def _ffmpeg_reason(tail):
+    """ffmpeg's last lines as a reason a person can read: known causes in words, otherwise the last line without
+    paths (hidden temp files), cut at the end."""
+    text = " ".join(tail)
+    if "No space left on device" in text:
+        return _no_space()
+    last = next((ln for ln in reversed(tail) if ln.strip()), "").strip()
+    last = re.sub(r"(?:^|(?<=\s))/[^:]*/([^/:]+)", r"\1", last)
+    if len(last) > 160:
+        last = last[:160].rsplit(" ", 1)[0] + "…"
+    return T("ffmpeg failed: ", "ffmpeg się nie udał: ") + last
+
+
+def _reason(err):
+    """An item's error as a grouping key: older tasks kept ffmpeg's raw tail (cut mid-word, with temp paths)."""
+    if "No space left on device" in err or "no space left" in err.lower() or "brak miejsca" in err:
+        return _no_space() if "not enough room" not in err and "za mało miejsca" not in err else re.sub(r"\d+ MB", "… MB", err)
+    return re.sub(r"\d+ MB", "… MB", err)
 
 
 DATA_FS = {"ext4", "ext3", "btrfs", "xfs", "zfs", "f2fs", "ntfs", "ntfs3", "fuseblk", "exfat", "vfat", "jfs", "reiserfs"}

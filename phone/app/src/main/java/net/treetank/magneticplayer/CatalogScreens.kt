@@ -694,7 +694,8 @@ private fun TitleScreen(c: CatCtx, x: CatItem) {
                             e.label.ifEmpty { (cont + 1).toString() }))
                 } else MediaActions(xa, x.ref(xs), c.snack, c.onPlayingOnPc, imdb = x.imdb.takeIf { !x.series }, big = true)
                 // "All": where the copies are; another copy plays from its server (it opens its own title screen)
-                if (x.srv.isNotEmpty()) CopiesOnServers(c, x)
+                // only with a choice to make: one copy says nothing ("Available" says where it is)
+                if (x.srv.isNotEmpty() && x.alsoOn.isNotEmpty()) CopiesOnServers(c, x)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     x.genres.forEach { g -> AssistChip({ c.push(Nav.results(listOf("genre:$g"))) }, { Text(genreLabel(g)) }) }
                     x.topics.forEach { q -> cat.topics[q]?.let { t -> AssistChip({ c.push(Nav.results(listOf("topic:$q"))) }, { Text(t) }) } }
@@ -810,15 +811,24 @@ private fun EpisodeList(c: CatCtx, x: CatItem, list: List<Episode>, extras: List
                     Text(listOf(e.episode?.let { "E$it" } ?: e.label, e.shortName).filter { it.isNotEmpty() }.joinToString(" · "),
                         style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         color = if (watched) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified)
+                    // what of it is on the phone, in words (a grey icon at the end read as "watched")
+                    val mark = remember(k, back, dlTick) { offlineMark(ctx, MediaRef.InLibrary(x.root, e.path, c.srvOf(x)), e.size) }
+                    val part = remember(k, back, dlTick, mark) { if (mark == null) offlinePart(ctx, MediaRef.InLibrary(x.root, e.path, c.srvOf(x)), e.size) else 0 }
+                    if (mark != null || part > 0) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (mark == "downloading") Icons.Filled.Downloading else Icons.Filled.DownloadDone, null,
+                            Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(4.dp))
+                        Text(when {
+                            mark == "complete" -> stringResource(R.string.ser_dl_on_phone)
+                            mark == "downloading" -> stringResource(R.string.ser_dl_downloading)
+                            else -> stringResource(R.string.ser_dl_on_phone_part, part)
+                        }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
                     if (pos > 0 && total > 0) LinearProgressIndicator(progress = { (pos.toFloat() / total).coerceIn(0f, 1f) },
                         Modifier.padding(top = 4.dp).fillMaxWidth().height(3.dp))
                     else if (pos > 0) Text(stringResource(R.string.cat_ep_at, pos / 60_000), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary)
                 }
-                val mark = remember(k, back, dlTick) { offlineMark(ctx, MediaRef.InLibrary(x.root, e.path, c.srvOf(x)), e.size) }
-                if (mark != null) Icon(if (mark == "complete") Icons.Filled.DownloadDone else Icons.Filled.Downloading,
-                    stringResource(if (mark == "complete") R.string.ser_dl_on_phone else R.string.ser_dl_downloading),
-                    Modifier.padding(start = 8.dp).size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (watched) Text("✓", Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.primary)
             }
         }

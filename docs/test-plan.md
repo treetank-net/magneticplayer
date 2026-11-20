@@ -230,6 +230,37 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       user, 2026-11-20: chips there made no sense with "All" picked).
 - [ ] With the active server asleep and another one on, Library in All doesn't show the asleep pane.
 
+- [ ] Trash on a full disk (agent 1.14.2): a disk under 5 % free sends a shrink's original to another disk's trash
+      (`.mp-trash/<date>/<source folder name>/…`) and moves its own older trash days there before an encode.
+      [x] 2026-11-20, laptop, unit check with a faked full disk (scratchpad vs ~/.cache): original moved, own trash
+      used when there is room, an old trash day moved to make room. [ ] On jmpc with a real run.
+- [ ] "All servers" header: Wake / Sleep name the server they act on ("Obudź jmpc"; several asleep: "Obudź wszystkie";
+      several awake: "Uśpij…" opens a list), no longer the hidden active server only.
+- [ ] Cancelling a running task asks first ("Przerwać …?", "Niech działa"); "Monitoruj" moved under the progress,
+      with a bell icon. The shrink preview says the space comes back only after the trash days.
+- [ ] Offline, a video with nothing of it on the phone: a dialog "Nie ma go na telefonie" (not downloaded, the server
+      doesn't answer) and back, instead of a player at 00:00 reconnecting for a minute. Also from the Discover hero.
+      A buffered video offline no longer waits for the server's subtitle list.
+- [ ] Player: a spinner from opening until the first picture and while buffering.
+- [ ] Resume starts at the keyframe before the saved position (then seeks are exact again): picture and sound start
+      together. Check on an x265 episode resumed mid-way (before: sound ran while the picture stood still).
+- [ ] Episode list: "Na telefonie" / "Na telefonie do 90%" / "Pobiera się na telefon" under the episode's title, in
+      the accent colour (the grey icon at the end read as "watched").
+- [ ] "Move to…": each target folder shows its disk's free space. "On the phone" header shows the phone's free space.
+- [ ] Task card: errors once per reason with a count ("457 × brak miejsca na dysku"), ffmpeg's reason without temp
+      paths (agent 1.14.2 `error_groups`; older tasks are grouped too).
+- [ ] "All servers" → Folders: server sections keep the order of the server list (no swap after opening a folder);
+      inside a folder a line above the path says "jmpc: Seriale (disk)".
+- [ ] Remote / jmpc screen: a library video shows its recognised name ("Series · S2 E3", "Film (1968)") instead of the
+      release's file name (agent 1.14.2).
+- [ ] A title's screen: "Na serwerach" only with two or more copies.
+- [ ] Chromecast version and audio (agent 1.14.2): for a file with two or more audio tracks the cast sheet says the
+      version's sound ("Dźwięk w niej: angielski") and, when the language picked since differs, offers "Przygotuj
+      ponownie: japoński" (removes the old version, prepares one with the new track).
+- [ ] Downloads in "All servers": with one server that has a torrent client (the usual case) its list shows without
+      server chips; chips only with two or more such servers. A true merged list is deferred (each client has its own
+      actions and settings).
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a

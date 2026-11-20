@@ -215,6 +215,7 @@
         <item quantity="other">Downloading %1$d videos to the phone</item>
     </plurals>
     <string name="ser_dl_on_phone">On the phone</string>
+    <string name="ser_dl_on_phone_part">On the phone up to %1$d%%</string>
     <string name="ser_dl_downloading">Downloading to the phone</string>
     <string name="cat_on_servers">On servers</string>
 </resources>

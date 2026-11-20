@@ -153,7 +153,10 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
         },
         onDelete = { confirmMany = true })
     if (!selecting) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(androidx.compose.ui.res.pluralStringResource(R.plurals.media_offline_total, list.size, list.size, humanBytes(list.sumOf { it.cached })),
+        // and the phone's free space: the place to see whether another season fits
+        val free = remember(list.size) { runCatching { ctx.noBackupFilesDir.usableSpace }.getOrDefault(0L) }
+        Text(androidx.compose.ui.res.pluralStringResource(R.plurals.media_offline_total, list.size, list.size, humanBytes(list.sumOf { it.cached })) +
+            (if (free > 0) " · " + stringResource(R.string.media_offline_free, humanBytes(free)) else ""),
             Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         IconButton({ compact = !compact; ui.edit().putBoolean("offline_compact", compact).apply() }) {
             Icon(if (compact) Icons.Filled.ViewAgenda else Icons.AutoMirrored.Filled.ViewList,

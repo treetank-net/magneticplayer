@@ -54,6 +54,8 @@ Numbers in brackets are the review numbers (2026-11-20).
     e.g. `jmpc:/<disk>/…` or a server badge.
 11. **The Remote shows the recognised title** [11] (series, episode) instead of the file name.
 12. **"All servers" in Downloads** [14]: one merged list instead of server chips.
+    Done as: with one server that has a torrent client, no chips (its list as is); a true merged list of several
+    clients is deferred.
 13. **Chromecast variant and audio** [15]: a variant is prepared with one audio track; after picking another language
     the old variant is cast. Say which audio a variant has and offer preparing it again (or one per language).
 14. **"On servers" on a title's screen** [17]: with one copy it says nothing; show it only for two or more copies.

@@ -189,6 +189,12 @@ class PlayerActivity : ComponentActivity() {
             root = this
             setBackgroundColor(Color.BLACK)
             addView(view, FrameLayout.LayoutParams(-1, -1))
+            // a spinner from the tap until the first picture and while it buffers: opening a file (from the phone's disk
+            // too) can take a few seconds of black screen
+            loading = android.widget.ProgressBar(this@PlayerActivity).apply {
+                indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            }
+            addView(loading, FrameLayout.LayoutParams((48 * dp).toInt(), (48 * dp).toInt(), Gravity.CENTER))
             addView(buttons, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply {
                 // gradient under the text so that it is legible on a bright picture
             })
@@ -229,7 +235,9 @@ class PlayerActivity : ComponentActivity() {
             var retries = 0
 
             override fun onPlaybackStateChanged(state: Int) {
+                loading?.visibility = if (state == Player.STATE_BUFFERING) android.view.View.VISIBLE else android.view.View.GONE
                 if (state == Player.STATE_READY) retries = 0
+                if (state == Player.STATE_READY && resumeSync) { resumeSync = false; p.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT) }
                 if (state == Player.STATE_ENDED) {
                     prefetchJob?.cancel()
                     val k = key
@@ -255,6 +263,7 @@ class PlayerActivity : ComponentActivity() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                loading?.visibility = android.view.View.GONE
                 // network error (agent restart during an update, a brief loss of Wi-Fi): we reconnect over
                 // ~a minute and keep playing from the same place instead of stopping the video
                 if (error.errorCode in 2000..2999 && retries < 15) {
@@ -292,18 +301,41 @@ class PlayerActivity : ComponentActivity() {
         if (offline != null && offline.size > 0) fileSize = offline.size
 
         lifecycleScope.launch {
+            // nothing of it on the phone and the server out of reach: say so at once instead of a player stuck at 00:00
+            // that keeps reconnecting for a minute (an episode list or a card offers it offline too)
+            val onPhone = offline?.complete == true || withContext(Dispatchers.IO) {
+                runCatching { MediaCache.get(this@PlayerActivity).getCachedBytes(key, 0, 1L shl 20) }.getOrDefault(0L) } > 0
             // downloaded video: subtitles saved with it (works offline); otherwise from the computer, copied locally
             val saved = offline?.subs.orEmpty().filter { java.io.File(it.file).exists() }
+            val reachable = if (onPhone && saved.isNotEmpty()) true else withContext(Dispatchers.IO) { api.ping(2500) }
+            if (isFinishing) return@launch
+            if (!onPhone && !reachable) {
+                loading?.visibility = android.view.View.GONE
+                android.app.AlertDialog.Builder(this@PlayerActivity)
+                    .setTitle(R.string.media_player_not_on_phone_title)
+                    .setMessage(getString(R.string.media_player_not_on_phone, api.srv.name.ifBlank { getString(R.string.media_player_the_server) }))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .setOnDismissListener { finish() }
+                    .show()
+                return@launch
+            }
             val local: Map<String, Uri>
             if (saved.isNotEmpty()) {
                 subs = saved.map { it.toSubFile() }
                 local = saved.associate { it.name to Uri.fromFile(java.io.File(it.file)) }
+            } else if (!reachable) {  // a buffered video offline: no waiting for the server's subtitle list
+                subs = emptyList()
+                local = emptyMap()
             } else {
                 subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
                 local = withContext(Dispatchers.IO) { localSubs(subs) }
             }
             localSubUris = local
             p.setMediaItem(buildItem())
+            // resume from the keyframe at or before the saved position: an exact seek decodes from that keyframe up to the
+            // position first, and with a long GOP (x265) the sound started while the picture stood still until it caught
+            // up. The owner's seeks later stay exact (resumeSync is switched back on the first READY).
+            if (start > 0) { p.setSeekParameters(androidx.media3.exoplayer.SeekParameters.PREVIOUS_SYNC); resumeSync = true }
             p.seekTo(start)
             p.prepare()
             p.playWhenReady = true
@@ -316,6 +348,8 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private var noVideoHandled = false
+    private var loading: android.widget.ProgressBar? = null
+    private var resumeSync = false
     private var altSource = false
     private var playerView: PlayerView? = null
 

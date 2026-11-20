@@ -312,10 +312,29 @@ private fun CastFormat(ref: MediaRef) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Column(Modifier.padding(start = 60.dp, end = 20.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         when {
-            v != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.srv_cast_prepared, humanBytes(v.optLong("size"))), Modifier.weight(1f),
-                    style = small, color = OK_GREEN)
-                TextButton({ op("remove") }) { Text(stringResource(R.string.srv_remove)) }
+            v != null -> Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.srv_cast_prepared, humanBytes(v.optLong("size"))), Modifier.weight(1f),
+                        style = small, color = OK_GREEN)
+                    TextButton({ op("remove") }) { Text(stringResource(R.string.srv_remove)) }
+                }
+                // a Chromecast plays the one audio track the version was made with: say which, and offer it again when
+                // the language picked since differs (agent 1.14.2+ reports the version's track)
+                val vLang = v.optJSONObject("audio")?.optString("lang").orEmpty()
+                val audios = p.optJSONObject("file")?.optJSONArray("audio")?.length() ?: 0
+                if (vLang.isNotEmpty() && audios > 1) {
+                    val want = ((ref as? MediaRef.InLibrary)?.let { api.s.folderAudio(folderKey(it)) } ?: api.s.audioChoice)
+                        ?.substringAfter('|', "")?.takeIf { it.isNotEmpty() }
+                    fun iso3(l: String) = runCatching { java.util.Locale(l).isO3Language }.getOrDefault(l)
+                    fun name(l: String) = java.util.Locale(l).getDisplayLanguage(java.util.Locale.getDefault()).ifEmpty { l }
+                    Text(stringResource(R.string.srv_cast_audio, name(vLang)), style = small, color = muted)
+                    if (want != null && iso3(want) != iso3(vLang)) TextButton({
+                        scope.launch {
+                            err = withContext(Dispatchers.IO) { runCatching { api.mediaConvert(ref, "remove"); api.mediaConvert(ref) }.exceptionOrNull()?.message }
+                            tick++
+                        }
+                    }) { Text(stringResource(R.string.srv_cast_audio_again, name(want))) }
+                }
             }
             state == "queued" || state == "running" -> {
                 val pct = j!!.optDouble("pct", 0.0)

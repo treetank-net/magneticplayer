@@ -155,6 +155,14 @@ fun LibraryTab(api: Api, online: Boolean, snack: SnackbarHostState, onPlayingOnP
     }
 }
 
+/** Library folder names per server ("<server key>/<index>"), filled where folders are listed: a folder's screen says
+ *  which server and folder (disk) it is on. */
+object RootNames {
+    private val names = java.util.concurrent.ConcurrentHashMap<String, String>()
+    fun put(srv: String, roots: List<LibRoot>) = roots.forEach { names["$srv/${it.index}"] = it.name }
+    fun get(srv: String, index: Int): String? = names["$srv/$index"]
+}
+
 @Composable
 private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () -> Unit, onSwitchServer: (String, Int) -> Unit,
                         allMode: Boolean,
@@ -175,6 +183,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
         roots = try { withContext(Dispatchers.IO) { api.libraryRoots(manage) } } catch (e: ApiException) {
             snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); emptyList()
         }
+        roots?.let { RootNames.put(api.srv.key, it) }
     }
     // folders of the other servers with a library that respond now (decision 11: one library across servers)
     var others by remember { mutableStateOf<List<Pair<Server, List<LibRoot>>>>(emptyList()) }
@@ -185,7 +194,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
                 async {
                     val a = Api(api.s, s)
                     if (!a.ping(1500)) null
-                    else runCatching { s to a.libraryRoots().filter { it.exists && it.open && "kopia" !in it.tags } }.getOrNull()
+                    else runCatching { s to a.libraryRoots().also { RootNames.put(s.key, it) }.filter { it.exists && it.open && "kopia" !in it.tags } }.getOrNull()
                         ?.takeIf { it.second.isNotEmpty() }
                 }
             }.awaitAll().filterNotNull()
@@ -224,6 +233,32 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
         if (list == null) Hint(stringResource(R.string.media_loading))
         else if (list.isEmpty() && others.isEmpty()) Hint(stringResource(if (tagFilter == null) R.string.media_lib_no_roots else R.string.lib_tag_none))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // "All": the servers in the order of the server list (opening a folder makes its server the active one, and
+            // "active first" swapped the sections between visits); the ones before the active server come first
+            val order = Servers.all(ctx).map { it.key }
+            val before = if (allMode) others.filter { o -> order.indexOf(o.first.key).let { it >= 0 && it < order.indexOf(api.srv.key) } } else emptyList()
+            val after = others - before.toSet()
+            fun othersSection(group: List<Pair<Server, List<LibRoot>>>) = group.forEach { (s, rs) ->
+                val shownHere = rs.filter { shown(it) }
+                if (shownHere.isNotEmpty()) item(key = "srv/${s.key}") {
+                    Text(stringResource(R.string.lib_on_server, s.name), style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp, start = 4.dp))
+                }
+                items(shownHere, key = { "srv/${s.key}/${it.index}" }) { r ->
+                    Card(Modifier.fillMaxWidth().clickable { onSwitchServer(s.key, r.index) }) {
+                        Row(Modifier.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(r.name, style = MaterialTheme.typography.titleSmall)
+                                if (r.tags.isNotEmpty()) Text(r.tags.joinToString(" ") { "#$it" }, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            }
+            othersSection(before)
             // "All": every server's folders in one list, this one under its name too
             if (allMode && others.isNotEmpty() && list.isNotEmpty()) item(key = "srv/self") {
                 Text(stringResource(R.string.lib_on_server, srv.name), style = MaterialTheme.typography.titleSmall,
@@ -250,26 +285,7 @@ private fun RootsScreen(api: Api, snack: SnackbarHostState, onPlayingOnPc: () ->
                     }
                 }
             }
-            others.forEach { (s, rs) ->
-                val shownHere = rs.filter { shown(it) }
-                if (shownHere.isNotEmpty()) item(key = "srv/${s.key}") {
-                    Text(stringResource(R.string.lib_on_server, s.name), style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp, start = 4.dp))
-                }
-                items(shownHere, key = { "srv/${s.key}/${it.index}" }) { r ->
-                    Card(Modifier.fillMaxWidth().clickable { onSwitchServer(s.key, r.index) }) {
-                        Row(Modifier.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(r.name, style = MaterialTheme.typography.titleSmall)
-                                if (r.tags.isNotEmpty()) Text(r.tags.joinToString(" ") { "#$it" }, style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
-                }
-            }
+            othersSection(after)
         }
         ExtendedFloatingActionButton(
             onClick = { picker = true }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text(stringResource(R.string.media_lib_add_folder)) },
@@ -622,6 +638,8 @@ private fun DirScreen(
     var subsGet by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf<List<LibRoot>?>(null) }
+    // the disk of each library folder, for its free space in "Move to…" (picking where a big folder fits)
+    var diskOf by remember { mutableStateOf<Map<Int, Disk>>(emptyMap()) }
     moving?.let { roots ->
         // another library folder for this one (the same tag first): the plan preview shows the move before it runs
         val here = roots.firstOrNull { it.index == root }
@@ -635,7 +653,10 @@ private fun DirScreen(
                             moving = null; onPlan(PlanBody.move(listOf(Triple(root, path, r.index))))
                         }.padding(vertical = 10.dp)) {
                             Text(r.name)
-                            if (r.tags.isNotEmpty()) Text(r.tags.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+                            val d = diskOf[r.index]
+                            val line = listOfNotNull(d?.let { stringResource(R.string.lib_move_free, humanBytes(it.free)) },
+                                r.tags.joinToString(" · ").ifEmpty { null }).joinToString(" · ")
+                            if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -653,8 +674,14 @@ private fun DirScreen(
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
             IconButton(onUp) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_cd_up)) }
-            Text(if (path.isEmpty()) "/" else path, style = MaterialTheme.typography.titleSmall, maxLines = 2,
-                overflow = TextOverflow.StartEllipsis, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                // "jmpc: Seriale (disk)": with several servers the path alone ("/") didn't say where this is
+                val where = listOfNotNull(srv.name.takeIf { Servers.all(ctx).size > 1 }, RootNames.get(srv.key, root)).joinToString(": ")
+                if (where.isNotEmpty()) Text(where, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (path.isEmpty()) "/" else path, style = MaterialTheme.typography.titleSmall, maxLines = 2,
+                    overflow = TextOverflow.StartEllipsis)
+            }
             if (srv.hasSubsGetTask && !srv.isGuest) IconButton({ subsGet = true }) {
                 Icon(Icons.Filled.Subtitles, stringResource(R.string.subs_get_title))
             }
@@ -668,6 +695,9 @@ private fun DirScreen(
                     DropdownMenuItem({ Text(stringResource(R.string.lib_move_folder)) }, {
                         more = false
                         scope.launch {
+                            diskOf = withContext(Dispatchers.IO) {
+                                runCatching { api.disks().disks.flatMap { d -> d.roots.map { it.root to d } }.toMap() }.getOrDefault(emptyMap())
+                            }
                             moving = try { withContext(Dispatchers.IO) { api.libraryRoots() } } catch (e: ApiException) {
                                 snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error)); null
                             }

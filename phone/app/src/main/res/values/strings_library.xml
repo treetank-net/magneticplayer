@@ -80,6 +80,7 @@
     <string name="lib_profile_tiny_short">tiny (480p)</string>
     <string name="lib_shrink_now">Shrink now…</string>
     <string name="lib_folder_more">More</string>
+    <string name="lib_move_free">%1$s free</string>
     <string name="lib_move_folder">Move to another library folder…</string>
     <string name="lib_move_title">Move “%1$s” to</string>
     <string name="lib_trash_folder">Delete to the trash…</string>
@@ -137,8 +138,8 @@
         <item quantity="other">Checked %1$d folders</item>
     </plurals>
     <plurals name="lib_sum_originals_kept">
-        <item quantity="one">Originals are kept in the trash for %1$d day.</item>
-        <item quantity="other">Originals are kept in the trash for %1$d days.</item>
+        <item quantity="one">Originals are kept in the trash for %1$d day: the space saved comes back only then (or when the trash is emptied). When their disk runs short, they go to the trash of another disk.</item>
+        <item quantity="other">Originals are kept in the trash for %1$d days: the space saved comes back only then (or when the trash is emptied). When their disk runs short, they go to the trash of another disk.</item>
     </plurals>
     <plurals name="lib_sum_trash_kept">
         <item quantity="one">Files go to the trash and are kept for %1$d day.</item>
@@ -183,6 +184,10 @@
     <string name="lib_watch_checking">Checking tasks…</string>
     <string name="lib_watch_unreachable">Server unreachable, trying again every minute</string>
     <string name="lib_watch_more">and %1$d more</string>
+    <string name="lib_task_cancel_q">Stop \"%1$s\"?</string>
+    <string name="lib_task_cancel_text">What is done stays done. The file being worked on now is left as it was, and the rest won\'t run.</string>
+    <string name="lib_task_cancel_yes">Stop task</string>
+    <string name="lib_task_cancel_no">Keep running</string>
     <string name="lib_task_watch">Monitor</string>
     <string name="lib_task_unwatch">Stop monitoring</string>
 </resources>

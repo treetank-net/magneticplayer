@@ -21,6 +21,8 @@
     <string name="srv_searching_network">searching the network…</string>
     <string name="srv_no_chromecast">none found on this Wi-Fi network</string>
     <string name="srv_cast_prepared">✓ Chromecast will get the version prepared for it (%1$s)</string>
+    <string name="srv_cast_audio">Its sound: %1$s</string>
+    <string name="srv_cast_audio_again">Prepare again with %1$s</string>
     <string name="srv_remove">Remove</string>
     <string name="srv_speed">%1$.1f× faster than real time</string>
     <string name="srv_finishing">Finishing (moving the index to the start of the file), this may take a minute…</string>

@@ -148,6 +148,28 @@ class Catalog:
                 out.append((top, fs, True))
         return out
 
+    def title_for(self, full):
+        """A library video's recognised name for screens (mpv's title, the Remote): "Series · S2 E3", "Film (1968)";
+        None when the catalog doesn't know it (the file name stays)."""
+        full = os.path.realpath(full)
+        for r in self.library.roots():
+            rp = os.path.realpath(r["path"])
+            if not full.startswith(rp + os.sep):
+                continue
+            rel = os.path.relpath(full, rp).replace(os.sep, "/")
+            parts = rel.split("/")
+            with self.lock:
+                it = next((self.items.get(f"{r['id']}/{'/'.join(parts[:k])}") for k in range(len(parts), 0, -1)
+                           if f"{r['id']}/{'/'.join(parts[:k])}" in self.items), None)
+            if not it or not it.get("title"):
+                return None
+            t = it["title"]
+            if it.get("kind") == "series":
+                se, ep = mp_ident.episode_no(rel)
+                return f"{t} · S{se} E{ep}" if se is not None and ep is not None else f"{t} · E{ep}" if ep is not None else t
+            return f"{t} ({it['year']})" if it.get("year") else t
+        return None
+
     def scan(self):
         roots = [r for r in self.library.roots() if r["exists"] and not set(r["tags"]) & (HIDDEN_TAGS | SKIP_TAGS)]
         self.state.update(scanning=True, done=0, total=0)

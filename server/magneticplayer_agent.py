@@ -54,7 +54,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.14.1"
+VERSION = "1.14.2"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 CONFIG_PATH = os.environ.get("MAGNETICPLAYER_CONFIG") or os.path.expanduser("~/.config/magneticplayer/config.json")
 CONFIG_DIR = os.path.dirname(CONFIG_PATH)
@@ -147,6 +147,15 @@ def guest_allowed(method, p):
         return method in ("GET", "HEAD") and p.endswith("/files")
     return any(p == a or (a.endswith("/") and p.startswith(a)) for a in allowed)
 
+
+
+def _variant_info(v):
+    """The prepared TV version: size, its cast check, and (1.14.2+) the language and title of its one audio track, so a
+    phone sees whether it matches the audio picked since."""
+    vi = mp_media.probe(v)
+    a = (vi.get("audio") or [{}])[0]
+    return {"size": os.path.getsize(v), "cast": mp_media.cast_check(vi),
+            "audio": {"lang": a.get("lang") or "", "title": a.get("title") or ""}}
 
 class ApiError(Exception):
     def __init__(self, msg, status=500):
@@ -1632,7 +1641,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({
                     "ffmpeg": True, "file": info, "cast": mp_media.cast_check(info), "cast_devices": per,
                     "complete": a.ref_complete(qd0),
-                    "variant": {"size": os.path.getsize(v), "cast": mp_media.cast_check(mp_media.probe(v))} if v else None,
+                    "variant": _variant_info(v) if v else None,
                     "job": a.convert.status(full), "encoder": mp_media.encoder_info()})
             if p == "/api/media/convert" and method == "POST":
                 b = self.body()
@@ -1801,7 +1810,12 @@ class Handler(BaseHTTPRequestHandler):
                     full = a.resolve_ref(b)
                     # mpv finds subtitles next to the video by itself, but not those in a subfolder (Subs/English.srt from torrents)
                     extra = [os.path.join(os.path.dirname(full), x["name"]) for x in sidecar_subs(full) if os.sep in x["name"]]
-                    a.mpv.open(full, start=b.get("start"), subs=extra, sub_lang=b.get("sub_lang"), audio=b.get("audio"))
+                    # the recognised name ("Series · S2 E3") on the Remote and the screen, not the release's file name
+                    try:
+                        title = a.catalog.title_for(full)
+                    except Exception:  # noqa: BLE001 (a title is a nicety, the film plays anyway)
+                        title = None
+                    a.mpv.open(full, title, start=b.get("start"), subs=extra, sub_lang=b.get("sub_lang"), audio=b.get("audio"))
                 return self.send_json({"ok": True})
             if p == "/api/player/status" and method == "GET":
                 return self.send_json(a.mpv.status())

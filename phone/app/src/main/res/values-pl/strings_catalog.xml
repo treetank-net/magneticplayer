@@ -229,6 +229,7 @@
         <item quantity="other">Pobieram %1$d filmu na telefon</item>
     </plurals>
     <string name="ser_dl_on_phone">Na telefonie</string>
+    <string name="ser_dl_on_phone_part">Na telefonie do %1$d%%</string>
     <string name="ser_dl_downloading">Pobiera się na telefon</string>
     <string name="cat_on_servers">Na serwerach</string>
 </resources>
