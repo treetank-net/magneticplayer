@@ -56,8 +56,12 @@ object Tasks {
         if (t.state == "cancelled") return ctx.getString(R.string.lib_notif_cancelled)
         val n = t.itemsDone
         val main = when (t.kind) {
-            "shrink" -> r.getQuantityString(R.plurals.lib_notif_shrank, n, n, humanBytes(t.saved))
+            // old formats and damaged sound may grow the files: "saved -386 MB" would read as a bug
+            "shrink" -> if (t.saved > 0) r.getQuantityString(R.plurals.lib_notif_shrank, n, n, humanBytes(t.saved))
+                else r.getQuantityString(R.plurals.lib_notif_updated, n, n)
             "trash" -> r.getQuantityString(R.plurals.lib_notif_deleted, n, n)
+            "subs" -> ctx.getString(R.string.lib_task_subs, t.fixed, t.unfit)  // used to say "Moved N items"
+            "subs_get" -> r.getQuantityString(R.plurals.lib_notif_subs_got, n, n)
             else -> r.getQuantityString(R.plurals.lib_notif_moved, n, n)
         }
         return if (t.errors > 0) main + ", " + r.getQuantityString(R.plurals.lib_errors, t.errors, t.errors) else main

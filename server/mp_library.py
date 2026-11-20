@@ -215,7 +215,9 @@ class Library:
             for r in lib:
                 r.setdefault("id", secrets.token_hex(3))
             self.save_cfg()
-        return [dict(r, index=i, exists=os.path.isdir(r["path"]), tags=r.get("tags") or [], visible=r.get("visible") or "all",
+        # a hand-edited config may lack "name": the folder's own name, as on the first run
+        return [dict(r, name=r.get("name") or os.path.basename(r["path"].rstrip("/\\")) or r["path"],
+                     index=i, exists=os.path.isdir(r["path"]), tags=r.get("tags") or [], visible=r.get("visible") or "all",
                      exclude=r.get("exclude") or [], replicate_to=r.get("replicate_to"),
                      **({"replica": REPLICA[r["id"]]} if r.get("replicate_to") and r["id"] in REPLICA else {}))
                 for i, r in enumerate(lib)]

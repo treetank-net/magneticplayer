@@ -205,6 +205,18 @@
         <item quantity="many">Zmniejszono %1$d plików, zaoszczędzono %2$s</item>
         <item quantity="other">Zmniejszono %1$d pliku, zaoszczędzono %2$s</item>
     </plurals>
+    <plurals name="lib_notif_updated">
+        <item quantity="one">Zaktualizowano %1$d plik</item>
+        <item quantity="few">Zaktualizowano %1$d pliki</item>
+        <item quantity="many">Zaktualizowano %1$d plików</item>
+        <item quantity="other">Zaktualizowano %1$d pliku</item>
+    </plurals>
+    <plurals name="lib_notif_subs_got">
+        <item quantity="one">Szukano napisów do %1$d filmu</item>
+        <item quantity="few">Szukano napisów do %1$d filmów</item>
+        <item quantity="many">Szukano napisów do %1$d filmów</item>
+        <item quantity="other">Szukano napisów do %1$d filmu</item>
+    </plurals>
     <plurals name="lib_notif_deleted">
         <item quantity="one">Usunięto %1$d pozycję</item>
         <item quantity="few">Usunięto %1$d pozycje</item>

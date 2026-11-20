@@ -386,6 +386,16 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       Polish not seen.
 - [ ] "Get subtitles" from Disks / a folder: the language dialog's button says "Preview" (it only opens the preview);
       from a film's menu it still says "Download" (it starts at once). Next app; compiled only.
+- [x] A whole "Update old formats" task on synthetic DivX 3 files (a throwaway agent on the laptop, 2026-11-20,
+      emulator, v1.261120.1625): preview (2 items, the 20 MB file left out as a sample), the task card with progress,
+      current file, Cancel and "Stop monitoring", the progress notification (a few seconds behind the card), the
+      originals in the trash (2 files, 198 MB, "Empty trash"), the card "Done · saved 152 MB" and the final
+      notification.
+- [ ] The final notification of a task says what it did: "Updated N files" when an old-format/sound task made the
+      files bigger (was "Shrank N files, saved -386 MB"), "Fitted: X · don't fit: Y" for Subtitles and "Looked for
+      subtitles for N videos" for Get subtitles (both said "Moved N items"). Next app; compiled only.
+- [ ] A library folder without "name" in a hand-edited config no longer breaks the library, the catalog and the
+      wish list (KeyError 'name', 500); the folder's own name is used (agent 1.15.3). Seen on the throwaway agent.
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
