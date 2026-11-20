@@ -428,27 +428,27 @@ only after seeing it on the phone next to its board (EN and PL).
 ### Stage 1 (agent 1.16.0 + the next app): element by element, next to the boards
 
 **A1. Disks and tidy-up: task list (replaces the actions in `DisksScreen`)**
-- [ ] header "Disks and tidy-up", back arrow;
+- [x] header "Disks and tidy-up", back arrow (2026-11-20, emulator against jmpc, v1.261120.2138);
 - [ ] scope bar "Scope: whole computer · Narrow…"; Narrow… opens a picker with three combinable filters (folder, category, age group) and a title search; applying it opens E2;
-- [ ] "Background work: N running, M waiting ›" row → C4;
-- [ ] disk bars (name, bar, "X free of Y");
+- [x] "Background work: N running, M waiting ›" row → C4 (2026-11-20, emulator against jmpc, v1.261120.2138);
+- [x] disk bars (name, bar, "X free of Y") (2026-11-20, emulator against jmpc, v1.261120.2138);
 - [ ] headings with a one-line explanation: **Tidy up · move and delete**, **Renovation · changes files, original to the trash**, **Subtitles**, **Catalog · doesn't touch files**;
 - [ ] one row per task: name, one-line description, counter or state on the right in the accent colour ("2 to move", "39% / 42% free", "32 groups · 20 GB", "not needed" greyed, "14 files", "5 in 4K", "412 files", "9 files", "1113 items", "578", "11 to check" in the warning colour); a "Trash · originals after changes, 14 days · 12 GB" row;
 - [ ] "ADVANCED" label and the Re-encode row at the end of Renovation;
-- [ ] every row opens its own screen; none expands in place.
+- [x] every row opens its own screen; none expands in place (2026-11-20, emulator against jmpc, v1.261120.2138).
 
 **A4. Duplicates**
-- [ ] description: removes extra copies; at least one of each group stays;
+- [x] description: removes extra copies; at least one of each group stays (2026-11-20, emulator against jmpc, v1.261120.2138);
 - [ ] "WHAT IS A DUPLICATE" chips with hint: same files / same film in other versions (from the catalog);
-- [ ] "WHICH COPY TO KEEP": in the fitting folder / better quality / on the disk with space / I'll choose;
+- [x] "WHICH COPY TO KEEP": in the fitting folder / better quality / on the disk with space / I'll choose (2026-11-20, emulator against jmpc, v1.261120.2138);
 - [ ] found summary; "Seeding in the torrent client: N. Shown, but deleted in the client.";
 - [ ] "Checked in the background today at HH:MM · check now";
 - [ ] "Preview".
 
 **A5. Free up space**
 - [ ] description: deletes titles from a disk (to the trash); doesn't re-encode or move;
-- [ ] "DISK" chips with free percentage;
-- [ ] "HOW MUCH" chips 50 / 100 / 250 GB / to 15% free, with the "already X% free: nothing to do" warning;
+- [x] "DISK" chips with free percentage (2026-11-20, emulator against jmpc, v1.261120.2138);
+- [x] "HOW MUCH" chips 50 / 100 / 250 GB / to 15% free, with the "already X% free: nothing to do" warning (2026-11-20, emulator against jmpc, v1.261120.2138);
 - [ ] "WHAT FIRST": watched by everyone, oldest first / largest files; skip "keep" and running series;
 - [ ] "INSTEAD OF DELETING" links with amounts to Downscale, Balance and Duplicates (links only), with the note that they are separate tasks;
 - [ ] "Preview".
@@ -500,11 +500,22 @@ only after seeing it on the phone next to its board (EN and PL).
 - [ ] "Preview".
 
 **E2. Optimise: tasks for a scope**
-- [ ] header "Optimise" ("Optymalizacja"), back to where it came from;
+- [x] header "Optimise" ("Optymalizacja"), back to where it came from (2026-11-20, emulator against jmpc, v1.261120.2138);
 - [ ] scope bar "Scope: <label>", "<N files · size · missing M>", "✕ whole computer" → A1;
 - [ ] the same headings and rows as A1, counters from F1 for the scope;
 - [ ] a task with nothing to do in the scope: greyed, "nothing to do", not hidden; disk-wide tasks (balance, free up, trash) replaced by the one-line note that they are on the whole-computer list;
 - [ ] opening a task keeps the scope (F6 scope bar instead of the folder picker); the created task carries the scope label (C4).
+
+**Emulator run (2026-11-20, v1.261120.2138 against jmpc, EN and PL)**: A1, A4, A5, B1, B2, B4, C1, C2, E2 (folder
+scope), D3, D4 (add via API, edit kind in the app → saved on the agent with `kind`/`open`, delete), D5 (⋮ menu,
+Select bar) open and show live counters. Found and fixed for the next tag:
+- [ ] B1 examples said "0 frame errors" for checks from before 1.16 (the agent sends null): now only the codec;
+- [ ] B1 preview offered an encoder choice and "saves 0 B" (sound fix copies the picture): gone;
+- [ ] A4 "Seeding in the torrent client: 0" shown at zero: now hidden;
+- [ ] C1 preselected only the first subtitle language, so its count (961) didn't match A1 (1732): all languages
+  preselected.
+Not checked on the emulator: D6 (needs a downloaded episode), starting a task, B3 with files above 1080p (none on
+jmpc). Typing fast into text fields loses characters on the emulator (slow typing works): an emulator artefact.
 
 **Where agent 1.16.0 differs from the boards (decide or fix later)**
 - "Watched" means streamed from this server since 1.16.0 (`played.json`, empty at first). The phones don't report what

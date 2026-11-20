@@ -672,7 +672,8 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
     val kind = r.optString("kind")
     val items = remember(planId) { r.objects("items") }
     val skipped = remember(planId) { r.objects("skipped") }
-    val encoders = remember(planId) { if (kind in ENCODE_KINDS) r.objects("encoders") else emptyList() }
+    // fixing the sound copies the picture: no encoder to choose
+    val encoders = remember(planId) { if (kind in ENCODE_KINDS && kind != "audio_fix") r.objects("encoders") else emptyList() }
     var picked by remember(planId) { mutableStateOf(items.indices.filter { !items[it].optBoolean("unsure") }.toSet()) }
     var showSkipped by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
@@ -758,11 +759,13 @@ private fun PlanSummary(r: JSONObject, count: Int) {
     }
     // agent 1.16+: the scope the plan was made for
     r.optStr("scope_label")?.let { lines += stringResource(R.string.job_scope, it) }
-    if (kind in ENCODE_KINDS) {
+    if (kind in ENCODE_KINDS && kind != "audio_fix") {
         lines += stringResource(R.string.lib_sum_shrink, humanBytes(r.optLong("bytes")), humanBytes(r.optLong("est")),
             humanBytes(r.optLong("saved")))
         lines += stringResource(R.string.lib_sum_hours, String.format(java.util.Locale.ROOT, "%.1f", r.optDouble("hours", 0.0)))
         r.optStr("encoder")?.let { lines += stringResource(R.string.lib_sum_encoder, it) }
+    } else if (kind == "audio_fix") {
+        lines += stringResource(R.string.lib_sum_hours, String.format(java.util.Locale.ROOT, "%.1f", r.optDouble("hours", 0.0)))
     }
     if (kind == "subs") {
         lines += stringResource(R.string.lib_sum_subs_time, r.optInt("minutes"))

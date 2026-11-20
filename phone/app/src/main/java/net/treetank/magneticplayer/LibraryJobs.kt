@@ -712,7 +712,7 @@ private fun DupesJob(c: JobCtx) {
                 val n = x?.optInt("titles") ?: 0
                 Text(pluralStringResource(R.plurals.job_dupes_found_titles, n, n, humanBytes(x?.optLong("saving") ?: 0L)), style = MaterialTheme.typography.bodyMedium)
             }
-            Note(stringResource(R.string.job_dupes_seeding, o.optInt("seeding")))
+            if (o.optInt("seeding") > 0) Note(stringResource(R.string.job_dupes_seeding, o.optInt("seeding")))
             // "check now" runs the preview, which checks every file again
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Note(checkedLine(load.info?.checkedAt))
@@ -858,8 +858,9 @@ private fun AudioFixJob(c: JobCtx) {
         }
         if (n > 0) Section(stringResource(R.string.job_files)) {
             Examples(o.list("examples"), n) { x ->
-                val e = x.optInt("errors")
-                pluralStringResource(R.plurals.job_audio_errors, e, x.optString("codec").uppercase(), e)
+                // null: checked before agent 1.16, which didn't count the damaged frames
+                if (x.isNull("errors")) x.optString("codec").uppercase()
+                else x.optInt("errors").let { e -> pluralStringResource(R.plurals.job_audio_errors, e, x.optString("codec").uppercase(), e) }
             }
         }
         Section(stringResource(R.string.job_settings)) {
@@ -1048,7 +1049,7 @@ private fun SubsGetJob(c: JobCtx) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val mine = remember { subLanguages(c.api) }
-    var langs by choice("sg.langs", setOf(mine.first()))
+    var langs by choice("sg.langs", mine.toSet())  // all of them, as the A1 counter
     var which by choice("sg.which", "no_subs")
     var order by choice("sg.order", "recent")
     var folders by choice("sg.folders", emptySet<Pair<Int, String>>())
