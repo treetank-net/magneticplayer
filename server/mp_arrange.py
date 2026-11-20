@@ -196,14 +196,55 @@ def units(m, roots_by_id, catalog=None, lang="en", facts=None, title_tags=None):
         g = it.get("group") or ""
         group = g if g.lower() not in own and not DECADE.fullmatch(g) else None  # "Films/" is no category
         cat = group or ("Anime" if "anime" in tags or "anime" in {g.lower() for g in it.get("genres") or []} else None)
+        kids_folder = bool(SYNONYMS["kids"] & set(tags))
         out.append({"key": key, "root_id": r["id"], "root": r["index"], "root_name": r["name"], "rel": rel,
                     "full": os.path.join(r["path"], rel), "dir": is_dir, "size": it.get("size") or 0,
                     "kind": it.get("kind") or "movie", "imdb": it.get("imdb"), "title": it.get("title"),
                     "year": it.get("year"), "genres": it.get("genres") or [], "category": cat,
                     "age": mp_scope.age_group(m.age_of(it)), "collection": coll, "tags": tags,
+                    "for_kids": for_kids(it.get("genres"), d, kids_folder, m.age_of(it)),
                     "audio": sound_langs(facts, r["id"], rel, is_dir, fidx),
                     "hand_tags": [str(t).lower() for t in title_tags.get(it.get("imdb") or "", [])]})
     return out
+
+
+DARK = {"Horror", "Thriller", "Crime", "War"}
+
+
+def for_kids(genres, wd, in_kids_folder, age=None):
+    """Whether a title belongs with the cartoons ("kids"), not just whether its age rating is low (a comedy rated 6
+    is no cartoon): Wikidata calls it a children's film or its intended public children, or it is animated without
+    dark genres (and either "Family" or an age rating: unrated animation may be adult anime). "Family" alone
+    (live-action fairy tales) is undecided: it stays where it is, as does a title nothing is known about. A title
+    already in a kids folder stays a kids title: the catalog only adds cartoons, it never takes one out."""
+    g, wd = set(genres or []), wd or {}
+    if in_kids_folder:
+        return True  # put there by a person; the catalog's match may be wrong (a 1961 cartoon taken for its remake)
+    if wd.get("kids"):
+        return True
+    if "Animation" in g or wd.get("animated"):
+        if g & DARK:
+            return False
+        return True if "Family" in g or age is not None else in_kids_folder
+    if "Family" in g and not g & DARK:
+        return in_kids_folder
+    if g or "animated" in wd:
+        return False
+    return in_kids_folder
+
+
+def bucket(u, ages):
+    """The age folder of a title: "kids", "teens" or None. The `ages` mapping applies to the age rating, but "kids"
+    only takes titles for children (for_kids): a live-action film rated 6 stays with the films, and a cartoon rated 12
+    or without a rating goes to the kids."""
+    age = u.get("age")
+    b = ages.get(str(age)) if age is not None else None
+    kids = u.get("for_kids")
+    if kids and (age is None or age <= 12) and b != "kids":
+        return "kids"
+    if b == "kids" and kids is False:
+        return None
+    return b if b in ("kids", "teens") else None
 
 
 def title_facts(u, top, ages):
@@ -211,8 +252,8 @@ def title_facts(u, top, ages):
     f = set(SYNONYMS["series" if u["kind"] == "series" else "movie"])
     if top:
         f |= SYNONYMS.get(top[0], set()) | ({top[0][4:]} if top[0].startswith("cat:") else set())
-    if u.get("age") is not None and ages.get(str(u["age"])) in ("kids", "teens"):
-        f |= SYNONYMS[ages[str(u["age"])]]
+    if bucket(u, ages):
+        f |= SYNONYMS[bucket(u, ages)]
     if (u.get("category") or "").lower() == "anime":
         f.add("anime")
     f |= set(u.get("hand_tags") or [])
@@ -230,8 +271,8 @@ def components(u, levels, ages, nm):
     top = None
     if "category" in levels and u["category"]:
         top = ("cat:" + u["category"].lower(), _clean(u["category"]))
-    elif "age" in levels and u["age"] is not None and ages.get(str(u["age"])) in ("kids", "teens"):
-        b = ages[str(u["age"])]
+    elif "age" in levels and bucket(u, ages):
+        b = bucket(u, ages)
         top = (b, nm[b])
     elif "kind" in levels:
         top = (u["kind"], nm["series" if u["kind"] == "series" else "movie"])

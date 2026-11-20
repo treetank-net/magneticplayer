@@ -342,7 +342,7 @@ class Catalog:
             with self.lock:
                 ids = sorted({i["imdb"] for i in self.items.values() if i.get("imdb")})
             # agent 1.17+: entries fetched before the film series (P179, folder layout) was asked for are fetched again
-            ids = [i for i in ids if now - (self.wd.get(i) or {}).get("at", 0) > WD_TTL or "series" not in (self.wd.get(i) or {})]
+            ids = [i for i in ids if now - (self.wd.get(i) or {}).get("at", 0) > WD_TTL or "animated" not in (self.wd.get(i) or {})]
         for k in range(0, len(ids), WD_BATCH):
             self._fetch(ids[k:k + WD_BATCH])
             self.version += 1
@@ -389,7 +389,10 @@ class Catalog:
                 if role_q and not role:
                     need.add(role_q)
             ages = [mp_ident.WD_AGE[a] for a in items("P1657") + items("P1981") if a in mp_ident.WD_AGE]
-            d = {"at": now, "qid": qid.get(imdb), "cast": cast, "dir": [x for x in items("P57") if x][:3],
+            genre, inst = set(items("P136")), set(items("P31"))
+            d = {"kids": bool(genre & mp_ident.WD_KIDS or set(items("P2360")) & mp_ident.WD_CHILDREN),  # 1.17.1+
+                 "animated": bool((genre | inst) & mp_ident.WD_ANIM),
+                 "at": now, "qid": qid.get(imdb), "cast": cast, "dir": [x for x in items("P57") if x][:3],
                  "topics": [x for x in items("P921") if x][:8], "age": max(ages) if ages else None,
                  "series": [x for x in items("P179") if x][:2],  # film series ("part of the series"), 1.17+
                  "pl": (e.get("labels", {}).get("pl") or {}).get("value"),

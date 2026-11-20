@@ -686,6 +686,13 @@ on real data, previews only, nothing started or confirmed:
   stays). Checked only on synthetic units in Python. On jmpc the Polish/English cartoon folders still have only
   `bajki`: they need `pl` / `en` added (owner's OK) before the layout preview can show it. Also: MCP `set_title_tags`
   (hand tags, e.g. `pl` for a title whose dub has no language tag) not called yet.
+  2026-11-21, jmpc: tags `pl`/`en` added to the two cartoon folders with the owner's OK; layout preview only (not
+  run): the Polish folder untouched, English cartoons go to the English folder ("bajki + en").
+- [ ] Agent 1.17.1: the Kids group = titles for children, not every low age rating (the owner's point: live-action
+  comedies rated 6 went into the cartoon folders). Layout preview on jmpc (2026-11-21): only animated titles go to
+  the cartoon folders now, nothing leaves them. Left: a folder holding a live-action fantasy film was matched to its
+  1970s animated namesake and still goes to the cartoons; misrecognised titles with a year prefix ("1961 - Title"
+  matched to the 1996 remake) — a recognition bug of its own, to fix in the catalog.
 - [ ] "Continue watching": a film's tile played at once instead of opening its page (the 2026-11-19 wish covered only
   series). Now every tile opens the title page; a film watched part-way shows "▶ Resume from 1:02:10" there.
 - [ ] not seen yet: scope entry points (stage 3), pause/resume/reorder of a running task, D2 search buttons with

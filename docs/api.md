@@ -248,6 +248,11 @@ New plan kinds for `POST /api/library/plan`:
   their synonyms, age groups, `anime`, `muzyka`/`music` and sound languages (`pl`, `en`, `de`, `fr`, `es`, `it`, `ru`,
   `ja`, `uk`, `cs`; from the facts scan, or set by hand); other folder tags don't count. An unknown sound language or a
   tie leaves the title in its folder. The item's `why` names the winning tags, e.g. "(bajki + pl)".
+  Also 1.17.1+: the `kids` age group takes only titles for children, not every low age rating: Wikidata says
+  children's film (P136) or intended public children (P2360), or the title is animated without dark genres (with
+  "Family" or an age rating; unrated animation may be adult anime). A live-action film rated 6 stays with the films,
+  a cartoon rated 12 or unrated goes to the kids. A title already in a kids folder stays a kids title (the catalog's
+  match may be wrong), and "Family" alone (live-action fairy tales) stays where it is.
   Result: `items` (op `move` with `to_root`, `to_name`, `to_sub`, `torrent`, `titles` = titles in that torrent,
   `unsure`, `why` = the destination, `prune` = empty folders left behind are removed, `same_disk: true`), `levels`,
   `ages`, `confirmed`, `hand_folders`, `stats` (`unsure`, `seeding`, `kept`), `skipped`, `eta`. A task with only

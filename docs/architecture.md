@@ -362,7 +362,9 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    are picked like CSS specificity (1.17.1+): a folder fits only when the title has every one of its tags (`bajki` +
    `pl` = a cartoon with Polish sound), and the fit with the most tags wins. Title tags come from the kind, the age
    group, the category, sound languages from the facts scan (a track without a language makes them unknown) and tags
-   set by hand (`title_tags`, MCP `set_title_tags`); an unknown language or a tie keeps the title where it is. Its moves are same-disk renames, so the task is
+   set by hand (`title_tags`, MCP `set_title_tags`); an unknown language or a tie keeps the title where it is. The
+   Kids group is "for children", not "low age rating": a children's film or intended public children in Wikidata, or
+   animation without dark genres (`for_kids()`); titles already in a kids folder stay there. Its moves are same-disk renames, so the task is
    **quick**: it runs between two files of a running encode instead of waiting behind it, and removes the folders it
    empties. The catalog looks into the layout's own folders (`Films/`, `Kids/`, a decade) and into decade folders, so
    a title keeps being a title after it moved there. `balance` moves whole titles between disks into the folder with
