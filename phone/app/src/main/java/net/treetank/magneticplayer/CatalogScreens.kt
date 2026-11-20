@@ -82,6 +82,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -408,13 +409,24 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
 @Composable
 private fun HeroCarousel(c: CatCtx, slides: List<Pair<String, CatItem>>) {
     val pager = androidx.compose.foundation.pager.rememberPagerState { slides.size }
+    // a finger on the hero (about to tap "Play", reading, swiping) holds the turning for 15 s: a slide must never
+    // change under a tap and start another title than the one looked at
+    var touched by remember { mutableStateOf(0L) }
     if (slides.size > 1) LaunchedEffect(pager, slides) {
         while (true) {
             kotlinx.coroutines.delay(8000)
-            if (!pager.isScrollInProgress) pager.animateScrollToPage((pager.currentPage + 1) % slides.size)
+            if (!pager.isScrollInProgress && System.currentTimeMillis() - touched > 15_000)
+                pager.animateScrollToPage((pager.currentPage + 1) % slides.size)
         }
     }
-    Column {
+    Column(Modifier.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                touched = System.currentTimeMillis()
+            }
+        }
+    }) {
         androidx.compose.foundation.pager.HorizontalPager(pager, key = { slides[it].second.id }) { i ->
             Hero(c, slides[i].second, slides[i].first)
         }
@@ -433,9 +445,12 @@ private fun Hero(c: CatCtx, x: CatItem, label: String) {
     val ctx = LocalContext.current
     Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp)).clickable { c.open(x) }) {
         SyntheticCover("", null, x.genres, Modifier.fillMaxSize(), corner = 18.dp, art = x.art(), wide = true, artSrv = x.srv)
+        // a dark fade under the texts: a bright poster made the label and the title hard to read
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.3f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.75f))))
         Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
-            Text(label.uppercase(Locale.getDefault()), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = Color(0xFFFFDAD6), fontSize = 12.sp, letterSpacing = 1.5.sp)
+            Text(label.uppercase(Locale.getDefault()), Modifier.clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.6f))
+                .padding(horizontal = 6.dp, vertical = 2.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
             Text(x.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, lineHeight = 30.sp, maxLines = 2,
                 overflow = TextOverflow.Ellipsis)
             Text(listOfNotNull(yearMinutes(x.year, x.minutes).ifEmpty { null },

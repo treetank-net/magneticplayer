@@ -107,6 +107,8 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var settings: Settings
     private lateinit var api: Api
     private lateinit var ref: MediaRef
+    /** The recognised name of a library video once known (libraryTitle), else the file name is shown. */
+    private var shownTitle: String? = null
     private lateinit var url: String
     private var subs: List<SubFile> = emptyList()
     private var prefetchJob: Job? = null
@@ -160,6 +162,12 @@ class PlayerActivity : ComponentActivity() {
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         texts.addView(android.widget.TextView(this).apply {
             text = ref.title
+            // the recognised name ("Series · S2 E3", "Film (1968)") as on the Remote, from the phone's catalog copy
+            val tv = this
+            lifecycleScope.launch {
+                val t = withContext(Dispatchers.IO) { runCatching { libraryTitle(this@PlayerActivity, ref) }.getOrNull() }
+                if (t != null) { tv.text = t; shownTitle = t }
+            }
             setTextColor(Color.WHITE)
             textSize = 16f
             maxLines = 1
@@ -276,6 +284,13 @@ class PlayerActivity : ComponentActivity() {
                     }
                     return
                 }
+                // the sound's decoder gave up (damaged MP3 frames of an old AVI, copied as they were): it's the sound,
+                // not the picture; the picture can go on without it, VLC skips such frames
+                val ex = error as? androidx.media3.exoplayer.ExoPlaybackException
+                if (ex?.type == androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER && androidx.media3.common.MimeTypes.isAudio(ex.rendererFormat?.sampleMimeType) && !audioOff) {
+                    onAudioFailed(p, ex.rendererFormat?.sampleMimeType?.substringAfter('/')?.let { if (it == "mpeg") "mp3" else it })
+                    return
+                }
                 // any other error (a decoder that chokes, e.g. DivX 3 that the AVI extractor passes off as MPEG-4,
                 // ends as "stuck buffering"): the computer's version may still play, so we offer it once
                 if (!noVideoHandled && !altSource && Api.of(this@PlayerActivity, ref.srv) != null) {
@@ -348,6 +363,27 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private var noVideoHandled = false
+    private var audioOff = false
+
+    /** The audio decoder failed: say so (not "can't show the picture") and offer the picture without sound, or VLC. */
+    private fun onAudioFailed(p: ExoPlayer, codec: String?) {
+        val pos = p.currentPosition
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.media_player_no_audio_title)
+            .setMessage(getString(R.string.media_player_no_audio, (codec ?: "?").uppercase()))
+            .setPositiveButton(R.string.media_player_without_sound) { _, _ ->
+                audioOff = true
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
+                p.seekTo(pos)
+                p.prepare()
+                p.playWhenReady = true
+            }
+            .setNegativeButton("VLC") { _, _ ->
+                openInVlc(this, url, ref.title, subs.firstOrNull()?.let { api.subUrl(ref, it.name) })
+            }
+            .setNeutralButton(R.string.media_cancel) { _, _ -> finish() }
+            .show()
+    }
     private var loading: android.widget.ProgressBar? = null
     private var resumeSync = false
     private var altSource = false
@@ -710,7 +746,7 @@ class PlayerActivity : ComponentActivity() {
                 .build()
         }
         return MediaItem.Builder().setUri(url).setCustomCacheKey(key)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(ref.title).build())
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(shownTitle ?: ref.title).build())
             .setSubtitleConfigurations(subConfigs)
             .build()
     }

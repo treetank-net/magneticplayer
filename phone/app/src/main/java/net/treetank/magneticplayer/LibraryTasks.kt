@@ -100,6 +100,7 @@ object Covers {
         cache.get(k)?.let { return it }
         val got = api.cover(root, path, wide) ?: run { missing += k; return null }
         val bytes = got.bytes
+        if (!wide) CoverStore.keep(api.s.ctx, api.srv.key, root, path, bytes, got.frame)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         var sample = 1

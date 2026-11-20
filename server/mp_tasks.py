@@ -1431,7 +1431,13 @@ class Tasks:
             enc = p.meta.get("enc") or enc
         else:
             _rm(part)
-            cmd = self._shrink_cmd(full, part, info, pr, enc)
+            # an audio track copied as is must decode cleanly: damaged MP3 frames in an old AVI ("Header missing")
+            # are skipped by ffmpeg but stop a phone's decoder, and the copied track kept the whole film silent there
+            broken = {a["index"] for a in _audio_keep(info, pr["audio"])
+                      if _audio_codec(a, pr["audio"]) == ["copy"] and _audio_damaged(full, a)}
+            if broken:
+                self.log(f"shrink: {os.path.basename(full)}: audio track(s) {sorted(broken)} don't decode cleanly, re-encoded")
+            cmd = self._shrink_cmd(full, part, info, pr, enc, broken)
             self.log("shrink:", os.path.basename(full), i["profile"], enc)
             os.makedirs(self.encodes, exist_ok=True)
             p = mp_detached.Detached.start(self.encodes, cmd, {"part": part, "full": full, "enc": enc}, "shrink")
@@ -1578,7 +1584,7 @@ class Tasks:
                 _signal(p, "SIGSTOP")
                 done.wait(SAME_DISK_DUTY[1])
 
-    def _shrink_cmd(self, full, out, info, pr, enc="cpu"):
+    def _shrink_cmd(self, full, out, info, pr, enc="cpu", broken=()):
         v = info["video"]
         h = min(v.get("height") or pr.get("height", 0), pr.get("height", 1 << 16))
         # even dimensions: old AVIs can be 351 px wide, and 4:2:0 HEVC/H.264 needs both even
@@ -1601,6 +1607,10 @@ class Tasks:
             cmd += ["-tag:v", "hvc1"]
         for n, a in enumerate(keep):
             how = _audio_codec(a, pr["audio"])
+            if a["index"] in broken:
+                # re-encoded (AAC plays everywhere); the gaps of the skipped frames are filled so the sound stays in sync
+                how = ["aac", "-b:a", "384k" if (a.get("channels") or 2) > 2 else "192k"]
+                cmd += [f"-filter:a:{n}", "aresample=async=1:first_pts=0"]
             cmd += [f"-c:a:{n}", *how]
         cmd += ["-c:s", "copy", "-max_muxing_queue_size", "4096", "-progress", "pipe:1", "-nostats", "-f", "matroska", out]
         return _nice(cmd)
@@ -1886,6 +1896,16 @@ def _lang2(code):
         except Exception:  # noqa: BLE001
             pass
     return "" if c in ("und", "mul", "zxx") else c
+
+
+def _audio_damaged(full, a):
+    """The audio track `a` of `full` has frames its decoder rejects (a full decode of that track only)."""
+    try:
+        r = subprocess.run(_nice(["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-i", full, "-map", f"0:a:{a['index']}",
+                                  "-f", "null", "-"]), capture_output=True, text=True, timeout=3600)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return any(ln.startswith("[") and not ln.startswith("[null @") for ln in r.stderr.splitlines())
 
 
 def _audio_keep(info, mode):

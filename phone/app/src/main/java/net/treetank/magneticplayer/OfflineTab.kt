@@ -87,7 +87,7 @@ fun OfflineTab(onPlaying: () -> Unit = {}) {
     val canScreen = true  // mpv screens, Chromecasts, DLNA TVs: the picker shows what is on the network
     val subsAsk = remember { SubsAsk() }
     SubsAskDialog(subsAsk)
-    fun playOn(item: OfflineItem, key: String?, cast: CastTarget?, tv: DlnaTarget? = null) = scope.launch {
+    fun playOn(item: OfflineItem, key: String?, cast: CastTarget?, tv: DlnaTarget? = null) = Screens.ui.launch {
         opening = ctx.getString(R.string.media_opening)
         try {
             if (cast != null) Screens.cast(ctx, item.ref, cast, null, subsAsk::ask) { opening = it }

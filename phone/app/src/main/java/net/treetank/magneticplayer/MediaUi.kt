@@ -86,7 +86,7 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
     var opening by remember { mutableStateOf<String?>(null) }
     val screens = remember { Servers.screens(ctx) }
     val subsAsk = remember { SubsAsk() }
-    fun playOn(key: String?, cast: CastTarget? = null, tv: DlnaTarget? = null) = scope.launch {
+    fun playOn(key: String?, cast: CastTarget? = null, tv: DlnaTarget? = null) = Screens.ui.launch {
         opening = ctx.getString(R.string.media_opening)
         try {
             if (cast != null) Screens.cast(ctx, ref, cast, null, subsAsk::ask) { opening = it }

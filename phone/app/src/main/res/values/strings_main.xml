@@ -165,4 +165,16 @@
     <string name="main_confirm_foreign_stop_desc">Spotify, YouTube and others: “Stop” closes the app on the TV</string>
     <string name="main_notif_confirm_stop">Tap ■ again to close %1$s</string>
     <string name="main_all_status">%1$d of %2$d servers on</string>
+    <string name="main_covers_title">Covers on this phone</string>
+    <string name="main_covers_desc">While the server answers, covers come from it. What the phone keeps shows without the server too.</string>
+    <string name="main_covers_none">Don\'t keep</string>
+    <string name="main_covers_none_desc">Nothing on the phone; without the server, drawn covers</string>
+    <string name="main_covers_tiny">Tiny previews</string>
+    <string name="main_covers_tiny_desc">A blurred preview of every title, a few hundred KB for the whole library</string>
+    <string name="main_covers_full">Full covers</string>
+    <string name="main_covers_full_desc">Every cover at card size, tens of KB each</string>
+    <plurals name="main_covers_usage">
+        <item quantity="one">%1$d cover kept, %2$s</item>
+        <item quantity="other">%1$d covers kept, %2$s</item>
+    </plurals>
 </resources>

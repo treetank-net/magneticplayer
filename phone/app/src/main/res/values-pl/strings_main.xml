@@ -165,4 +165,18 @@
     <string name="main_confirm_foreign_stop_desc">Spotify, YouTube i inne: „Zakończ” zamyka aplikację na telewizorze</string>
     <string name="main_notif_confirm_stop">Dotknij ■ jeszcze raz, żeby zamknąć %1$s</string>
     <string name="main_all_status">Działa %1$d z %2$d serwerów</string>
+    <string name="main_covers_title">Okładki na telefonie</string>
+    <string name="main_covers_desc">Gdy serwer odpowiada, okładki przychodzą z niego. To, co telefon zachowa, widać też bez serwera.</string>
+    <string name="main_covers_none">Nie zapisuj</string>
+    <string name="main_covers_none_desc">Nic na telefonie; bez serwera rysowane okładki</string>
+    <string name="main_covers_tiny">Miniatury</string>
+    <string name="main_covers_tiny_desc">Rozmyty podgląd każdego tytułu, kilkaset KB na całą bibliotekę</string>
+    <string name="main_covers_full">Pełne okładki</string>
+    <string name="main_covers_full_desc">Każda okładka w rozmiarze karty, po kilkadziesiąt KB</string>
+    <plurals name="main_covers_usage">
+        <item quantity="one">%1$d okładka zapisana, %2$s</item>
+        <item quantity="few">%1$d okładki zapisane, %2$s</item>
+        <item quantity="many">%1$d okładek zapisanych, %2$s</item>
+        <item quantity="other">%1$d okładki zapisanej, %2$s</item>
+    </plurals>
 </resources>

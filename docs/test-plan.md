@@ -281,6 +281,23 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       server chips; chips only with two or more such servers. A true merged list is deferred (each client has its own
       actions and settings). (2026-11-20, Pixel, v1.261120.1000) No chips (only jmpc has a torrent client).
 
+## Since v1.261120.1000 (agent 1.14.5 + the next app)
+
+- [ ] Shrink: a copied audio track that doesn't decode cleanly (damaged MP3 frames from an old AVI) is re-encoded to
+      AAC instead of copied (agent 1.14.5; the phone's MP3 decoder stops on such frames). [ ] On jmpc with a real run.
+- [ ] Recognition: "<Collection 2> - 03 - <Title>" style names give the film's own title, not the collection's
+      (agent 1.14.5, `ITEM_V` 4 re-identifies the catalog). Checked on names only; [ ] covers and years in the app.
+- [ ] Player: a damaged audio track no longer shows "the phone can't show this picture (HEVC)": a dialog "Telefon
+      nie odtworzy tego dźwięku" with "Bez dźwięku" (picture only, same position), VLC, Cancel. Reproduce with the
+      season 2 extra whose MP3 audio is damaged in the original.
+- [ ] Player title: the recognised name ("Series · S2 E3", "Film (1968)") from the cached catalog, not the file name.
+- [ ] Settings → "Okładki na telefonie": none (always from the server), tiny (~1 KB each, blurred, like a message
+      preview), full; the usage line; switching to none deletes them, to tiny shrinks them. Offline cold start shows
+      kept covers.
+- [ ] Discover hero: a touch holds the carousel for 15 s; a dark scrim under the text; the label is white on a dark chip.
+- [ ] "Play on jmpc" from a folder switches to the Remote (the launch no longer dies with the folder screen).
+- [ ] Server picker: "Wszystkie serwery" reads "Biblioteka, foldery i pobierania ze wszystkich".
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a

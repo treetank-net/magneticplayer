@@ -364,4 +364,7 @@
     <string name="media_magnet_named_moving">Recognized: moving to its folder on %1$s.</string>
     <string name="media_magnet_named">Recognized, but the folder is unsure: check it below.</string>
     <string name="media_magnet_name_later">Added. It will be recognized and moved to its folder once the name is known (you can close this).</string>
+    <string name="media_player_no_audio_title">The phone can\'t play this sound</string>
+    <string name="media_player_no_audio">The sound of this file (%1$s) has damaged parts the phone\'s decoder stops at. The picture can play without sound; VLC skips such parts.</string>
+    <string name="media_player_without_sound">Without sound</string>
 </resources>

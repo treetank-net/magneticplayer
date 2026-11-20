@@ -243,7 +243,8 @@ object CatalogCache {
         if (got == null) {
             synced[key] = System.currentTimeMillis()
             runCatching { f.setLastModified(synced[key]!!) }
-            return old!!
+            CoverStore.sync(ctx, api, old!!)
+            return old
         }
         val (fresh, raw) = got
         data[key] = fresh
@@ -255,6 +256,7 @@ object CatalogCache {
             tmp.renameTo(f)
         }
         version.value++
+        CoverStore.sync(ctx, api, fresh)
         return fresh
     }
 

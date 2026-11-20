@@ -72,6 +72,8 @@ import androidx.compose.material.icons.filled.Tv
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.RadioButton
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -1228,6 +1230,8 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
         HorizontalDivider()
         BufferSettings(s)
         HorizontalDivider()
+        CoverSettings()
+        HorizontalDivider()
         var keepScreen by remember { mutableStateOf(s.pilotKeepScreen) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -1260,6 +1264,41 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
 fun copyText(ctx: Context, label: String, text: String) {
     (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
         .setPrimaryClip(android.content.ClipData.newPlainText(label, text))
+}
+
+/** Which covers the phone keeps on its disk (CoverStore): none, tiny ones of every title, or full ones. */
+@Composable
+private fun CoverSettings() {
+    val ctx = LocalContext.current
+    var mode by remember { mutableStateOf(CoverStore.mode(ctx)) }
+    val usage by produceState<Pair<Long, Int>?>(null, mode) {
+        // a while after a change: the old files go and the background fetch starts at the next catalog refresh
+        while (true) {
+            value = withContext(Dispatchers.IO) { CoverStore.usage(ctx) }
+            kotlinx.coroutines.delay(5000)
+        }
+    }
+    Text(stringResource(R.string.main_covers_title), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.main_covers_desc), style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    listOf(
+        Triple(CoverStore.NONE, R.string.main_covers_none, R.string.main_covers_none_desc),
+        Triple(CoverStore.TINY, R.string.main_covers_tiny, R.string.main_covers_tiny_desc),
+        Triple(CoverStore.FULL, R.string.main_covers_full, R.string.main_covers_full_desc),
+    ).forEach { (m, label, desc) ->
+        Row(Modifier.fillMaxWidth().clickable { mode = m; CoverStore.setMode(ctx, m) }.padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(mode == m, { mode = m; CoverStore.setMode(ctx, m) })
+            Column {
+                Text(stringResource(label))
+                Text(stringResource(desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+    usage?.takeIf { mode != CoverStore.NONE }?.let { (bytes, n) ->
+        Text(pluralStringResource(R.plurals.main_covers_usage, n, n, humanBytes(bytes)), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 /** Disk buffer (PlayerActivity.prefetch, MediaCache); takes effect from the next time a video is opened. */

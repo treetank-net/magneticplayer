@@ -68,6 +68,11 @@ class Settings(ctx: Context) {
     fun setFolderSubShift(folder: String, provider: String, seconds: Double) =
         p.edit().putString("subshift:$folder", "$provider|$seconds").apply()
 
+    /** covers kept on the phone: CoverStore.NONE / TINY / FULL */
+    var coverStore: String
+        get() = p.getString("cover_store", CoverStore.NONE) ?: CoverStore.NONE
+        set(v) = p.edit().putString("cover_store", v).apply()
+
     /** how many minutes of video the app downloads ahead onto the phone's disk (MediaCache) */
     var bufferMinutes: Int
         get() = p.getInt("buffer_min", 5)

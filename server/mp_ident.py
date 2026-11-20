@@ -345,7 +345,25 @@ def wd_kids(w):
     return True if w["animated"] and w["family"] else None
 
 
+COLLECTION = re.compile(r"^(?P<c>.+?\d)\s+-\s+\d{1,3}\s+-\s+(?P<t>.+)$")
+
+
 def _guessit(name):
+    # "<Collection 2> - 19 - <Title> (1995)": numbered films of a collection; guessit takes the collection's name for
+    # the title (every film got the collection's name). The film's own part counts when it has a year or the collection
+    # ends with a number (a series' "Show - 01 - Pilot" has neither and stays as it was).
+    m = COLLECTION.match(name)
+    if m:
+        g = _guessit_raw(m.group("t"))
+        if g.get("title") and (g.get("year") or re.search(r"\d$", m.group("c"))):
+            g["type"] = "movie"
+            for k in ("season", "episode", "episode_title"):
+                g.pop(k, None)
+            return g
+    return _guessit_raw(name)
+
+
+def _guessit_raw(name):
     try:
         import guessit  # in the agent venv (a subliminal dependency)
         g = dict(guessit.guessit(name))

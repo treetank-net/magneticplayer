@@ -384,4 +384,7 @@
     <string name="media_magnet_named_moving">Rozpoznane: przenoszę do właściwego katalogu na %1$s.</string>
     <string name="media_magnet_named">Rozpoznane, ale katalog niepewny: sprawdź poniżej.</string>
     <string name="media_magnet_name_later">Dodane. Zostanie rozpoznane i przeniesione do katalogu, gdy nazwa będzie znana (możesz zamknąć).</string>
+    <string name="media_player_no_audio_title">Telefon nie odtworzy tego dźwięku</string>
+    <string name="media_player_no_audio">Dźwięk tego pliku (%1$s) ma uszkodzone fragmenty, na których dekoder telefonu staje. Obraz może grać bez dźwięku; VLC takie fragmenty pomija.</string>
+    <string name="media_player_without_sound">Bez dźwięku</string>
 </resources>

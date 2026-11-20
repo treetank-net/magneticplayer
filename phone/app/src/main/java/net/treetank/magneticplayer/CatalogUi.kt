@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -103,13 +104,19 @@ fun SyntheticCover(title: String, year: Int?, genres: List<String>, modifier: Mo
     val api = (if (artSrv.isEmpty() || artSrv == base?.srv?.key) base else forSrv(artSrv))?.takeIf { art != null && it.srv.libraryCovers }
     val k = if (api != null && art != null) Covers.key(api, art.first, art.second, wide) else null
     var bmp by remember(k) { mutableStateOf(k?.let { Covers.cached(it) }) }
-    if (k != null && bmp == null && !Covers.isMissing(k)) LaunchedEffect(k) {
+    // a cover kept on the phone (Settings → covers): shown at once, also without the server; a tiny one blurred
+    var kept by remember(k) { mutableStateOf<Triple<android.graphics.Bitmap, Boolean, Boolean>?>(null) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    if (k != null && bmp == null) LaunchedEffect(k) {
+        kept = withContext(Dispatchers.IO) { runCatching { CoverStore.read(ctx, api!!.srv.key, art!!.first, art.second) }.getOrNull() }
+        if (Covers.isMissing(k)) return@LaunchedEffect
         bmp = withContext(Dispatchers.IO) {
             runCatching { Covers.load(api!!, art!!.first, art.second, if (wide) 720 else 300, wide) }.getOrNull()
         }
     }
-    val pic = bmp
-    val frame = pic != null && k != null && Covers.isFrame(k)
+    val pic = bmp ?: kept?.first
+    val blurred = bmp == null && kept?.third == true
+    val frame = pic != null && k != null && (if (bmp != null) Covers.isFrame(k) else kept?.second == true)
     Box(modifier.clip(RoundedCornerShape(corner))) {
         if (pic == null) Canvas(Modifier.fillMaxSize()) {
             // about 160°: mostly top to bottom, light → dark → almost black
@@ -119,7 +126,7 @@ fun SyntheticCover(title: String, year: Int?, genres: List<String>, modifier: Mo
             drawCircle(Color.White.copy(alpha = 0.14f), r, Offset(size.width * 0.8f, size.height * 0.18f))
             drawCircle(Color.White.copy(alpha = 0.06f), r * 1.6f, Offset(size.width * 0.8f, size.height * 0.18f))
         } else {
-            Image(pic.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+            Image(pic.asImageBitmap(), null, Modifier.fillMaxSize().let { if (blurred) it.blur(6.dp) else it }, contentScale = ContentScale.Crop,
                 colorFilter = if (missing) androidx.compose.ui.graphics.ColorFilter.colorMatrix(
                     androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) else null)
             // a frame has no title of its own: a tint of the genre's colour and a dark fade at the bottom carry it
@@ -321,6 +328,24 @@ fun InfoBadge(text: String) {
 }
 
 /** Plays a catalog item on the phone (the same activity as the library's "Phone" button); [imdb] enables "What next". */
+/**
+ * A library video's recognised name for the player, as the agent gives mpv and the Remote: "Series · S2 E3",
+ * "Film (1968)"; null when this phone's copy of the catalog doesn't know it (the file name stays). Reads the catalog
+ * from disk when it isn't in memory: call off the main thread.
+ */
+fun libraryTitle(ctx: android.content.Context, ref: MediaRef): String? {
+    if (ref !is MediaRef.InLibrary) return null
+    val cat = CatalogCache.cached(ctx, ref.srv) ?: return null
+    val it = cat.items.firstOrNull { x -> x.root == ref.root && (x.path == ref.path || (x.dir != null && ref.path.startsWith(x.dir + "/"))) }
+        ?: return null
+    if (it.series) {
+        val name = ref.path.substringAfterLast('/')
+        val m = Regex("""(?i)\bS(\d{1,2})[ ._-]?E(\d{1,3})""").find(name) ?: Regex("""\b(\d{1,2})x(\d{2,3})\b""").find(name)
+        return if (m != null) "${it.title} · S${m.groupValues[1].toInt()} E${m.groupValues[2].toInt()}" else it.title
+    }
+    return if (it.year != null) "${it.title} (${it.year})" else it.title
+}
+
 fun playOnPhone(ctx: android.content.Context, ref: MediaRef, imdb: String?, kind: String) {
     ctx.startActivity(PlayerActivity.intent(ctx, ref, imdb.takeIf { kind == "movie" }))
 }

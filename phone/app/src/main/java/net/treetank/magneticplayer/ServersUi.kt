@@ -95,6 +95,13 @@ private val WARN = Color(0xFFF2B84B)
 
 object Screens {
     /**
+     * Where "play on a screen/TV" runs: not the button's composition scope. The button's list can be rebuilt while the
+     * screen starts (the Remote's state changes under it), which cancelled the job after mpv had started and before the
+     * app switched to the Remote: the app stayed on the folder.
+     */
+    val ui = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
+
+    /**
      * Plays `ref` on screen `screenKey` (mpv on a server), waking it if needed. Same server: a local file
      * as before. Different one: a URL with a ticket from the file server or from the phone ([source]). Remembers the screen for Remote.
      * [ask]: "No subtitles in <language>, download?" (null = only where they are fetched without asking, see [ensureChosenSubs]);
