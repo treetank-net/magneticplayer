@@ -693,8 +693,9 @@ on real data, previews only, nothing started or confirmed:
   the cartoon folders now, nothing leaves them. Left: a folder holding a live-action fantasy film was matched to its
   1970s animated namesake and still goes to the cartoons; misrecognised titles with a year prefix ("1961 - Title"
   matched to the 1996 remake) — a recognition bug of its own, to fix in the catalog.
-- [ ] "Continue watching": a film's tile played at once instead of opening its page (the 2026-11-19 wish covered only
-  series). Now every tile opens the title page; a film watched part-way shows "▶ Resume from 1:02:10" there.
+- [x] "Continue watching": a film's tile played at once instead of opening its page (the 2026-11-19 wish covered only
+  series). Now every tile opens the title page; a film watched part-way shows "▶ Resume from 1:02:10" there. (2026-11-21, emulator,
+  debug build of main before the tag: tile → title page with "Resume from 0:59", which resumed at 1:00)
 - [ ] not seen yet: scope entry points (stage 3), pause/resume/reorder of a running task, D2 search buttons with
   engines set, PL wording of the new screens.
 
