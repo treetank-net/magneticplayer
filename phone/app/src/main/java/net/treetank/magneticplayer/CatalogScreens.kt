@@ -1078,12 +1078,11 @@ private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
             } else {
                 // SEARCH: one button per site and "Set up search sites ›" (D4, Back returns here); no site: only the link
                 val phrase = listOfNotNull(t.title, t.year?.toString()).joinToString(" ")
-                val sites = engines.filter { it.kind != "subtitles" }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.cat_search).uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     EngineRow(engines, phrase, t.imdb, onSetUp = { c.push(Nav.engines()) })
-                    if (sites.isNotEmpty()) Text(stringResource(R.string.d2_phrase, phrase), style = MaterialTheme.typography.bodySmall,
+                    if (engines.isNotEmpty()) Text(stringResource(R.string.d2_phrase, phrase), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1107,7 +1106,6 @@ private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
-            if (why != null) MetaRow(stringResource(R.string.cat_why)) { Text(why) }
             // SIMILAR · YOU HAVE N: covers marked "on disk" / "you don't have"
             val sim = similar.orEmpty().distinctBy { it.imdb }.sortedByDescending { it.have }.take(12)
             if (sim.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1127,15 +1125,6 @@ private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
                             Text(stringResource(if (s.have) R.string.d2_on_disk else R.string.d2_not_have), style = MaterialTheme.typography.labelSmall,
                                 color = if (s.have) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    }
-                }
-            }
-            if (t.cast.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.cat_cast), style = MaterialTheme.typography.titleMedium)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(t.cast.take(20), key = { it.first }) { (q, name, role) ->
-                        val n = cat?.items?.count { q in it.cast } ?: 0
-                        PersonTile(name, if (n > 0) stringResource(R.string.cat_in_collection_n, n) else role) { c.push(Nav.person(q)) }
                     }
                 }
             }

@@ -574,19 +574,21 @@ only after seeing it on the phone next to its board (EN and PL).
 **D2. A title you don't have** (boards BrakTytulu)
 - [ ] header "← You don't have it on your disks"; back returns where it came from (search, person, what next, list);
 - [ ] cover beside the title, "year · minutes · ★ rating", "kind · genres · age+", "dir. <name>" (opens the person);
-- [ ] "SEARCH": one button per search site (torrents and video kinds), "Set up search sites ›" in the same row
-  (opens D4, back returns here); with no site only the link;
-- [ ] the phrase line "Phrase: “Title Year”. Pick a result in the browser…" (only with sites); a site set to "In the
-  app" opens the in-app browser, "In the browser" the system browser, both with the phrase;
+- [ ] "SEARCH": one button per household search site, every kind (subtitle sites too), "Set up search sites ›" in
+  the same row (opens D4, back returns here); with no site only the link;
+- [ ] the phrase line "Phrase: „Title Year”. Pick a result in the browser; the magnet comes back to the app and lands
+  in this title (right folder from tags)." / „Fraza: „Tytuł Rok”. Wybierz wynik w przeglądarce, a magnet wróci…”
+  (only with sites); each site opens per its setting ("In the app": in-app browser, "In the browser": the system
+  browser), all with the same phrase "Title Year";
 - [ ] "Want to watch" (filled; "On your list" once added, tap again removes) and "Paste magnet" side by side;
 - [ ] the description: the lead of the Wikipedia article (Polish phone: the Polish article when there is one) with
   "Source: Wikipedia"; absent offline or without an article (agent 1.16.1+);
 - [ ] "SIMILAR · YOU HAVE N": covers marked "on disk" / "you don't have", on-disk ones first; tap opens the title
   page or another D2 (appears after "What next" answers, up to ~10 s the first time);
 - [ ] a title that is on the disks after all: header "On your disks" and "Open" instead of the search block.
-- Differences from the board: the cover is the drawn one (no poster images are fetched); subtitle sites are not
-  among the buttons (they belong to "Get subtitles"); the cast row stays under "Similar"; "why" (from what next)
-  stays as a line.
+- [ ] nothing below "Similar": no cast row, no "Why" line (not on the board).
+- Differences from the board: the cover is the drawn one (no poster images are fetched); the board's second note
+  (how "Set up search sites" behaves) is a design note, not shown.
 
 
 ## Noted wishes

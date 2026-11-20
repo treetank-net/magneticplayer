@@ -22,7 +22,7 @@
     <!-- D2: a title you don't have -->
     <string name="d2_header_missing">You don\'t have it on your disks</string>
     <string name="d2_dir">dir. %1$s</string>
-    <string name="d2_phrase">Phrase: “%1$s”. Pick a result in the browser and the magnet comes back to the app and lands in this title (the right folder from the tags).</string>
+    <string name="d2_phrase">Phrase: „%1$s”. Pick a result in the browser; the magnet comes back to the app and lands in this title (right folder from tags).</string>
     <string name="d2_similar">SIMILAR · YOU HAVE %1$d</string>
     <string name="d2_on_disk">on disk</string>
     <string name="d2_not_have">you don\'t have</string>
