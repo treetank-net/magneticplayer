@@ -152,8 +152,7 @@ suspend fun fetchSubtitles(
         job = null
         // the next episode: the same source as this one's subtitles first (same translator, same timing habits)
         val results = found?.results.orEmpty().filter { it.key !in have }
-            .sortedWith(compareByDescending<SubResult> { it.provider == preferProvider }.thenByDescending { it.hashMatch }
-                .thenByDescending { it.score })
+            .sortedWith(compareBy<SubResult> { it.machine }.thenByDescending { it.provider == preferProvider }.then(SUB_RANK))
         var got: SubsDownloaded? = null
         for ((k, r) in results.take(3).withIndex()) {
             val trying = ctx.getString(R.string.media_psubs_trying, k + 1, minOf(3, results.size),
@@ -621,7 +620,7 @@ private fun LanguagePage(
                     style = MaterialTheme.typography.bodyMedium)
                 if (busy != null && api.srv.hasSubsFit) Text(phase ?: stringResource(R.string.media_subs_fitting),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                f.results.sortedWith(compareByDescending<SubResult> { it.hashMatch }.thenByDescending { it.score }).forEach { r ->
+                f.results.sortedWith(SUB_RANK).forEach { r ->
                     val mine = haveByKey[r.key]
                     SubRow(r, busy, have = mine != null, status = phase) {
                         if (mine != null) { onChoose(mine); return@SubRow }  // already on disk: switch, no download
@@ -742,9 +741,30 @@ private fun SubRow(r: SubResult, busy: String?, have: Boolean, status: String? =
         }
         if (r.release.isNotEmpty()) Text(r.release, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (busy == r.key && status != null) Text(status, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        if (r.hi) Text(stringResource(R.string.media_subs_hi), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val notes = listOfNotNull(
+            r.downloads.takeIf { it > 0 }?.let { stringResource(R.string.media_subs_downloads, compactNumber(it)) },
+            if (r.trusted) stringResource(R.string.media_subs_trusted) else null,
+            if (r.hi) stringResource(R.string.media_subs_hi) else null,
+        )
+        if (notes.isNotEmpty()) Text(notes.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // warnings: likely worse than the rest (the list puts them lower)
+        val warn = listOfNotNull(
+            if (r.machine) stringResource(R.string.media_subs_machine) else null,
+            if (r.fpsOff && r.fps != null) stringResource(R.string.media_subs_fps_off, fpsText(r.fps)) else null,
+        )
+        if (warn.isNotEmpty()) Text(warn.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error)
     }
 }
+
+/** 12345 → "12K" / "12 tys." (the phone's language). */
+private fun compactNumber(n: Int): String =
+    android.icu.text.CompactDecimalFormat.getInstance(java.util.Locale.getDefault(),
+        android.icu.text.CompactDecimalFormat.CompactStyle.SHORT).format(n.toLong())
+
+private fun fpsText(f: Double): String =
+    if (f == Math.floor(f)) f.toInt().toString() else String.format(java.util.Locale.getDefault(), "%.3f", f).trimEnd('0')
 
 // ---------------------------------------------------------------- missing subtitles for a film, a series, the library
 

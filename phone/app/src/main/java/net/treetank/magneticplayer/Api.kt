@@ -298,9 +298,17 @@ data class SubsProgress(
 data class SubResult(
     val id: String, val provider: String, val lang: String, val release: String, val score: Int,
     val hashMatch: Boolean, val hi: Boolean,
+    // agent 1.17.3+, from the provider's own listing (OpenSubtitles): 0 / false / null when unknown
+    val downloads: Int = 0, val machine: Boolean = false, val trusted: Boolean = false,
+    val fps: Double? = null, val fpsOff: Boolean = false,
 ) {
     val key get() = "$provider:$id"
 }
+
+/** Best first, as the agent sorts (mp_subs.rank_key): not machine-translated, hash match, the film's frame rate, score,
+ *  trusted uploader, downloads. */
+val SUB_RANK: Comparator<SubResult> = compareBy<SubResult> { it.machine }.thenBy { !it.hashMatch }.thenBy { it.fpsOff }
+    .thenByDescending { it.score }.thenBy { !it.trusted }.thenByDescending { it.downloads }
 /** `fit` (agent 1.9+): good / unsure / bad = how these subtitles fit this copy of the film (speech detection), null = not checked */
 data class SubFile(
     val name: String, val lang: String, val ext: String, val fit: String? = null,
@@ -875,7 +883,9 @@ class Api(val s: Settings, srv: Server) {
             SubsFound(r.optString("query"), r.optString("title"), r.optInt("year").takeIf { it > 0 }, List(a.length()) { i ->
                 val x = a.getJSONObject(i)
                 SubResult(x.getString("id"), x.optString("provider"), x.optString("lang"), x.optString("release"),
-                    x.optInt("score"), x.optBoolean("hash_match"), x.optBoolean("hi"))
+                    x.optInt("score"), x.optBoolean("hash_match"), x.optBoolean("hi"), x.optInt("downloads"),
+                    x.optBoolean("machine"), x.optBoolean("trusted"), x.optDouble("fps").takeIf { !it.isNaN() && it > 0 },
+                    x.optBoolean("fps_off"))
             }, r.optInt("hidden"))
         }
         return SubsProgress(o.optString("phase"), o.optInt("round", 1), o.optString("query").takeIf { it.isNotEmpty() && it != "null" },

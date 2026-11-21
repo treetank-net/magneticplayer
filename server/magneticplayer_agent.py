@@ -55,12 +55,12 @@ import mp_ident
 import mp_episodes
 import mp_library
 from mp_library import Library, LibError, sidecar_subs
-from mp_subs import Subtitles, SubsError, readable_srt
+from mp_subs import Subtitles, SubsError, readable_srt, rank_key as subs_rank_key
 import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.17.2"
+VERSION = "1.17.3"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -240,8 +240,8 @@ class App:
         return res
 
     def fetch_best_subs(self, full, lang, prefer=None):
-        """As the app's "Download: <language>": search one language, try the best results (`prefer`'s provider first,
-        then a hash match, then the score) until one fits this copy (at most 3); results already here are skipped.
+        """As the app's "Download: <language>": search one language, try the best results (no machine translation,
+        `prefer`'s provider first, then `mp_subs.rank_key`: hash match, same frame rate, score, trusted, downloads) until one fits this copy (at most 3); results already here are skipped.
         The download result, or None when nothing was found (task "download missing subtitles")."""
         d = os.path.dirname(full)
         have = set()
@@ -255,7 +255,7 @@ class App:
             log("subtitles: search failed for", os.path.basename(full), e)
             return None
         cands = [r for r in found.get("results") or [] if r.get("lang") == lang and f"{r['provider']}:{r['id']}" not in have]
-        cands.sort(key=lambda r: (r["provider"] != prefer, not r.get("hash_match"), -(r.get("score") or 0)))
+        cands.sort(key=lambda r: (bool(r.get("machine")), r["provider"] != prefer, *subs_rank_key(r)))
         got = None
         for r in cands[:3]:
             try:

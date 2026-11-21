@@ -46,8 +46,51 @@ def _subliminal():
         except ImportError:
             raise SubsError(T("subliminal is missing — run server/install.sh again", "brak subliminal — uruchom ponownie server/install.sh"), 500)
         subliminal.region.configure("dogpile.cache.memory")
+        _keep_oscom_attributes()
         _sl = (subliminal, Language)
     return _sl
+
+
+def _keep_oscom_attributes():
+    """subliminal reads only part of an OpenSubtitles.com result (trusted uploader, AI translation and the uploader's
+    rank are commented out): keep the raw attributes on the subtitle so the list can show them."""
+    try:
+        from subliminal.providers.opensubtitlescom import OpenSubtitlesComSubtitle as C
+    except Exception:  # noqa: BLE001 — another subliminal version: the extra signals are simply missing
+        return
+    if getattr(C.from_response, "_mp", False):
+        return
+    orig = C.from_response.__func__
+
+    def from_response(cls, response, **kw):
+        sub = orig(cls, response, **kw)
+        sub.mp_attributes = response.get("attributes") or {}
+        return sub
+    from_response._mp = True
+    C.from_response = classmethod(from_response)
+
+
+def signals(s, video_fps=None):
+    """What the search result itself says about a subtitle: downloads, machine translation, trusted uploader,
+    frame rate (a different one than the video's usually means another release, out of sync), the film's IMDb id."""
+    a = getattr(s, "mp_attributes", None) or {}
+    fps = getattr(s, "fps", None) or None
+    imdb = getattr(s, "movie_imdb_id", None) or getattr(s, "series_imdb_id", None)
+    out = {"downloads": int(getattr(s, "download_count", 0) or 0),
+           "machine": bool(getattr(s, "machine_translated", False) or a.get("ai_translated")),
+           "trusted": bool(a.get("from_trusted")), "fps": round(fps, 3) if fps else None,
+           "fps_off": bool(fps and video_fps and abs(fps - video_fps) > 0.05),
+           "imdb": imdb if imdb and str(imdb).startswith("tt") else None}
+    rank = (a.get("uploader") or {}).get("rank")
+    if rank:
+        out["rank"] = str(rank)
+    return out
+
+
+def rank_key(r):
+    """Best first (within a language): not machine-translated, hash match, same frame rate, score, trusted, downloads."""
+    return (bool(r.get("machine")), not r.get("hash_match"), bool(r.get("fps_off")), -r.get("score", 0),
+            not r.get("trusted"), -(r.get("downloads") or 0))
 
 
 _CUE = re.compile(r"(\d+):(\d\d):(\d\d)[,.](\d+)\s*-->\s*(\d+):(\d\d):(\d\d)[,.](\d+)[^\n]*\n(.*?)(?:\n\s*\n|\Z)", re.S)
@@ -267,6 +310,7 @@ class Subtitles:
                 break
         ex.shutdown(wait=False)
         found, results = {}, []
+        vfps = _video_fps(v.name) if any(getattr(s, "fps", None) for s in subs) else None
         if progress is not None:
             progress.update(phase="match", matched=0, total=len(subs))
         for i, s in enumerate(subs):
@@ -285,6 +329,7 @@ class Subtitles:
                 # a matching title/series and without a hash these are almost certainly subtitles for another film
                 "title_match": "hash" in matches or ("series" if self._is_episode(v) else "title") in matches
                 or bool(matches & {"imdb_id", "series_imdb_id"}),
+                **signals(s, vfps),
             })
         return found, results
 
@@ -400,7 +445,7 @@ class Subtitles:
         hidden = sum(1 for r in results if not r["title_match"])
         results = [r for r in results if r["title_match"]]
         order = [l.lower() for l in languages]
-        results.sort(key=lambda r: (order.index(r["lang"]) if r["lang"] in order else 99, -r["score"]))
+        results.sort(key=lambda r: (order.index(r["lang"]) if r["lang"] in order else 99, *rank_key(r)))
         with self.lock:
             self.cache[full] = (time.time(), v, found)
             for k in [k for k, c in self.cache.items() if time.time() - c[0] > 3600]:

@@ -117,6 +117,10 @@
     <string name="media_subs_prov_pending">waiting</string>
     <string name="media_subs_matches_file">matches the file</string>
     <string name="media_subs_hi">hearing impaired</string>
+    <string name="media_subs_downloads">%1$s downloads</string>
+    <string name="media_subs_trusted">trusted uploader</string>
+    <string name="media_subs_machine">machine translation</string>
+    <string name="media_subs_fps_off">made for %1$s fps, the film has another frame rate</string>
     <string name="media_offline_empty">Nothing on the phone yet. To watch a video without a network (on the go, away from home), open the video\'s ⋮ menu in the Library or on a torrent → “Download to phone”.</string>
     <string name="media_offline_delete_title">Delete from phone?</string>
     <string name="media_offline_delete_text">%1$s\n\nIt stays on the server.</string>

@@ -117,6 +117,10 @@
     <string name="media_subs_prov_pending">czeka</string>
     <string name="media_subs_matches_file">pasuje do pliku</string>
     <string name="media_subs_hi">dla niesłyszących</string>
+    <string name="media_subs_downloads">pobrania: %1$s</string>
+    <string name="media_subs_trusted">zaufany autor</string>
+    <string name="media_subs_machine">tłumaczenie maszynowe</string>
+    <string name="media_subs_fps_off">robione do %1$s fps, film ma inną liczbę klatek</string>
     <string name="media_offline_empty">Nic nie ma na telefonie. Żeby obejrzeć film bez sieci (w drodze, poza domem), w Bibliotece albo przy torrencie otwórz menu ⋮ filmu → „Pobierz na telefon”.</string>
     <string name="media_offline_delete_title">Usunąć z telefonu?</string>
     <string name="media_offline_delete_text">%1$s\n\nNa serwerze zostaje.</string>
