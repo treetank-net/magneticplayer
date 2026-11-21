@@ -433,7 +433,7 @@ def _guessit(name):
         if g.get("title") and norm(t) != norm(g["title"]) and norm(t).endswith(norm(g["title"])):
             g["title"] = t
         elif g.get("title") and g.get("year") and norm(t) == norm(f"{g['title']} {g['year']}"):
-            g["title"], g["year"] = t, None  # "2000 - Fantasia 2000": the number ends the title, the year is in front
+            g["title"], g["year"] = t, None  # "2000 - <Title> 2000": the number ends the title, the year is in front
         elif g.get("title") and (n := re.match(r"\d+\s", t)) and not g["title"].startswith(n.group(0)):
             g["title"] = n.group(0) + g["title"]  # "101 <Title> 2 - <subtitle>": the number goes back
         if g.get("title"):
