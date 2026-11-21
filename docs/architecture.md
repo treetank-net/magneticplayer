@@ -417,9 +417,16 @@ when nothing changed.
 
 ### Series (agent 1.10+)
 `GET /api/library/episodes` walks a series folder (3 levels) and `mp_ident.episodes()` orders it:
-- the number: `S01E02`, `1x02`, `Season 1 Episode 2`, `1.2` between dashes, otherwise the season from the name or a
-  folder (`Season 4`, `Sezon 4`, `S04`) and the episode from `E07`/`Episode 7`, a leading number (`1-Title`) or a lone
-  one (`Show_01_Title`); `(?<![A-Za-z0-9])` instead of `\b`, since `_` counts as a word character;
+- the number: `S01E02`, `S01.E02`, `1x02`, `Season 1 Episode 2`, `1.2` between dashes, `01.02`, otherwise the season
+  from the name or a folder (`Season 4`, `Sezon 4`, `S04`) and the episode from `E07`/`Episode 7`, a leading number
+  (`1-Title`) or a lone one (`Show_01_Title`); `(?<![A-Za-z0-9])` instead of `\b`, since `_` counts as a word
+  character; dates, audio channels (`5.1`) and codecs (`H.264`) are never episodes;
+- a lone number of 3-4 digits is read with the whole folder (`mp_ident.episode_nos`): `Show 105` is S1E05 when the
+  folder has several hundreds blocks each starting near x01 (101..112, 201..213) or the hundreds match the season
+  folder (`Season 2/Show 205`), but the 105th episode beside smaller numbers or in a block reaching past x60 (an
+  anime run 98, 99, 100, 101); with one block and nothing else to go by it stays absolute (`[Grp] Show - 105`). Alone,
+  `Show 0205` (a leading zero) is S2E05 and `Show 1012` has no number; years and resolutions never count. The title
+  for mpv (`Catalog.title_for`) reads the file with the other videos of its directory;
 - extras: folders like Extras, Featurettes, Deleted Scenes, Dodatki…, names with sample/trailer/featurette/gag reel,
   and small files without a number (under 15% of the biggest video);
 - order: season, episode, then natural name order; files with no number at all (specials, films of the series) last.
