@@ -33,7 +33,7 @@ G = {g: 1 << i for i, g in enumerate(GENRES)}
 VIDEO = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}
 AUDIO = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
 OTHER = {".iso", ".dmg", ".exe", ".deb", ".zip", ".rar", ".7z", ".cbr", ".cbz", ".pdf", ".epub"}
-EPISODE = re.compile(r"(?i)\bS\d{1,2}\s?E\d{1,3}\b|\b\d{1,2}x\d{2}\b|(?:^|[\s._-])E(?:p(?:isode)?)?\s?\d{1,3}(?:[\s._-]|$)|\bSeason\s?\d")
+EPISODE = re.compile(r"(?i)\bS\d{1,2}[\s.]?E\d{1,3}\b|\b\d{1,2}x\d{2}\b|(?:^|[\s._-])E(?:p(?:isode)?)?\s?\d{1,3}(?:[\s._-]|$)|\bSeason\s?\d")
 
 # folders and names of what comes with a series or a film but isn't part of it
 EXTRAS = re.compile(r"(?i)^(extras?|featurettes?|bonus(es)?|special[ ._-]?features?|behind[ ._-]?the[ ._-]?scenes|"
@@ -41,13 +41,17 @@ EXTRAS = re.compile(r"(?i)^(extras?|featurettes?|bonus(es)?|special[ ._-]?featur
                     r"materia(l|ł)y[ ._-]?dodatkowe)$")
 EXTRA_NAME = re.compile(r"(?i)(^|[\s._-])(sample|trailer|featurette|behind[ ._-]the[ ._-]scenes|making[ ._-]of|"
                         r"deleted[ ._-]scenes?|gag[ ._-]?reel|bloopers?)([\s._-]|$)")
-_SE = re.compile(r"(?i)(?<![A-Za-z0-9])S(\d{1,2})\s?E(\d{1,3})(?!\d)|(?<![A-Za-z0-9])(\d{1,2})x(\d{2})(?!\d)|"
+_SE = re.compile(r"(?i)(?<![A-Za-z0-9])S(\d{1,2})[\s.]?E(\d{1,3})(?!\d)|(?<![A-Za-z0-9])(\d{1,2})x(\d{2})(?!\d)|"
                  r"(?<![A-Za-z0-9])(?:season|sezon|series)[\s._-]?(\d{1,2})[\s._-]*(?:episode|ep|odcinek|odc)[\s._-]?(\d{1,3})(?!\d)|"
-                 r"(?:^|\s-\s)(\d{1,2})\.(\d{1,2})(?=\s|$)")
+                 r"(?:^|\s-\s)(\d{1,2})\.(\d{1,2})(?=\s|$)|(?<!\S)(\d\d)\.(\d\d)(?![^\s_-])")
 _SEASON = re.compile(r"(?i)(?<![A-Za-z0-9])(?:season|sezon|series|staffel|saison)[\s._-]?(\d{1,2})(?!\d)|^S(\d{1,2})$")
 _EP = re.compile(r"(?i)(?:^|[\s._-])(?:E|Ep|Episode|Odc(?:inek)?)[\s._-]?(\d{1,3})(?:[\s._-]|$)")
 _LEAD = re.compile(r"^(\d{1,3})(?=[\s._-]|$)")  # "1-She's Not There", "03 - Title"
 _BARE = re.compile(r"(?:^|[\s_-])(\d{1,3})(?=[\s_-]|$)")  # "Show_01_Title", "Show - 07 - Title"
+_NOT_EP = re.compile(r"(?i)(?<!\d)\d{1,4}[.-]\d{1,2}[.-]\d{2,4}(?!\d)|(?<!\d)[1-9]\.[0-2](?!\d)|\b[hx]\.?26[45]\b")
+# dates (12.05.2010), audio channels (5.1, DD2.0) and codecs (H.264), never episodes
+_BARE4 = re.compile(r"(?:^|[\s_-])(\d{4})(?=[\s_-]|$)")  # "Show 0205": SSEE, or an absolute number past 999
+_NOT_EP4 = re.compile(r"^(?:19\d\d|20\d\d|1080|1440|2160|0720|0480|0576)$")  # years and resolutions
 
 
 def is_extra(rel):
@@ -60,27 +64,88 @@ def _natural(s):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s.lower())]
 
 
-def episode_no(rel):
-    """(season, episode) from the path, either may be None."""
+def _parse(rel):
+    """(season, episode, raw) from the path. `raw` is the digit string when the episode is a lone number ("Show 205",
+    "Show 0205", "05 - Title"), whose meaning may depend on the folder; None for explicit forms (S02E05, E05)."""
     parts = rel.replace("\\", "/").split("/")
     name = os.path.splitext(parts[-1])[0]
     m = _SE.search(name)
     if m:
         g = [x for x in m.groups() if x is not None]
-        return int(g[0]), int(g[1])
+        return int(g[0]), int(g[1]), None
     if re.search(r"(?i)\bspecial\b", name):
-        return None, None  # a special without SxxEyy: after the numbered episodes
+        return None, None, None  # a special without SxxEyy: after the numbered episodes
     season = None
     for d in [name, *reversed(parts[:-1])]:
         m = _SEASON.search(d.strip())
         if m:
             season = int(m.group(1) or m.group(2))
             break
+    m = _EP.search(name)
+    if m:
+        return season, int(m.group(1)), None
     bare = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", name)  # no [group]/(year) numbers
-    bare = _SEASON.sub(" ", bare)
+    bare = _NOT_EP.sub(" ", _SEASON.sub(" ", bare))
     # "Show - 07 - Title", and "[Group].Show.07.Title" (dots for spaces)
-    m = _EP.search(name) or _LEAD.search(bare.strip()) or _BARE.search(bare) or _BARE.search(bare.replace(".", " "))
-    return season, int(m.group(1)) if m else None
+    m = _LEAD.search(bare.strip()) or _BARE.search(bare) or _BARE.search(bare.replace(".", " "))
+    if not m:
+        m = next((x for x in _BARE4.finditer(bare.replace(".", " ")) if not _NOT_EP4.match(x.group(1))), None)
+    return (season, int(m.group(1)), m.group(1)) if m else (season, None, None)
+
+
+def _resolve(season, ep, raw, coded):
+    """(season, episode) of a lone number. `coded`: True when the folder numbers episodes as SEE/SSEE (101..112,
+    201..213), False when it counts them absolutely (98, 99, 100, 101), None when unknown (a single file): then a
+    3-digit number stays absolute ("[Grp] Show - 105" in anime) unless its hundreds are the season from a folder
+    ("Season 2/Show 205"), and a 4-digit one is SSEE when it starts with a zero ("Show 0205")."""
+    if raw is None or ep < 100:
+        return season, ep
+    s, e = divmod(ep, 100)
+    if coded is None:
+        coded = s == season or (len(raw) == 4 and raw[0] == "0")
+        if not coded and len(raw) == 4:
+            return season, None  # "Show 1012": S10E12 or the 1012th, unknowable alone
+    return (s, e) if coded else (season, ep)
+
+
+def episode_no(rel, siblings=None):
+    """(season, episode) from the path, either may be None. A lone number of 3-4 digits is read in the light of
+    `siblings` (paths of the other videos of its folder, see `episode_nos`), or alone without them (see `_resolve`)."""
+    parsed = _parse(rel)
+    return _resolve(*parsed, _season_coded([parsed] + [_parse(p) for p in siblings or [] if p != rel]))
+
+
+def _season_coded(parsed):
+    """Whether a folder's lone numbers code the season in the hundreds (True), count episodes absolutely (False), or
+    don't tell (None). `parsed`: [(season, episode, raw)] of the folder's videos, as `_parse` gives.
+    Season-coded: 2+ hundreds blocks, each starting near x01 and running on without big gaps below x60 (101..112,
+    201..213), or every such number's hundreds equal to its season folder. Absolute: smaller numbers beside them or
+    a block reaching past x60 (a run like 98, 99, 100, 101)."""
+    nums = [(se, ep) for se, ep, raw in parsed if raw is not None]
+    big = [(se, ep) for se, ep in nums if ep >= 100]
+    if not big:
+        return None
+    low = {se for se, ep in nums if ep < 100}
+    if all(se == ep // 100 and se not in low for se, ep in big):
+        return True  # "Season 2/Show 205", and no "Season 2/Show 05" beside it
+    blocks = {}
+    for _, ep in big:
+        blocks.setdefault(ep // 100, set()).add(ep % 100)
+    small = len(nums) - len(big)
+    if any(max(b) > 60 for b in blocks.values()):
+        return False
+    if (len(blocks) >= 2 and small <= 0.2 * len(nums)
+            and all(min(b) <= 2 and len(b) >= 0.5 * (max(b) - min(b) + 1) for b in blocks.values())):
+        return True
+    return False if small else None
+
+
+def episode_nos(rels):
+    """(season, episode) of each path of one folder (a series with its season folders), lone 3-4 digit numbers read
+    in the light of the others: "Show 105" is S1E05 beside "Show 201", but the 105th episode beside "Show 99"."""
+    parsed = [_parse(r) for r in rels]
+    coded = _season_coded(parsed)
+    return [_resolve(*p, coded) for p in parsed]
 
 
 def numbered(files):
@@ -91,7 +156,7 @@ def numbered(files):
     if len(vids) < 3:
         return 0
     top = max(s for _, s in vids)
-    nums = [episode_no(p) for p, s in vids if s >= 0.15 * top]
+    nums = episode_nos([p for p, s in vids if s >= 0.15 * top])
     have = {x for x in nums if x[1] is not None}
     return len(have) if len(have) >= 3 and sum(x[1] is not None for x in nums) >= 0.8 * len(nums) else 0
 
@@ -118,8 +183,7 @@ def episodes(files):
         return [], []
     top = max(s for _, s in vids)
     eps, extras = [], []
-    for p, s in vids:
-        se, ep = episode_no(p)
+    for (p, s), (se, ep) in zip(vids, episode_nos([p for p, _ in vids])):
         x = {"path": p, "season": se, "episode": ep, "size": s}
         (extras if is_extra(p) or (s < 0.15 * top and ep is None) else eps).append(x)
     # numbered ones by season and episode; ones with no number at all (specials, films of the series) at the end

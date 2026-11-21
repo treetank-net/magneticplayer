@@ -220,7 +220,13 @@ class Catalog:
             return None
         t = it["title"]
         if it.get("kind") == "series":
-            se, ep = mp_ident.episode_no(rel)
+            d = rel.rsplit("/", 1)[0] if "/" in rel else ""
+            try:  # the other episodes beside it tell "Show 105" (S1E05) from the 105th episode
+                sib = [f"{d}/{n}" if d else n for n in os.listdir(os.path.dirname(full))
+                       if os.path.splitext(n)[1].lower() in mp_ident.VIDEO]
+            except OSError:
+                sib = []
+            se, ep = mp_ident.episode_no(rel, sib)
             return f"{t} · S{se} E{ep}" if se is not None and ep is not None else f"{t} · E{ep}" if ep is not None else t
         return f"{t} ({it['year']})" if it.get("year") else t
 
