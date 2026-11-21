@@ -250,7 +250,7 @@ class App:
             if src:
                 have.add(f"{src['provider']}:{src['id']}")
         try:
-            found = self.subs.search(full, [lang])
+            found = self.subs.search(full, [lang], known=self.catalog.known_for(full))
         except Exception as e:  # noqa: BLE001  (providers down, an unrecognised title)
             log("subtitles: search failed for", os.path.basename(full), e)
             return None

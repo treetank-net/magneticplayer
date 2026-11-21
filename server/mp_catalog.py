@@ -197,9 +197,8 @@ class Catalog:
                 out.append((top, fs, True, group))
         return out
 
-    def title_for(self, full):
-        """A library video's recognised name for screens (mpv's title, the Remote): "Series · S2 E3", "Film (1968)";
-        None when the catalog doesn't know it (the file name stays)."""
+    def _item_for(self, full):
+        """(rel, catalog item) of a library video, or (None, None)."""
         full = os.path.realpath(full)
         for r in self.library.roots():
             rp = os.path.realpath(r["path"])
@@ -210,14 +209,31 @@ class Catalog:
             with self.lock:
                 it = next((self.items.get(f"{r['id']}/{'/'.join(parts[:k])}") for k in range(len(parts), 0, -1)
                            if f"{r['id']}/{'/'.join(parts[:k])}" in self.items), None)
-            if not it or not it.get("title"):
-                return None
-            t = it["title"]
-            if it.get("kind") == "series":
-                se, ep = mp_ident.episode_no(rel)
-                return f"{t} · S{se} E{ep}" if se is not None and ep is not None else f"{t} · E{ep}" if ep is not None else t
-            return f"{t} ({it['year']})" if it.get("year") else t
-        return None
+            return rel, it
+        return None, None
+
+    def title_for(self, full):
+        """A library video's recognised name for screens (mpv's title, the Remote): "Series · S2 E3", "Film (1968)";
+        None when the catalog doesn't know it (the file name stays)."""
+        rel, it = self._item_for(full)
+        if not it or not it.get("title"):
+            return None
+        t = it["title"]
+        if it.get("kind") == "series":
+            se, ep = mp_ident.episode_no(rel)
+            return f"{t} · S{se} E{ep}" if se is not None and ep is not None else f"{t} · E{ep}" if ep is not None else t
+        return f"{t} ({it['year']})" if it.get("year") else t
+
+    def known_for(self, full):
+        """What the catalog knows of a video for a subtitle search (agent 1.17.2+): {"imdb", "kind", "year", "titles"
+        (IMDb's, then the English and Polish Wikidata labels)}, or None when it has no IMDb id."""
+        _, it = self._item_for(full)
+        if not it or not it.get("imdb"):
+            return None
+        with self.lock:
+            d = self.wd.get(it["imdb"]) or {}
+        titles = list(dict.fromkeys(x for x in (it.get("title"), d.get("en"), d.get("pl")) if x))
+        return {"imdb": it["imdb"], "kind": it.get("kind") or "movie", "year": it.get("year"), "titles": titles}
 
     def scan(self):
         roots = [r for r in self.library.roots() if r["exists"] and not set(r["tags"]) & (HIDDEN_TAGS | SKIP_TAGS)]

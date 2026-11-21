@@ -753,6 +753,11 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
   old vs new over all 730 catalog names on jmpc: 8 better, none worse. `ITEM_V` 8: the catalog redoes its items
   (no ffprobe). Still to see in the app: those titles with the right poster and year after the rescan.
 
+- [ ] Agent 1.17.2, subtitles (owner's report: a film in a collection folder found nothing until its title was typed
+  by hand): a last round with the catalog's titles, year and IMDb id. Checked through the API on jmpc (2026-11-21):
+  round 1 asked by the collection folder's name, round 2 by the catalog title found 25 matching results including
+  Polish ones (nothing downloaded). Not seen in the app yet; the round text is now "another round with the title …".
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a

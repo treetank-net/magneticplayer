@@ -49,12 +49,13 @@ def subs_search(req, a, **_):
     b = req.body()
     langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
     args = (a.resolve_ref(b), langs, (b.get("title") or "").strip() or None, b.get("year") or None)
+    args += (None if args[2] else a.catalog.known_for(args[0]),)  # the catalog's titles and IMDb id: a last round
     if mp_subsync.available():  # while the user looks at the results: the embedded track's times for fitting
         threading.Thread(target=bind(lambda f: (mp_subsync.embedded(f) if os.path.exists(f) else None)),
                          args=(args[0],), daemon=True).start()
     if b.get("async"):  # the app shows progress by polling /api/subs/job
         return req.send_json({"job": a.subs.start_search(*args)})
-    return req.send_json(a.subs.search(*args))
+    return req.send_json(a.subs.search(*args[:4], known=args[4]))
 
 
 def subs_job(req, a, qd, **_):

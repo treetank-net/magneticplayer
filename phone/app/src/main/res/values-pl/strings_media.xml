@@ -111,7 +111,7 @@
     <string name="media_subs_connecting">Łączę z komputerem…</string>
     <string name="media_subs_hashing">Liczę hash pliku i rozpoznaję tytuł…</string>
     <string name="media_subs_matching">Porównuję wyniki z plikiem: %1$d/%2$d</string>
-    <string name="media_subs_round2">Nic pasującego — druga runda z tytułem z nazwy: „%1$s”</string>
+    <string name="media_subs_round2">Nic pasującego — kolejna runda z tytułem „%1$s”</string>
     <string name="media_subs_searching">Szukam: „%1$s”</string>
     <string name="media_subs_prov_running">szukam…</string>
     <string name="media_subs_prov_pending">czeka</string>

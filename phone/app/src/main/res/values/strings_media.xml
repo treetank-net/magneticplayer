@@ -111,7 +111,7 @@
     <string name="media_subs_connecting">Connecting to the computer…</string>
     <string name="media_subs_hashing">Hashing the file and recognizing the title…</string>
     <string name="media_subs_matching">Matching results with the file: %1$d/%2$d</string>
-    <string name="media_subs_round2">Nothing matching — second round with the title from the name: “%1$s”</string>
+    <string name="media_subs_round2">Nothing matching — another round with the title “%1$s”</string>
     <string name="media_subs_searching">Searching: “%1$s”</string>
     <string name="media_subs_prov_running">searching…</string>
     <string name="media_subs_prov_pending">waiting</string>

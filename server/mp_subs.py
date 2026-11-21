@@ -283,12 +283,13 @@ class Subtitles:
                 "hash_match": "hash" in matches, "hi": bool(s.hearing_impaired),
                 # with no hits OpenSubtitles returns "something similar" (Der Golem → a completely different film) — without
                 # a matching title/series and without a hash these are almost certainly subtitles for another film
-                "title_match": "hash" in matches or ("series" if self._is_episode(v) else "title") in matches,
+                "title_match": "hash" in matches or ("series" if self._is_episode(v) else "title") in matches
+                or bool(matches & {"imdb_id", "series_imdb_id"}),
             })
         return found, results
 
     # ---- background search with progress (the app polls /api/subs/job)
-    def start_search(self, full, languages, title=None, year=None):
+    def start_search(self, full, languages, title=None, year=None, known=None):
         jid = uuid.uuid4().hex[:12]
         job = {"id": jid, "phase": "file", "started": time.time(), "done": False}
         with self.lock:
@@ -298,7 +299,7 @@ class Subtitles:
 
         def run():
             try:
-                job["result"] = self.search(full, languages, title, year, progress=job)
+                job["result"] = self.search(full, languages, title, year, progress=job, known=known)
             except SubsError as e:
                 job["error"] = str(e)
             except Exception as e:  # noqa: BLE001
@@ -344,7 +345,10 @@ class Subtitles:
         out["elapsed"] = round(time.time() - j["started"], 1)
         return out
 
-    def search(self, full, languages, title=None, year=None, progress=None):
+    def search(self, full, languages, title=None, year=None, progress=None, known=None):
+        """`known` (agent 1.17.2+, from the catalog: imdb, kind, year, titles): when the file's hash and name find
+        nothing for this title, one more round asks by the catalog's titles, year and IMDb id (what typing the title
+        by hand did: a file named oddly, a title only known in another language)."""
         progress = progress if progress is not None else {}
         _, Language = _subliminal()
         langs = set()
@@ -374,6 +378,24 @@ class Subtitles:
                 found, results = f2, r2
             else:
                 self._set_title(v, orig, None)
+        if known and known.get("titles") and not title and not progress.get("stop") \
+                and not any(r["title_match"] for r in results):
+            ep = self._is_episode(v)
+            orig, orig_year, orig_ids = (v.series if ep else v.title), getattr(v, "year", None), dict(v.external_ids or {})
+            v.external_ids = dict(orig_ids, **{"series_imdb_id" if ep else "imdb_id": known["imdb"]})
+            hit = False
+            for t in [t for t in known["titles"] if t != orig][:2] or known["titles"][:1]:
+                self._set_title(v, t, None if ep else known.get("year"))
+                progress.update(query=t, phase="search", round=2)  # the app: "second round with the title …"
+                f3, r3 = self._list(v, langs, progress, skip=BY_HASH_ONLY)
+                hit = any(r["title_match"] for r in r3)
+                if hit:
+                    found, results = f3, r3
+                if hit or progress.get("stop"):
+                    break
+            if not hit:
+                self._set_title(v, orig, None)
+                v.year, v.external_ids = orig_year, orig_ids
         names, _ = self.providers()
         hidden = sum(1 for r in results if not r["title_match"])
         results = [r for r in results if r["title_match"]]
