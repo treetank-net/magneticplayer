@@ -79,6 +79,12 @@ yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. Stage 8 
     age ratings: animation up to age 6 or live-action family from age 0 = kids): 90/92, the miss being an animated
     film rated FSK 12 that the user keeps under kids. Low confidence = the magnet dialog doesn't close by itself, and
     changing the folder ("Change") remembers the choice for that title.
+    Agent 1.17.2 (a test over all 730 names on jmpc, 8 fixed, nothing worse): an IMDb hit far from the name's year
+    (> 2 years) is another film of that name, so Wikidata decides and its film is taken when its year fits (an
+    original that IMDb lists under another title than its remake's); a title written twice in the name is taken once;
+    without a year a trailing "-group" is tried off; "<year> - <Title> <number>" keeps the number in the title when it
+    equals the leading year ("2000 - <Title> 2000"). A film's folder name counts only when the film is alone in it and the
+    years don't clash (a folder holding several films of a franchise gave each of them its newest film).
 16. **Storage profiles (lossy shrinking on request):** losslessly there's little to gain in video (on jmpc: samples
     0.1 GB, audio ~10% of the size, few DTS/extra tracks), so the real lever is re-encoding — but only where the user
     asks for it. Measured on jmpc (18.11): 222 GB of video in 250 files, mostly H.264 1080p at 4–5 Mb/s; the

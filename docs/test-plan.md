@@ -746,6 +746,13 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
   used only when the magnet's name (or the agent's recognition) contains the series' title.
 
 
+### Agent 1.17.2: recognition (2026-11-21)
+
+- [ ] Owner's report: a film in a franchise folder was catalogued as the newest film of that franchise (the folder
+  name decided), and a 1961 cartoon as its 1996 remake. Fixed in `mp_ident`/`mp_catalog` (see plan-library 15);
+  old vs new over all 730 catalog names on jmpc: 8 better, none worse. `ITEM_V` 8: the catalog redoes its items
+  (no ffprobe). Still to see in the app: those titles with the right poster and year after the rescan.
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a

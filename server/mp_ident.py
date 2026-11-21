@@ -432,6 +432,8 @@ def _guessit(name):
         t = re.split(r"[\[(]|\b(?:480|576|720|1080|2160)p\b", os.path.splitext(m.group("t"))[0])[0].strip(" -._")
         if g.get("title") and norm(t) != norm(g["title"]) and norm(t).endswith(norm(g["title"])):
             g["title"] = t
+        elif g.get("title") and g.get("year") and norm(t) == norm(f"{g['title']} {g['year']}"):
+            g["title"], g["year"] = t, None  # "2000 - Fantasia 2000": the number ends the title, the year is in front
         elif g.get("title") and (n := re.match(r"\d+\s", t)) and not g["title"].startswith(n.group(0)):
             g["title"] = n.group(0) + g["title"]  # "101 <Title> 2 - <subtitle>": the number goes back
         if g.get("title"):
@@ -500,6 +502,8 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
         return {"tag": None, "confidence": "high", "why": ["no videos: not moving"]}
     g = _guessit(name)
     title, year = g.get("title"), g.get("year")
+    if title and (m := re.fullmatch(r"(.{3,}?)\s*\1", title)):
+        title = m.group(1)  # "SintelSintel[2010]": a name with the title twice
     # series only from episode markers: a large number of files alone may also be a movie collection
     series_hint = (g.get("type") == "episode" and "episode" in g or "season" in g) or c.get("episodes", 0) >= 2
     # a single video without episode markers is never a whole series: an exact title match of a series of the same
@@ -515,18 +519,24 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
     hit = None
     # guessit can be fooled by a number at the start of the title (takes it for an episode number): second try with the text before the year
     alt = re.split(r"[\[(]?\b(?:19|20)\d\d\b", re.sub(r"[._]", " ", name))[0].strip(" -[(") if year else None
+    # "title-group" without a year: guessit keeps the release group in the title ("sintel-grp")
+    bare = re.sub(r"\s*-[A-Za-z0-9]+$", "", title) if title and not year and "-" in title else None
+    names = list(dict.fromkeys(x for x in (title, alt, bare) if x))
     if index:
         m = re.search(r"tt\d{7,8}", nfo_text or "")
         if m:
             hit = index.get(m.group(0))
             if hit:
                 why.append("IMDb from .nfo")
-        for t in dict.fromkeys(x for x in (title, alt) if x):
+        for t in names:
             if hit:
                 break
             hit = index.find(t, year, 1 if series_hint else 0 if films_only else None, only=films_only)
             if hit:
                 why.append(f"IMDb: {hit['title']} ({hit['year']})")
+    # a hit far from the name's year is another film of that name (a remake for "1961 - <Title>" when IMDb lists the
+    # 1961 original under another title): Wikidata, which knows the other titles, decides
+    far = bool(hit and year and hit.get("year") and abs(hit["year"] - year) > 2)
     kind = hit["kind"] if hit else ("series" if series_hint else "movie")
     if hit and hit["kind"] == "movie" and series_hint and c.get("episodes", 0) >= 2:
         kind = "series"  # content takes precedence over the database (e.g. a set of episodes titled like a movie)
@@ -541,9 +551,9 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
     if kids and not (anim and family):
         conf = "low"  # animation alone (adult anime) or "Family" alone (live-action remakes) is not enough
     # uncertain: ask Wikidata (age ratings, "children's film", Polish titles)
-    if wd and (title or alt) and (conf == "low" or not hit or (anim and not family)):
+    if wd and names and (conf == "low" or not hit or far or (anim and not family)):
         w = None
-        for t in dict.fromkeys(x for x in (title, alt) if x):
+        for t in names:
             w = wd(t, year, kind if hit or series_hint else None)
             if w:
                 break
@@ -552,7 +562,14 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
         info_only = bool(w) and w["kind"] == "series" and no_eps
         if w:
             why.append(f"Wikidata: {w['title']} ({w['year']})" + (", a series: kind not taken" if info_only else ""))
-            if not hit and not info_only:
+            if far and not info_only and w["imdb"] and w["year"] and abs(w["year"] - year) <= 1:
+                hit = (index.get(w["imdb"]) if index else None) or \
+                    {"imdb": w["imdb"], "kind": w["kind"], "title": w["title"], "year": w["year"], "genres": []}
+                why.append("IMDb by Wikidata: the year fits")
+                kind = hit["kind"]
+                gen = set(hit["genres"])
+                dark = gen & {"Horror", "Thriller", "Crime", "War"}
+            elif not hit and not info_only:
                 hit = (index.get(w["imdb"]) if index and w["imdb"] else None) or \
                     {"imdb": w["imdb"], "kind": w["kind"], "title": w["title"], "year": w["year"], "genres": []}
                 kind = "series" if series_hint and c.get("episodes", 0) >= 2 else hit["kind"]

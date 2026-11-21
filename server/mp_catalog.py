@@ -35,7 +35,7 @@ WD_TTL = 30 * 86400    # Wikidata details are refreshed after a month
 WD_BATCH = 40
 SPARQL = "https://query.wikidata.org/sparql"
 CAST_MAX = 12
-ITEM_V = 7             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
+ITEM_V = 8             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
 SKIP_TAGS = {"muzyka", "inne"}
 LANG2 = {"pol": "pl", "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es",
          "ita": "it", "rus": "ru", "por": "pt", "dut": "nl", "nld": "nl", "cze": "cs", "ces": "cs", "chi": "zh",
@@ -263,6 +263,16 @@ class Catalog:
             self.version += 1
         self._save()
 
+    @staticmethod
+    def _alone(base, rel):
+        """Whether the video `rel` is the only one in its folder (samples aside)."""
+        try:
+            d = os.path.join(base, rel.rsplit("/", 1)[0])
+            return sum(1 for x in os.listdir(d) if os.path.splitext(x)[1].lower() in mp_ident.VIDEO
+                       and "sample" not in x.lower()) <= 1
+        except OSError:
+            return False
+
     def _item(self, r, rel, fs, is_dir, size, old, group=None):
         base = r["path"]
         eps = mp_ident.content(fs).get("episodes", 0) if is_dir else 0
@@ -284,9 +294,11 @@ class Catalog:
             except OSError:
                 pass
         g = self.ident.guess(name, fs if is_dir else None, nfo)
-        if not g.get("imdb") and "/" in rel and not is_dir:  # a film inside a category folder: its folder may say more
+        if not g.get("imdb") and "/" in rel and not is_dir and self._alone(base, rel):
+            # a film alone in a folder of its own: the folder's name may say more. Not a folder of several films
+            # (a franchise folder with three of them gave each the franchise's newest film), nor against the file's own year
             g2 = self.ident.guess(rel.rsplit("/", 2)[-2], None)
-            if g2.get("imdb"):
+            if g2.get("imdb") and not (g.get("year") and g2.get("year") and abs(g["year"] - g2["year"]) > 1):
                 g = g2
         full = os.path.join(base, main)
         st = os.stat(full)
