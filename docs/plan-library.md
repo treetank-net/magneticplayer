@@ -85,6 +85,14 @@ yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. Stage 8 
     without a year a trailing "-group" is tried off; "<year> - <Title> <number>" keeps the number in the title when it
     equals the leading year ("2000 - <Title> 2000"). A film's folder name counts only when the film is alone in it and the
     years don't clash (a folder holding several films of a franchise gave each of them its newest film).
+    Agent 1.17.4, the file's hash as a second opinion: the catalog asks OpenSubtitles.com once per film file which
+    IMDb ids subtitles uploaded for exactly that file (by its hash) are filed under (a search, no download quota;
+    `catalog.hash_check`, ~1.5 s apart, again only when the file changes). Measured on jmpc over 412 films: a hash hit
+    for 61 %; of those, the name's film agreed for 168 of 169 "high", 20 of 22 "medium" and 31 of 40 "low". Rule
+    (`Catalog._apply_hash`): agreement (or 2+ subtitles for the name's film) marks the item `sure`; 3+ subtitles for one
+    other film (and no close second) replace the name's film (`by_hash`, the old id kept in `name_imdb`; a
+    sequel named as the first film of a series); with no film from the name, 2 are enough.
+    A single stray subtitle (wrong uploads, hash collisions) is ignored. Films only; series later.
 16. **Storage profiles (lossy shrinking on request):** losslessly there's little to gain in video (on jmpc: samples
     0.1 GB, audio ~10% of the size, few DTS/extra tracks), so the real lever is re-encoding — but only where the user
     asks for it. Measured on jmpc (18.11): 222 GB of video in 250 files, mostly H.264 1080p at 4–5 Mb/s; the

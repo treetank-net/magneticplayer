@@ -333,6 +333,35 @@ class Subtitles:
             })
         return found, results
 
+    def hash_ids(self, full):
+        """IMDb ids OpenSubtitles.com files subtitles of exactly this file under (a search by the file's hash only, no
+        download): [(imdb, how many subtitles)], most first; None when it can't be asked (no API key, an error)."""
+        if not self.cfg.get("opensubtitles_api_key"):
+            return None
+        sl, Language = _subliminal()
+        from subliminal.providers.opensubtitlescom import OpenSubtitlesComProvider
+        from subliminal.refiners.hash import hash_opensubtitles
+        h = hash_opensubtitles(full)
+        if not h:
+            return None
+        p = OpenSubtitlesComProvider(apikey=self.cfg["opensubtitles_api_key"])
+        try:
+            p.initialize()
+            subs = p.query({Language(x) for x in ("eng", "pol", "fra", "spa", "deu")}, moviehash=h)
+        except Exception:  # noqa: BLE001 — offline, rate limit: try again another time
+            return None
+        finally:
+            try:
+                p.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+        n = {}
+        for s in subs:
+            i = getattr(s, "movie_imdb_id", None)
+            if getattr(s, "moviehash_match", False) and i and str(i).startswith("tt"):
+                n[i] = n.get(i, 0) + 1
+        return sorted(n.items(), key=lambda x: -x[1])
+
     # ---- background search with progress (the app polls /api/subs/job)
     def start_search(self, full, languages, title=None, year=None, known=None):
         jid = uuid.uuid4().hex[:12]

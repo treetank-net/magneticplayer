@@ -758,14 +758,18 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
   round 1 asked by the collection folder's name, round 2 by the catalog title found 25 matching results including
   Polish ones (nothing downloaded). Not seen in the app yet; the round text is now "another round with the title …".
 
-- [ ] Agent 1.17.3 + app, subtitle signals: each search result carries `downloads`, `machine` (machine/AI
+- [ ] Agent 1.17.3+ + app, subtitle signals: each search result carries `downloads`, `machine` (machine/AI
   translation), `trusted` (trusted uploader), `fps` and `fps_off` (a frame rate other than the video's: usually another
   release, out of sync), `imdb`; the list and the automatic pick sort by language, then not machine-translated, hash
   match, same frame rate, score, trusted, downloads. The app shows "12K downloads · trusted uploader" and, in red,
   "machine translation" / "made for 24 fps, the film has another frame rate". Checked on jmpc in a separate process
   (2026-11-21, a 25 fps film: machine translations last, 23.976/24 fps ones marked); app compiled only. To see in the
   app: the badges and the order on a phone.
-- [ ] Episode numbers (agent 1.17.3): `Show 0205`, `Show 02.05`, `S02.E05` read as S2E05; a lone 3-4 digit number is
+- [ ] Agent 1.17.4, catalog checked by the file's hash (OpenSubtitles search, no downloads): 3+ subtitles for another
+  film replace the name's film, agreement marks it sure. On jmpc's data three such fixes are expected (sequels
+  named as earlier films, a same-name older film); see the journal "the file's hash says". To see in the app: their
+  posters and years after the check.
+- [ ] Episode numbers (agent 1.17.4): `Show 0205`, `Show 02.05`, `S02.E05` read as S2E05; a lone 3-4 digit number is
   read with the rest of its folder (101..112 + 201..213 = season-coded; 98, 99, 100, 101 = absolute, as in anime);
   dates, `5.1`/`DD2.0` and `H.264` are never episodes. 45 synthetic cases pass; on jmpc's library (202 folders) no
   series changed, 7 films lost a bogus episode number taken from "5.1". The new folder logic is tested only on

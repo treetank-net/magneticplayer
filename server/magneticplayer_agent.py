@@ -60,7 +60,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.17.3"
+VERSION = "1.17.4"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -115,6 +115,7 @@ class App:
         self.ident.start()
         # the library as films and series (genres, age, languages, people, topics; Wikidata by IMDb id), shared wishlist
         self.catalog = mp_catalog.Catalog(os.path.join(CONFIG_DIR, "catalog.json"), cfg, self.library, self.ident, log)
+        self.catalog.hash_ids = self.subs.hash_ids
         self.catalog.start()
         # episode lists of series (Wikidata, IMDb datasets as fallback): missing seasons and episodes on the title page
         self.episodes = mp_episodes.Episodes(os.path.join(os.path.dirname(mp_ident.cache_dir()), "episodes"), log)

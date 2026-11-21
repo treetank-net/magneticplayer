@@ -119,6 +119,7 @@ class Catalog:
         self.version = d.get("version") or 0
         self.state = {"scanning": False, "done": 0, "total": 0, "last": d.get("last")}
         self._ext = {}                         # (kind, key) → (time, result): on-demand Wikidata queries
+        self.hash_ids = None                   # full path → [(imdb, n)] from OpenSubtitles by file hash (set by the agent)
 
     # ---- persistence
 
@@ -146,6 +147,10 @@ class Catalog:
                 self.scan()
             except Exception as e:  # noqa: BLE001 (a disk that went away mid-walk must not stop the thread)
                 self.log("catalog: scan failed:", e)
+            try:
+                self.hash_check()
+            except Exception as e:  # noqa: BLE001
+                self.log("catalog: hash check failed:", e)
             try:
                 self.enrich()
             except Exception as e:  # noqa: BLE001
@@ -285,6 +290,62 @@ class Catalog:
             self.version += 1
         self._save()
 
+    # ---- the file's hash as a second opinion (subtitles uploaded for exactly this file name its film)
+
+    HASH_OVERRIDE, HASH_FILL = 3, 2  # votes needed to replace the name's film / to fill a missing one
+
+    def _apply_hash(self, it):
+        """Use `it["hc"]` (OpenSubtitles by hash): agreeing → sure; 3+ subtitles for another film → that film (a name
+        like "Episode IV" for a copy of episode VI); 2+ when the name found nothing. One stray subtitle is ignored."""
+        ids = (it.get("hc") or {}).get("ids") or []
+        it.pop("sure", None)
+        if not ids or it.get("kind") != "movie":
+            return
+        top, n = ids[0]
+        if it.get("imdb") in {i for i, _ in ids if _ >= 2} or (it.get("imdb") == top):
+            it["sure"] = True
+            return
+        if n < (self.HASH_OVERRIDE if it.get("imdb") else self.HASH_FILL) or (len(ids) > 1 and ids[1][1] * 2 > n):
+            return
+        row = self.ident.index.get(top) if self.ident.index.db else None
+        if not row or row.get("kind") != "movie":
+            return
+        it.setdefault("name_imdb", it.get("imdb"))
+        it.update(imdb=top, title=row["title"], year=row.get("year"), genres=row.get("genres") or [], sure=True,
+                  by_hash=True)
+
+    def hash_check(self):
+        """Ask OpenSubtitles about each film's file once (by its hash; a search, no download quota)."""
+        if not self.hash_ids:
+            return
+        roots = {r["id"]: r for r in self.library.roots() if r["exists"]}
+        with self.lock:
+            todo = [(k, it) for k, it in self.items.items() if it.get("kind") == "movie" and it.get("root_id") in roots
+                    and (it.get("hc") or {}).get("sig") != it.get("probe", {}).get("sig")]
+        done = 0
+        for k, it in todo:
+            if self.wake.is_set():
+                break  # the library changed: rescan first
+            full = os.path.join(roots[it["root_id"]]["path"], it["file"])
+            ids = self.hash_ids(full) if os.path.isfile(full) else None
+            if ids is None:
+                time.sleep(5)
+                continue
+            before = it.get("imdb")
+            with self.lock:
+                it["hc"] = {"sig": it.get("probe", {}).get("sig"), "ids": ids[:3]}
+                self._apply_hash(it)
+            if it.get("imdb") != before:
+                self.log(f"catalog: {it['rel'][:60]}: the file's hash says {it['imdb']}, not {before}")
+            done += 1
+            if done % 25 == 0:
+                self.version += 1
+                self._save()
+            time.sleep(1.5)  # OpenSubtitles: a few requests a second at most
+        if done:
+            self.version += 1
+            self._save()
+
     @staticmethod
     def _alone(base, rel):
         """Whether the video `rel` is the only one in its folder (samples aside)."""
@@ -363,6 +424,10 @@ class Catalog:
         if PL_SUBS.search(rel) and "pl" not in subs:
             subs.append("pl")
         it["audio"], it["subs"] = sorted(set(audio)), sorted(set(subs))
+        hc = (old or {}).get("hc")
+        if hc and hc.get("sig") == probe.get("sig"):  # the same file: the hash's answer still holds
+            it["hc"] = hc
+            self._apply_hash(it)
         return it
 
     # ---- Wikidata (by IMDb id)
