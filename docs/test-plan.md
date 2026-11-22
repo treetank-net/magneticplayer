@@ -808,6 +808,46 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       again at HH:MM" instead of being asked (journal: "subs: bsplayer didn't answer"). Background subtitle tasks no
       longer wait minutes per file on it.
 
+## Suggestions you don't have (G4, agent 1.18.0)
+
+- [ ] Discover: under "Because you watched" a row "Because you watched <title>: not on your disks" (PL "Podobne do
+      „…”: nie ma na dyskach") with greyed covers and a reason (director, actor, genres).
+- [ ] A tap opens the missing title's page (D2: search engines, paste a magnet, want to watch); a wishlisted title
+      says "want".
+- [ ] A title that reaches the disks leaves the row (at the latest after the phone's 10-minute cache).
+- [ ] An older agent (no `suggest_missing`): no row, Discover as before.
+- [ ] First load after an agent restart: the row arrives after a few seconds (Wikidata), the screen doesn't stutter.
+- [ ] "All servers": the row asks the server that has the watched title.
+
+## Player: episodes, recognised title, audio of the Chromecast version (G2, G3, G5; agent 1.18.0)
+
+- [ ] G2: an "Episodes" button in a series episode's player (from the catalog and from a folder), none for a film with
+      extras; the sheet shows the current season, chips for the others, marks now / watched / up to N % / on the
+      phone; a tap switches episode, ⏭ and the countdown still work; offline for a downloaded season.
+- [ ] G2: the player's title is "Series · S2 E3" / "Film (1968)" from the agent (also for a file outside the phone's
+      catalog copy).
+- [ ] G3: the Chromecast card says "Audio in it: <language> · <kind>"; after changing the choice (e.g. lector →
+      original) "Prepare again: …" appears and the new version carries the right track; a version made before the
+      agent update is recognised too.
+- [ ] G5: "Play on <server>" from a folder switches to the Remote, also when the server had to be woken.
+- [ ] The new texts in both languages.
+
+## Offline sync points (G1, agent 1.18.0)
+
+- [ ] Watch offline on a downloaded copy (a position, and one to the end), reconnect: the agent's `watch.json` has
+      them, Continue watching unchanged, Free up counts the title as watched.
+- [ ] Clear the app's data and pair again: positions and watched marks come back (a new pairing is a new device id:
+      may not; see the open question in `docs/architecture.md`).
+- [ ] Pick another subtitle version offline on a downloaded copy: shown at once with the "server gets this choice"
+      toast; after reconnecting it is the server's default too.
+- [ ] An offline choice older than a change made on the server: the server's subtitles stay and the copy gets them.
+- [ ] Shift subtitles on the server: the downloaded copy gets the shifted file at the next sync (≤ 10 min).
+- [ ] After the update every downloaded copy re-downloads its subtitles once (old copies have no `mtime`): harmless.
+- [ ] Catalog delta on the Pixel: a new title appears and a removed one goes after the next refresh without a full
+      download; a folder tag change brings a full catalog.
+- [ ] Back home with the app on screen: one sync; no requests while the app is in the background.
+- [ ] The web page and older apps against agent 1.18 still get the full catalog with `since=<version>`.
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a
