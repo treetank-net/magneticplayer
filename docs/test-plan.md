@@ -801,13 +801,16 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       notification service kept polling a music app's Chromecast session (~1.8 s CPU per minute, multicast lock held)
       for as long as the music played. After the fix: our notification goes once the app leaves the screen, the
       lock is released; our own casts (mpv, our Chromecast/DLNA playback) keep their notification.
-- [ ] Root cause of the warm phone, found 2026-11-22 on v1.261122.2131: media3's `SimpleBasePlayer.release()` skips
+- [x] Root cause of the warm phone, found 2026-11-22 on v1.261122.2131: media3's `SimpleBasePlayer.release()` skips
       `handleRelease()` unless `COMMAND_RELEASE` is available, so every Remote notification that went away left its
       polling loop running (every 1.5 s to the TV or the server, ~80 CPU ticks a minute, no notification, a route
       still shown in the system's output switcher) for as long as the process lived, one more per target played.
       After the fix: Remote tab with music on a Chromecast, then Home; a minute later the process uses almost no CPU
       (per-thread ticks in `/proc/<pid>/task`), no `castnet` threads, no route of ours in
-      `dumpsys media_router`.
+      `dumpsys media_router`. Measured (2026-11-22, Pixel, v1.261122.2223) with music from another app on a
+      Chromecast: 13 ticks in the first minute after Home, then 1 tick a minute (before: 80-93), no route, no
+      `castnet` threads. The process stays unfrozen while the system keeps our route provider bound (another app
+      looking for routes, e.g. the music app casting): memory only, no CPU.
 - [ ] Away from home (`Home.kt`, next app): on mobile data only the header says "not on this network" at once, the
       Library shows the catalog copy, no pings to the server (agent journal quiet) and no CPU use while the app sits
       in the background; Wi-Fi back on at home: "on" within a few seconds, no restart needed.
