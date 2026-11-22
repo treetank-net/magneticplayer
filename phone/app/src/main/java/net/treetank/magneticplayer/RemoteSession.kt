@@ -117,7 +117,7 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
         val cmds = Player.Commands.Builder().addAll(
             Player.COMMAND_PLAY_PAUSE, Player.COMMAND_STOP, Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
             Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD, Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
-            Player.COMMAND_GET_TIMELINE, Player.COMMAND_GET_METADATA,
+            Player.COMMAND_GET_TIMELINE, Player.COMMAND_GET_METADATA, Player.COMMAND_RELEASE,
         ).apply {
             if (s?.volume != null) addAll(Player.COMMAND_GET_DEVICE_VOLUME, Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS,
                 Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS)
@@ -172,9 +172,16 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
     override fun handleSetDeviceMuted(muted: Boolean, flags: Int) = run { setMuted(muted) }
 
     override fun handleRelease(): ListenableFuture<*> {
+        close()
+        return Futures.immediateVoidFuture()
+    }
+
+    /** Ends the polling loop. Called by [RemoteSessionService.drop] directly: media3's release() skips handleRelease()
+     *  unless COMMAND_RELEASE is available, and without it every dropped target left its loop polling the TV or the
+     *  server every 1.5 s for as long as the process lived, with no notification (the phone got warm in a pocket). */
+    fun close() {
         scope.cancel()
         RemoteRoutes.set(ctx, kind, null)
-        return Futures.immediateVoidFuture()
     }
 }
 
@@ -250,6 +257,7 @@ class RemoteSessionService : MediaSessionService() {
     private fun drop(kind: String) {
         val s = sessions.remove(kind) ?: return
         removeSession(s)
+        (s.player as RemotePlayer).close()
         s.player.release(); s.release()
     }
 

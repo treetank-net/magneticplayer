@@ -801,6 +801,13 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       notification service kept polling a music app's Chromecast session (~1.8 s CPU per minute, multicast lock held)
       for as long as the music played. After the fix: our notification goes once the app leaves the screen, the
       lock is released; our own casts (mpv, our Chromecast/DLNA playback) keep their notification.
+- [ ] Root cause of the warm phone, found 2026-11-22 on v1.261122.2131: media3's `SimpleBasePlayer.release()` skips
+      `handleRelease()` unless `COMMAND_RELEASE` is available, so every Remote notification that went away left its
+      polling loop running (every 1.5 s to the TV or the server, ~80 CPU ticks a minute, no notification, a route
+      still shown in the system's output switcher) for as long as the process lived, one more per target played.
+      After the fix: Remote tab with music on a Chromecast, then Home; a minute later the process uses almost no CPU
+      (per-thread ticks in `/proc/<pid>/task`), no `castnet` threads, no route of ours in
+      `dumpsys media_router`.
 - [ ] A paused player behind another app: no HEAD requests every 3 s once the buffer is full (or the server is
       away); a background download of the buffer still finishes; back in the player the buffer line updates again.
 - [ ] Server sheet, cover settings, Discover hero, covers waiting for an offline server, uploads list, subtitle
