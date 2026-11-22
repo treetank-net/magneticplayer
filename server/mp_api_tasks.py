@@ -1,6 +1,8 @@
 """Routes: disks and background file tasks (mp_tasks.py): plans (previews), counters, the task queue. Each function is
 a route of mp_routes.ROUTES: (req = the Handler, a = the App, method, p = path, q = query lists, qd = query values,
 path parameters)."""
+import json
+
 import mp_scope
 from mp_core import ApiError
 from mp_i18n import T
@@ -74,10 +76,12 @@ def plan(req, a, **_):
         return req.send_json(a.tasks.plan_balance(b))
     if kind == "cast_ready":  # agent 1.17+
         return req.send_json(a.tasks.plan_cast_ready(b, scope))
+    if kind == "reencode":  # agent 1.18+: steps, encoder, name
+        return req.send_json(a.tasks.plan_reencode(b, scope))
     raise ApiError(T("kind must be free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
-                     "subs, subs_get, trash, layout, balance or cast_ready",
+                     "subs, subs_get, trash, layout, balance, cast_ready or reencode",
                      "kind to free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
-                     "subs, subs_get, trash, layout, balance albo cast_ready"), 400)
+                     "subs, subs_get, trash, layout, balance, cast_ready albo reencode"), 400)
 
 
 # counters of the task list for a scope (agent 1.16+)
@@ -87,7 +91,14 @@ def job_counters(req, a, q, **_):
     except mp_scope.ScopeError as e:
         raise ApiError(str(e), 400) from None
     lv = q.get("levels")  # agent 1.17+: the folder layout counter for these levels
-    return req.send_json(a.tasks.jobs(scope, (q.get("languages") or ["pl,en"])[0], None if lv is None else lv[0]))
+    rs = None
+    if q.get("reencode"):  # agent 1.18+: the re-encode counter for these steps (JSON)
+        try:
+            rs = json.loads(q["reencode"][0])
+        except ValueError:
+            raise ApiError(T("reencode must be JSON", "reencode to JSON"), 400) from None
+    return req.send_json(a.tasks.jobs(scope, (q.get("languages") or ["pl,en"])[0], None if lv is None else lv[0],
+                                      reencode=rs, only=(q.get("only") or [None])[0]))
 
 
 def profile(req, a, **_):

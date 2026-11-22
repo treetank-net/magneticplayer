@@ -42,6 +42,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -235,11 +236,12 @@ fun JobsArea(api: Api, snack: SnackbarHostState, scopeStr: String?, onScope: (St
 }
 
 // Rows of the list, by group. "layout" (A2), "balance" (A3) and "cast_ready" (B5) are plan stage 2 (agent 1.17+,
-// screens in LibraryJobs2.kt); "reencode" (B6, under "Advanced") comes in stage 6.
+// screens in LibraryJobs2.kt); "reencode" (B6, under "Advanced", last in Renovation) is stage 6 (agent 1.18+,
+// LibraryReencode.kt).
 private val TIDY = listOf("layout", "balance", "dupes", "free")
-private val RENOVATION = listOf("audio_fix", "modernize", "downscale", "compress", "cast_ready")
+private val RENOVATION = listOf("audio_fix", "modernize", "downscale", "compress", "cast_ready", "reencode")
 /** Shown only when the agent lists them in `features.jobs` (an older agent's counters lack them anyway). */
-private val STAGE2 = setOf("layout", "balance", "cast_ready")
+private val STAGE2 = setOf("layout", "balance", "cast_ready", "reencode")
 private val SUBTITLES = listOf("subs_get", "subs")
 private val CATALOG = listOf("tags")
 /** Whole disks only: not on the scoped list, replaced there by one note. */
@@ -262,6 +264,7 @@ private fun jobName(kind: String) = when (kind) {
     "layout" -> stringResource(R.string.j2_layout)
     "balance" -> stringResource(R.string.j2_balance)
     "cast_ready" -> stringResource(R.string.j2_cast)
+    "reencode" -> stringResource(R.string.re_title)
     else -> kind
 }
 
@@ -279,6 +282,7 @@ private fun jobRowText(kind: String) = when (kind) {
     "layout" -> stringResource(R.string.j2_layout_row)
     "balance" -> stringResource(R.string.j2_balance_row)
     "cast_ready" -> stringResource(R.string.j2_cast_row)
+    "reencode" -> stringResource(R.string.re_row)
     else -> ""
 }
 
@@ -286,6 +290,11 @@ private fun jobRowText(kind: String) = when (kind) {
 @Composable
 private fun jobCounter(kind: String, j: JobInfo?): Pair<String?, Tone> {
     j ?: return null to Tone.DIM
+    // re-encode: nothing to count before steps are chosen; the row shows how many step sets there are
+    if (kind == "reencode") {
+        val n = j.options.optJSONArray("presets")?.length() ?: 0
+        return (if (n > 0) pluralStringResource(R.plurals.re_n_sets, n, n) else null) to Tone.DIM
+    }
     // balance: the free share of each disk ("39% / 42% free"), also when nothing would move
     if (kind == "balance" && j.applicable) {
         val pcts = j.options.list("disks").map { "${it.optInt("pct")}%" }
@@ -396,7 +405,11 @@ private fun JobsListScreen(api: Api, snack: SnackbarHostState, scope: JobScope?,
                     items(kinds, key = { "job/$it" }) { k ->
                         val j = info?.jobs?.get(k)
                         val (counter, tone) = jobCounter(k, j)
-                        JobRow(jobName(k), jobRowText(k), counter, tone, dim = j != null && tone == Tone.DIM,
+                        if (k == "reencode") Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // board A1: "ADVANCED" and the Re-encode row at the end of Renovation
+                            GroupHeading(stringResource(R.string.re_advanced))
+                            JobRow(jobName(k), jobRowText(k), counter, tone, dim = false) { onOpen(k) }
+                        } else JobRow(jobName(k), jobRowText(k), counter, tone, dim = j != null && tone == Tone.DIM,
                             why = j?.why?.takeIf { tone == Tone.DIM }) { onOpen(k) }
                     }
                     if (trash) item(key = "job/trash") {
@@ -549,7 +562,7 @@ private fun NarrowDialog(api: Api, onDismiss: () -> Unit, onScope: (JobScope) ->
 
 /** "Folders: all ▾" on a task screen (whole computer); a scope replaces it with the scope bar. */
 @Composable
-private fun FoldersPicker(api: Api, picked: Set<Pair<Int, String>>, names: Map<Int, String>, onPick: (Set<Pair<Int, String>>, Map<Int, String>) -> Unit) {
+internal fun FoldersPicker(api: Api, picked: Set<Pair<Int, String>>, names: Map<Int, String>, onPick: (Set<Pair<Int, String>>, Map<Int, String>) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.job_folders), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -582,6 +595,7 @@ internal fun planBody(kind: String, scope: JSONObject?, fill: JSONObject.() -> U
 @Composable
 internal fun JobFrame(c: JobCtx, title: String, description: String, scopeLabel: String?, primary: String?,
                      primaryEnabled: Boolean = true, onPrimary: () -> Unit = {}, onRefresh: (() -> Unit)? = null,
+                     secondary: String? = null, onSecondary: () -> Unit = {},
                      content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(title, c.onBack, onRefresh)
@@ -600,7 +614,12 @@ internal fun JobFrame(c: JobCtx, title: String, description: String, scopeLabel:
             content()
         }
         if (primary != null) Surface(tonalElevation = 3.dp) {
-            Button(onPrimary, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), enabled = primaryEnabled) { Text(primary) }
+            // a second action next to it (B6 "Save set"), agent 1.18+ screens
+            if (secondary != null) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onSecondary, Modifier.weight(1f)) { Text(secondary) }
+                Button(onPrimary, Modifier.weight(1f), enabled = primaryEnabled) { Text(primary) }
+            } else Button(onPrimary, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), enabled = primaryEnabled) { Text(primary) }
         }
     }
 }
@@ -705,6 +724,7 @@ private fun JobScreen(c: JobCtx, kind: String) {
         "layout" -> LayoutJob(c)
         "balance" -> BalanceJob(c)
         "cast_ready" -> CastReadyJob(c)
+        "reencode" -> ReencodeJob(c)
         else -> LaunchedEffect(kind) { c.onBack() }
     }
 }

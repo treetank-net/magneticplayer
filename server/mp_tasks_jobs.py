@@ -93,7 +93,8 @@ class JobsMixin:
         idx = {r["id"]: r["index"] for r in self.library.roots()}
         return {"audio_fix_auto": bool(self.cfg.get("audio_fix_auto")), "subs_auto": self.cfg.get("subs_auto") or "",
                 "layout_levels": st["levels"], "layout_ages": st["ages"],  # 1.17+
-                "layout_keep": None if st["keep"] is None else [{"root": idx[a], "path": b} for a, b in st["keep"] if a in idx]}
+                "layout_keep": None if st["keep"] is None else [{"root": idx[a], "path": b} for a, b in st["keep"] if a in idx],
+                "reencode_presets": self.reencode_presets()}  # 1.18+: built-in and saved step sets (B6)
 
     def set_jobs_config(self, b):
         if "audio_fix_auto" in b:
@@ -104,6 +105,10 @@ class JobsMixin:
             self.cfg["layout_levels"] = mp_arrange.norm_levels(b["layout_levels"]) or list(mp_arrange.DEFAULT_LEVELS)
         if "layout_ages" in b:
             self.cfg["layout_ages"] = mp_arrange.norm_ages(b["layout_ages"])
+        if b.get("reencode_preset") is not None:  # 1.18+: {"name", "steps"} saved (same name replaced)
+            self.save_reencode_preset(b["reencode_preset"])
+        if b.get("reencode_preset_delete"):
+            self.delete_reencode_preset(str(b["reencode_preset_delete"]))
         if "layout_keep" in b:
             if b["layout_keep"] is None:
                 self.cfg.pop("layout_keep", None)
@@ -624,8 +629,9 @@ class JobsMixin:
 
     # ---- counters for the task list (GET /api/library/jobs): only what the background scans know
 
-    def jobs(self, scope=None, languages="pl,en", levels=None):
-        """`levels` (1.17+): the folder layout counter with these levels (the A2 screen while the owner taps them)."""
+    def jobs(self, scope=None, languages="pl,en", levels=None, reencode=None, only=None):
+        """`levels` (1.17+): the folder layout counter with these levels (the A2 screen while the owner taps them).
+        `reencode` (1.18+): the re-encode counter for these steps (B6); `only` = "reencode": just that counter."""
         m = self._matcher(scope)
         roots = {r["id"]: r for r in self._job_roots()}
         with self.flock:
@@ -644,6 +650,28 @@ class JobsMixin:
         ctx = {"torrents": torrents, "enc": enc, "check": None}
         hours = lambda s: None if s is None else int(s)  # noqa: E731
         jobs = {}
+
+        def envelope():
+            return {"scope_label": m.label(mp_i18n.lang()), "files": len(lst) if listing else len(inscope),
+                    "size": sum(s for _, _, s in lst) if listing else sum(f["size"] for _, _, f in inscope),
+                    "checked_at": int(at) if at else None, "pending": pending, "jobs": jobs}
+
+        # re-encode (1.18+, B6): its summary card for the steps being chosen; without steps only the step sets
+        import mp_tasks_reencode
+        rsteps = mp_tasks_reencode.norm_steps(reencode) if reencode is not None else None
+        ropts = {"presets": self.reencode_presets()}
+        if rsteps is not None and mp_tasks_reencode.active(rsteps):
+            rc = self.reencode_counter(inscope, rsteps, torrents, enc, choices)
+            ropts.update(steps=rsteps, passes=rc["passes"], by_step=rc["by_step"], unmeasured=rc["waiting"],
+                         skipped=rc["skipped"], warnings=mp_tasks_reencode.warnings(rsteps))
+            jobs["reencode"] = {"applicable": True, "count": rc["count"], "size": rc["size"], "saving": max(rc["saving"], 0),
+                                "eta": rc["eta"] or 0, "pending": pending, "options": ropts,
+                                "why": None if rc["count"] else T("no file needs these steps", "żaden plik nie potrzebuje tych kroków")}
+        else:
+            jobs["reencode"] = {"applicable": True, "count": 0, "size": 0, "saving": 0, "eta": 0, "pending": 0, "why": None,
+                                "options": ropts}
+        if only == "reencode":
+            return envelope()
 
         def count(kind, o, examples=None):
             n = size = saving = 0
@@ -898,9 +926,7 @@ class JobsMixin:
             tsize, tfiles = sum(x["size"] for x in tr), sum(x["files"] for x in tr)
             jobs["trash"] = job(count=tfiles, size=tsize, saving=tsize, why=None if tfiles else T("the trash is empty", "kosz jest pusty"),
                                 options={"days": self.trash_days()})
-        return {"scope_label": m.label(mp_i18n.lang()), "files": len(lst) if listing else len(inscope),
-                "size": sum(s for _, _, s in lst) if listing else sum(f["size"] for _, _, f in inscope),
-                "checked_at": int(at) if at else None, "pending": pending, "jobs": jobs}
+        return envelope()
 
     # ---- tasks created without a preview (the owner's "by itself" settings for new files)
 

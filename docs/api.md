@@ -306,6 +306,49 @@ The catalog (`/api/catalog/*` entries) adds `series` (up to two film-series Wiki
 entries cached before are fetched again once. Folders named like the layout's own (`Films/`, `Kids/`, `Teens/`, a
 decade) are looked into: their subfolders are titles, as at the top of a library folder.
 
+### Re-encode, advanced (agent 1.18+)
+
+`features.jobs` adds `reencode` (board B6, plan item F3); apps show the screen only when it is listed.
+
+- `{"kind": "reencode", "steps": {...}, "encoder"?: "auto"|"cpu"|"gpu", "name"?: "Series archive"}`: several changes
+  in one ffmpeg run per file. `steps` (every key optional, `on: false` = skipped; defaults in brackets):
+  `resolution` `{on, height: 720|480|360 [720]}` (never enlarged; the class of a 1920×800 film is 1080p),
+  `codec` `{on, mode: "hevc_saving"|"hevc_quality"|"h264" [hevc_saving]}`, `picture` `{on, deinterlace [true],
+  denoise [false], crop [true]}`, `sound` `{on, mode: "fix"|"loudness"|"leave" [fix]}` (fix: tracks with damaged
+  frames become AAC; loudness: every track AAC through `loudnorm`), `cast` `{on, add_aac [true], subs_to_srt [true]}`,
+  `container` `{on, format: "mkv"|"mp4" [mkv]}`. A step with nothing chosen inside (or sound `leave`) counts as off;
+  with every step off the plan is a 400. The encode's order is fixed: sound fix and deinterlace, denoise, crop, scale,
+  video codec; audio additions; container. Per file a step is skipped when not needed: no scaling at or below the
+  target, no video encode when the file is already in the chosen codec and the picture doesn't change, deinterlace
+  and crop only where `idet`/`cropdetect` found interlacing or bars (over 4 % of the picture), the AAC track only when
+  the first track isn't AAC/MP3 (and never with `loudness`), `.srt` only for text tracks with a language not next to
+  the file yet, the container only when it changes. Picture changes without the codec step are encoded as
+  `hevc_saving`. Without the container step an MP4 stays MP4 and anything else becomes MKV. With MP4, image subtitles
+  and attachments are dropped and text subtitles become `mov_text`; a file whose picture MP4 can't hold without
+  re-encoding is skipped. Interlacing and black bars are measured during the preview (three 3-second samples per
+  file, 240 s budget); files past the budget are measured when their encode starts (`reencode.detect`, a warning
+  says how many). Seeding torrents are skipped unless only subtitles would be written.
+  Result: as the other encode kinds (`items` with op `shrink`, `bytes`, `est`, `saved`, `hours`, `encoder`,
+  `encoder_id`, `encoders`, `skipped`, `trash_days`) plus `eta`, `passes` (most board steps one file needs: separate
+  tasks would encode it that many times), `steps` (normalized), `warnings` (pointless combinations: denoise or crop
+  or H.265 quality at 360p, picture changes without the codec step, loudness with the extra AAC track, MP4 drops
+  image subtitles). Items add `steps` (ids: `deinterlace`, `denoise`, `crop`, `resolution`, `codec`, `sound_fix`,
+  `loudness`, `add_aac`, `subs_srt`, `container`), `labels` (localized, one per step, e.g. "Crop to 720×432"),
+  `passes`, `to_height`, `to_codec`, and `reencode` (what the encode does: `video`, `deinterlace`, `denoise`, `crop`,
+  `target`, `cls`, `sound`, `broken`, `add_aac`, `subs`, `format`, `remux`, `max_growth`, `detect`). An item with
+  only subtitles to write (`remux: false`) leaves the video untouched. A result bigger than `max_growth` × the
+  original (1.0 for H.265 saving or a lower resolution, else 1.25) keeps the original (item `skipped`). The title is
+  "Re-encode" or "Re-encode: <name>".
+- Counter: `GET /api/library/jobs?reencode=<steps JSON>` (with `&only=reencode` nothing else is computed): `reencode`
+  `count` files, `size`, `saving` (may be negative), `eta`, `why`, `options` `steps`, `passes`, `by_step` `{step id:
+  files}`, `unmeasured` (files whose bars/interlacing no preview measured yet: counted, measured later), `skipped`
+  (seeding, MP4 can't hold), `warnings`, `presets`. Without `reencode` the entry has only `options.presets`.
+- Step sets: `GET /api/config/jobs` returns `reencode_presets` `[{id, name, builtin, steps}]`: the built-in
+  `series_archive` (480p, H.265 saving, fix sound, MKV), `chromecast` (H.264 compatible, fix sound, AAC stereo and
+  subtitles to .srt, MP4) and `old_vhs` (deinterlace, denoise, crop, H.265 quality, even loudness, MKV), named in the
+  request's language, then the saved ones. `POST /api/config/jobs` takes `{"reencode_preset": {"name", "steps"}}`
+  (saved; one with the same name, any case, is replaced; at most 20) and `{"reencode_preset_delete": "<id>"}`.
+
 ## Catalog: films instead of folders (agent 1.8+, `features.catalog`)
 
 The agent walks the library in the background and keeps every film and series as a title: identification (local IMDb

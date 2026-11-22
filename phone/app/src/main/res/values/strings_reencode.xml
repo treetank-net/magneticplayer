@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plan stage 6 (agent 1.18+, docs/plan-ux-tasks.md B6): Re-encode (advanced); LibraryReencode.kt. English. -->
+<resources>
+    <string name="re_title">Re-encode</string>
+    <string name="re_row">Several changes in one pass</string>
+    <string name="re_desc">Several changes in one pass: the file is encoded once.</string>
+    <string name="re_advanced">Advanced</string>
+    <string name="re_start_from">Start from</string>
+    <string name="re_empty">Empty</string>
+    <string name="re_modified">Changed from the set: Save set keeps it under a name.</string>
+    <string name="re_files">Files</string>
+    <string name="re_steps">Steps</string>
+    <string name="re_step_resolution">Resolution</string>
+    <string name="re_step_codec">Video codec</string>
+    <string name="re_step_picture">Old picture</string>
+    <string name="re_step_sound">Sound</string>
+    <string name="re_step_cast">Chromecast</string>
+    <string name="re_step_container">Container</string>
+    <string name="re_skipped">skipped</string>
+    <string name="re_res_hint">Never enlarged: files already this small stay as they are.</string>
+    <string name="re_codec_hevc_saving">H.265 saving</string>
+    <string name="re_codec_hevc_quality">H.265 quality</string>
+    <string name="re_codec_h264">H.264 compatible</string>
+    <string name="re_codec_hevc_saving_hint">Small files; a file already in H.265 isn\'t encoded again unless its picture changes.</string>
+    <string name="re_codec_hevc_quality_hint">No visible difference, files about twice the size of saving.</string>
+    <string name="re_codec_h264_hint">Plays on every phone, TV and Chromecast; bigger files.</string>
+    <string name="re_pic_deinterlace">Deinterlace</string>
+    <string name="re_pic_denoise">Denoise</string>
+    <string name="re_pic_crop">Crop black bars</string>
+    <string name="re_pic_hint">Interlacing and black bars are measured per file in the preview; files without them skip that part.</string>
+    <string name="re_sound_fix">Fix damaged</string>
+    <string name="re_sound_loudness">Even loudness</string>
+    <string name="re_sound_leave">Leave</string>
+    <string name="re_sound_fix_hint">Tracks with damaged frames become AAC; the others are copied.</string>
+    <string name="re_sound_loudness_hint">Every track becomes AAC with even loudness (quiet dialogue, loud music).</string>
+    <string name="re_sound_leave_hint">Sound copied as it is.</string>
+    <string name="re_cast_aac">Add AAC stereo</string>
+    <string name="re_cast_subs">Subtitles to .srt</string>
+    <string name="re_mkv_hint">Holds everything: all tracks, subtitles and fonts.</string>
+    <string name="re_mp4_hint">Plays most widely; image subtitles and fonts are dropped.</string>
+    <string name="re_order_note">Order: sound fix and deinterlace first, then crop, scale and codec; audio additions; container last. A step a file doesn\'t need is skipped for that file.</string>
+    <string name="re_none_on">Turn on at least one step.</string>
+    <string name="re_save">Save set</string>
+    <string name="re_save_title">Save the set</string>
+    <string name="re_save_name">Name</string>
+    <string name="re_save_hint">It appears under Start from on every phone; a set with the same name is replaced.</string>
+    <string name="re_saved">Set saved</string>
+    <string name="re_sum_passes">1 pass instead of %1$d</string>
+    <plurals name="re_summary">
+        <item quantity="one">%1$d file · 1 pass instead of %2$d · about %3$s · %4$s</item>
+        <item quantity="other">%1$d files · 1 pass instead of %2$d · about %3$s · %4$s</item>
+    </plurals>
+    <plurals name="re_summary_one">
+        <item quantity="one">%1$d file · about %2$s · %3$s</item>
+        <item quantity="other">%1$d files · about %2$s · %3$s</item>
+    </plurals>
+    <plurals name="re_unmeasured">
+        <item quantity="one">%1$d file not measured yet for black bars and interlacing: the preview measures it</item>
+        <item quantity="other">%1$d files not measured yet for black bars and interlacing: the preview measures them</item>
+    </plurals>
+    <plurals name="re_skipped_files">
+        <item quantity="one">%1$d file left out (still seeding, or MP4 can\'t hold it)</item>
+        <item quantity="other">%1$d files left out (still seeding, or MP4 can\'t hold them)</item>
+    </plurals>
+    <plurals name="re_n_sets">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
+</resources>

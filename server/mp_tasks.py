@@ -56,6 +56,7 @@ from mp_tasks_layout import LayoutMixin
 from mp_tasks_facts import FactsMixin
 from mp_tasks_ops import OpsMixin
 from mp_tasks_shrink import ShrinkMixin
+from mp_tasks_reencode import ReencodeMixin
 from mp_tasks_common import (  # noqa: F401 (re-exported)
     AUDIO_CHECK_BUDGET, AUDIO_SUSPECT, ENCODERS, GPU_SIZE, LOSSLESS_AUDIO, MIN_SAVING, MIN_SIZE, MODERN, OLD_GROWTH,
     OLD_VIDEO, PLAYABLE_AUDIO, PROFILES, RESERVE, WATCHING_DAYS, companions, is_old, tree_size
@@ -121,7 +122,7 @@ def _scope_filter(res, m, roots):
             res["wasted"] = 0
 
 
-class Tasks(PlanMixin, JobsMixin, LayoutMixin, FactsMixin, OpsMixin, ShrinkMixin):
+class Tasks(PlanMixin, JobsMixin, LayoutMixin, FactsMixin, OpsMixin, ShrinkMixin, ReencodeMixin):
     def __init__(self, path, cfg, save_cfg, library, backend, watching, renderers, log):
         """watching(): files in use now, [{"path", "kind"}] with kind stream (a GET from the library or a torrent),
         probe (HEAD only: a phone playing its own copy), mpv (the computer's screen) or convert (a version for a TV);
@@ -322,7 +323,7 @@ class Tasks(PlanMixin, JobsMixin, LayoutMixin, FactsMixin, OpsMixin, ShrinkMixin
 
     def _drop_part(self, j):
         part = (j.meta or {}).get("part")
-        if part and part.endswith(".mp-shrink.part.mkv"):
+        if part and part.endswith((".mp-shrink.part.mkv", ".mp-shrink.part.mp4")):  # .mp4: re-encode (1.18+)
             try:
                 j.wait(30)
             except subprocess.TimeoutExpired:

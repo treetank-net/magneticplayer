@@ -62,6 +62,9 @@ def _item_profile(i):
     item's own overrides (compression quality, sound mode; agent 1.16+)."""
     if i.get("audio_fix"):
         return AUDIO_FIX
+    if i.get("reencode"):  # re-encode (agent 1.18+): the command comes from mp_tasks_reencode, this only steers checks
+        v = i["reencode"].get("video")
+        return {"copy": not v, "codec": "h264" if v == "h264" else "hevc", "audio": "keep", "reencode": True}
     pr = MODERN if i.get("modern") else PROFILES[i["profile"]]
     if i.get("q"):
         pr = dict(pr, crf=i["q"]["crf"], cq=i["q"]["cq"])
@@ -143,6 +146,12 @@ class ShrinkMixin:
         if st.st_size != i["size"]:
             self._drop_job(i)
             raise TaskError(T("the file changed since the preview", "plik zmienił się od podglądu"))
+        if i.get("reencode") and not i["reencode"].get("remux"):  # re-encode with only subtitles to write: file untouched
+            wrote = self._reencode_srts(full, i["reencode"])
+            if wrote:
+                i["subs_written"] = wrote
+            progress(i["size"])
+            return
         if self._inside(full, self._torrents()):
             raise TaskError(T("the file is back in the torrent client", "plik jest z powrotem w kliencie torrentów"))
         if not mp_detached.Detached.find(self.encodes, i.get("job")):
@@ -169,9 +178,11 @@ class ShrinkMixin:
                                   f"nie ma miejsca na oryginał w koszu"))
         info = mp_media.probe(full)
         pr = _item_profile(i)
+        rp = i.get("reencode")
         stem, ext = os.path.splitext(full)
-        out_final = stem + ".mkv"
-        part = os.path.join(os.path.dirname(full), f".{os.path.basename(stem)}.mp-shrink.part.mkv")
+        oext = ".mp4" if rp and rp.get("format") == "mp4" else ".mkv"
+        out_final = stem + oext
+        part = os.path.join(os.path.dirname(full), f".{os.path.basename(stem)}.mp-shrink.part{oext}")
         enc = t.get("enc") or "cpu"  # tasks from before 1.7 ran on the processor
         if enc == "gpu" and not mp_media.detect_hevc().get("gpu"):
             self.log("shrink: the graphics card's encoder is gone, using the processor")
@@ -190,16 +201,25 @@ class ShrinkMixin:
             _rm(part)
             # an audio track copied as is must decode cleanly: damaged MP3 frames in an old AVI ("Header missing")
             # are skipped by ffmpeg but stop a phone's decoder, and the copied track kept the whole film silent there
-            if i.get("audio_fix"):  # found by the preview (the file is unchanged since: same size)
+            if rp:  # re-encode (1.18+): subtitles next to the file first, then one encode for every other step
+                wrote = self._reencode_srts(full, rp)
+                if wrote:
+                    i["subs_written"] = wrote
+                broken = self._reencode_broken(full, info, rp)
+            elif i.get("audio_fix"):  # found by the preview (the file is unchanged since: same size)
                 broken = set(i.get("broken") or [])
             else:
                 broken = {a["index"] for a in _audio_keep(info, pr["audio"])
                           if _audio_codec(a, pr["audio"]) == ["copy"] and _audio_damaged(full, a)}
             if broken:
                 self.log(f"shrink: {os.path.basename(full)}: audio track(s) {sorted(broken)} don't decode cleanly, re-encoded")
-            cmd = self._shrink_cmd(full, part, info, pr, enc, broken, to_h=i.get("to_height") if not pr.get("copy") else None,
-                                   aac=i.get("aac") or "standard")
-            self.log("shrink:", os.path.basename(full), "sound only" if i.get("audio_fix") else i["profile"], enc)
+            if rp:
+                cmd = self._reencode_cmd(full, part, info, rp, enc, broken)
+            else:
+                cmd = self._shrink_cmd(full, part, info, pr, enc, broken, to_h=i.get("to_height") if not pr.get("copy") else None,
+                                       aac=i.get("aac") or "standard")
+            self.log("shrink:", os.path.basename(full), "sound only" if i.get("audio_fix") else
+                     "re-encode: " + ",".join(i.get("steps") or []) if rp else i["profile"], enc)
             os.makedirs(self.encodes, exist_ok=True)
             p = mp_detached.Detached.start(self.encodes, cmd, {"part": part, "full": full, "enc": enc}, "shrink")
             i["job"] = p.id
@@ -266,8 +286,14 @@ class ShrinkMixin:
         if abs(got - dur) > max(2.0, dur * 0.005) and abs(got - _readable_length(full)) > max(2.0, got * 0.005):
             _rm(part)
             raise TaskError(T("the result has a different length, the original was kept", "wynik ma inną długość, oryginał został"))
-        if new > st.st_size * (OLD_GROWTH if i.get("old_format") or i.get("audio_fix")
-                               else 1 - pr.get("min_saving", MIN_SAVING) / 2):
+        if rp and new > st.st_size * rp.get("max_growth", OLD_GROWTH):
+            _rm(part)
+            i["state"] = "skipped"
+            i["error"] = T("the result was bigger than the original, the original was kept",
+                           "wynik był większy niż oryginał, oryginał został")
+            return
+        if not rp and new > st.st_size * (OLD_GROWTH if i.get("old_format") or i.get("audio_fix")
+                                          else 1 - pr.get("min_saving", MIN_SAVING) / 2):
             _rm(part)
             i["state"] = "skipped"
             i["error"] = T("the result wasn't much smaller, the original was kept", "wynik nie był wyraźnie mniejszy, oryginał został")
@@ -283,7 +309,7 @@ class ShrinkMixin:
             _rm(part)
             raise TaskError(T("the new sound doesn't decode cleanly either, the original was kept",
                               "nowy dźwięk też nie dekoduje się czysto, oryginał został"))
-        if not pr.get("copy") and pr.get("codec") != "h264":  # the speeds are the HEVC encoders'
+        if not pr.get("copy") and pr.get("codec") != "h264" and not rp:  # the speeds are the plain HEVC encoders'
             h = (ninfo.get("video") or {}).get("height") or 0
             self._learn_speed(enc, dur * h * h * 16 / 9, work[0])
         # a film being watched (or probed by a phone that plays its own copy) keeps its name until it's left alone:
