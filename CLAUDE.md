@@ -145,7 +145,8 @@ Win11 in VirtualBox: the `~/.cache/winvm/LOCK` protocol (shared with timeprotect
   - the Remote refreshes 4×/s, so `uiautomator dump` often fails ("could not get idle state"): use screenshots.
 - **Agent 1.5.0 + app v1.261118.2108: verified on the Pixel** (magnet → recognised folder, "Change" moves the torrent
   and remembers the choice, library search). The player's own reconnect wasn't really exercised: an agent restart
-  is covered by the buffer. Missing: re-recognising a magnet without `dn=` once metadata arrives.
+  is covered by the buffer. Re-recognising a magnet without `dn=` once metadata arrives: logic checked
+  offline with a stub client (2026-11-22), not yet with a real magnet from the phone.
 - **Agent 1.6.1 + app v1.261118.2230: verified on the Pixel** (read-only on the real library: disks with library vs
   other files, previews of free-up, tidy, duplicates and shrink, folder profile and "Also copy to", covers, tag filter,
   agent update switch). Not exercised on hardware yet: running a real move/shrink task to the end and its

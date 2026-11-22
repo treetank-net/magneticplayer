@@ -123,6 +123,10 @@ Legend: `[ ]` to test, `[x]` verified (date, how), `[!]` found broken (what), `[
       (≤ ~20 s after it arrives) the agent recognizes it and, when sure, moves it to its folder (journal: "unnamed
       magnet recognized"); the card shows "Recognized: moving…" or the unsure folder with "Change"; closing the card
       early still gets it placed.
+      - 2026-11-22, agent 1.17.6 on jmpc, offline: `place_unnamed` with a stub torrent client and the real IMDb index
+        and folders: a public-domain film (high) moved to a "films" folder, a series (medium) and a junk name (low)
+        stayed with the guess saved, a torrent still named by its hash kept waiting; `/api/library/guess` for a name
+        that is only the hash returns no title, so the card keeps waiting. Not seen with a real client and the app.
 
 ## Library screens
 
