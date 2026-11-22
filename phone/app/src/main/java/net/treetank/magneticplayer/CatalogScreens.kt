@@ -376,6 +376,9 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
         val ids = seen.map { it.item.id }.toSet()
         seen.firstOrNull()?.item?.let { x -> x to similar(ctx, cat, x).filter { it.first.id !in ids } }?.takeIf { it.second.size >= 3 }
     }
+    // G4: the same title's suggestions that are not on the disks (CatalogSuggest.kt)
+    val lastSeen = remember(cat, back) { c.resumes(ctx, cat, withDone = true).firstOrNull()?.item }
+    val suggest = rememberSuggestMissing(c, cat, lastSeen)
     // the hero: a few slides of different kinds ("New on your disks", "Because you watched…", "Top rated", a random
     // pick), the first one picked at random each time the screen is built, turning by itself like a shop window
     val heroNewLabel = stringResource(R.string.cat_hero_new)
@@ -433,6 +436,7 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
                 CoverCard(y, why) { c.open(y) }
             }
         }
+        if (lastSeen != null && suggest != null) item(key = "suggest") { SuggestMissingRow(c, lastSeen, suggest) }
         if (kids.isNotEmpty()) item {
             CoverRow(stringResource(R.string.cat_row_kids), stringResource(R.string.cat_all_n, kids.size), kids.take(15),
                 { c.push(Nav.results(listOf("age:7"))) }, { it.id }) { x -> CoverCard(x, cardMeta(x)) { c.open(x) } }

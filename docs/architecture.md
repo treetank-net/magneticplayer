@@ -464,7 +464,12 @@ load balancing) is journalled in `moves.json`, and the phone re-keys what it kee
 "Similar in your collection" on the title screen is computed by the app from the catalog: shared actors and
 directors, then topics, then genres. Genres alone need two specific ones in common ("Drama" doesn't count), and
 kids' titles are matched only with kids' titles. The same match makes Discover's "Because you watched <title>" row
-from the title watched last on this phone (finished films too), minus what was watched. The shared want-to-watch list is re-read every 30 s and on every
+from the title watched last on this phone (finished films too), minus what was watched. Below it (agent 1.18+, G4) the
+row "Because you watched <title>: not on your disks" comes from the agent: `GET /api/catalog/suggest` scores titles
+from the local IMDb index that share the watched title's directors, first billed actors (Wikidata, cached for a day),
+genres and era, keeps popular ones of the same kind that no library folder has, and caches the candidates per watched
+title for a day; the phone keeps the answer for 10 minutes and drops what any merged server has. A tap opens the
+missing title's page (search engines, magnet, want to watch). The shared want-to-watch list is re-read every 30 s and on every
 screen change, so a title added on another phone shows up without a restart.
 
 ### MCP for an AI assistant

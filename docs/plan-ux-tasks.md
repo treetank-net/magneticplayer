@@ -395,6 +395,7 @@ Each stage is a release of its own (tag after it was seen on the Pixel, in Engli
      a Chromecast variant says which audio it has and offers preparing it again for another one.
    - **G4. Suggestions you don't have.** Discover gets a row "Because you watched <title>: not on your disks" from
      the IMDb index (same genres/people, popular, not in the library); a tap opens D2 (search engines, magnet).
+     Code: `GET /api/catalog/suggest` (`features.suggest_missing`), `CatalogSuggest.kt`; not checked on the phone yet.
    - **G5. Playing on the server's screen from a folder opens the Remote** (the app stayed on the folder).
 
 ## Answers (2026-11-20)

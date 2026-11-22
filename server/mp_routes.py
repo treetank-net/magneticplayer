@@ -147,6 +147,7 @@ ROUTES = [
     ("GET", "/api/catalog/episodes", catalog.episodes, {}),
     ("GET", "/api/catalog/person", catalog.person, {}),
     ("GET", "/api/catalog/next", catalog.next_titles, {}),
+    ("GET", "/api/catalog/suggest", catalog.suggest, {}),
     ("GET", "/api/wishlist", catalog.wishlist, {}),
     ("POST", "/api/wishlist", catalog.wishlist_add, {}),
     ("POST", "/api/wishlist/remove", catalog.wishlist_remove, {}),

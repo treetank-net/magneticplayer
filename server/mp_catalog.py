@@ -14,11 +14,13 @@ the one that helps.
 
 "What next" mixes titles from the collection with ones that are not on the disks (same actors, same genres, same
 topic): the app shows the latter greyed out, with the shared "want to watch" list and an optional search link that the
-user configures (no search sites are built in).
+user configures (no search sites are built in). "Suggest" (Discover's "not on your disks" row) keeps only the latter,
+scored by shared people, genres and era, and cached per watched title.
 
 State: catalog.json in the config directory (items, Wikidata details, labels).
 """
 import json
+import math
 import os
 import re
 import threading
@@ -41,6 +43,12 @@ LANG2 = {"pol": "pl", "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre":
          "ita": "it", "rus": "ru", "por": "pt", "dut": "nl", "nld": "nl", "cze": "cs", "ces": "cs", "chi": "zh",
          "zho": "zh", "kor": "ko", "swe": "sv", "nor": "no", "dan": "da", "fin": "fi", "hun": "hu", "ukr": "uk"}
 PL_AUDIO = re.compile(r"(?i)\b(lektor|dubbing|pldub|dub\.?pl|pl\.?dub)\b")
+SUGGEST_TTL = 86400    # suggestions per watched title are kept for a day
+SUGGEST_KEEP = 64      # ... for this many watched titles
+SUGGEST_POOL = 40      # candidates kept per title (an answer drops those the library has meanwhile)
+SUGGEST_MIN_VOTES = 5000  # "popular": IMDb votes a suggestion needs
+SUGGEST_PER_REASON = 4   # one director or actor fills at most this many places before others get theirs
+SUGGEST_GENERIC = {"Drama", "Comedy", "Romance"}  # genres that alone say little about a title
 PL_SUBS = re.compile(r"(?i)\b(napisy|plsub|pl\.?sub|sub\.?pl)\b")
 
 
@@ -119,6 +127,7 @@ class Catalog:
         self.version = d.get("version") or 0
         self.state = {"scanning": False, "done": 0, "total": 0, "last": d.get("last")}
         self._ext = {}                         # (kind, key) → (time, result): on-demand Wikidata queries
+        self._suggest = {}                     # imdb → (valid until, source, candidates): suggest() per watched title
         self.hash_ids = None                   # full path → [(imdb, n)] from OpenSubtitles by file hash (set by the agent)
 
     # ---- persistence
@@ -789,6 +798,127 @@ class Catalog:
                     add(r, ", ".join(sorted(gs & set(r["genres"]))), ", ".join(sorted(gs & set(r["genres"]))), "genre")
         out.sort(key=lambda c: (not c["have"], {"actor": 0, "topic": 1, "genre": 2}[c["reason"]]))
         return {"items": out[:limit]}
+
+    def suggest(self, imdb, lang="en", limit=20):
+        """G4, "Because you watched <title>: not on your disks" (agent 1.18+): popular titles from the local IMDb index
+        that share people (directors, the first billed actors), genres and era with `imdb` and that no library folder
+        has. The candidates are computed once per watched title and kept for a day (`SUGGEST_TTL`); each answer only
+        drops what the library has meanwhile. Names are those of the title page (Wikidata details, cached)."""
+        if not re.fullmatch(r"tt\d+", imdb or ""):
+            raise ValueError("bad imdb id")
+        with self.ident.lock:
+            index = self.ident.index
+        if not index.db:
+            return {"items": [], "index": False}
+        try:
+            limit = max(1, min(int(limit), 40))
+        except (TypeError, ValueError):
+            limit = 20
+        hit = self._suggest.get(imdb)
+        if hit and time.time() < hit[0]:
+            src, cands = hit[1], hit[2]
+        else:
+            src, cands, ttl = self._suggest_compute(imdb, index)
+            self._suggest[imdb] = (time.time() + ttl, src, cands)
+            if len(self._suggest) > SUGGEST_KEEP:  # the oldest answers go first
+                for k in sorted(self._suggest, key=lambda k: self._suggest[k][0])[:len(self._suggest) - SUGGEST_KEEP]:
+                    self._suggest.pop(k, None)
+        with self.lock:
+            have = {it.get("imdb") for it in self.items.values() if it.get("imdb")}
+        pl = lang == "pl"
+        out = []
+        for c in cands:
+            if c["imdb"] in have:
+                continue
+            x = {k: v for k, v in c.items() if k not in ("why_en", "why_pl", "score")}
+            x["why"] = c["why_pl"] if pl else c["why_en"]
+            out.append(x)
+            if len(out) >= limit:
+                break
+        return {"items": out, "index": True, "source": src}
+
+    def _suggest_compute(self, imdb, index):
+        """(source title, ranked candidates, seconds to keep them) for `suggest`. Scores: a shared director 4, each
+        shared actor 2.5, each shared genre 1.5 (a generic one like Drama 0.5), the same era (within 10 years) 1, and
+        popularity log10(votes). Only titles of the same kind (film / series) with SUGGEST_MIN_VOTES or more; for a
+        kids' title only animation and family titles."""
+        me = index.get(imdb) or {}
+        with self.lock:
+            mine = next((it for it in self.items.values() if it.get("imdb") == imdb), None)
+        if imdb not in self.wd and self.ident.online:
+            try:
+                self._fetch([imdb])
+            except Exception as e:  # noqa: BLE001 (network: genres and era still work)
+                self.log("catalog: Wikidata failed:", e)
+        d = self.wd.get(imdb) or {}
+        kind = me.get("kind") or (mine or {}).get("kind") or "movie"
+        genres = set(me.get("genres") or (mine or {}).get("genres") or [])
+        year = me.get("year") or (mine or {}).get("year")
+        kids = bool(d.get("kids") or (mine or {}).get("kids") or d.get("age") == 0)
+        src = {"imdb": imdb, "title": me.get("title") or (mine or {}).get("title") or d.get("en") or imdb, "year": year,
+               "kind": kind}
+        cand = {}  # imdb → {"row", "dirs", "cast", "genres"}
+
+        def note(r):
+            return cand.setdefault(r["imdb"], {"row": r, "dirs": [], "cast": []})
+        dirs, cast = (d.get("dir") or [])[:2], [q for q, _ in d.get("cast") or []][:4]
+        ttl = SUGGEST_TTL
+        if self.ident.online and (dirs or cast):
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(3) as ex:  # more at once and the query service answers 429
+                found = dict(zip(dirs + cast, ex.map(self._person_films, dirs + cast)))
+            for q, ids in found.items():
+                hit = self._ext.get(("person", q))
+                if not hit or time.time() - hit[0] > 86400 - 600:  # _ext_query stamps a failure a day minus 5 min old
+                    ttl = 300  # a failed Wikidata query: try again soon instead of keeping a list without people
+                directed = {i[2:] for i in ids if i.startswith("d:")}
+                rows = index.many(list(dict.fromkeys(i[2:] if i.startswith("d:") else i for i in ids)))
+                for r in rows.values():
+                    if q in dirs and r["imdb"] in directed:
+                        note(r)["dirs"].append(q)
+                    elif q in cast and r["imdb"] not in directed:
+                        note(r)["cast"].append(q)
+        specific = genres - SUGGEST_GENERIC or genres
+        g = sorted(specific)[:3]
+        masks = {mp_ident.G[a] | mp_ident.G[b] for i, a in enumerate(g) for b in g[i + 1:] if a in mp_ident.G and b in mp_ident.G}
+        if not masks and g and g[0] in mp_ident.G:
+            masks = {mp_ident.G[g[0]]}
+        years = (year - 15, year + 15) if year else None
+        for m in masks:
+            for r in index.popular(m, 1 if kind == "series" else 0, years, 40):
+                note(r)
+        out = []
+        for i, c in cand.items():
+            r = c["row"]
+            if i == imdb or (r.get("votes") or 0) < SUGGEST_MIN_VOTES or r.get("kind") != kind:
+                continue
+            rg = set(r.get("genres") or [])
+            if kids and not rg & {"Animation", "Family"}:
+                continue
+            shared = genres & rg
+            if not shared and not c["dirs"] and not c["cast"]:
+                continue
+            score = (4 * len(c["dirs"]) + 2.5 * len(c["cast"]) + sum(0.5 if x in SUGGEST_GENERIC else 1.5 for x in shared)
+                     + (1 if year and r.get("year") and abs(r["year"] - year) <= 10 else 0) + math.log10(r["votes"]))
+            if c["dirs"]:
+                n = self.label(c["dirs"][0])
+                why = (f"directed by {n}", f"reżyseria: {n}", "director")
+            elif c["cast"]:
+                n = ", ".join(self.label(q) for q in c["cast"][:2])
+                why = (f"also {n}", f"też {n}", "actor")
+            else:
+                n = ", ".join(sorted(shared))
+                why = (n, n, "genre")
+            x = {k: r.get(k) for k in ("imdb", "title", "year", "kind", "genres", "rating", "votes", "minutes")}
+            x.update(have=False, reason=why[2], why_en=why[0], why_pl=why[1], score=round(score, 2))
+            out.append(((c["dirs"][:1] or c["cast"][:1] or ["genre"])[0], x))
+        out.sort(key=lambda kx: -kx[1]["score"])
+        # variety: at most SUGGEST_PER_REASON titles for one person (or for genres alone) before the rest
+        first, rest, per = [], [], {}
+        for k, x in out:
+            per[k] = per.get(k, 0) + 1
+            (first if per[k] <= SUGGEST_PER_REASON else rest).append(x)
+        return src, (first + rest)[:SUGGEST_POOL], ttl
 
 
 class Wishlist:
