@@ -87,9 +87,14 @@ def signals(s, video_fps=None):
     return out
 
 
+QUOTA = {"opensubtitlescom"}  # providers whose downloads count against a daily limit
+
+
 def rank_key(r):
-    """Best first (within a language): not machine-translated, hash match, same frame rate, score, trusted, downloads."""
-    return (bool(r.get("machine")), not r.get("hash_match"), bool(r.get("fps_off")), -r.get("score", 0),
+    """Best first (within a language): not machine-translated, hash match, same frame rate, among hash matches one that
+    costs no download quota (NapiProjekt's hash hit is made for this very file just as well), score, trusted, downloads."""
+    return (bool(r.get("machine")), not r.get("hash_match"), bool(r.get("fps_off")),
+            bool(r.get("hash_match") and r.get("provider") in QUOTA), -r.get("score", 0),
             not r.get("trusted"), -(r.get("downloads") or 0))
 
 

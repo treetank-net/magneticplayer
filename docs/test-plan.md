@@ -765,6 +765,14 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
   "machine translation" / "made for 24 fps, the film has another frame rate". Checked on jmpc in a separate process
   (2026-11-21, a 25 fps film: machine translations last, 23.976/24 fps ones marked); app compiled only. To see in the
   app: the badges and the order on a phone.
+- [ ] Agent 1.17.5, subtitles: among hash matches NapiProjekt (no download quota) goes before OpenSubtitles.
+  Measured on jmpc (2026-11-21, 40 random films + 12 series, search only): NapiProjekt has Polish subtitles by hash for
+  18/40 films and 9/12 series episodes, OpenSubtitles title matches for 22/40 (PL) and 22/40 (EN); only 2 films had
+  Polish only from free sources. BSPlayer failed for 29/40 films (and all series), Podnapisi for everything, Gestdown
+  gives English for series only. Timings of free candidates compared pairwise (`mp_subsync.align` + share of lines
+  starting within 0.5 s): a NapiProjekt Polish file agreed 0.99 with English hash matches of BSPlayer, and series
+  pairs showed the 25↔23.976 drift (ratios 0.959/1.043). Too few files with two independent sources and cached speech
+  (8 and 1) to say how well agreement predicts the speech fit: voting stays an idea.
 - [ ] Agent 1.17.4, catalog checked by the file's hash (OpenSubtitles search, no downloads): 3+ subtitles for another
   film replace the name's film, agreement marks it sure. On jmpc's data three such fixes are expected (sequels
   named as earlier films, a same-name older film); see the journal "the file's hash says". To see in the app: their
