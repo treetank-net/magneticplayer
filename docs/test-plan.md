@@ -821,6 +821,9 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       says "want".
 - [ ] A title that reaches the disks leaves the row (at the latest after the phone's 10-minute cache).
 - [ ] An older agent (no `suggest_missing`): no row, Discover as before.
+- [ ] Discover rows (kids, genres, "Because you watched") show one card per title: a series kept per season on one
+      disk and whole on another showed up three or four times side by side (seen on the Pixel, v1.261122.1956). The
+      copy with most episodes is shown; "Because you watched" also leaves out other copies of the watched title.
 - [ ] First load after an agent restart: the row arrives after a few seconds (Wikidata), the screen doesn't stutter.
 - [ ] "All servers": the row asks the server that has the watched title.
 

@@ -374,7 +374,9 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
     val because = remember(cat, back) {
         val seen = c.resumes(ctx, cat, withDone = true)
         val ids = seen.map { it.item.id }.toSet()
-        seen.firstOrNull()?.item?.let { x -> x to similar(ctx, cat, x).filter { it.first.id !in ids } }?.takeIf { it.second.size >= 3 }
+        val seenImdb = seen.mapNotNull { it.item.imdb }.toSet()  // other copies of a watched title too
+        seen.firstOrNull()?.item?.let { x -> x to similar(ctx, cat, x).filter { it.first.id !in ids && it.first.imdb !in seenImdb } }
+            ?.takeIf { it.second.size >= 3 }
     }
     // G4: the same title's suggestions that are not on the disks (CatalogSuggest.kt)
     val lastSeen = remember(cat, back) { c.resumes(ctx, cat, withDone = true).firstOrNull()?.item }
@@ -432,19 +434,20 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
         }
         if (because != null) item {
             val (x, list) = because
-            CoverRow(stringResource(R.string.cat_row_because, x.title), null, list, null, { it.first.id }) { (y, why) ->
+            CoverRow(stringResource(R.string.cat_row_because, x.title), null, list.distinctBy { it.first.imdb ?: it.first.id }, null,
+                { it.first.id }) { (y, why) ->
                 CoverCard(y, why) { c.open(y) }
             }
         }
         if (lastSeen != null && suggest != null) item(key = "suggest") { SuggestMissingRow(c, lastSeen, suggest) }
         if (kids.isNotEmpty()) item {
-            CoverRow(stringResource(R.string.cat_row_kids), stringResource(R.string.cat_all_n, kids.size), kids.take(15),
+            CoverRow(stringResource(R.string.cat_row_kids), stringResource(R.string.cat_all_n, kids.size), kids.oneCopyEach().take(15),
                 { c.push(Nav.results(listOf("age:7"))) }, { it.id }) { x -> CoverCard(x, cardMeta(x)) { c.open(x) } }
         }
         genres.forEach { g ->
             item(key = "g/$g") {
                 val list = cat.items.filter { g in it.genres }.sortedByDescending { it.rating ?: 0.0 }
-                CoverRow(genreLabel(g), stringResource(R.string.cat_all_n, list.size), list.take(15),
+                CoverRow(genreLabel(g), stringResource(R.string.cat_all_n, list.size), list.oneCopyEach().take(15),
                     { c.push(Nav.results(listOf("genre:$g"))) }, { it.id }) { x -> CoverCard(x, cardMeta(x)) { c.open(x) } }
             }
         }
@@ -1398,3 +1401,8 @@ private fun WishlistScreen(c: CatCtx) {
         }
     }
 }
+
+/** One card per title in the Discover rows: the same series kept per season on one disk and whole on another showed up
+ *  three or four times side by side. The copy with most episodes wins, then the sharper picture; order is kept. */
+private fun List<CatItem>.oneCopyEach(): List<CatItem> =
+    groupBy { it.imdb ?: it.id }.values.map { g -> g.maxWith(compareBy<CatItem>({ it.episodes }, { it.height ?: 0 })) }
