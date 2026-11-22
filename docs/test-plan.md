@@ -816,9 +816,11 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       But with the app on screen something still opened a connection every few seconds (SYN_SENT over mobile data):
       the next app makes every API call and cover load to a server that isn't on this network fail at once, only
       Home's check, the header's ping (once a minute) and Wake really ask.
-- [ ] Away from home (`Home.kt`, next app): on mobile data only the header says "not on this network" at once, the
-      Library shows the catalog copy, no pings to the server (agent journal quiet) and no CPU use while the app sits
-      in the background; Wi-Fi back on at home: "on" within a few seconds, no restart needed.
+      [x] Fixed (2026-11-22, Pixel, v1.261122.2306): Wi-Fi off with the app on screen, 30 samples over ~60 s of the
+      phone's TCP table: 2 entries to the server (the header's once-a-minute ping), was 85.
+- [x] Away from home (`Home.kt`): on mobile data only the header says "not on this network" at once, no pings to the
+      server and no CPU use while the app sits in the background; Wi-Fi back on at home: "here" within a few seconds,
+      no restart needed. (2026-11-22, Pixel, v1.261122.2306; the Library copy not looked at in this run)
 - [ ] At home with jmpc asleep: "asleep or off" with Wake (the Chromecast next to it is remembered), not "not on this
       network". First run after the update: the neighbours are learned the first time jmpc answers.
 - [ ] Another Wi-Fi with the same address range (or a hotspot from the other phone): "not on this network", the token
