@@ -323,7 +323,7 @@ class Tasks(PlanMixin, JobsMixin, LayoutMixin, FactsMixin, OpsMixin, ShrinkMixin
 
     def _drop_part(self, j):
         part = (j.meta or {}).get("part")
-        if part and part.endswith((".mp-shrink.part.mkv", ".mp-shrink.part.mp4")):  # .mp4: re-encode (1.18+)
+        if part and part.endswith((".mp-shrink.part.mkv", ".mp-shrink.part.mp4")):  # .mp4: re-encode (1.18.1+)
             try:
                 j.wait(30)
             except subprocess.TimeoutExpired:

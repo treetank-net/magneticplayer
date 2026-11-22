@@ -306,7 +306,7 @@ The catalog (`/api/catalog/*` entries) adds `series` (up to two film-series Wiki
 entries cached before are fetched again once. Folders named like the layout's own (`Films/`, `Kids/`, `Teens/`, a
 decade) are looked into: their subfolders are titles, as at the top of a library folder.
 
-### Re-encode, advanced (agent 1.18+)
+### Re-encode, advanced (agent 1.18.1+)
 
 `features.jobs` adds `reencode` (board B6, plan item F3); apps show the screen only when it is listed.
 

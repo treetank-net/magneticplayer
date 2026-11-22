@@ -1,6 +1,6 @@
 package net.treetank.magneticplayer
 
-// Stage 6 of docs/plan-ux-tasks.md (agent 1.18+, "reencode" in `features.jobs`): Re-encode (advanced), board B6, on the
+// Stage 6 of docs/plan-ux-tasks.md (agent 1.18.1+, "reencode" in `features.jobs`): Re-encode (advanced), board B6, on the
 // task screen template of LibraryJobs.kt (F6). Six steps chosen by the owner, one ffmpeg run per file on the agent
 // (mp_tasks_reencode.py); presets ("Start from") and "Save set" are kept on the agent (`reencode_presets` in
 // /api/config/jobs); the summary card comes from GET /api/library/jobs?only=reencode&reencode=<steps>.
@@ -87,7 +87,7 @@ private fun stepActive(s: JSONObject?): Boolean {
     return true
 }
 
-/** The re-encode counter for [steps] in [scope] (agent 1.18+), only that one. */
+/** The re-encode counter for [steps] in [scope] (agent 1.18.1+), only that one. */
 private fun Api.reencodeCounter(scope: JSONObject?, steps: String): JobInfo? {
     val q = buildList {
         if (scope != null && scope.length() > 0) add("scope=" + Uri.encode(scope.toString()))

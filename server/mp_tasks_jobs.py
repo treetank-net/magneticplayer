@@ -94,7 +94,7 @@ class JobsMixin:
         return {"audio_fix_auto": bool(self.cfg.get("audio_fix_auto")), "subs_auto": self.cfg.get("subs_auto") or "",
                 "layout_levels": st["levels"], "layout_ages": st["ages"],  # 1.17+
                 "layout_keep": None if st["keep"] is None else [{"root": idx[a], "path": b} for a, b in st["keep"] if a in idx],
-                "reencode_presets": self.reencode_presets()}  # 1.18+: built-in and saved step sets (B6)
+                "reencode_presets": self.reencode_presets()}  # 1.18.1+: built-in and saved step sets (B6)
 
     def set_jobs_config(self, b):
         if "audio_fix_auto" in b:
@@ -105,7 +105,7 @@ class JobsMixin:
             self.cfg["layout_levels"] = mp_arrange.norm_levels(b["layout_levels"]) or list(mp_arrange.DEFAULT_LEVELS)
         if "layout_ages" in b:
             self.cfg["layout_ages"] = mp_arrange.norm_ages(b["layout_ages"])
-        if b.get("reencode_preset") is not None:  # 1.18+: {"name", "steps"} saved (same name replaced)
+        if b.get("reencode_preset") is not None:  # 1.18.1+: {"name", "steps"} saved (same name replaced)
             self.save_reencode_preset(b["reencode_preset"])
         if b.get("reencode_preset_delete"):
             self.delete_reencode_preset(str(b["reencode_preset_delete"]))
@@ -631,7 +631,7 @@ class JobsMixin:
 
     def jobs(self, scope=None, languages="pl,en", levels=None, reencode=None, only=None):
         """`levels` (1.17+): the folder layout counter with these levels (the A2 screen while the owner taps them).
-        `reencode` (1.18+): the re-encode counter for these steps (B6); `only` = "reencode": just that counter."""
+        `reencode` (1.18.1+): the re-encode counter for these steps (B6); `only` = "reencode": just that counter."""
         m = self._matcher(scope)
         roots = {r["id"]: r for r in self._job_roots()}
         with self.flock:
@@ -656,7 +656,7 @@ class JobsMixin:
                     "size": sum(s for _, _, s in lst) if listing else sum(f["size"] for _, _, f in inscope),
                     "checked_at": int(at) if at else None, "pending": pending, "jobs": jobs}
 
-        # re-encode (1.18+, B6): its summary card for the steps being chosen; without steps only the step sets
+        # re-encode (1.18.1+, B6): its summary card for the steps being chosen; without steps only the step sets
         import mp_tasks_reencode
         rsteps = mp_tasks_reencode.norm_steps(reencode) if reencode is not None else None
         ropts = {"presets": self.reencode_presets()}

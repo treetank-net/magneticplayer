@@ -663,7 +663,7 @@ private fun planKindTitle(kind: String) = when (kind) {
     "layout" -> stringResource(R.string.j2_layout)
     "balance" -> stringResource(R.string.j2_balance)
     "cast_ready" -> stringResource(R.string.j2_cast)
-    "reencode" -> stringResource(R.string.re_title)  // agent 1.18+ (plan stage 6)
+    "reencode" -> stringResource(R.string.re_title)  // agent 1.18.1+ (plan stage 6)
     else -> stringResource(R.string.lib_move)
 }
 
@@ -785,7 +785,7 @@ private fun PlanSummary(r: JSONObject, count: Int) {
     if (kind == "balance") r.objects("disks").forEach { d ->
         lines += d.optString("name") + ": " + stringResource(R.string.j2_bal_pct, d.optInt("pct"), d.optInt("pct_after"))
     }
-    // re-encode (agent 1.18+): how many separate passes the steps replace
+    // re-encode (agent 1.18.1+): how many separate passes the steps replace
     if (kind == "reencode" && r.optInt("passes") > 1) lines += stringResource(R.string.re_sum_passes, r.optInt("passes"))
     if (kind == "cast_ready" && r.optLong("est") > r.optLong("bytes"))
         lines += stringResource(R.string.j2_sum_grow, humanBytes(r.optLong("est") - r.optLong("bytes")))
@@ -858,7 +858,7 @@ private fun PlanItem(kind: String, it: JSONObject) {
     val name = it.optString("name").ifEmpty { it.optString("path").substringAfterLast('/') }
     Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
     when (kind) {
-        // re-encode (agent 1.18+): the steps that apply to this file, and its size before and after
+        // re-encode (agent 1.18.1+): the steps that apply to this file, and its size before and after
         "reencode" -> {
             val labels = it.optJSONArray("labels")?.let { a -> List(a.length()) { k -> a.optString(k) } }.orEmpty()
             Text(labels.joinToString(" · "), style = small, color = MaterialTheme.colorScheme.primary, maxLines = 3, overflow = TextOverflow.Ellipsis)

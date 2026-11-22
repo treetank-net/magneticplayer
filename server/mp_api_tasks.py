@@ -76,7 +76,7 @@ def plan(req, a, **_):
         return req.send_json(a.tasks.plan_balance(b))
     if kind == "cast_ready":  # agent 1.17+
         return req.send_json(a.tasks.plan_cast_ready(b, scope))
-    if kind == "reencode":  # agent 1.18+: steps, encoder, name
+    if kind == "reencode":  # agent 1.18.1+: steps, encoder, name
         return req.send_json(a.tasks.plan_reencode(b, scope))
     raise ApiError(T("kind must be free, shrink, modernize, audio_fix, downscale, compress, move, tidy, dupes, "
                      "subs, subs_get, trash, layout, balance, cast_ready or reencode",
@@ -92,7 +92,7 @@ def job_counters(req, a, q, **_):
         raise ApiError(str(e), 400) from None
     lv = q.get("levels")  # agent 1.17+: the folder layout counter for these levels
     rs = None
-    if q.get("reencode"):  # agent 1.18+: the re-encode counter for these steps (JSON)
+    if q.get("reencode"):  # agent 1.18.1+: the re-encode counter for these steps (JSON)
         try:
             rs = json.loads(q["reencode"][0])
         except ValueError:

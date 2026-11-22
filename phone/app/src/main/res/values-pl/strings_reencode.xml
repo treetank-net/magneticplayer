@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Etap 6 planu (agent 1.18+, docs/plan-ux-tasks.md B6): Przekoduj (zaawansowane); LibraryReencode.kt. Polski. -->
+<!-- Etap 6 planu (agent 1.18.1+, docs/plan-ux-tasks.md B6): Przekoduj (zaawansowane); LibraryReencode.kt. Polski. -->
 <resources>
     <string name="re_title">Przekoduj</string>
     <string name="re_row">Kilka zmian w jednym przebiegu</string>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Plan stage 6 (agent 1.18+, docs/plan-ux-tasks.md B6): Re-encode (advanced); LibraryReencode.kt. English. -->
+<!-- Plan stage 6 (agent 1.18.1+, docs/plan-ux-tasks.md B6): Re-encode (advanced); LibraryReencode.kt. English. -->
 <resources>
     <string name="re_title">Re-encode</string>
     <string name="re_row">Several changes in one pass</string>

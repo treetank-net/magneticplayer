@@ -236,7 +236,7 @@ fun JobsArea(api: Api, snack: SnackbarHostState, scopeStr: String?, onScope: (St
 }
 
 // Rows of the list, by group. "layout" (A2), "balance" (A3) and "cast_ready" (B5) are plan stage 2 (agent 1.17+,
-// screens in LibraryJobs2.kt); "reencode" (B6, under "Advanced", last in Renovation) is stage 6 (agent 1.18+,
+// screens in LibraryJobs2.kt); "reencode" (B6, under "Advanced", last in Renovation) is stage 6 (agent 1.18.1+,
 // LibraryReencode.kt).
 private val TIDY = listOf("layout", "balance", "dupes", "free")
 private val RENOVATION = listOf("audio_fix", "modernize", "downscale", "compress", "cast_ready", "reencode")
@@ -614,7 +614,7 @@ internal fun JobFrame(c: JobCtx, title: String, description: String, scopeLabel:
             content()
         }
         if (primary != null) Surface(tonalElevation = 3.dp) {
-            // a second action next to it (B6 "Save set"), agent 1.18+ screens
+            // a second action next to it (B6 "Save set"), agent 1.18.1+ screens
             if (secondary != null) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onSecondary, Modifier.weight(1f)) { Text(secondary) }

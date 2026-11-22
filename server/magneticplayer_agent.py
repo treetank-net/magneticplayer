@@ -61,7 +61,7 @@ import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.18.0"
+VERSION = "1.18.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -416,7 +416,7 @@ class App:
                 "catalog_delta": True, "watch_sync": True,
                 "jobs": ["free", "dupes", "audio_fix", "modernize", "downscale", "compress", "subs_get", "subs", "tags", "trash",
                          "layout", "balance", "cast_ready",  # agent 1.17+: folder layout, balance, ready for Chromecast
-                         "reencode"],  # agent 1.18+: re-encode (advanced), steps and saved sets
+                         "reencode"],  # agent 1.18.1+: re-encode (advanced), steps and saved sets
                 # pause/resume, queue order and retry of tasks: /api/tasks/<id>/pause|resume|move|retry, /api/tasks/order
                 "task_queue": True,  # agent 1.17+
                 "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)

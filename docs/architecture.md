@@ -391,7 +391,7 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    (even after an agent restart) re-attaches to the same ffmpeg and continues; an encode left stopped is killed when
    its file changed or vanished. Tasks can be moved up or down the queue or re-ordered as a whole; a finished task
    whose files failed for lack of space can be retried as a new task after emptying the trash.
-11. Re-encode, advanced (agent 1.18+, `mp_tasks_reencode.py`, board B6): the owner turns on some of six steps and
+11. Re-encode, advanced (agent 1.18.1+, `mp_tasks_reencode.py`, board B6): the owner turns on some of six steps and
    each file gets one ffmpeg run built from the steps it needs, in a fixed order (sound fix and deinterlace, denoise,
    crop, scale, video codec; the AAC track and `.srt` files; the container last). Steps a file doesn't need are
    skipped for it and the preview lists the ones that apply per file. Interlacing and black bars are measured by

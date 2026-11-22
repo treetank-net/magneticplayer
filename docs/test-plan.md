@@ -848,6 +848,28 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
 - [ ] Back home with the app on screen: one sync; no requests while the app is in the background.
 - [ ] The web page and older apps against agent 1.18 still get the full catalog with `since=<version>`.
 
+## Re-encode, advanced (stage 6: F3 + B6, agent 1.18.1)
+
+A1/E2:
+- [ ] an "ADVANCED" label and a "Re-encode" row at the end of Renovation (only with agent 1.18.1+)
+- [ ] the counter "N sets" greyed out; the row opens B6; an E2 scope carries into B6
+
+B6:
+- [ ] description: several changes in one pass, the file is encoded once
+- [ ] "START FROM": Series archive / For Chromecast / Old VHS / Empty, plus saved sets
+- [ ] files row: folder picker on the whole computer, the scope bar in a scope
+- [ ] six steps: switch + name + one-line summary, only one expanded at a time
+- [ ] resolution 720/480/360; codec H.265 saving / H.265 quality / H.264 compatible
+- [ ] old picture: deinterlace / denoise / crop black bars; sound: fix damaged / even loudness / leave
+- [ ] Chromecast: add AAC stereo / subtitles to .srt; container MKV / MP4
+- [ ] a step that is off reads "skipped"
+- [ ] summary card: "N files · 1 pass instead of K · about T · −X GB", the order note, warnings
+- [ ] "Save set" (a name; the set shows on the other phone) and "Preview" with the steps per file
+- [ ] a real task to the end on jmpc (GPU), including an interlaced VHS-like file and one with subtitles; survives an
+      agent restart; EN and PL
+- Decisions taken without the owner (2026-11-22): deleting a saved set is API-only for now (no place on the board);
+  "For Chromecast" uses MP4 (B5 makes MKV); the encoder is picked in the preview, as in the other tasks.
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a

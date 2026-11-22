@@ -62,7 +62,7 @@ def _item_profile(i):
     item's own overrides (compression quality, sound mode; agent 1.16+)."""
     if i.get("audio_fix"):
         return AUDIO_FIX
-    if i.get("reencode"):  # re-encode (agent 1.18+): the command comes from mp_tasks_reencode, this only steers checks
+    if i.get("reencode"):  # re-encode (agent 1.18.1+): the command comes from mp_tasks_reencode, this only steers checks
         v = i["reencode"].get("video")
         return {"copy": not v, "codec": "h264" if v == "h264" else "hevc", "audio": "keep", "reencode": True}
     pr = MODERN if i.get("modern") else PROFILES[i["profile"]]
@@ -201,7 +201,7 @@ class ShrinkMixin:
             _rm(part)
             # an audio track copied as is must decode cleanly: damaged MP3 frames in an old AVI ("Header missing")
             # are skipped by ffmpeg but stop a phone's decoder, and the copied track kept the whole film silent there
-            if rp:  # re-encode (1.18+): subtitles next to the file first, then one encode for every other step
+            if rp:  # re-encode (1.18.1+): subtitles next to the file first, then one encode for every other step
                 wrote = self._reencode_srts(full, rp)
                 if wrote:
                     i["subs_written"] = wrote

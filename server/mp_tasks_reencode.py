@@ -1,4 +1,4 @@
-"""Re-encode (advanced), docs/plan-ux-tasks.md F3 + B6 (agent 1.18+): several changes to a file in one ffmpeg run.
+"""Re-encode (advanced), docs/plan-ux-tasks.md F3 + B6 (agent 1.18.1+): several changes to a file in one ffmpeg run.
 
 The owner turns on some of six steps (board order: resolution, video codec, old picture, sound, Chromecast,
 container) and each file gets one encode built from the steps it needs, always in the same order:
