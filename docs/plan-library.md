@@ -92,7 +92,9 @@ yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. Stage 8 
     (`Catalog._apply_hash`): agreement (or 2+ subtitles for the name's film) marks the item `sure`; 3+ subtitles for one
     other film (and no close second) replace the name's film (`by_hash`, the old id kept in `name_imdb`; a
     sequel named as the first film of a series); with no film from the name, 2 are enough.
-    A single stray subtitle (wrong uploads, hash collisions) is ignored. Films only; series later.
+    A single stray subtitle (wrong uploads, hash collisions) is ignored. Agent 1.17.6: series too, by their first
+    episode (its subtitles name the series' id); a dry run over jmpc's 37 series confirmed 26, filled 2 without an id,
+    changed none (where both versions of a remade series get votes, 2+ for the catalog's one keeps it).
 16. **Storage profiles (lossy shrinking on request):** losslessly there's little to gain in video (on jmpc: samples
     0.1 GB, audio ~10% of the size, few DTS/extra tracks), so the real lever is re-encoding — but only where the user
     asks for it. Measured on jmpc (18.11): 222 GB of video in 250 files, mostly H.264 1080p at 4–5 Mb/s; the

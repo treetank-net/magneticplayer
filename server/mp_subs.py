@@ -340,7 +340,8 @@ class Subtitles:
 
     def hash_ids(self, full):
         """IMDb ids OpenSubtitles.com files subtitles of exactly this file under (a search by the file's hash only, no
-        download): [(imdb, how many subtitles)], most first; None when it can't be asked (no API key, an error)."""
+        download): [(imdb, how many subtitles)], most first — the series' id for an episode; None when it can't be
+        asked (no API key, an error)."""
         if not self.cfg.get("opensubtitles_api_key"):
             return None
         sl, Language = _subliminal()
@@ -363,6 +364,8 @@ class Subtitles:
         n = {}
         for s in subs:
             i = getattr(s, "movie_imdb_id", None)
+            if getattr(s, "movie_kind", None) == "episode":
+                i = getattr(s, "series_imdb_id", None)
             if getattr(s, "moviehash_match", False) and i and str(i).startswith("tt"):
                 n[i] = n.get(i, 0) + 1
         return sorted(n.items(), key=lambda x: -x[1])

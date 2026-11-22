@@ -296,10 +296,11 @@ class Catalog:
 
     def _apply_hash(self, it):
         """Use `it["hc"]` (OpenSubtitles by hash): agreeing → sure; 3+ subtitles for another film → that film (a name
-        like "Episode IV" for a copy of episode VI); 2+ when the name found nothing. One stray subtitle is ignored."""
+        like "Episode IV" for a copy of episode VI); 2+ when the name found nothing. One stray subtitle is ignored.
+        A series is asked about its first episode, whose subtitles name the series (agent 1.17.6+)."""
         ids = (it.get("hc") or {}).get("ids") or []
         it.pop("sure", None)
-        if not ids or it.get("kind") != "movie":
+        if not ids or it.get("kind") not in ("movie", "series"):
             return
         top, n = ids[0]
         if it.get("imdb") in {i for i, _ in ids if _ >= 2} or (it.get("imdb") == top):
@@ -308,7 +309,7 @@ class Catalog:
         if n < (self.HASH_OVERRIDE if it.get("imdb") else self.HASH_FILL) or (len(ids) > 1 and ids[1][1] * 2 > n):
             return
         row = self.ident.index.get(top) if self.ident.index.db else None
-        if not row or row.get("kind") != "movie":
+        if not row or row.get("kind") != it.get("kind"):
             return
         it.setdefault("name_imdb", it.get("imdb"))
         it.update(imdb=top, title=row["title"], year=row.get("year"), genres=row.get("genres") or [], sure=True,
@@ -320,7 +321,7 @@ class Catalog:
             return
         roots = {r["id"]: r for r in self.library.roots() if r["exists"]}
         with self.lock:
-            todo = [(k, it) for k, it in self.items.items() if it.get("kind") == "movie" and it.get("root_id") in roots
+            todo = [(k, it) for k, it in self.items.items() if it.get("kind") in ("movie", "series") and it.get("root_id") in roots
                     and (it.get("hc") or {}).get("sig") != it.get("probe", {}).get("sig")]
         done = 0
         for k, it in todo:

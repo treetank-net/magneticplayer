@@ -780,7 +780,7 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
 - [ ] Agent 1.17.4, catalog checked by the file's hash (OpenSubtitles search, no downloads): 3+ subtitles for another
   film replace the name's film, agreement marks it sure. On jmpc's data three such fixes are expected (sequels
   named as earlier films, a same-name older film); see the journal "the file's hash says". To see in the app: their
-  posters and years after the check.
+  posters and years after the check. Agent 1.17.6: series as well (by their first episode).
 - [ ] Episode numbers (agent 1.17.4): `Show 0205`, `Show 02.05`, `S02.E05` read as S2E05; a lone 3-4 digit number is
   read with the rest of its folder (101..112 + 201..213 = season-coded; 98, 99, 100, 101 = absolute, as in anime);
   dates, `5.1`/`DD2.0` and `H.264` are never episodes. 45 synthetic cases pass; on jmpc's library (202 folders) no
