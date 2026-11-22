@@ -1111,8 +1111,17 @@ class PlayerActivity : ComponentActivity() {
         OfflineSync.refreshLater(applicationContext, ref)  // a downloaded copy gets the change too
         val p = player ?: return
         lifecycleScope.launch {
-            subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(subs) }
-            localSubUris = withContext(Dispatchers.IO) { localSubs(subs) }
+            val fresh = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrNull() }
+            // the server out of reach (a version picked offline, G1): the downloaded copy's own files
+            val saved = if (fresh != null) emptyList()
+                else OfflineStore.get(this@PlayerActivity, key)?.subs.orEmpty().filter { java.io.File(it.file).exists() }
+            if (saved.isNotEmpty()) {
+                subs = saved.map { it.toSubFile() }
+                localSubUris = saved.associate { it.name to Uri.fromFile(java.io.File(it.file)) }
+            } else {
+                subs = fresh ?: subs
+                localSubUris = withContext(Dispatchers.IO) { localSubs(subs) }
+            }
             val pos = p.currentPosition
             val playing = p.playWhenReady
             // the file on, even when subtitles were switched off or another track was picked by hand

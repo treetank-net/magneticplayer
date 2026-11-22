@@ -222,7 +222,12 @@ fun SubtitlesSheet(
     val versions = api.srv.hasSubsVersions
 
     suspend fun reload() {
-        files = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(files ?: emptyList()) }
+        files = withContext(Dispatchers.IO) {
+            runCatching { api.subsList(ref) }.getOrElse {
+                // the server out of reach: a downloaded copy's own subtitles, so a version can be picked offline (G1)
+                files ?: OfflineStore.get(ctx, ref.key())?.subs.orEmpty().filter { java.io.File(it.file).exists() }.map { it.toSubFile() }
+            }
+        }
     }
     LaunchedEffect(ref) { reload() }
 
@@ -258,7 +263,12 @@ fun SubtitlesSheet(
             reload()
             picked(SubPick.File(name, f.langKey), ctx.getString(R.string.media_psubs_on, name))
         } catch (e: ApiException) {
-            error = e.message
+            // no answer (code 0) and a downloaded copy has this version: it is used now and the server gets the
+            // choice when the phone reaches it again (WatchSync)
+            if (e.code == 0 && !f.default && withContext(Dispatchers.IO) { WatchSync.pickSubOffline(ctx, ref, f.name) }) {
+                files = OfflineStore.get(ctx, ref.key())?.subs.orEmpty().filter { java.io.File(it.file).exists() }.map { it.toSubFile() }
+                picked(SubPick.File(f.name, f.langKey), ctx.getString(R.string.sync_sub_picked_offline, f.name))
+            } else error = e.message
         }
     }
 

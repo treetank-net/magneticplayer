@@ -290,6 +290,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         var first = true
         var pings = 0
         var fails = 0
+        var synced = false
         while (true) {
             // only while the app is on screen: a foreground service (Remote, downloads) keeps the process alive and
             // this loop pinged the server every 5 s with the app in the background
@@ -298,7 +299,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 lifecycle.currentStateFlow.first { it.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) }
                 // back after a while: what was known then is stale (the computer may have gone to sleep, the phone
                 // may be home again), so "…" until a fresh answer instead of the old "on" or "asleep"
-                if (System.currentTimeMillis() - awaySince > 30_000) { online = null; fails = 0 }
+                if (System.currentTimeMillis() - awaySince > 30_000) { online = null; fails = 0; synced = false }
             }
             // 3 s for connecting: after a longer break the phone's Wi-Fi and the first connection can be slow
             val ok = withContext(Dispatchers.IO) { api.ping(3000) }
@@ -313,6 +314,10 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 withContext(Dispatchers.IO) { runCatching { api.info() } }
                 infoVer++
             }
+            // G1 sync point: the server answers again (or the app is back after a while): offline changes go out,
+            // the catalog's changes come in (Sync.kt; at most every 2 min per server, off the loop's thread)
+            if (ok && !synced) launch(Dispatchers.IO) { SyncPoint.reached(ctx, api) }
+            synced = ok
             // access requests from the home network (Access.kt): every ~15 s while the app is on screen and the server responds
             if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) {
                 Access.check(ctx, api); Tasks.check(ctx, api)
