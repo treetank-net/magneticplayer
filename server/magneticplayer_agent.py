@@ -405,6 +405,8 @@ class App:
                 "episode_lists": True,  # GET /api/catalog/episodes (agent 1.16+)
                 # GET /api/catalog/search (titles you don't have) and "about" in /api/catalog/title (agent 1.17+)
                 "catalog_search": True,
+                # GET /api/catalog/suggest: "because you watched…: not on your disks" from the IMDb index (agent 1.18+)
+                "suggest_missing": True,
                 "jobs": ["free", "dupes", "audio_fix", "modernize", "downscale", "compress", "subs_get", "subs", "tags", "trash",
                          "layout", "balance", "cast_ready"],  # agent 1.17+: folder layout, balance, ready for Chromecast
                 # pause/resume, queue order and retry of tasks: /api/tasks/<id>/pause|resume|move|retry, /api/tasks/order

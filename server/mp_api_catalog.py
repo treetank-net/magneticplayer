@@ -40,6 +40,14 @@ def next_titles(req, a, qd, **_):
     return req.send_json(a.catalog.next(qd.get("imdb", ""), mp_i18n.lang()))
 
 
+# "Because you watched <title>: not on your disks" from the local IMDb index (agent 1.18+, features.suggest_missing)
+def suggest(req, a, qd, **_):
+    try:
+        return req.send_json(a.catalog.suggest(qd.get("imdb", ""), mp_i18n.lang(), qd.get("limit") or 20))
+    except ValueError:
+        raise ApiError(T("bad IMDb id", "zły numer IMDb"), 400)
+
+
 def wishlist(req, a, **_):
     return req.send_json({"items": a.wishlist.list(a.catalog, mp_i18n.lang())})
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- G4: Discover's row of titles from the server's film database that are not on the disks. English. -->
+<resources>
+    <string name="suggest_row">Because you watched %1$s: not on your disks</string>
+    <string name="suggest_want">want</string>
+</resources>
