@@ -231,7 +231,7 @@ private val GB = 1L shl 30
 
 /** Plan and task kinds that re-encode files (agent 1.16+ splits "shrink" into the four after it): the same item
  *  fields (codec, height, size, est), the encoder choice in the preview and "saved" on the task. */
-internal val ENCODE_KINDS = setOf("shrink", "audio_fix", "modernize", "downscale", "compress")
+internal val ENCODE_KINDS = setOf("shrink", "audio_fix", "modernize", "downscale", "compress", "reencode")
 
 /** Plan request bodies (JSON as a string, so it survives in rememberSaveable). */
 object PlanBody {
@@ -662,6 +662,7 @@ private fun planKindTitle(kind: String) = when (kind) {
     "layout" -> stringResource(R.string.j2_layout)
     "balance" -> stringResource(R.string.j2_balance)
     "cast_ready" -> stringResource(R.string.j2_cast)
+    "reencode" -> stringResource(R.string.re_title)  // agent 1.18+ (plan stage 6)
     else -> stringResource(R.string.lib_move)
 }
 
@@ -734,7 +735,7 @@ private fun PlanContent(api: Api, planId: String, r: JSONObject, onStarted: () -
                 }, enabled = picked.isNotEmpty() && !starting) {
                     Text(when (kind) {
                         "shrink" -> stringResource(R.string.lib_shrink)
-                        "audio_fix", "modernize", "downscale", "compress", "cast_ready" -> stringResource(R.string.job_start)
+                        "audio_fix", "modernize", "downscale", "compress", "cast_ready", "reencode" -> stringResource(R.string.job_start)
                         "subs" -> stringResource(R.string.lib_subs_go)
                         "subs_get" -> stringResource(R.string.subs_get_go)
                         "trash" -> stringResource(R.string.lib_delete)
@@ -783,6 +784,8 @@ private fun PlanSummary(r: JSONObject, count: Int) {
     if (kind == "balance") r.objects("disks").forEach { d ->
         lines += d.optString("name") + ": " + stringResource(R.string.j2_bal_pct, d.optInt("pct"), d.optInt("pct_after"))
     }
+    // re-encode (agent 1.18+): how many separate passes the steps replace
+    if (kind == "reencode" && r.optInt("passes") > 1) lines += stringResource(R.string.re_sum_passes, r.optInt("passes"))
     if (kind == "cast_ready" && r.optLong("est") > r.optLong("bytes"))
         lines += stringResource(R.string.j2_sum_grow, humanBytes(r.optLong("est") - r.optLong("bytes")))
     if (kind in setOf("layout", "balance", "cast_ready") && r.optLong("eta") > 0)
@@ -854,6 +857,14 @@ private fun PlanItem(kind: String, it: JSONObject) {
     val name = it.optString("name").ifEmpty { it.optString("path").substringAfterLast('/') }
     Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
     when (kind) {
+        // re-encode (agent 1.18+): the steps that apply to this file, and its size before and after
+        "reencode" -> {
+            val labels = it.optJSONArray("labels")?.let { a -> List(a.length()) { k -> a.optString(k) } }.orEmpty()
+            Text(labels.joinToString(" · "), style = small, color = MaterialTheme.colorScheme.primary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            val h = it.optInt("height")
+            Text(listOfNotNull(it.optString("codec").uppercase().ifEmpty { null }, h.takeIf { v -> v > 0 }?.let { v -> "${v}p" }).joinToString(" ") +
+                " · ${humanBytes(it.optLong("size"))} → ${humanBytes(it.optLong("est"))}", style = small, color = dim)
+        }
         "shrink", "audio_fix", "modernize", "downscale", "compress" -> if (it.optBoolean("audio_fix") || kind == "audio_fix") {
             // damaged sound in a modern picture (agent 1.15.0+): only the sound is re-encoded
             val codecs = it.optJSONArray("audio_codecs")?.let { a -> List(a.length()) { k -> a.optString(k) } }.orEmpty()

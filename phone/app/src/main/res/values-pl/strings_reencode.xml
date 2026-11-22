@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Etap 6 planu (agent 1.18+, docs/plan-ux-tasks.md B6): Przekoduj (zaawansowane); LibraryReencode.kt. Polski. -->
+<resources>
+    <string name="re_title">Przekoduj</string>
+    <string name="re_row">Kilka zmian w jednym przebiegu</string>
+    <string name="re_desc">Kilka zmian za jednym razem: plik jest kodowany tylko raz.</string>
+    <string name="re_advanced">Zaawansowane</string>
+    <string name="re_start_from">Zacznij od</string>
+    <string name="re_empty">Pusty</string>
+    <string name="re_modified">Zmienione względem zestawu: Zapisz zestaw zachowa je pod nazwą.</string>
+    <string name="re_files">Pliki</string>
+    <string name="re_steps">Kroki</string>
+    <string name="re_step_resolution">Rozdzielczość</string>
+    <string name="re_step_codec">Kodek wideo</string>
+    <string name="re_step_picture">Stary obraz</string>
+    <string name="re_step_sound">Dźwięk</string>
+    <string name="re_step_cast">Chromecast</string>
+    <string name="re_step_container">Kontener</string>
+    <string name="re_skipped">pominięty</string>
+    <string name="re_res_hint">Nigdy nie powiększa: pliki już tak małe zostają, jakie są.</string>
+    <string name="re_codec_hevc_saving">H.265 oszczędnie</string>
+    <string name="re_codec_hevc_quality">H.265 jakość</string>
+    <string name="re_codec_h264">H.264 zgodny</string>
+    <string name="re_codec_hevc_saving_hint">Małe pliki; plik już w H.265 nie jest kodowany ponownie, chyba że zmienia się obraz.</string>
+    <string name="re_codec_hevc_quality_hint">Bez widocznej różnicy, pliki ok. dwa razy większe niż oszczędnie.</string>
+    <string name="re_codec_h264_hint">Gra na każdym telefonie, telewizorze i Chromecaście; większe pliki.</string>
+    <string name="re_pic_deinterlace">Usuń przeplot</string>
+    <string name="re_pic_denoise">Odszum</string>
+    <string name="re_pic_crop">Przytnij czarne pasy</string>
+    <string name="re_pic_hint">Przeplot i czarne pasy są mierzone dla każdego pliku w podglądzie; pliki bez nich pomijają ten krok.</string>
+    <string name="re_sound_fix">Napraw uszkodzony</string>
+    <string name="re_sound_loudness">Wyrównaj głośność</string>
+    <string name="re_sound_leave">Zostaw</string>
+    <string name="re_sound_fix_hint">Ścieżki z uszkodzonymi ramkami stają się AAC; reszta jest kopiowana.</string>
+    <string name="re_sound_loudness_hint">Każda ścieżka staje się AAC o wyrównanej głośności (ciche dialogi, głośna muzyka).</string>
+    <string name="re_sound_leave_hint">Dźwięk kopiowany bez zmian.</string>
+    <string name="re_cast_aac">Dodaj AAC stereo</string>
+    <string name="re_cast_subs">Napisy do .srt</string>
+    <string name="re_mkv_hint">Mieści wszystko: wszystkie ścieżki, napisy i czcionki.</string>
+    <string name="re_mp4_hint">Gra najszerzej; napisy obrazkowe i czcionki wypadają.</string>
+    <string name="re_order_note">Kolejność: naprawa dźwięku i usunięcie przeplotu, potem przycięcie, skalowanie i kodek; dodatki audio; kontener na końcu. Krok, którego plik nie potrzebuje, jest dla niego pomijany.</string>
+    <string name="re_none_on">Włącz przynajmniej jeden krok.</string>
+    <string name="re_save">Zapisz zestaw</string>
+    <string name="re_save_title">Zapisz zestaw</string>
+    <string name="re_save_name">Nazwa</string>
+    <string name="re_save_hint">Pojawi się w Zacznij od na każdym telefonie; zestaw o tej samej nazwie zostanie zastąpiony.</string>
+    <string name="re_saved">Zestaw zapisany</string>
+    <string name="re_sum_passes">1 przebieg zamiast %1$d</string>
+    <plurals name="re_summary">
+        <item quantity="one">%1$d plik · 1 przebieg zamiast %2$d · ok. %3$s · %4$s</item>
+        <item quantity="few">%1$d pliki · 1 przebieg zamiast %2$d · ok. %3$s · %4$s</item>
+        <item quantity="many">%1$d plików · 1 przebieg zamiast %2$d · ok. %3$s · %4$s</item>
+        <item quantity="other">%1$d plików · 1 przebieg zamiast %2$d · ok. %3$s · %4$s</item>
+    </plurals>
+    <plurals name="re_summary_one">
+        <item quantity="one">%1$d plik · ok. %2$s · %3$s</item>
+        <item quantity="few">%1$d pliki · ok. %2$s · %3$s</item>
+        <item quantity="many">%1$d plików · ok. %2$s · %3$s</item>
+        <item quantity="other">%1$d plików · ok. %2$s · %3$s</item>
+    </plurals>
+    <plurals name="re_unmeasured">
+        <item quantity="one">%1$d plik jeszcze niezmierzony (czarne pasy, przeplot): zmierzy go podgląd</item>
+        <item quantity="few">%1$d pliki jeszcze niezmierzone (czarne pasy, przeplot): zmierzy je podgląd</item>
+        <item quantity="many">%1$d plików jeszcze niezmierzonych (czarne pasy, przeplot): zmierzy je podgląd</item>
+        <item quantity="other">%1$d plików jeszcze niezmierzonych (czarne pasy, przeplot): zmierzy je podgląd</item>
+    </plurals>
+    <plurals name="re_skipped_files">
+        <item quantity="one">%1$d plik pominięty (jeszcze seeduje albo MP4 go nie zmieści)</item>
+        <item quantity="few">%1$d pliki pominięte (jeszcze seedują albo MP4 ich nie zmieści)</item>
+        <item quantity="many">%1$d plików pominiętych (jeszcze seedują albo MP4 ich nie zmieści)</item>
+        <item quantity="other">%1$d plików pominiętych (jeszcze seedują albo MP4 ich nie zmieści)</item>
+    </plurals>
+    <plurals name="re_n_sets">
+        <item quantity="one">%1$d zestaw</item>
+        <item quantity="few">%1$d zestawy</item>
+        <item quantity="many">%1$d zestawów</item>
+        <item quantity="other">%1$d zestawów</item>
+    </plurals>
+</resources>
