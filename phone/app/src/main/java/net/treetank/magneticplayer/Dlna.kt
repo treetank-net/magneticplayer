@@ -249,7 +249,7 @@ object Dlna {
         val pos = secs(pi?.let { tag(it, "RelTime") })
         val dur = secs(pi?.let { tag(it, "TrackDuration") })
         currentRef?.let { r ->
-            if (dur > 0 && pos > 5) Settings(ctx).setPosition(r.key(), if (pos > dur - 60) 0 else (pos * 1000).toLong())
+            if (dur > 0 && pos > 5) Settings(ctx).setPosition(r, if (pos > dur - 60) 0 else (pos * 1000).toLong())
         }
         val vol = t.rendering?.let { rc ->
             runCatching { tag(soap(rc, RC, "GetVolume", "InstanceID" to "0", "Channel" to "Master"), "CurrentVolume")?.toIntOrNull() }.getOrNull()

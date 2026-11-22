@@ -55,7 +55,7 @@ class MpvRemote(private val ctx: Context, val api: Api) : Remote {
         val pos = d("pos")
         // video opened from another server (URL with a ticket): mpv will not remember the position, so the phone saves it
         val ref = Servers.screenRef(ctx, api.srv.key)
-        if (ref != null && o.optString("title") == ref.title && pos > 5) Settings(ctx).setPosition(ref.key(), (pos * 1000).toLong())
+        if (ref != null && o.optString("title") == ref.title && pos > 5) Settings(ctx).setPosition(ref, (pos * 1000).toLong())
         RemoteState(o.optString("title"), pos, d("duration"), !o.optBoolean("paused"),
             volume = d("volume").toInt().coerceIn(0, 100), muted = o.optBoolean("muted"), mpv = o).also { last = it }
     }

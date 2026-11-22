@@ -132,6 +132,16 @@ class Settings(ctx: Context) {
     fun markWatched(key: String) = p.edit().putLong("wd:$key", System.currentTimeMillis()).apply()
     /** Also stamps when it was saved ("pt:"), so "Continue watching" in the catalog can order videos by recency. */
     fun setPosition(key: String, ms: Long) = p.edit().putLong("pos:$key", ms).putLong("pt:$key", System.currentTimeMillis()).apply()
+    /** The same for [ref]; a file played from a torrent also keeps its name ("pn:"), so the catalog can find the title
+     *  it is in the library (also once the torrent is moved there or removed) for "Continue watching" and suggestions. */
+    fun setPosition(ref: MediaRef, ms: Long) {
+        setPosition(ref.key(), ms)
+        if (ref is MediaRef.InTorrent && ref.title.isNotBlank()) p.edit().putString("pn:${ref.key()}", ref.title).apply()
+    }
+    /** File names of positions saved from torrents: key → name. */
+    fun torrentNames(): Map<String, String> = p.all.mapNotNull { (k, v) ->
+        if (k.startsWith("pn:") && v is String) k.removePrefix("pn:") to v else null
+    }.toMap()
 
     /**
      * Saved positions > 0: video key → (position ms, when it was last saved or watched, epoch ms; 0 = unknown).

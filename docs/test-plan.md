@@ -862,6 +862,10 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       Discover, or the app reopened). The title page ends with "Similar, not in your collection" (loads when scrolled
       to; the first answer 10-30 s). Also fixed: the missing-titles row kept the previous title's list when its title
       changed (produceState kept its state across keys).
+- [ ] A film played from Downloads (a torrent's file) counts as watched in the library: "Continue watching" and the
+      suggestion rows show its library title (matched by file name, also after the torrent was moved or removed).
+      Found 2026-11-23: such a position was kept under the torrent's key only, so Discover kept an older title.
+      Positions saved before this version have no file name and stay invisible.
 - [ ] Discover rows (kids, genres, "Because you watched") show one card per title: a series kept per season on one
       disk and whole on another showed up three or four times side by side (seen on the Pixel, v1.261122.1956). The
       copy with most episodes is shown; "Because you watched" also leaves out other copies of the watched title.

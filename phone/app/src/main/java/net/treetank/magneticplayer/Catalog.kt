@@ -380,8 +380,12 @@ fun resumes(ctx: Context, srv: String, cat: CatalogData, withDone: Boolean = fal
     val byRoot = cat.items.flatMap { listOf(it) + it.alsoOn }.filter { it.srv.isEmpty() || it.srv == srv }.groupBy { it.root }
     val s = Settings(ctx)
     // a series episode watched to the end keeps the series in the row (its next episode), like an interrupted one
-    val finished = s.watchedAll().filterKeys { it.startsWith(prefix) }.mapValues { 0L to it.value }
+    val finished = s.watchedAll().mapValues { 0L to it.value }
+    // played from a torrent (Downloads): the library copy with the same file name, wherever the torrent is now
+    val names = s.torrentNames().filterKeys { it.startsWith(Servers.prefixOf(srv)) }
+    val byName by lazy { byRoot.values.flatten().filter { it.dir == null }.associateBy { it.path.substringAfterLast('/') } }
     return (finished + s.positions()).mapNotNull { (key, v) ->
+        names[key]?.let { n -> byName[n]?.let { return@mapNotNull Resume(it, it.path, v.first, v.second).takeIf { v.first > 0 || withDone } } }
         if (!key.startsWith(prefix)) return@mapNotNull null
         val rest = key.removePrefix(prefix)
         val root = rest.substringBefore('/').toIntOrNull() ?: return@mapNotNull null

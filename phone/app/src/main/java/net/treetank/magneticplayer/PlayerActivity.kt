@@ -663,7 +663,7 @@ class PlayerActivity : ComponentActivity() {
             val dur = it.duration
             // at the end of the video we start from the beginning next time
             if (it.playbackState != Player.STATE_IDLE) {
-                settings.setPosition(ref.key(), if (dur > 0 && pos > dur - 60_000) 0 else pos)
+                settings.setPosition(ref, if (dur > 0 && pos > dur - 60_000) 0 else pos)
                 if (dur > 0 && pos > dur - 60_000) settings.markWatched(ref.key())  // the credits count as watched
                 // screen locked: we delete nothing; exiting the player at ≥80%: we delete at once
                 val watched = if (dur > 0) pos.toFloat() / dur else 0f

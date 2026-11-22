@@ -272,7 +272,7 @@ object Cast {
         val ref = current ?: return@ProgressListener
         val ctx = app ?: return@ProgressListener
         if (listening?.mediaInfo?.contentId != currentUrl || dur <= 0 || pos < 5_000) return@ProgressListener
-        Settings(ctx).setPosition(ref.key(), if (pos > dur - 60_000) 0 else pos)
+        Settings(ctx).setPosition(ref, if (pos > dur - 60_000) 0 else pos)
     }
 
     /** Receiver state for the log; a playback error (e.g. it cannot reach the address) is shown instead of silently stalling. */
