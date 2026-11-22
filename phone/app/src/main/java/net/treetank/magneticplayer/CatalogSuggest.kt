@@ -49,7 +49,28 @@ private object SuggestCache {
 }
 
 /**
- * Suggestions after [x] (the title watched last), asked from the server that has [x]; titles any merged server has are
+ * Seeds of Discover's suggestion rows, picked on the phone (the agent only answers per title): [seen] for "Similar to"
+ * (titles on the disks) and [seenMissing] for "After watching" (titles that aren't), each at random from the last ten
+ * titles watched and different from each other, and [disk] for "Because you have" (a well rated title on the disks
+ * not watched yet). The same for a day and the same history: a change of history (another title watched) or of the
+ * day picks again; returning to the screen doesn't.
+ */
+data class DiscoverSeeds(val seen: CatItem?, val seenMissing: CatItem?, val disk: CatItem?)
+
+fun discoverSeeds(recentlySeen: List<CatItem>, cat: CatalogData, hasSimilar: (CatItem) -> Boolean): DiscoverSeeds {
+    val recent = recentlySeen.distinctBy { it.imdb ?: it.id }.take(10)
+    val rnd = kotlin.random.Random(java.time.LocalDate.now().toEpochDay() * 31 + recent.map { it.imdb ?: it.id }.hashCode())
+    val order = recent.shuffled(rnd)
+    val seen = order.firstOrNull(hasSimilar)
+    val seenMissing = order.filter { it.imdb != null }.let { l -> l.firstOrNull { it.id != seen?.id } }
+    val seenImdb = recent.mapNotNull { it.imdb }.toSet()
+    val disk = cat.items.filter { it.imdb != null && it.imdb !in seenImdb && (it.rating ?: 0.0) >= 7.0 && (it.votes ?: 0) >= 1000 }
+        .distinctBy { it.imdb }.sortedBy { it.imdb }.randomOrNull(rnd)
+    return DiscoverSeeds(seen, seenMissing, disk)
+}
+
+/**
+ * Suggestions after [x] (a title watched lately, one on the disks or the title on screen), asked from the server that has [x]; titles any merged server has are
  * left out. Null while loading, without an IMDb id, on older agents or with fewer than 3 suggestions (then no row).
  */
 @Composable
@@ -58,6 +79,8 @@ fun rememberSuggestMissing(c: CatCtx, cat: CatalogData, x: CatItem?): List<Sugge
     val api = x?.let { c.apiOf(it) }
     val key = if (imdb != null && api != null && api.srv.hasSuggestMissing) api.srv.key + "/" + imdb else null
     val list by produceState(key?.let { SuggestCache.get(it) }, key) {
+        // produceState keeps its state across keys: without this a new title kept showing the previous title's list
+        value = key?.let { SuggestCache.get(it) }
         if (value == null && key != null && api != null && imdb != null) value = withContext(Dispatchers.IO) {
             runCatching { api.catalogSuggest(imdb) }.getOrNull()?.also { SuggestCache.put(key, it) }
         }
@@ -66,11 +89,11 @@ fun rememberSuggestMissing(c: CatCtx, cat: CatalogData, x: CatItem?): List<Sugge
     return list?.filter { cat.byImdb(it.imdb) == null }?.takeIf { it.size >= 3 }
 }
 
-/** The row "Because you watched <[x]>: not on your disks"; a tap opens the missing title's page (D2). */
+/** A row of titles that aren't on the disks under [label] (their covers say so); a tap opens the title's page (D2). */
 @Composable
-fun SuggestMissingRow(c: CatCtx, x: CatItem, shown: List<Suggestion>) {
+fun SuggestMissingRow(c: CatCtx, label: String, shown: List<Suggestion>) {
     val want = stringResource(R.string.suggest_want)
-    CoverRow(stringResource(R.string.suggest_row, x.title), null, shown, null, { it.imdb }) { s ->
+    CoverRow(label, null, shown, null, { it.imdb }) { s ->
         Column(Modifier.width(112.dp).clickable { c.push(Nav.missing(s.imdb, s.why.ifEmpty { null })) },
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             SyntheticCover(s.title, s.year, s.genres, Modifier.width(112.dp).height(168.dp), missing = true)

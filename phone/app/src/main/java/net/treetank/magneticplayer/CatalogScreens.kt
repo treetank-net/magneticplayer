@@ -370,17 +370,17 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
         cat.items.flatMap { it.cast.take(5) }.groupingBy { it }.eachCount().filter { it.value >= 2 }.maxByOrNull { it.value }?.key
     }
     val kids = remember(cat) { cat.items.filter { it.fitsAge(7) } }
-    // "Because you watched": the title watched last (also a film finished) and what is like it, minus what was watched
-    val because = remember(cat, back) {
-        val seen = c.resumes(ctx, cat, withDone = true)
-        val ids = seen.map { it.item.id }.toSet()
-        val seenImdb = seen.mapNotNull { it.item.imdb }.toSet()  // other copies of a watched title too
-        seen.firstOrNull()?.item?.let { x -> x to similar(ctx, cat, x).filter { it.first.id !in ids && it.first.imdb !in seenImdb } }
-            ?.takeIf { it.second.size >= 3 }
-    }
-    // G4: the same title's suggestions that are not on the disks (CatalogSuggest.kt)
-    val lastSeen = remember(cat, back) { c.resumes(ctx, cat, withDone = true).firstOrNull()?.item }
-    val suggest = rememberSuggestMissing(c, cat, lastSeen)
+    // "Similar to": a title watched lately (also a film finished; at random among the last ten, CatalogSuggest.kt) and
+    // what on the disks is like it, minus what was watched
+    val seen = remember(cat, back) { c.resumes(ctx, cat, withDone = true) }
+    val seenIds = remember(seen) { seen.map { it.item.id }.toSet() }
+    val seenImdb = remember(seen) { seen.mapNotNull { it.item.imdb }.toSet() }  // other copies of a watched title too
+    fun likeIt(x: CatItem) = similar(ctx, cat, x).filter { it.first.id !in seenIds && it.first.imdb !in seenImdb }
+    val seeds = remember(cat, seen) { discoverSeeds(seen.map { it.item }, cat) { likeIt(it).size >= 3 } }
+    val because = remember(seeds) { seeds.seen?.let { x -> x to likeIt(x) }?.takeIf { it.second.size >= 3 } }
+    // G4: titles that aren't on the disks, after another title watched lately and after a good one on the disks
+    val suggestSeen = rememberSuggestMissing(c, cat, seeds.seenMissing)
+    val suggestDisk = rememberSuggestMissing(c, cat, seeds.disk)
     // the hero: a few slides of different kinds ("New on your disks", "Because you watched…", "Top rated", a random
     // pick), the first one picked at random each time the screen is built, turning by itself like a shop window
     val heroNewLabel = stringResource(R.string.cat_hero_new)
@@ -439,7 +439,12 @@ private fun DiscoverScreen(c: CatCtx, cat: CatalogData) {
                 CoverCard(y, why) { c.open(y) }
             }
         }
-        if (lastSeen != null && suggest != null) item(key = "suggest") { SuggestMissingRow(c, lastSeen, suggest) }
+        seeds.seenMissing?.let { x -> if (suggestSeen != null) item(key = "suggest") {
+            SuggestMissingRow(c, stringResource(R.string.suggest_row, x.title), suggestSeen)
+        } }
+        seeds.disk?.let { x -> if (suggestDisk != null) item(key = "suggest-disk") {
+            SuggestMissingRow(c, stringResource(R.string.suggest_row_disk, x.title), suggestDisk.filter { it.imdb !in seenImdb })
+        } }
         if (kids.isNotEmpty()) item {
             CoverRow(stringResource(R.string.cat_row_kids), stringResource(R.string.cat_all_n, kids.size), kids.oneCopyEach().take(15),
                 { c.push(Nav.results(listOf("age:7"))) }, { it.id }) { x -> CoverCard(x, cardMeta(x)) { c.open(x) } }
@@ -937,6 +942,11 @@ private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPh
             CoverRow(stringResource(R.string.cat_similar), null, similar, null, { it.first.id }) { (y, why) ->
                 CoverCard(y, why, width = 100.dp) { c.open(y) }
             }
+        }
+        // the same, from the agent's IMDb index: titles like this one that aren't on the disks (agent 1.18+); asked only
+        // once the row is scrolled to, the first answer for a title takes 10-30 s
+        if (x.imdb != null) item(key = "similar-missing") {
+            rememberSuggestMissing(c, cat, x)?.let { SuggestMissingRow(c, stringResource(R.string.cat_similar_missing), it) }
         }
     }
     if (selecting) SelectionBar(selected.size, Modifier.align(Alignment.BottomCenter)) {

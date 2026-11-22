@@ -855,6 +855,13 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       says "want".
 - [ ] A title that reaches the disks leaves the row (at the latest after the phone's 10-minute cache).
 - [ ] An older agent (no `suggest_missing`): no row, Discover as before.
+- [ ] More variety (the owner's wish, 2026-11-23: the row stayed on one title): Discover's "Similar to …" and
+      "After watching …" rows each take a title at random from the last ten watched (two different ones), plus
+      "Because you have …" after a well rated title on the disks not watched yet; the labels no longer say "not on
+      your disks" (the covers do). The picks hold for the day and change after another title is watched (back on
+      Discover, or the app reopened). The title page ends with "Similar, not in your collection" (loads when scrolled
+      to; the first answer 10-30 s). Also fixed: the missing-titles row kept the previous title's list when its title
+      changed (produceState kept its state across keys).
 - [ ] Discover rows (kids, genres, "Because you watched") show one card per title: a series kept per season on one
       disk and whole on another showed up three or four times side by side (seen on the Pixel, v1.261122.1956). The
       copy with most episodes is shown; "Because you watched" also leaves out other copies of the watched title.

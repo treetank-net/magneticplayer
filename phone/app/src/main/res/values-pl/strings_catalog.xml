@@ -99,6 +99,7 @@
     <string name="cat_what_next">Co dalej?</string>
     <string name="cat_cast">Obsada</string>
     <string name="cat_similar">Podobne w twojej kolekcji</string>
+    <string name="cat_similar_missing">Podobne spoza kolekcji</string>
     <string name="cat_on_disks">Na twoich dyskach</string>
     <string name="cat_not_on_disks">Nie ma na twoich dyskach</string>
     <string name="cat_open_title">Otwórz</string>

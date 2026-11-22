@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- G4: Discover's row of titles from the server's film database that are not on the disks. Polish. -->
 <resources>
-    <string name="suggest_row">Podobne do „%1$s”: nie ma na dyskach</string>
+    <string name="suggest_row">Po obejrzeniu „%1$s”</string>
+    <string name="suggest_row_disk">Bo masz na dysku „%1$s”</string>
     <string name="suggest_want">chcę</string>
 </resources>

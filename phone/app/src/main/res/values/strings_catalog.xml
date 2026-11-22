@@ -93,6 +93,7 @@
     <string name="cat_what_next">What next?</string>
     <string name="cat_cast">Cast</string>
     <string name="cat_similar">Similar in your collection</string>
+    <string name="cat_similar_missing">Similar, not in your collection</string>
     <string name="cat_on_disks">On your disks</string>
     <string name="cat_not_on_disks">Not on your disks</string>
     <string name="cat_open_title">Open</string>
