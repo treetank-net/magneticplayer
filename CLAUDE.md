@@ -40,7 +40,7 @@ ssh jmpc systemctl --user restart magneticplayer
 ssh jmpc journalctl --user -u magneticplayer -n 50
 
 # app: the phones have the treetank key, so an update = a CI release (a local build has the debug key, for the
-# emulator). Tag → CI builds and publishes on GitHub → agents fetch it themselves (mp_appupdate, every 6 h and one
+# emulator). Tag → CI builds and publishes on GitHub → agents fetch it themselves (mp_appupdate, every hour and one
 # minute after an agent restart). Right away, without waiting (or in "manual" mode):
 phone/tools/tag-release.sh            # after commit and push; CI ~10 min
 phone/tools/publish.sh --release latest

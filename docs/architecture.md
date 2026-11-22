@@ -567,7 +567,7 @@ A setting, off by default (details and decisions: [plan-upload.md](plan-upload.m
 The agent serves the app to phones from `~/.local/share/magneticplayer/apk/` (`MagneticPlayer.apk` and
 `version.json`). It gets there in two ways, always the APK first, then the version:
 - **from GitHub releases** (`mp_appupdate.py`, mode `app_updates: "auto"`, the default): one minute after the agent
-  starts and then every 6 h the agent reads `releases/latest/download/version.json`. When `version_code` is higher
+  starts and then every hour the agent reads `releases/latest/download/version.json`. When `version_code` is higher
   than the one being served, it downloads the APK and checks the certificate fingerprint in the APK v2/v3 signing
   block (treetank `05f72b11…`). Android verifies the signature at install time. It never downgrades. The phone
   switches the mode in the server details ("App updates from GitHub");

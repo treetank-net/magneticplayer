@@ -1,7 +1,7 @@
 """The phone app from GitHub releases: the agent downloads a newer app itself and serves it at /app/MagneticPlayer.apk.
 
 Mode in config.json `app_updates`: "auto" (default) or "manual" (only phone/tools/publish.sh). A phone changes it
-(`POST /api/config/app_updates`). The check runs a minute after start, then every 6 hours, and right away when "auto"
+(`POST /api/config/app_updates`). The check runs a minute after start, then every hour, and right away when "auto"
 is switched on. It never downgrades: it only serves an app with a higher version_code than the current one (including
 the one from publish.sh).
 
@@ -18,7 +18,7 @@ import urllib.request
 
 BASE = "https://github.com/treetank-net/magneticplayer/releases/latest/download"
 CERT_SHA256 = "05f72b11239022e9256185257b8926693e39e445c89c96b926613cd7de6e39ce"  # treetank (same as release-ci.sh)
-FIRST_DELAY, INTERVAL = 60, 6 * 3600
+FIRST_DELAY, INTERVAL = 60, 3600
 MODES = ("auto", "manual")
 
 
