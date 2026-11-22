@@ -438,13 +438,22 @@ class ReencodeMixin:
                          "profile": "reencode"},
                 "cost": cost, "remux": remux}
 
-    def _reenc_ctx(self, steps, torrents, enc, plan_deadline=None):
+    def _reenc_ctx(self, steps, torrents, enc, plan_deadline=None, p=None):
         a = active(steps)
+
+        def measuring(full):
+            # the file walk has already filled the bar: say what the preview waits for, and for how long at most
+            if p is not None and plan_deadline is not None:
+                left = max(1, round((plan_deadline - time.time()) / 60))
+                name = os.path.basename(full)
+                p["step"] = T(f"measuring sound and picture (up to {left} min more): {name}",
+                              f"mierzę dźwięk i obraz (jeszcze do {left} min): {name}")
 
         def det(f, full):
             c = self._rdetect_cached(f)
             if c is not None or plan_deadline is None or time.time() > plan_deadline:
                 return c
+            measuring(full)
             try:
                 return self._rdetect_now(f, full)
             except OSError:
@@ -452,8 +461,9 @@ class ReencodeMixin:
 
         def aud(f, full, info):
             c = self._acheck_cached(f)
-            if c is not None or plan_deadline is None:
+            if c is not None or plan_deadline is None or time.time() > plan_deadline:
                 return c
+            measuring(full)
             try:
                 return self.audio_check(full, info, plan_deadline)
             except OSError:
@@ -506,7 +516,7 @@ class ReencodeMixin:
             mp_media.detect_hevc()
             enc = self.resolve_encoder(o.get("encoder"))
             choices = self._encoder_choices()
-            ctx = self._reenc_ctx(steps, self._torrents(), enc, time.time() + DETECT_BUDGET)
+            ctx = self._reenc_ctx(steps, self._torrents(), enc, time.time() + DETECT_BUDGET, p)
             items, skipped, later = [], [], 0
             est_by, work_by = {e: 0 for e in choices}, {e: 0.0 for e in choices}
             any_video = False

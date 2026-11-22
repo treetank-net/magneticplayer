@@ -796,6 +796,11 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
 - [ ] The Remote tab left open, app in the background: no multicast lock (`dumpsys wifi`, "Multicast Locks held"
       without `magneticplayer-announce`) and no Chromecast discovery. Measured before the fix on the Pixel
       (v1.261121.0922): ~0.7 s CPU per minute and the lock held; Library tab in the background: ~0.1 s per minute.
+- [ ] Another app's session on a Chromecast (music started from that app) is followed by the Remote's media
+      notification only while our app is on screen. Found on v1.261122.1956: with the app in the background the
+      notification service kept polling a music app's Chromecast session (~1.8 s CPU per minute, multicast lock held)
+      for as long as the music played. After the fix: our notification goes once the app leaves the screen, the
+      lock is released; our own casts (mpv, our Chromecast/DLNA playback) keep their notification.
 - [ ] A paused player behind another app: no HEAD requests every 3 s once the buffer is full (or the server is
       away); a background download of the buffer still finishes; back in the player the buffer line updates again.
 - [ ] Server sheet, cover settings, Discover hero, covers waiting for an offline server, uploads list, subtitle
@@ -810,8 +815,8 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
 
 ## Suggestions you don't have (G4, agent 1.18.0)
 
-- [ ] Discover: under "Because you watched" a row "Because you watched <title>: not on your disks" (PL "Podobne do
-      „…”: nie ma na dyskach") with greyed covers and a reason (director, actor, genres).
+- [x] Discover: under "Because you watched" a row "Because you watched <title>: not on your disks" (PL "Podobne do
+      „…”: nie ma na dyskach") with greyed covers and a reason (director, actor, genres). (2026-11-22, Pixel, v1.261122.1956)
 - [ ] A tap opens the missing title's page (D2: search engines, paste a magnet, want to watch); a wishlisted title
       says "want".
 - [ ] A title that reaches the disks leaves the row (at the latest after the phone's 10-minute cache).
@@ -851,20 +856,28 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
 ## Re-encode, advanced (stage 6: F3 + B6, agent 1.18.1)
 
 A1/E2:
-- [ ] an "ADVANCED" label and a "Re-encode" row at the end of Renovation (only with agent 1.18.1+)
+- [x] an "ADVANCED" label and a "Re-encode" row at the end of Renovation (only with agent 1.18.1+) (2026-11-22, Pixel, v1.261122.1956)
 - [ ] the counter "N sets" greyed out; the row opens B6; an E2 scope carries into B6
 
 B6:
 - [ ] description: several changes in one pass, the file is encoded once
-- [ ] "START FROM": Series archive / For Chromecast / Old VHS / Empty, plus saved sets
+- [x] "START FROM": Series archive / For Chromecast / Old VHS / Empty (2026-11-22, Pixel, v1.261122.1956); saved sets not checked yet
 - [ ] files row: folder picker on the whole computer, the scope bar in a scope
 - [ ] six steps: switch + name + one-line summary, only one expanded at a time
 - [ ] resolution 720/480/360; codec H.265 saving / H.265 quality / H.264 compatible
 - [ ] old picture: deinterlace / denoise / crop black bars; sound: fix damaged / even loudness / leave
 - [ ] Chromecast: add AAC stereo / subtitles to .srt; container MKV / MP4
-- [ ] a step that is off reads "skipped"
+- [x] a step that is off reads "skipped" (2026-11-22, Pixel, v1.261122.1956)
 - [ ] summary card: "N files · 1 pass instead of K · about T · −X GB", the order note, warnings
 - [ ] "Save set" (a name; the set shows on the other phone) and "Preview" with the steps per file
+- [x] Preview on the whole computer with Series archive: 1334 items, size before/after, CPU vs NVENC with hours,
+      each file with its steps ("480p · H.265 saving", source codec and height, size → estimate) (2026-11-22, Pixel, v1.261122.1956)
+- [ ] While the preview measures (up to 4 min) the line under the bar says "measuring sound and picture (up to N min
+      more): <file>" instead of the last file of the walk with the bar stuck at 99 % (agent 1.18.2; seen on the
+      Pixel 2026-11-22 with agent 1.18.2 hand-deployed, app v1.261122.1956)
+- [ ] Open question: "Series archive" with "Folders: all" also takes films (a 1080p AV1 film was scaled to 480p). The
+      task scope has no "series only" filter; folder tags are free-form. Default the preset to folders tagged like
+      series, add a kind filter to scopes, or leave it to the folder picker?
 - [ ] a real task to the end on jmpc (GPU), including an interlaced VHS-like file and one with subtitles; survives an
       agent restart; EN and PL
 - Decisions taken without the owner (2026-11-22): deleting a saved set is API-only for now (no place on the board);

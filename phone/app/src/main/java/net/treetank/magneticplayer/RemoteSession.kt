@@ -75,7 +75,10 @@ class RemotePlayer(private val ctx: Context, val kind: String) : SimpleBasePlaye
                 // a notification and a foreground service for: it ends like a stopped target (the Remote brings it back)
                 foreignPaused = if (s != null && s.app != null && !s.playing && !s.buffering) foreignPaused + 1 else 0
                 // a stopped TV (end of video, someone turned it off) counts as "nothing playing"
-                val idle = s == null || (r is DlnaRemote && Dlna.last?.state in Dlna.IDLE_STATES) || foreignPaused > 80
+                // another app's session (music on the Chromecast) is followed only while our app is on screen: that app
+                // has its own notification, and polling it every 1.5 s behind the lock screen kept the phone warm
+                val idle = s == null || (r is DlnaRemote && Dlna.last?.state in Dlna.IDLE_STATES) || foreignPaused > 80 ||
+                    (s.app != null && !MainVisible.state.value)
                 // a Chromecast with the Cast SDK has its own notification, but the series queue needs its state too
                 val q = if (r == null && kind == "cast" && Cast.session(ctx) != null) runCatching { CastRemote(ctx).status() }.getOrNull() else s
                 TvQueue.tick(ctx, kind, q, if (q === s) idle else q == null)
