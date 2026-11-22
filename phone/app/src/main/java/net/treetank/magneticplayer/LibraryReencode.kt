@@ -247,7 +247,7 @@ internal fun ReencodeJob(c: JobCtx) {
         co.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    c.api.setJobsConfig(JSONObject().put("reencode_preset", JSONObject().put("name", name).put("steps", JSONObject(steps))))
+                    c.api.setJobsConfig(JSONObject().put("reencode_preset", JSONObject().put("name", name).put("steps", cur)))
                     presetsOf(c.api.jobsConfig().optJSONArray("reencode_presets"))
                 }
             }.onSuccess { list ->
