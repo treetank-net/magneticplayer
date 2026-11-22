@@ -109,7 +109,10 @@ class AppUpdates:
                     self.last_error = str(e)
                     self.log(f"app update from GitHub: {e}")
                 self.last_check = time.time()
-            self._wake.wait(INTERVAL)
+            # wall-clock deadline in 15 min steps: Event.wait's monotonic clock stops while the computer sleeps
+            due = time.time() + INTERVAL
+            while time.time() < due and not self._wake.wait(min(900, max(1, due - time.time()))):
+                pass
 
     @staticmethod
     def _get(url, timeout=60):

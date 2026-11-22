@@ -202,8 +202,10 @@ class AgentUpdates:
                 except Exception as e:
                     self.last_error, self.state, self.requested = str(e)[:300], "error", False
                     self.log(f"agent update: {e}")
+            # at most 15 min at a time: Event.wait runs on the monotonic clock, which stops while the computer
+            # sleeps, so a laptop that slept overnight would otherwise wait the rest of its 6 h after waking up
             self._wake.wait(IDLE_POLL if self.state == "waiting" else
-                            max(60, next_check - time.time()))
+                            min(900, max(60, next_check - time.time())))
 
     @staticmethod
     def _get(url, timeout=60):

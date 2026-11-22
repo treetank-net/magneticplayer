@@ -60,7 +60,7 @@ import mp_subsync
 import mp_segments
 import mp_subfiles
 
-VERSION = "1.17.5"
+VERSION = "1.17.6"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 

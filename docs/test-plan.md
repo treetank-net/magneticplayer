@@ -765,6 +765,10 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
   "machine translation" / "made for 24 fps, the film has another frame rate". Checked on jmpc in a separate process
   (2026-11-21, a 25 fps film: machine translations last, 23.976/24 fps ones marked); app compiled only. To see in the
   app: the badges and the order on a phone.
+- [ ] Agent 1.17.6: agent and app update checks keep to their 6 h on the wall clock (waits of at most 15 min): the laptop
+  agent slept from one afternoon to the next evening and then still waited out the rest of its 6 h (monotonic clock
+  stops during suspend), so it never fetched a release that came out meanwhile. To see: the laptop picks up the next
+  release within ~15 min of waking.
 - [ ] Agent 1.17.5, subtitles: among hash matches NapiProjekt (no download quota) goes before OpenSubtitles.
   Measured on jmpc (2026-11-21, 40 random films + 12 series, search only): NapiProjekt has Polish subtitles by hash for
   18/40 films and 9/12 series episodes, OpenSubtitles title matches for 22/40 (PL) and 22/40 (EN); only 2 films had
