@@ -17,6 +17,10 @@ VENV = os.path.expanduser("~/.local/share/magneticplayer/venv")
 STOPPED = ("interrupted", "przerwane")  # (en, pl) — provider state after "Enough" (stop)
 BY_HASH_ONLY = {"bsplayer", "napiprojekt"}  # they search by file hash — changing the title won't help them
 FREE_PROVIDERS = ["podnapisi", "bsplayer", "gestdown", "napiprojekt"]  # tvsubtitles: 403
+# A provider that doesn't answer (BSPlayer's servers stopped accepting connections and subliminal tried its five
+# addresses one after another, minutes per search) is skipped for a while, so background tasks don't wait on it per file.
+PROVIDER_DEADLINE, PROVIDER_PAUSE = 60, 1800
+_down = {}  # provider → time until which it is skipped
 
 
 class SubsError(Exception):
@@ -273,6 +277,11 @@ class Subtitles:
         for n in names:
             prov[n] = {"state": "skip", "error": T("searches by hash — no change", "szuka po hashu — bez zmian")} if n in skip else {"state": "pending"}
         names = [n for n in names if n not in skip]
+        now = time.time()
+        for n in [n for n in names if _down.get(n, 0) > now]:
+            prov[n] = {"state": "skip", "error": T(f"didn't answer, tried again at {time.strftime('%H:%M', time.localtime(_down[n]))}",
+                                                   f"nie odpowiadał, spróbuję o {time.strftime('%H:%M', time.localtime(_down[n]))}")}
+        names = [n for n in names if _down.get(n, 0) <= now]
 
         stopped = set(STOPPED)
 
@@ -305,10 +314,19 @@ class Subtitles:
         ex = ThreadPoolExecutor(max_workers=max(1, len(names)))
         futs = {ex.submit(bind(one), n): n for n in names}
         pending, subs = set(futs), []
+        deadline = time.time() + PROVIDER_DEADLINE
         while pending:
             done, pending = wait(pending, timeout=0.4)
             for f in done:
                 subs += f.result()
+            if pending and time.time() > deadline:
+                for f in pending:  # still connecting: skipped now and for the next half hour
+                    n = futs[f]
+                    _down[n] = time.time() + PROVIDER_PAUSE
+                    prov[n] = {"state": "error", "error": T(f"no answer in {PROVIDER_DEADLINE} s", f"brak odpowiedzi w {PROVIDER_DEADLINE} s"),
+                               "secs": PROVIDER_DEADLINE}
+                    print(f"subs: {n} didn't answer in {PROVIDER_DEADLINE} s, skipped for {PROVIDER_PAUSE // 60} min", file=sys.stderr)
+                break
             if pending and (progress or {}).get("stop"):
                 for f in pending:  # the threads will finish in the background, but we no longer wait for them
                     prov[futs[f]] = {"state": "skip", "error": T(*STOPPED)}

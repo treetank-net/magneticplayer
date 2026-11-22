@@ -801,6 +801,13 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
 - [ ] Server sheet, cover settings, Discover hero, covers waiting for an offline server, uploads list, subtitle
       search progress: their polling stops while the app is off screen and resumes when it is back.
 
+## Subtitle providers that don't answer (next agent)
+
+- [ ] A provider still connecting after 60 s (BSPlayer's servers stopped accepting connections on 2026-11-22) is
+      marked "no answer in 60 s", the search goes on with the others, and for 30 min it shows "didn't answer, tried
+      again at HH:MM" instead of being asked (journal: "subs: bsplayer didn't answer"). Background subtitle tasks no
+      longer wait minutes per file on it.
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a
