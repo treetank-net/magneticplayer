@@ -382,7 +382,10 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                             allMode && waking == null -> stringResource(R.string.main_all_status, up, fileKeys.size) to
                                 (if (up > 0) OK_GREEN else MaterialTheme.colorScheme.error)
                             waking != null -> waking!! to MaterialTheme.colorScheme.tertiary
-                            wrong -> stringResource(R.string.main_status_wrong_server) to MaterialTheme.colorScheme.error
+                            // another device at the server's address is news at home (the router gave it away), not at
+                            // somebody else's Wi-Fi with the same range: there the server just isn't on this network
+                            wrong && here[srv.key] != Home.Here.AWAY ->
+                                stringResource(R.string.main_status_wrong_server) to MaterialTheme.colorScheme.error
                             online == true -> stringResource(R.string.main_status_online, srv.rolesText(LocalContext.current)) to OK_GREEN
                             online == false && here[srv.key] == Home.Here.AWAY ->
                                 stringResource(R.string.main_status_away) to MaterialTheme.colorScheme.onSurfaceVariant
@@ -481,7 +484,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) &&
                     !(t == TAB_LIBRARY && waking == null && srv.hasCatalog && CatalogCache.hasCopy(ctx, srv.key)) &&
                     !(t == TAB_LIBRARY && allMode && anyUp && waking == null) ->
-                    AsleepPane(srv, waking, wrong, away = !allMode && here[srv.key] == Home.Here.AWAY,
+                    AsleepPane(srv, waking, wrong && here[srv.key] != Home.Here.AWAY, away = !allMode && here[srv.key] == Home.Here.AWAY,
                         onCheck = { Home.recheck(ctx) }) { if (allMode && downSrv.isNotEmpty()) downSrv.forEach { wake(it.key) } else wake() }
                 t == TAB_TORRENTS && !srv.hasTorrent && !srv.hasCatalog ->
                     Hint(stringResource(R.string.main_hint_no_torrent, srv.name))

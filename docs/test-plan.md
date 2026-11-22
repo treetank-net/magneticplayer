@@ -825,6 +825,13 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       network". First run after the update: the neighbours are learned the first time jmpc answers.
 - [ ] Another Wi-Fi with the same address range (or a hotspot from the other phone): "not on this network", the token
       isn't sent anywhere; "Check again" checks once; Wake still tries.
+      Seen 2026-11-22 on the emulator (v1.261122.2306): its traffic to the server's address redirected (iptables, the
+      emulator's cgroup only) to a fake agent answering with another id. Verdict "away" within 8 s of joining; the fake
+      got only pings without a token (two at once, then one a minute with the app on screen); back home "here" after
+      12 s. [ ] But the header said "a different server is at this address" and Downloading said "the router may have
+      given jmpc a new address, pair it again": misleading at somebody else's Wi-Fi. Next app: when the server is
+      away, the away message wins (the wrong-server one stays for home, where neighbours prove it's the same place);
+      "Check again" not reached because of it.
 - [ ] Two servers in two homes: each is "here" only in its own home; "All servers" keeps one library, titles of the
       server that is away stay listed from the copy.
 - [ ] A laptop agent that travels: "here" wherever it answers, never "asleep here".
