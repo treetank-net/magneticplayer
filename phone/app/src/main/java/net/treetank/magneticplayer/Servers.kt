@@ -61,6 +61,10 @@ data class Server(
     val hasMoves get() = features?.optBoolean("library_moves", false) ?: false
     /** POST /api/media/convert takes the remembered audio choice (agent 1.14+). */
     val hasConvertAudio get() = features?.optBoolean("convert_audio", false) ?: false
+    /** GET /api/media/probe takes `audio` and answers `audio_want` and `variant.audio_match` (agent 1.18+). */
+    val hasConvertAudioMatch get() = features?.optBoolean("convert_audio_match", false) ?: false
+    /** GET /api/media/title: a library video's recognised name, as on mpv and the Remote (agent 1.18+). */
+    val hasMediaTitle get() = features?.optBoolean("media_title", false) ?: false
     /** Agent 1.8.2+: a plan that re-encodes old picture formats across the library. */
     val hasModernize get() = features?.optBoolean("library_modernize", false) ?: false
     /** agent 1.9+: subtitles fitted to the film's speech (after a download, and the "Subtitles" task in Disks) */

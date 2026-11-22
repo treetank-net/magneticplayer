@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Wybór odcinka w odtwarzaczu telefonu (plan G2) -->
+<resources>
+    <string name="player2_episodes">Odcinki</string>
+    <string name="player2_now_playing">Teraz odtwarzany</string>
+    <string name="player2_watched">Obejrzany</string>
+    <string name="player2_part_watched">Obejrzany do %1$d%%</string>
+</resources>

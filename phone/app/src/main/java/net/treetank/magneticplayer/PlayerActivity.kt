@@ -153,6 +153,9 @@ class PlayerActivity : ComponentActivity() {
         // the audio sheet next to CC (ExoPlayer's gear has a bare track list without remembering)
         audioButton = barButton(view, R.drawable.ic_player_audio, R.string.audio_title) { audioMenu() }
         audioButton?.visibility = android.view.View.GONE  // shown when the video has two or more audio tracks
+        // G2: the season's episodes, to switch without leaving the player; shown once the list is known (loadEpisodes)
+        episodesButton = barButton(view, R.drawable.ic_player_episodes, R.string.player2_episodes) { episodeMenu() }
+        episodesButton?.visibility = android.view.View.GONE
         val dp = resources.displayMetrics.density
         // top: title and how much can be watched without a network; visible together with the controls
         val top = LinearLayout(this).apply {
@@ -168,6 +171,9 @@ class PlayerActivity : ComponentActivity() {
             lifecycleScope.launch {
                 val t = withContext(Dispatchers.IO) { runCatching { libraryTitle(this@PlayerActivity, ref) }.getOrNull() }
                 if (t != null) { tv.text = t; shownTitle = t }
+                // the agent's name is the one mpv and the Remote show (it reads episode numbers better), when reachable
+                val a = withContext(Dispatchers.IO) { runCatching { if (api.configured) api.mediaTitle(ref) else null }.getOrNull() }
+                if (a != null && !isFinishing) { tv.text = a; shownTitle = a }
             }
             setTextColor(Color.WHITE)
             textSize = 16f
@@ -359,6 +365,7 @@ class PlayerActivity : ComponentActivity() {
             showDiskAhead(p)
         }
         loadSegments()
+        loadEpisodes()
         settings.touchCache(key, settings.cacheWatched(key))
         Thread { OfflineStore.ensure(this, ref); MediaCache.sweep(this, keep = key) }.start()
     }
@@ -683,6 +690,68 @@ class PlayerActivity : ComponentActivity() {
         ui.removeCallbacks(nextTick)
         player?.pause()
         startActivity(PlayerActivity.intent(this, MediaRef.InLibrary(r.root, n.path, r.srv), null, nextEps.drop(1), series = true))
+        finish()
+    }
+
+    private var episodesButton: android.widget.ImageButton? = null
+    /** the series' episodes in watching order (all seasons), for the picker; empty: no picker */
+    private var seasonEps: List<Episode> = emptyList()
+
+    /**
+     * The series folder's episode list (the catalog item's folder when it is a series, else the video's own folder),
+     * from the agent or the copy kept on the phone (Api.episodes), so the picker works offline for a downloaded season.
+     * A film in a folder with its extras gets no button: only a series, or a numbered episode, does.
+     */
+    private fun loadEpisodes() {
+        val r = ref as? MediaRef.InLibrary ?: return
+        lifecycleScope.launch {
+            val list = withContext(Dispatchers.IO) {
+                runCatching {
+                    val item = CatalogCache.cached(this@PlayerActivity, r.srv)?.items?.firstOrNull {
+                        it.root == r.root && it.dir != null && r.path.startsWith(it.dir + "/")
+                    }
+                    val dir = item?.takeIf { it.series }?.dir ?: r.path.substringBeforeLast('/', "")
+                    val eps = api.episodes(r.root, dir).episodes
+                    val cur = eps.firstOrNull { it.path == r.path }
+                    eps.takeIf { cur != null && it.size > 1 && (series || nextEps.isNotEmpty() || item?.series == true || cur.episode != null) }
+                }.getOrNull()
+            } ?: return@launch
+            if (isFinishing) return@launch
+            seasonEps = list
+            episodesButton?.visibility = android.view.View.VISIBLE
+        }
+    }
+
+    /** The episode picker over the player (EpisodeSheet); the video pauses while it is open, as with audio and subtitles. */
+    private fun episodeMenu() {
+        val p = player ?: return
+        val root = root ?: return
+        val r = ref as? MediaRef.InLibrary ?: return
+        val eps = seasonEps.takeIf { it.isNotEmpty() } ?: return
+        val host = androidx.compose.ui.platform.ComposeView(this)
+        val wasPlaying = p.isPlaying
+        if (wasPlaying) p.pause()
+        fun close() {
+            root.removeView(host)
+            if (wasPlaying) player?.play()
+        }
+        host.setContent {
+            AppTheme {
+                EpisodeSheet(r.srv, r.root, eps, r.path, onDismiss = ::close) { i ->
+                    if (eps[i].path == r.path) close() else { root.removeView(host); switchEpisode(eps, i) }
+                }
+            }
+        }
+        root.addView(host, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    /** Another episode in a new player, as "Next episode" does (its own buffer, subtitles and position); the episodes
+     * after it become its "next". This player saves its position as it closes (onStop). */
+    private fun switchEpisode(eps: List<Episode>, i: Int) {
+        val r = ref as? MediaRef.InLibrary ?: return
+        ui.removeCallbacks(nextTick)
+        player?.pause()
+        startActivity(PlayerActivity.intent(this, MediaRef.InLibrary(r.root, eps[i].path, r.srv), null, eps.drop(i + 1), series = true))
         finish()
     }
 

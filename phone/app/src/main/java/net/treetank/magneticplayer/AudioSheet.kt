@@ -116,6 +116,25 @@ fun audioTitle(label: String?, lang: String, ui: java.util.Locale): String? {
     return t.takeUnless { names.any { n -> n.equals(t, true) } }
 }
 
+/** The kind's name on screen ("Lector (voice-over)", "Original"…), null for a track that says nothing. */
+@Composable
+fun audioKindText(kind: String): String? = when (kind) {
+    "lector" -> stringResource(R.string.audio_kind_lector)
+    "dubbing" -> stringResource(R.string.audio_kind_dubbing)
+    "description" -> stringResource(R.string.audio_kind_description)
+    "commentary" -> stringResource(R.string.audio_kind_commentary)
+    "original" -> stringResource(R.string.audio_kind_original)
+    else -> null
+}
+
+/** One audio track as the agent describes it (`{lang, title, kind}`, agent 1.18+): "Polish · Lector (voice-over)". */
+@Composable
+fun audioTrackText(a: org.json.JSONObject): String {
+    val lang = subLangKey(a.optString("lang"))
+    return listOfNotNull(lang.takeIf { it.isNotEmpty() }?.let { langName(it) }, audioKindText(a.optString("kind")))
+        .joinToString(" · ").ifEmpty { a.optString("title").ifEmpty { stringResource(R.string.audio_lang_unknown) } }
+}
+
 /** The audio sheet over the player: the tracks grouped by language, each with its title, channels and codec. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -134,14 +153,7 @@ fun AudioSheet(opts: List<AudioOpt>, onDismiss: () -> Unit, onPick: (AudioOpt) -
                         RadioButton(o.selected, { onPick(o) })
                         Spacer(Modifier.width(4.dp))
                         Column {
-                            val kind = when (o.kind) {
-                                "lector" -> stringResource(R.string.audio_kind_lector)
-                                "dubbing" -> stringResource(R.string.audio_kind_dubbing)
-                                "description" -> stringResource(R.string.audio_kind_description)
-                                "commentary" -> stringResource(R.string.audio_kind_commentary)
-                                "original" -> stringResource(R.string.audio_kind_original)
-                                else -> null
-                            }
+                            val kind = audioKindText(o.kind)
                             // the title without codec/channel claims: the line below (from the file itself) says those
                             val title = audioTitle(o.label, lang, ui)
                             Text(listOfNotNull(kind, title?.takeIf { !it.equals(kind, true) }).joinToString(" · ")

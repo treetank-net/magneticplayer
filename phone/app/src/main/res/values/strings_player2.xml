@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The phone player's episode picker (plan G2) -->
+<resources>
+    <string name="player2_episodes">Episodes</string>
+    <string name="player2_now_playing">Playing now</string>
+    <string name="player2_watched">Watched</string>
+    <string name="player2_part_watched">Watched up to %1$d%%</string>
+</resources>

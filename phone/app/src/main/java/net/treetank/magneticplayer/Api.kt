@@ -933,14 +933,27 @@ class Api(val s: Settings, srv: Server) {
     }
 
     /** File format and rating for Chromecast, the "for Chromecast" version and its preparation (agent 1.2+). */
-    fun mediaProbe(ref: MediaRef): JSONObject = JSONObject(call("GET", "/api/media/probe?${ref.query()}", timeout = 30000))
+    fun mediaProbe(ref: MediaRef): JSONObject = JSONObject(call("GET", "/api/media/probe?${ref.query()}" +
+        // the remembered audio choice: the answer says which track a version would carry and whether the prepared one
+        // has it (agent 1.18+, `audio_want`, `variant.audio_match`)
+        (audioPref(ref)?.takeIf { srv.hasConvertAudioMatch }?.let { "&audio=" + Uri.encode(it) } ?: ""), timeout = 30000))
+
+    /** The audio picked for this folder (a series) or in general ([AudioPref.encode]), as the players use it. */
+    fun audioPref(ref: MediaRef): String? = (ref as? MediaRef.InLibrary)?.let { s.folderAudio(folderKey(it)) } ?: s.audioChoice
+
+    /** A library video's recognised name ("Series · S2 E3", "Film (1968)"), null when unknown or the agent is older
+     * (agent 1.18+, `features.media_title`). */
+    fun mediaTitle(ref: MediaRef): String? {
+        if (!srv.hasMediaTitle) return null
+        val o = JSONObject(call("GET", "/api/media/title?${ref.query()}", timeout = 4000))
+        return if (o.isNull("title")) null else o.optString("title").ifBlank { null }
+    }
     fun mediaConvert(ref: MediaRef, op: String? = null): JSONObject =
         JSONObject(call("POST", "/api/media/convert", ref.json().apply {
             if (op != null) put(op, true)
             // the version for a TV carries the audio this phone picked last (the same folder's choice first): a
             // Chromecast plays one audio track of a file, it can't switch like the phone's player or mpv
-            else if (srv.hasConvertAudio) ((ref as? MediaRef.InLibrary)?.let { s.folderAudio(folderKey(it)) } ?: s.audioChoice)
-                ?.let { put("audio", it) }
+            else if (srv.hasConvertAudio) audioPref(ref)?.let { put("audio", it) }
         }))
 
     /** Chromecast seen by the agent (any sender): `{active, device, id, app, title, state, pos, …, all: [...]}`. */

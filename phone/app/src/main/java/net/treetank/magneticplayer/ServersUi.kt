@@ -329,18 +329,26 @@ private fun CastFormat(ref: MediaRef) {
                 // the language picked since differs (agent 1.14.2+ reports the version's track)
                 val vLang = v.optJSONObject("audio")?.optString("lang").orEmpty()
                 val audios = p.optJSONObject("file")?.optJSONArray("audio")?.length() ?: 0
-                if (vLang.isNotEmpty() && audios > 1) {
-                    val want = ((ref as? MediaRef.InLibrary)?.let { api.s.folderAudio(folderKey(it)) } ?: api.s.audioChoice)
-                        ?.substringAfter('|', "")?.takeIf { it.isNotEmpty() }
+                val want = p.optJSONObject("audio_want")
+                fun again() = scope.launch {
+                    err = withContext(Dispatchers.IO) { runCatching { api.mediaConvert(ref, "remove"); api.mediaConvert(ref) }.exceptionOrNull()?.message }
+                    tick++
+                }
+                if (audios > 1 && v.optJSONObject("audio")?.has("kind") == true) {
+                    // agent 1.18+: the version's track by kind too ("Polish · Lector"), and whether it is the one the
+                    // remembered choice ("original", "lector", a language) picks; otherwise preparing it again for that one
+                    Text(stringResource(R.string.srv_cast_audio, audioTrackText(v.getJSONObject("audio"))), style = small, color = muted)
+                    if (!v.optBoolean("audio_match", true) && want != null)
+                        TextButton({ again() }) { Text(stringResource(R.string.srv_cast_audio_again, audioTrackText(want))) }
+                } else if (vLang.isNotEmpty() && audios > 1) {
+                    // an older agent: by language only
+                    val wantLang = api.audioPref(ref)?.substringAfter('|', "")?.takeIf { it.isNotEmpty() }
                     fun iso3(l: String) = runCatching { java.util.Locale(l).isO3Language }.getOrDefault(l)
                     fun name(l: String) = java.util.Locale(l).getDisplayLanguage(java.util.Locale.getDefault()).ifEmpty { l }
                     Text(stringResource(R.string.srv_cast_audio, name(vLang)), style = small, color = muted)
-                    if (want != null && iso3(want) != iso3(vLang)) TextButton({
-                        scope.launch {
-                            err = withContext(Dispatchers.IO) { runCatching { api.mediaConvert(ref, "remove"); api.mediaConvert(ref) }.exceptionOrNull()?.message }
-                            tick++
-                        }
-                    }) { Text(stringResource(R.string.srv_cast_audio_again, name(want))) }
+                    if (wantLang != null && iso3(wantLang) != iso3(vLang)) TextButton({ again() }) {
+                        Text(stringResource(R.string.srv_cast_audio_again, name(wantLang)))
+                    }
                 }
             }
             state == "queued" || state == "running" -> {
