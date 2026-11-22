@@ -582,6 +582,7 @@ private fun LanguagePage(
             val job = withContext(Dispatchers.IO) { api.subsSearchStart(ref, t, y, langs = lang) }
             jobId = job
             while (true) {
+                MainVisible.await()
                 val p = withContext(Dispatchers.IO) { api.subsJob(job) }
                 progress = p
                 if (p.done) {

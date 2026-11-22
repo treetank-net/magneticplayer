@@ -64,7 +64,7 @@ fun rememberUploads(api: Api, online: Boolean, enabled: Boolean): UploadsState {
                 data.value = it
                 UploadsBadge.count.intValue = it.new
             }
-            delay(if (data.value?.items?.any { it.state == "moving" } == true) 2000 else 8000)
+            visibleDelay(if (data.value?.items?.any { it.state == "moving" } == true) 2000L else 8000L)
         }
     }
     return UploadsState(data) { tick++ }

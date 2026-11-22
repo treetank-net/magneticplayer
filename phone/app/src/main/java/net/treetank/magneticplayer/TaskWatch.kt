@@ -28,6 +28,29 @@ object MainVisible {
     suspend fun await() { state.first { it } }
 }
 
+/** A polling loop's pause: [ms], then until the app is on screen again. Work that must go on in the background
+ *  belongs in a service with a notification; everything else stops while nobody looks (a phone in a pocket got warm). */
+suspend fun visibleDelay(ms: Long) { delay(ms); MainVisible.await() }
+
+/** [start] while the screen this composable belongs to is visible (STARTED), its returned stop on leaving: discovery,
+ *  multicast listening and similar radio work. A plain DisposableEffect kept them running with the app off screen. */
+@androidx.compose.runtime.Composable
+fun WhileOnScreen(vararg keys: Any?, start: () -> () -> Unit) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner, *keys) {
+        var stop: (() -> Unit)? = null
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> if (stop == null) stop = start()
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> { stop?.invoke(); stop = null }
+                else -> {}
+            }
+        }
+        owner.lifecycle.addObserver(obs)  // replays ON_START at once when already started
+        onDispose { owner.lifecycle.removeObserver(obs); stop?.invoke(); stop = null }
+    }
+}
+
 /**
  * Library tasks this phone follows: the ones it started, and ones picked with "Monitor" on a task card. Only these get a
  * progress notification and a "finished" one (other phones of the household don't hear about someone else's task).

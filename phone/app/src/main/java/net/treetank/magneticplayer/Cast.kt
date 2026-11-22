@@ -370,9 +370,9 @@ object Cast {
 fun rememberCastTargets(): List<CastTarget> {
     val ctx = LocalContext.current
     var list by remember { mutableStateOf(Cast.routes(ctx)) }
-    DisposableEffect(Unit) {
+    WhileOnScreen {
         val stop = Cast.discover(ctx) { list = it }
-        onDispose { stop() }
+        stop
     }
     return list
 }

@@ -36,6 +36,7 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -434,6 +435,7 @@ class PlayerActivity : ComponentActivity() {
                 info?.text = getString(R.string.media_player_preparing, (j?.optDouble("pct", 0.0) ?: 0.0).toInt())
                 playerView?.showController()
                 delay(3_000)
+                onScreen()
             }
         } catch (e: ApiException) {
             altSource = false
@@ -569,8 +571,15 @@ class PlayerActivity : ComponentActivity() {
                 }
                 false
             }.getOrElse { false }
-            if (!worked) delay(3_000)
+            // nothing to fetch (buffer full, server away): wait, and with the player off screen until it is back,
+            // instead of two HEAD requests every 3 s for as long as a paused player sat behind another app
+            if (!worked) { delay(3_000); onScreen() }
         }
+    }
+
+    /** Until the player is visible again (a background download keeps going; idle polling doesn't). */
+    private suspend fun onScreen() {
+        lifecycle.currentStateFlow.first { it.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) }
     }
 
     /** Writes the bytes [from, to) of the video to the disk buffer, skipping what is already there. */
@@ -626,6 +635,7 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
             delay(1_000)
+            onScreen()
         }
     }
 

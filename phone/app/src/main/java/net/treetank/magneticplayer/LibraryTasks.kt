@@ -129,7 +129,7 @@ object Covers {
             val r = withContext(Dispatchers.IO) { runCatching { load(api, root, path, px, wide) } }
             if (r.isSuccess) return r.getOrNull()
             do {
-                kotlinx.coroutines.delay(wait)
+                visibleDelay(wait)
                 wait = minOf(wait * 2, 60_000L)
             } while (!withContext(Dispatchers.IO) { reachable(api) })
         }

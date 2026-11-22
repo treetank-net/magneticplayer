@@ -473,7 +473,7 @@ private fun HeroCarousel(c: CatCtx, slides: List<Pair<String, CatItem>>) {
     var touched by remember { mutableStateOf(0L) }
     if (slides.size > 1) LaunchedEffect(pager, slides) {
         while (true) {
-            kotlinx.coroutines.delay(8000)
+            visibleDelay(8000)
             if (!pager.isScrollInProgress && System.currentTimeMillis() - touched > 15_000)
                 pager.animateScrollToPage((pager.currentPage + 1) % slides.size)
         }

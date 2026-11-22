@@ -824,10 +824,10 @@ private fun PilotTab(screenApi: Api?, snack: SnackbarHostState, onPickScreen: (S
     val ctx = LocalContext.current
     var avail by remember { mutableStateOf(Pilot.available(ctx)) }
     // Chromecasts on the network searched from the phone (works without the agent too, e.g. for guests)
-    DisposableEffect(Unit) {
+    WhileOnScreen {
         val stop = CastNet.discover(ctx)
         val stopListen = Announce.listen(ctx)  // what other remotes play (DLNA TVs)
-        onDispose { stop(); stopListen() }
+        ({ stop(); stopListen() })
     }
     LaunchedEffect(Unit) {
         var n = 0
@@ -1420,7 +1420,7 @@ private fun CoverSettings() {
         // a while after a change: the old files go and the background fetch starts at the next catalog refresh
         while (true) {
             value = withContext(Dispatchers.IO) { CoverStore.usage(ctx) }
-            kotlinx.coroutines.delay(5000)
+            visibleDelay(5000)
         }
     }
     Text(stringResource(R.string.main_covers_title), style = MaterialTheme.typography.titleMedium)

@@ -791,6 +791,16 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
   series changed, 7 films lost a bogus episode number taken from "5.1". The new folder logic is tested only on
   synthetic names (the library has no SSEE or 100+ episode names).
 
+## Battery: nothing runs in the background without a notification (next app after v1.261122.1912)
+
+- [ ] The Remote tab left open, app in the background: no multicast lock (`dumpsys wifi`, "Multicast Locks held"
+      without `magneticplayer-announce`) and no Chromecast discovery. Measured before the fix on the Pixel
+      (v1.261121.0922): ~0.7 s CPU per minute and the lock held; Library tab in the background: ~0.1 s per minute.
+- [ ] A paused player behind another app: no HEAD requests every 3 s once the buffer is full (or the server is
+      away); a background download of the buffer still finishes; back in the player the buffer line updates again.
+- [ ] Server sheet, cover settings, Discover hero, covers waiting for an offline server, uploads list, subtitle
+      search progress: their polling stops while the app is off screen and resumes when it is back.
+
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a

@@ -429,7 +429,7 @@ fun ServerSheet(current: String?, onPick: (String) -> Unit, onWake: (String) -> 
     LaunchedEffect(Unit) {
         while (true) {
             servers.forEach { s -> launch(Dispatchers.IO) { online[s.key] = Api(Settings(ctx), s).ping(1500) } }
-            delay(4000)
+            visibleDelay(4000)
         }
     }
     ModalBottomSheet(onDismiss) {
