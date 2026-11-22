@@ -315,9 +315,28 @@ def variant(full):
     return p if os.path.isfile(p) else None
 
 
+def variant_audio(full):
+    """Which of the film's audio tracks the prepared version carries (agent 1.18+ writes it next to the version):
+    {"index", "lang", "title", "codec"}, or None (an older version, or no audio)."""
+    try:
+        with open(variant_path(full) + ".json", encoding="utf-8") as f:
+            a = json.load(f).get("audio")
+        return a if isinstance(a, dict) else None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _write_variant_audio(full, audio):
+    try:
+        with open(variant_path(full) + ".json", "w", encoding="utf-8") as f:
+            json.dump({"audio": audio}, f)
+    except OSError:
+        pass  # only the audio's description is lost; the version plays
+
+
 def remove_variant(full):
     p = variant_path(full)
-    for f in (p, p + ".part"):
+    for f in (p, p + ".part", p + ".json"):
         try:
             os.remove(f)
         except OSError:
@@ -497,6 +516,8 @@ class Converter:
                 pass
             raise RuntimeError((err or T(f"ffmpeg exited with code {p.returncode}", f"ffmpeg zakończył się kodem {p.returncode}")).strip())
         os.replace(part, out)
+        # the one audio track it carries, so a phone can tell it from the audio picked since (agent 1.18+)
+        _write_variant_audio(full, (m.get("check") or {}).get("audio"))
         j.update(state="done", pct=100)
         self.log("conversion done:", os.path.basename(out), f"{time.time() - (j['started'] or time.time()):.0f}s")
 

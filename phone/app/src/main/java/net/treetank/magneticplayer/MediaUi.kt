@@ -96,6 +96,9 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
             else if (tv != null) Screens.dlna(ctx, ref, tv, null, subsAsk::ask) { opening = it }
             else Screens.play(ctx, ref, key!!, null, subsAsk::ask) { opening = it }
             onPlayingOnPc()
+            // G5: the Remote also when the screen that asked is gone by now (waking the server takes a while, and the
+            // activity may have been recreated meanwhile: the callback above then switches a tab nobody sees)
+            openRemoteTab(ctx)
         } catch (e: ApiException) {
             snack.showSnackbar(e.message ?: ctx.getString(R.string.media_error))
         } finally {
@@ -197,4 +200,14 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
     }
     SubsAskDialog(subsAsk)
 
+}
+
+/** Brings the app's main screen forward on the Remote tab (onNewIntent switches the tab; singleTop keeps the same
+ * activity). Started from the app itself, so Android ignores it when the app is no longer in front. */
+fun openRemoteTab(ctx: android.content.Context) {
+    runCatching {
+        ctx.startActivity(android.content.Intent(ctx, MainActivity::class.java).putExtra("tab", TAB_REMOTE)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                (if (ctx is android.app.Activity) 0 else android.content.Intent.FLAG_ACTIVITY_NEW_TASK)))
+    }
 }

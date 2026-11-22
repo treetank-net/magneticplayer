@@ -79,6 +79,7 @@ ROUTES = [
     ("POST", "/api/wake", system.wake, {}),
     ("POST", "/api/media/ticket", media.media_ticket, {}),
     ("GET", "/api/media/probe", media.media_probe, {}),
+    ("GET", "/api/media/title", media.media_title, {}),
     ("POST", "/api/media/convert", media.media_convert, {}),
     ("GET", "/api/media/converts", call("convert.all"), {}),
     ("GET", "/api/cast/devices", call("casts.devices"), {}),

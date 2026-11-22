@@ -68,7 +68,7 @@ API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/
 # stay closed to guests until someone deliberately adds them here.
 GUEST_ALLOWED = {
     "GET": ("/api/info", "/api/announce", "/api/app/version", "/app/MagneticPlayer.apk", "/api/library",
-            "/api/library/browse", "/api/library/episodes", "/api/library/segments", "/api/library/search", "/api/library/cover", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe",
+            "/api/library/browse", "/api/library/episodes", "/api/library/segments", "/api/library/search", "/api/library/cover", "/lib/", "/media/", "/sub", "/api/subs/list", "/api/subs/job", "/api/media/probe", "/api/media/title",
             "/api/media/converts", "/api/jobs", "/api/player/status", "/api/cast/status", "/api/cast/devices",
             "/api/renderers", "/api/torrents"),
     "POST": ("/api/media/ticket", "/api/player/open", "/api/player/cmd", "/api/cast/play", "/api/cast/cmd",
@@ -399,6 +399,8 @@ class App:
                 "tasks_brief": True,  # GET /api/tasks?brief=1, "tasks" in /api/ping (agent 1.14.1+)
                 "library_moves": True,  # GET /api/library/moves?since= (agent 1.14+)
                 "convert_audio": True,  # POST /api/media/convert takes "audio" (agent 1.14+)
+                # GET /api/media/probe?audio= answers audio_want and variant.audio_match; GET /api/media/title (agent 1.18+)
+                "convert_audio_match": True, "media_title": True,
                 "library_modernize": True,  # POST /api/library/plan {"kind": "modernize"} (agent 1.8.2+)
                 # task scopes, GET /api/library/jobs, one plan kind per task, /api/config/jobs (agent 1.16+)
                 "jobs_v2": True,
