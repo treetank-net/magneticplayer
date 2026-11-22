@@ -35,7 +35,7 @@ WD_TTL = 30 * 86400    # Wikidata details are refreshed after a month
 WD_BATCH = 40
 SPARQL = "https://query.wikidata.org/sparql"
 CAST_MAX = 12
-ITEM_V = 8             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
+ITEM_V = 9             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
 SKIP_TAGS = {"muzyka", "inne"}
 LANG2 = {"pol": "pl", "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es",
          "ita": "it", "rus": "ru", "por": "pt", "dut": "nl", "nld": "nl", "cze": "cs", "ces": "cs", "chi": "zh",

@@ -95,6 +95,9 @@ yet: renaming to `Title (year)/…`, TMDB posters, Windows self-update. Stage 8 
     A single stray subtitle (wrong uploads, hash collisions) is ignored. Agent 1.17.6: series too, by their first
     episode (its subtitles name the series' id); a dry run over jmpc's 37 series confirmed 26, filled 2 without an id,
     changed none (where both versions of a remade series get votes, 2+ for the catalog's one keeps it).
+    Agent 1.17.6, too: a folder of 6+ numbered episodes ("[Grp] Show - 01", no SxxEyy) whose name matched a film is
+    looked up among series only, and without one loses the film's id (an anime series had a recent horror film's id,
+    poster and genres). Over jmpc's 202 folder items exactly that one changed. `ITEM_V` 9.
 16. **Storage profiles (lossy shrinking on request):** losslessly there's little to gain in video (on jmpc: samples
     0.1 GB, audio ~10% of the size, few DTS/extra tracks), so the real lever is re-encoding — but only where the user
     asks for it. Measured on jmpc (18.11): 222 GB of video in 250 files, mostly H.264 1080p at 4–5 Mb/s; the

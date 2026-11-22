@@ -598,6 +598,17 @@ def identify(name, files=None, index=None, nfo_text=None, wd=None, memory=None):
             hit = index.find(t, year, 1 if series_hint else 0 if films_only else None, only=films_only)
             if hit:
                 why.append(f"IMDb: {hit['title']} ({hit['year']})")
+    # a folder of many numbered episodes ("[Grp] Show - 01" in anime, no SxxEyy) is a series even when its name is a
+    # film's title: a film's IMDb id would give the series its poster, year and genres. A series of that name, else none
+    # (Wikidata may know it)
+    many = max(c.get("episodes", 0), numbered(files) if files else 0)
+    if index and hit and hit["kind"] == "movie" and many >= 6 and "IMDb from .nfo" not in why \
+            and not (files and film_years(files) >= 2):
+        series_hint = True
+        s2 = next((x for x in (index.find(t, year, 1, only=True) for t in names) if x), None)
+        why.append(f"{many} episodes: not the film {hit['title']} ({hit['year']})" +
+                   (f", the series {s2['title']} ({s2['year']})" if s2 else ""))
+        hit = s2
     # a hit far from the name's year is another film of that name (a remake for "1961 - <Title>" when IMDb lists the
     # 1961 original under another title): Wikidata, which knows the other titles, decides
     far = bool(hit and year and hit.get("year") and abs(hit["year"] - year) > 2)
