@@ -378,6 +378,25 @@ Each stage is a release of its own (tag after it was seen on the Pixel, in Engli
 5. F5 + E1 (after the data source decision).
 6. F3 + B6.
 
+7. The owner's noted wishes (`test-plan.md` "Noted wishes"), moved here on 2026-11-22 as plan items:
+   - **G1. Offline sync points.** The phone keeps positions, watched marks and subtitle choices made without a server
+     and sends them when it reaches the server again (the newer change wins, per title). The catalog is fetched
+     incrementally: the agent keeps a change counter per library (bumped on every item change); the phone sends the
+     last counter it saw and gets only changed and removed items (the whole catalog the first time, after an agent
+     restart that lost the counter, or when it is small). Downloaded copies get the server's newer subtitles at the
+     same moment.
+   - **G2. Episode picker inside the phone player.** A button in the player opens the season's episodes (watched,
+     on the phone, current marked); a tap switches episode without leaving the player. The player's title is the
+     recognised name ("Series · S2 E3", "Film (1968)"), not the file name.
+   - **G3. Audio choice remembered as a kind.** The sheet groups tracks by language with the file's track title
+     (lector, dubbing, audio description, commentary), channels and codec. The choice is stored as a kind
+     ("original", "Polish lector", "dubbing"): per series folder, otherwise a general preference ("original with
+     subtitles", "lector when there is one"). The phone player, mpv and the Chromecast variant use the same choice;
+     a Chromecast variant says which audio it has and offers preparing it again for another one.
+   - **G4. Suggestions you don't have.** Discover gets a row "Because you watched <title>: not on your disks" from
+     the IMDb index (same genres/people, popular, not in the library); a tap opens D2 (search engines, magnet).
+   - **G5. Playing on the server's screen from a folder opens the Remote** (the app stayed on the folder).
+
 ## Answers (2026-11-20)
 
 1. Episode lists: Wikidata first, IMDb's datasets (`title.episode`, `title.basics`) when Wikidata lacks the series;
