@@ -438,7 +438,8 @@ private fun DiskCard(disk: Disk, roots: Map<Int, LibRoot>, onAdd: () -> Unit, on
                     ReplicaLine(roots[r.root]?.replica)
                 }
             }
-            disk.roots.firstOrNull()?.let { first ->
+            // offered only on a disk that is getting full (under 15 % free); "Free up space" stays in the task list
+            disk.roots.firstOrNull()?.takeIf { disk.total > 0 && disk.free < disk.total * 0.15 }?.let { first ->
                 TextButton({ onFree(first.root) }, Modifier.padding(top = 4.dp)) { Text(stringResource(R.string.lib_free_up)) }
             }
             // agent 1.8+ also lists disks without library folders, so a new disk can be put to use from here

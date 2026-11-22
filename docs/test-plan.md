@@ -838,75 +838,77 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
 - [idea] The folder browser as the place for jobs on its files: shrink, missing subtitles (both there), and more as
   they come. Zip archiving gives videos almost nothing (already compressed), so no.
 
-## UX notes (observed while testing; to review with the user, not fixed)
+## UX notes (observed while testing)
 
-Written down as seen, also when unsure whether it is a problem at all.
+Written down as seen, also when unsure whether it is a problem at all. Reviewed with the owner on 2026-11-20
+(the approved fixes are numbered in `plan-12-points.md`); each note says where it went. From 2026-11-22 new findings
+are fixed as they come and reported, not only noted.
 
-- 2026-11-20, "Old formats" preview (emulator, jmpc): ~2 minutes of "Preparing the preview…" with the bar standing at
+- [replaced: stage 1 job screens] 2026-11-20, "Old formats" preview (emulator, jmpc): ~2 minutes of "Preparing the preview…" with the bar standing at
   the start (the damaged-sound check spends up to 90 s); nothing says what it is doing or how long it takes.
-- 2026-11-20, "Old formats" preview: every one of 494 items is ticked, and the button reads "Shrink" (the screen is
+- [replaced: stage 1 job screens (B1-B4)] 2026-11-20, "Old formats" preview: every one of 494 items is ticked, and the button reads "Shrink" (the screen is
   "Update old formats"); one tap starts ~40 h of CPU work. Damaged-sound items sit among the picture conversions
   with nothing grouping them (the job grouping prototype `docs/ux-jobs.html` covers this).
-- 2026-11-20, "Disks and tidy-up": five tool buttons ("Tidy up", "Duplicates", "Old formats", "Subtitles", "Get
+- [replaced: A1 task list] 2026-11-20, "Disks and tidy-up": five tool buttons ("Tidy up", "Duplicates", "Old formats", "Subtitles", "Get
   subtitles"); "Subtitles" next to "Get subtitles" doesn't say the first one fits subtitles already on the disk.
-- 2026-11-20, "Disks and tidy-up": "Free up space" is offered on a disk with 718 GB of 1.8 TB free.
+- [fixed 2026-11-22: the disk card offers it under 15 % free] 2026-11-20, "Disks and tidy-up": "Free up space" is offered on a disk with 718 GB of 1.8 TB free.
 
-- 2026-11-20, catalog: a library folder's subfolder that holds many series (e.g. `ANIME/<series>/…`) is one unrecognised
+- [fixed: agent 1.15.0] 2026-11-20, catalog: a library folder's subfolder that holds many series (e.g. `ANIME/<series>/…`) is one unrecognised
   item named after that subfolder; the series inside don't get their own titles in Discover/Browse. (Addressed by agent
   1.15.0; how to show the group, a category or a tag, is in the prototype `docs/ux-jobs.html`.)
-- 2026-11-20, catalog: an anime series without a year in its names was matched to a 2022 title of the same name (the
+- [open: the file-hash check of agent 1.17.4+ may correct it; recheck] 2026-11-20, catalog: an anime series without a year in its names was matched to a 2022 title of the same name (the
   original is from the 1990s).
-- 2026-11-20, phone player: an MKV with an MPEG-4 ASP picture and two 5.1 AAC tracks played with a black picture and
+- [open bug] 2026-11-20, phone player: an MKV with an MPEG-4 ASP picture and two 5.1 AAC tracks played with a black picture and
   "Dźwięk: Brak" (no audio track offered), with no audio-error dialog. An old format ("Stare formaty" fixes the
   picture); why no audio track is offered is not known yet.
-- 2026-11-20, covers in "Miniatury" mode: after a start without the server, the blurred thumbnails stay when the server
+- [fixed] 2026-11-20, covers in "Miniatury" mode: after a start without the server, the blurred thumbnails stay when the server
   comes back; sharp covers return only after the app is restarted. (Addressed in the next app.)
-- 2026-11-20, Discover hero carousel: it can turn to the next slide just as "Odtwórz" is tapped, so another title
+- [fixed: a touch holds the turning for 15 s] 2026-11-20, Discover hero carousel: it can turn to the next slide just as "Odtwórz" is tapped, so another title
   starts than the one looked at (seen offline: tapped on one film, the dialog named another).
-- 2026-11-20, Discover hero: the small pink label over a bright cover is hard to read.
-- 2026-11-20, server picker: "Wszystkie serwery" is described as "pobieranie po jednym serwerze", which no longer
+- [fixed: dark label background and fade] 2026-11-20, Discover hero: the small pink label over a bright cover is hard to read.
+- [fixed: new description] 2026-11-20, server picker: "Wszystkie serwery" is described as "pobieranie po jednym serwerze", which no longer
   matches Downloads with a single torrent server (no chips).
-- 2026-11-20, phone player: the title is still the release's file name ("… (1080p BluRay x265 …).mkv"), while the
+- [plan G2] 2026-11-20, phone player: the title is still the release's file name ("… (1080p BluRay x265 …).mkv"), while the
   Remote now shows the recognised name.
-- 2026-11-20, playing on jmpc from a folder: the app stays on the folder; the Remote has to be opened by hand.
+- [plan G5] 2026-11-20, playing on jmpc from a folder: the app stays on the folder; the Remote has to be opened by hand.
 
-- 2026-11-20, Remote, Audio sheet: a track's own title can contradict the detail line under it ("English: 5.1ch
+- [approved fix 17] 2026-11-20, Remote, Audio sheet: a track's own title can contradict the detail line under it ("English: 5.1ch
   (AC3 640Kbps)" over "5.1 · AAC": the file really has AAC; the title is the release's). Which one to trust is unclear.
-- 2026-11-20, Remote on jmpc: the title shown is the raw file name with release tags
+- [approved fix 11] 2026-11-20, Remote on jmpc: the title shown is the raw file name with release tags
   ("[group].Title.02.Episode [1080p.BRrip.x264.Dual-Audio].mkv"), not the recognised series/episode as in the catalog.
-- 2026-11-20, tasks: item errors are cut from the front ("ffmpeg failed: e left on device Error writing trailer of
+- [approved fix 9] 2026-11-20, tasks: item errors are cut from the front ("ffmpeg failed: e left on device Error writing trailer of
   /media/…/.Film.mp-shrink.part.mkv: No space left on device"): starts mid-word, shows a hidden temp path, and 457
   identical errors are listed one per file instead of one reason.
-- 2026-11-20, shrink / "Update old formats": the preview promises space saved, but originals go to the trash on the
+- [approved fix 3] 2026-11-20, shrink / "Update old formats": the preview promises space saved, but originals go to the trash on the
   same disk for 14 days, so the disk fills up during a big run; nothing on the preview or the task says so.
-- 2026-11-20, Remote: after leaving the Remote (app in the background, nothing of ours playing) its session service
+- [approved fix 19] 2026-11-20, Remote: after leaving the Remote (app in the background, nothing of ours playing) its session service
   stayed in the foreground for 10+ minutes (another app's paused cast session on the TV was selected).
-- A Chromecast variant keeps the audio track it was prepared with: after switching the language on the phone,
+- [approved fix 13; plan G3] A Chromecast variant keeps the audio track it was prepared with: after switching the language on the phone,
   casting the same film again uses the old variant (no "Prepare" offered, it already exists). Unclear whether a
   second variant per language, or a hint "prepared with English audio", is wanted.
-- "All servers": a title on two servers resumes only on the copy where it was watched (positions are per server);
+- [approved fix 15] "All servers": a title on two servers resumes only on the copy where it was watched (positions are per server);
   the merged cover may open the other copy from zero. Flagged in the prototype as a simplification.
-- "All servers" in Downloads and Folders is a chip row, not a merged list: it reads like a filter, while Library
+- [approved fix 12] "All servers" in Downloads and Folders is a chip row, not a merged list: it reads like a filter, while Library
   really merges. Could confuse; check with the user.
-- 2026-11-20, "All servers", Continue watching: the server prefix cuts the next-episode label to "jmpc · Dalej: S1 …"
+- [approved fix 16] 2026-11-20, "All servers", Continue watching: the server prefix cuts the next-episode label to "jmpc · Dalej: S1 …"
   (with one server it read "Dalej: S1 E3"); with several servers the prefix may matter less than the episode.
-- 2026-11-20, "All servers": "Uśpij" (suspend) in the header acts on the active server only, while the header says
+- [approved fix 1] 2026-11-20, "All servers": "Uśpij" (suspend) in the header acts on the active server only, while the header says
   "All servers"; it disappears when the Downloads chip picks the laptop (no power control), which hints at the hidden
   active server.
-- 2026-11-20, folder ⋮ "Move to…": the target list shows names and tags but not the free space of each disk, so
+- [approved fix 8] 2026-11-20, folder ⋮ "Move to…": the target list shows names and tags but not the free space of each disk, so
   picking where a big folder fits needs a trip to "Disks".
-- 2026-11-20, Downloads: "Odłożone w tym tygodniu" lists the test files `mp-test-*.avi/.mkv` ("left in downloads");
+- [approved fix 20: waits for the owner's yes] 2026-11-20, Downloads: "Odłożone w tym tygodniu" lists the test files `mp-test-*.avi/.mkv` ("left in downloads");
   test leftovers from an earlier session, to be removed from the server's downloads with the user's yes.
-- 2026-11-20, Discover: the hero still says "Nowe na twoich dyskach" (new on your disks); item 7 added "Because you
+- [approved fix 18] 2026-11-20, Discover: the hero still says "Nowe na twoich dyskach" (new on your disks); item 7 added "Because you
   watched" as a row, the hero kept its old role. Unclear whether the hero should also change.
-- 2026-11-20, "All servers", Folders: the server whose folder was opened last moves to the top of the list (it
+- [approved fix 10] 2026-11-20, "All servers", Folders: the server whose folder was opened last moves to the top of the list (it
   becomes the active one), so the sections swap places between visits; inside a folder nothing says which server
   it is on (the path shows "/").
-- 2026-11-20, task card: "Monitor" sits right next to "Cancel" on a running task; a slip cancels a five-hour move
+- [approved fix 2] 2026-11-20, task card: "Monitor" sits right next to "Cancel" on a running task; a slip cancels a five-hour move
   (cancel has no confirmation).
-- 2026-11-20, a title's screen: "Na serwerach" (on servers) with one row also shows when the title is on one
+- [approved fix 14] 2026-11-20, a title's screen: "Na serwerach" (on servers) with one row also shows when the title is on one
   server only; it says nothing new there.
-- 2026-11-20, "All servers" with every server away: the header button says "Obudź" (wake) and wakes only the active
+- [approved fix 1] 2026-11-20, "All servers" with every server away: the header button says "Obudź" (wake) and wakes only the active
   server; "Wake all" lives in the switcher sheet.
 - 2026-11-20, offline: an episode that is not on the phone opens the player, which sits at 00:00 / 00:00 with a
   spinning pause button and no message (watched for 28 s). The list doesn't say which episodes are on the phone
