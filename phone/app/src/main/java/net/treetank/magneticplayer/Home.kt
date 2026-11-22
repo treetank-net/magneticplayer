@@ -92,7 +92,7 @@ object Home {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val result = coroutineScope {
             val pings = servers.associate { s ->
-                s.key to async { Api.of(ctx, s.key)?.let { it.ping(1500) || it.ping(3000) } == true }
+                s.key to async { Api.of(ctx, s.key)?.let { it.ping(1500, force = true) || it.ping(3000, force = true) } == true }
             }
             val since = System.currentTimeMillis()
             val stop = withContext(Dispatchers.Main) { CastNet.discover(ctx) }

@@ -811,6 +811,11 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       Chromecast: 13 ticks in the first minute after Home, then 1 tick a minute (before: 80-93), no route, no
       `castnet` threads. The process stays unfrozen while the system keeps our route provider bound (another app
       looking for routes, e.g. the music app casting): memory only, no CPU.
+- [ ] Seen 2026-11-22 on the Pixel (v1.261122.2243): Wi-Fi off → "no local network: all away" and the header "not on
+      this network" within 12 s; Wi-Fi on → "here" after 8 s; in the background no connections and ~13 ticks a minute.
+      But with the app on screen something still opened a connection every few seconds (SYN_SENT over mobile data):
+      the next app makes every API call and cover load to a server that isn't on this network fail at once, only
+      Home's check, the header's ping (once a minute) and Wake really ask.
 - [ ] Away from home (`Home.kt`, next app): on mobile data only the header says "not on this network" at once, the
       Library shows the catalog copy, no pings to the server (agent journal quiet) and no CPU use while the app sits
       in the background; Wi-Fi back on at home: "on" within a few seconds, no restart needed.

@@ -446,6 +446,9 @@ class Api(val s: Settings, srv: Server) {
 
     private fun call(method: String, path: String, body: JSONObject? = null, timeout: Int = 8000): String {
         if (!configured) throw ApiException(ctx.getString(R.string.media_err_add_server))
+        // not on this network (Home.kt): fail at once instead of every screen's loop waiting on a connection that can't
+        // come (on mobile data each try sat in SYN_SENT for seconds, a few every few seconds)
+        if (Home.away(srv.key)) throw ApiException(ctx.getString(R.string.srv_away_title, srv.name))
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {
             c.requestMethod = method
@@ -483,8 +486,9 @@ class Api(val s: Settings, srv: Server) {
      * [timeout] applies to the connection (a sleeping computer does not answer it at all); we wait longer for the response, because
      * a running agent can be a few seconds late when an old USB disk spins up.
      */
-    fun ping(timeout: Int = 1500, readTimeout: Int = 5000): Boolean {
+    fun ping(timeout: Int = 1500, readTimeout: Int = 5000, force: Boolean = false): Boolean {
         if (srv.host.isBlank()) return false
+        if (!force && Home.away(srv.key)) return false  // [force]: the checks that decide it (Home, the header, Wake)
         val c = runCatching { URL("$base/api/ping").openConnection() as HttpURLConnection }.getOrNull() ?: return false
         return try {
             c.connectTimeout = timeout; c.readTimeout = maxOf(timeout, readTimeout)
@@ -812,6 +816,7 @@ class Api(val s: Settings, srv: Server) {
 
     fun cover(root: Int, path: String, wide: Boolean = false): CoverBytes? {
         if (!configured) return null
+        if (Home.away(srv.key)) throw IOException("not on this network")  // tried again once it is (LibraryTasks.loadRetrying)
         val c = URL("$base/api/library/cover?root=$root&path=${Uri.encode(path)}" + (if (wide) "&w=720" else ""))
             .openConnection() as HttpURLConnection
         try {
@@ -1059,7 +1064,7 @@ class Api(val s: Settings, srv: Server) {
      * A successful wake is remembered (`wakeOk`), so "Suspend" does not warn.
      */
     suspend fun ensureAwake(onStatus: (String) -> Unit): Unit = withContext(Dispatchers.IO) {
-        if (ping()) return@withContext
+        if (ping(force = true)) { Home.mark(srv.key, Home.Here.HERE); return@withContext }
         if (wrongServer) throw ApiException(ctx.getString(R.string.media_err_wrong_server, srv.host, srv.name))
         val mac = Servers.get(ctx, srv.key)?.mac.orEmpty().ifBlank { srv.mac }
         if (mac.isBlank()) throw ApiException(
@@ -1085,7 +1090,8 @@ class Api(val s: Settings, srv: Server) {
             val secs = ((now - start) / 1000).toInt()
             onStatus(if (!via.isNullOrEmpty()) ctx.getString(R.string.media_waking_via, name, via, secs)
                 else ctx.getString(R.string.media_waking, name, secs))
-            if (ping(1500)) {
+            if (ping(1500, force = true)) {
+                Home.mark(srv.key, Home.Here.HERE)  // before the call below, which an "away" server refuses
                 Servers.update(ctx, srv.key) { it.copy(wakeOk = true) }
                 // the agent remembers this for all devices (an older agent does not know the endpoint: too bad)
                 runCatching { call("POST", "/api/wake/verified", JSONObject(), 4000) }

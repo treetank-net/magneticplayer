@@ -307,7 +307,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             // not on this network (Home.kt): no pinging every few seconds; one try a minute while the screen is open
             if (Home.away(api.srv.key)) { online = false; fails = 2; Home.whileAway(api.srv.key) }
             // 3 s for connecting: after a longer break the phone's Wi-Fi and the first connection can be slow
-            val ok = withContext(Dispatchers.IO) { api.ping(3000) }
+            val ok = withContext(Dispatchers.IO) { api.ping(3000, force = true) }
             if (ok && Home.of(api.srv.key).let { it == Home.Here.AWAY || it == Home.Here.ASLEEP }) Home.mark(api.srv.key, Home.Here.HERE)
             // "asleep" only after two failed attempts in a row, also right after opening the app (until then "…")
             fails = if (ok) 0 else fails + 1
