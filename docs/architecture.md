@@ -386,6 +386,15 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    (even after an agent restart) re-attaches to the same ffmpeg and continues; an encode left stopped is killed when
    its file changed or vanished. Tasks can be moved up or down the queue or re-ordered as a whole; a finished task
    whose files failed for lack of space can be retried as a new task after emptying the trash.
+11. Re-encode, advanced (agent 1.18+, `mp_tasks_reencode.py`, board B6): the owner turns on some of six steps and
+   each file gets one ffmpeg run built from the steps it needs, in a fixed order (sound fix and deinterlace, denoise,
+   crop, scale, video codec; the AAC track and `.srt` files; the container last). Steps a file doesn't need are
+   skipped for it and the preview lists the ones that apply per file. Interlacing and black bars are measured by
+   `idet` + `cropdetect` on three short samples while the preview is made (240 s budget, cached in memory per file);
+   the rest is measured when the encode starts. Items are shrink items with a `reencode` dict, so they run detached
+   and are governed, verified (length, full decode, size limit) and swapped like every other encode; the output can
+   be `.mp4` (`.mp-shrink.part.mp4`). Saved step sets are `reencode_presets` in the config next to three built-in
+   ones. The counter for the screen's summary card is computed from the facts only (`?only=reencode&reencode=`).
 
 ### Covers
 `mp_media.cover()`: a picture next to the video or in the folder first (Jellyfin/Kodi names), otherwise a frame of
