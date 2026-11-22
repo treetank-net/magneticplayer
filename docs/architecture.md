@@ -26,7 +26,7 @@ pipe instead of a unix socket.
 | `magneticplayer_agent.py` | entry point: `App` (wires the modules together, status and `features`), the HTTP `Handler` (authorization, guest permissions `GUEST_ALLOWED`, error handling, Range streaming helpers, dispatch through the route table), the CLI (`--pair`, `--join`), `VERSION` |
 | `mp_core.py` | shared basics with no agent dependencies: config load/save, `log`, `ApiError`, `WEB_DIR`/`APK_DIR`, `apk_version`, `lan_ip` |
 | `mp_routes.py` | the route table: `(method, pattern, handler, options)` rows with typed `<name:type>` parameters, public rows (no token) first; `call("x.y", "param")` points a row straight at an `App` method and is resolved at startup, so a route pointing at nothing stops the agent from starting |
-| `mp_api_*.py` | route handlers by topic, `fn(req, app, *, method, p, q, qd, **params)`: `system` (ping, info, power, agent update), `access` (pairing, access requests, install scripts, OAuth/MCP), `media` (streams, tickets, variants), `player`, `torrents`, `library`, `tasks`, `subs`, `catalog`, `config` |
+| `mp_api_*.py` | route handlers by topic, `fn(req, app, *, method, p, q, qd, **params)`: `system` (ping, info, power, agent update), `access` (pairing, access requests, install scripts, OAuth/MCP), `media` (streams, tickets, variants), `player`, `torrents`, `library`, `tasks`, `subs`, `catalog`, `config`, `watch` (watch state from phones, 1.18+) |
 | `mp_torrents.py` | Deluge and Transmission backends (and `NoBackend`), computing "how much can be watched", video durations |
 | `mp_mpv.py` | mpv control over its IPC socket / named pipe, choosing the audio track |
 | `mp_power.py` | `SleepGuard` (keeps the computer awake while something plays or downloads), poweroff and suspend, the `POWER`/`AUTO_UNLOCK` settings set by `App` |
@@ -41,6 +41,7 @@ pipe instead of a unix socket.
 | `mp_install.py` | installing the agent on another computer: join code, the `/i/<code>` script (templates `join.sh`, `join.ps1`, shared with the phone), the bundle, registering the new server with a pairing code for the phone |
 | `mp_upload.py` | receiving videos from the phone (`/api/upload/<id>`): resumable chunks in `.mp-upload/`, free space, name collisions, the `upload_dir` folder or `Z telefonu` ("From phone") in the library; history of received files (`uploads.json`) with keep / move to a library folder |
 | `mp_catalog.py` | the library as films (agent 1.8+): `Catalog` groups library files into titles, recognises them (`mp_ident`), reads audio and subtitle languages, adds Wikidata details by IMDb id (cast, directors, topics, age) and answers title, person and "what next"; `Wishlist` is the shared want-to-watch list |
+| `mp_watch.py` | positions, "watched" marks and subtitle choices synced from phones (agent 1.18+, `watch.json`): per device, the newer change per video wins on the agent's clock; a subtitle choice made offline becomes the default unless the server's subtitles changed after it |
 | `mp_selfupdate.py` | the agent updates itself from signed GitHub releases (ECDSA P-256 verified in pure Python), at a quiet moment, through `self-update.sh` with a rollback |
 | `mp_tasks.py` | background file tasks with a preview: planners (free up a disk, tidy up by recognition, duplicates, shrinking by storage profiles, deleting to the trash; 1.16+: sound fix, modernize, downscale, compress, task counters from a background scan; 1.17+: folder layout, balance between disks, For Chromecast, pause, resume and queue order) and one worker; moving through the torrent client when the torrent is still in it; `.mp-trash/` per library folder |
 | `mp_tasks_*.py` | mixins of `Tasks`, split by topic: `common` (constants, helpers, `TaskError`), `plan` (v1 planners), `jobs` (v2 planners, task counters), `layout` (folder layout, balance, For Chromecast), `facts` (background scan, played files, audio), `ops` (subtitles, replicate, move, trash), `shrink` (encoders and shrinking) |
@@ -417,7 +418,14 @@ black or half-faded one. The answer says `X-Cover-Kind: frame` or `picture`: the
    them; the user's own search addresses (`search_engines`, none by default) are opened by the phone.
 
 Results are in `catalog.json` next to the configuration; `GET /api/catalog?since=<version>` returns only `same`
-when nothing changed.
+when nothing changed. Agent 1.18+ answers incrementally (`features.catalog_delta`): every item change (a walk, the
+file's hash, Wikidata details that really differ, not just refetched) bumps `version` and stamps the item with it
+(`cv`); a removed item leaves a tombstone with its version (the last 5000). Each answer carries a `cursor`,
+`<epoch>.<version>`, where the epoch is a hash of what changes answers without touching items: the catalog file's
+generation, a relabelling of names, the IMDb index's build time, the asking device's folders (numbers, names, tags,
+visibility, exclusions) and the language. A phone sending its cursor back gets the changed items, the removed ids and
+the names those items need; another epoch, a cursor older than the tombstones, a catalog of 100 items or fewer, or
+more than half of it changed gets the whole catalog.
 
 ### Series (agent 1.10+)
 `GET /api/library/episodes` walks a series folder (3 levels) and `mp_ident.episodes()` orders it:
@@ -460,10 +468,36 @@ the credits; its countdown starts at the credits when they are known, otherwise 
 
 The catalog is kept on the phone too (`files/catalog/<server>.json`, the agent's last answer, ~0.5 MB for a few
 thousand titles): Library opens on it when the server is unreachable (a bar says since when), and every refresh asks
-`?since=<version>`, so an unchanged catalog costs one tiny answer. Per-item changes aren't worth it at this size.
+`?since=<version>`, so an unchanged catalog costs one tiny answer; with agent 1.18+ it sends the last answer's cursor
+and applies the changes to the copy on disk (`applyCatalogDelta`: items replaced by id, removed ids dropped, names
+merged, newest first), so a changed title costs that title, not the whole catalog.
 Before that refresh the phone asks `/api/library/moves?since=` (agent 1.14+): every move a task made (freeing a disk,
 load balancing) is journalled in `moves.json`, and the phone re-keys what it keeps under a library folder and path
 (positions, "watched", buffer use, a folder's audio choice and subtitle shift) to the new place.
+
+**Sync points (G1, agent 1.18+).** The phone keeps positions, "watched" marks and the downloaded copies' subtitles
+itself, so it works without the computer; the moments it reaches a server again are sync points (`Sync.kt`):
+MainActivity's ping loop calls `SyncPoint.reached` when the server answers after not answering, or when the app
+comes back on screen after more than 30 s (at most every 2 min per server; nothing runs while the app is off
+screen), and the Library's catalog refresh (every minute while it is open) is one too. A sync point, in order:
+1. the moves journal (above), so everything below uses the current keys;
+2. `WatchSync` (`features.watch_sync`, `POST /api/watch/sync`): the phone sends every library video whose position
+   or "watched" mark was saved after its last sync, plus subtitle choices made offline; the agent keeps them per
+   device in `watch.json` (`mp_watch.py`), newer change per video wins on the agent's clock (the phone sends its own
+   clock with the request), and answers with this device's entries changed after the phone's last counter, which the
+   phone applies when newer than its own. Positions and "watched" from phones also count as "streamed" for the disk
+   tasks (`played.json`), so "watched" in Free up includes what was watched on a downloaded copy;
+3. the catalog's changes (above);
+4. `OfflineSync.verify` (copies whose file changed on the server) and `OfflineSync.refreshSubs`: a downloaded copy
+   whose subtitle list differs from the server's (names, the version in use, the file's `mtime`) gets the server's
+   subtitles, at most every 10 min per server.
+
+A subtitle version picked in the player on a downloaded copy while the server is out of reach is used at once (the
+copy's default for that language changes) and remembered as waiting (`sync` preferences); at the next sync the agent
+makes it the default there too, unless the video's subtitles changed on the server after that choice (a choice made
+there, a new download, a shift: the files' mtime/ctime and `subs_at` in `watch.json`). Either way the choice is then
+settled and step 4 gives the copy the server's subtitles. Older agents: no watch sync, the catalog whole when changed,
+subtitles compared by name and version only.
 
 "Similar in your collection" on the title screen is computed by the app from the catalog: shared actors and
 directors, then topics, then genres. Genres alone need two specific ones in common ("Drama" doesn't count), and
@@ -565,11 +599,12 @@ agent errors come back in the same language.
 | `Cast.kt`, `Dlna.kt` | Chromecast (Cast SDK, MediaRouter) and DLNA TVs (SSDP, SOAP) |
 | `PhoneShare.kt` | the phone as a file server for a screen, Chromecast and DLNA |
 | `TvQueue.kt` | a series sent to a screen, TV or Chromecast: the following episodes (from the agent, or saved with a downloaded copy), intro and credits; Remote shows "Skip intro" and "Next episode", from the credits (or the last 10 s) a 10 s countdown in Remote and in a notification starts the next episode on the same target; `RemoteSessionService` feeds it the target's state every 1.5 s (also the Cast SDK's Chromecast) and a CPU lock keeps it running near the end with the phone locked; from halfway the next episode's subtitles are fetched ahead. `Screens` (`ServersUi.kt`) puts the subtitles picked last first (or none on for "Off", `sub_lang` for mpv) and, since a screen cannot add subtitles later, downloads missing ones before sending: in the same series on its own, elsewhere after a question (`SubsAsk`) |
-| `Offline.kt` | downloaded copies (`OfflineStore`) and `OfflineSync`: besides the bytes a copy keeps the agent's subtitles as they are now (fitted, shifted, the version in use), intro and credits and the series' episodes, saved when the download starts and completes and after the subtitles change, so the phone can play it or feed a TV without the computer |
+| `Offline.kt` | downloaded copies (`OfflineStore`) and `OfflineSync`: besides the bytes a copy keeps the agent's subtitles as they are now (fitted, shifted, the version in use), intro and credits and the series' episodes, saved when the download starts and completes and after the subtitles change, so the phone can play it or feed a TV without the computer; at a sync point `refreshSubs` gives a copy the server's newer subtitles (G1) |
 | `LibraryTab.kt` | the library (folders of every server, tag filter, search, covers), folder settings (tags, visibility, storage profile, "Also copy to") and picking a folder on the computer |
 | `LibraryJobs2.kt` | agent 1.17+ (plan stage 2): the Folder layout (levels in tap order, tree preview, age mapping, hand-arranged folders confirmed before the first preview), Balance between disks (goal, now → after per disk, rules) and For Chromecast screens on the F6 template of `LibraryJobs.kt`, and Background work (C4: running cards with pause/resume and the inline cancel confirmation, queue with ↑ and ✕, recent tasks with "Empty the trash and retry") |
 | `LibraryTasks.kt` | agent 1.6+: "Disks and tidy-up" (disks with the library vs other files, trash, tasks with progress and cancel), the plan preview with checkboxes (free up space, move, tidy, shrink, duplicates, delete), profile choice, covers (`Covers`, `CoverThumb`) |
-| `Catalog.kt` | agent 1.8+: catalog models and requests (`/api/catalog*`, wishlist, search engines, `/api/uploads`), `CatalogCache` (per server, in memory, refreshed with `?since=<version>`), "continue watching" from local positions, filter conditions (`Cond`) |
+| `Catalog.kt` | agent 1.8+: catalog models and requests (`/api/catalog*`, wishlist, search engines, `/api/uploads`), `CatalogCache` (per server, in memory and on disk, refreshed with `?since=<version>`, agent 1.18+ with the cursor and only the changes), "continue watching" from local positions, filter conditions (`Cond`) |
+| `Sync.kt` | G1 sync points: `SyncPoint` (called by MainActivity's ping loop when the server answers again), `WatchSync` (positions, "watched" marks and offline subtitle choices to and from `/api/watch/sync`, agent 1.18+) |
 | `CatalogUi.kt` | covers: the agent's picture (a poster as it is, a frame with the title over a dark fade; agent 1.6+), a drawn one while it loads and when there is none (gradient by first genre, title in heavy type, greyscale when not on the disks); cover cards and rows, people, genre names, badges; series: `continueIndex` (where this phone left off), `playEpisode`, `playItem` |
 | `CatalogScreens.kt` | the Library on a server with a catalog: Discover / Browse / Folders switch (Folders is the folder view above), results with combinable filters, title, missing title (want to watch, the user's own search engines, paste magnet), person, "What next?" (also opened by the player after a film ends), want-to-watch list, the search engines dialog; screens are a saveable stack inside the Library tab |
 | `CatalogSearch.kt` | D1: the search field shared by the Library's tabs, results in groups "on your disks", "you don't have it · from the film database" (`/api/catalog/search`, the agent's IMDb index, agent 1.17+) and people; the search sites row of a missing title's page (D2) |

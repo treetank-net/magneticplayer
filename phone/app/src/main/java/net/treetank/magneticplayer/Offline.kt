@@ -21,7 +21,11 @@ val RETENTION = listOf(
 fun retentionLabel(ctx: Context, policy: String) = RETENTION.firstOrNull { it.first == policy }?.let { ctx.getString(it.second) } ?: policy
 
 /** Subtitles saved on the phone together with a downloaded video. `default`: its language's version in use. */
-data class LocalSub(val name: String, val lang: String, val ext: String, val file: String, val default: Boolean = true) {
+data class LocalSub(
+    val name: String, val lang: String, val ext: String, val file: String, val default: Boolean = true,
+    /** the server file's [SubFile.mtime] when it was copied (0 = not known): a newer one there = refresh the copy */
+    val mtime: Long = 0,
+) {
     fun toSubFile() = SubFile(name, lang, ext, default = default)
 }
 
@@ -58,6 +62,7 @@ data class OfflineItem(
         .put("complete", complete).put("error", error ?: JSONObject.NULL).put("created", created)
         .put("subs", JSONArray(subs.map {
             JSONObject().put("name", it.name).put("lang", it.lang).put("ext", it.ext).put("file", it.file).put("default", it.default)
+                .apply { if (it.mtime > 0) put("mtime", it.mtime) }
         }))
         .apply {
             intro?.let { put("intro", JSONArray().put(it.first).put(it.second)) }
@@ -76,7 +81,7 @@ data class OfflineItem(
                 o.optLong("created", System.currentTimeMillis()),
                 List(a.length()) { i ->
                     a.getJSONObject(i).let { LocalSub(it.getString("name"), it.optString("lang"), it.optString("ext"), it.getString("file"),
-                        it.optBoolean("default", true)) }
+                        it.optBoolean("default", true), it.optLong("mtime")) }
                 },
                 o.optJSONArray("intro")?.takeIf { it.length() == 2 }?.let { it.getLong(0) to it.getLong(1) },
                 o.optLong("credits", -1).takeIf { it > 0 },
@@ -145,7 +150,7 @@ object OfflineSync {
             val h = MessageDigest.getInstance("SHA-1").digest(s.name.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
             val f = File(dir, "$h.${s.ext}")
             val tmp = File(dir, "$h.${s.ext}.part")
-            runCatching { download(api.subUrl(item.ref, s.name), tmp); tmp.renameTo(f); LocalSub(s.name, s.lang, s.ext, f.path, s.default) }
+            runCatching { download(api.subUrl(item.ref, s.name), tmp); tmp.renameTo(f); LocalSub(s.name, s.lang, s.ext, f.path, s.default, s.mtime) }
                 .getOrElse { tmp.delete(); null }
         }
         val keep = saved.map { File(it.file).name }.toSet()
@@ -195,6 +200,28 @@ object OfflineSync {
             // a whole copy is downloaded again; a paused one waits for the user. Starting the service from the
             // background can be refused: the item stays wanted and the next download run takes it.
             if (item.pinned && item.complete) runCatching { DownloadService.start(ctx, item.ref) }
+        }
+    }
+
+    private val subsChecked = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /**
+     * Blocking, at a sync point (after [WatchSync], so a subtitle choice made offline has reached the server): a
+     * downloaded copy whose subtitles differ from the server's (another version in use, a new download, a shift or a
+     * fit, by [SubFile.mtime] with agent 1.18+) gets the server's. One subtitle list per downloaded copy, at most every
+     * 10 minutes per server; a copy with a choice still waiting to be sent keeps its own.
+     */
+    fun refreshSubs(ctx: Context, api: Api) {
+        val now = System.currentTimeMillis()
+        if (now - (subsChecked[api.srv.key] ?: 0) < 10 * 60_000) return
+        subsChecked[api.srv.key] = now
+        for (item in OfflineStore.all(ctx)) {
+            if (!item.pinned || WatchSync.pickPending(ctx, item.key)) continue
+            if (runCatching { Api.forRef(ctx, item.ref).srv.key }.getOrNull() != api.srv.key) continue
+            val there = runCatching { api.subsList(item.ref) }.getOrNull() ?: continue
+            fun sig(name: String, default: Boolean, mtime: Long) = Triple(name, default, if (there.any { it.mtime > 0 }) mtime else 0L)
+            val mine = item.subs.filter { File(it.file).exists() }.map { sig(it.name, it.default, it.mtime) }.toSet()
+            if (there.map { sig(it.name, it.default, it.mtime) }.toSet() != mine) runCatching { save(ctx, api, item.key) }
         }
     }
 

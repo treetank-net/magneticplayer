@@ -34,6 +34,8 @@ data class CatItem(
 data class CatalogData(
     val version: String, val scanning: Boolean, val done: Int, val total: Int, val items: List<CatItem>,
     val people: Map<String, String>, val topics: Map<String, String>,
+    /** Agent 1.18+: where this answer stands, sent back as `since` for the changes only (`features.catalog_delta`). */
+    val cursor: String? = null,
 ) {
     fun byId(id: String) = items.firstOrNull { it.id == id } ?: items.firstNotNullOfOrNull { p -> p.alsoOn.firstOrNull { it.id == id } }
         // a merged catalog ("All") prefixes ids with the server: an id from a server's answer (wishlist, "what next")
@@ -155,7 +157,31 @@ fun Api.catalog(since: String?): Pair<CatalogData, String>? {
 }
 
 private fun parseCatalog(o: JSONObject) = CatalogData(o.optString("version"), o.optBoolean("scanning"), o.optInt("done"),
-    o.optInt("total"), objects(o.optJSONArray("items")).map(::catItem), o.map("people"), o.map("topics"))
+    o.optInt("total"), objects(o.optJSONArray("items")).map(::catItem), o.map("people"), o.map("topics"), o.optStr("cursor"))
+
+/** Agent 1.18+: the answer to `?since=<cursor>`, whole or only the changes (`delta`), null when nothing changed. */
+fun Api.catalogSince(cursor: String): JSONObject? {
+    val o = JSONObject(request("GET", "/api/catalog?since=" + Uri.encode(cursor), timeout = 30000))
+    return if (o.optBoolean("same")) null else o
+}
+
+/**
+ * A `delta` answer applied to the previous answer (both as the agent's JSON, the form kept on disk): changed and new
+ * items replace theirs, `removed` ids go, names of people and topics are added, the status fields and the cursor are
+ * the new answer's. Newest first, as the agent sorts a whole answer.
+ */
+internal fun applyCatalogDelta(old: JSONObject, d: JSONObject): JSONObject {
+    val changed = objects(d.optJSONArray("items"))
+    val drop = changed.map { it.optString("id") }.toSet() + d.optJSONArray("removed").strings()
+    val items = (objects(old.optJSONArray("items")).filter { it.optString("id") !in drop } + changed)
+        .sortedByDescending { it.optDouble("added", 0.0) }
+    val out = JSONObject()
+    for (k in d.keys()) if (k !in setOf("items", "removed", "people", "topics", "delta", "since")) out.put(k, d.get(k))
+    fun names(k: String) = JSONObject().apply {
+        for (src in listOf(old.optJSONObject(k), d.optJSONObject(k))) src?.let { o -> o.keys().forEach { put(it, o.get(it)) } }
+    }
+    return out.put("items", JSONArray(items)).put("people", names("people")).put("topics", names("topics"))
+}
 
 fun Api.catalogTitle(imdb: String): TitleInfo {
     val o = JSONObject(request("GET", "/api/catalog/title?imdb=" + Uri.encode(imdb), timeout = 30000))
@@ -232,7 +258,9 @@ fun Api.uploadKeep(id: String) { request("POST", "/api/uploads/keep", JSONObject
 /**
  * The catalog per server, in memory and on disk (`files/catalog/<server>.json`, the agent's last answer, ~0.5 MB), so
  * the library opens without the computer: the phone's last sync point. Refreshed with `?since=<version>`: an unchanged
- * catalog costs one tiny answer, a changed one comes whole (small enough that per-item changes aren't worth it).
+ * catalog costs one tiny answer, a changed one comes whole; agent 1.18+ (`catalog_delta`) takes the answer's cursor
+ * instead and sends only the changed and removed items, applied to the copy on disk ([applyCatalogDelta]). A refresh is
+ * a sync point ([SyncPoint]): positions and "watched" marks go both ways first, downloaded copies are checked after.
  */
 object CatalogCache {
     private val data = java.util.concurrent.ConcurrentHashMap<String, CatalogData>()
@@ -268,14 +296,26 @@ object CatalogCache {
             moves.forEach { (fr, f, tr, t) -> s.applyMove(key, fr as Int, f as String, tr as Int, t as String) }
             s.setMovesSeen(key, now)
         }
+        // positions, "watched" marks and subtitle choices made offline go out (and come back) under the current keys
+        runCatching { WatchSync.sync(ctx, api) }
         val old = cached(ctx, key)
-        val got = api.catalog(old?.version)
         val f = file(ctx, key)
+        // agent 1.18+: only what changed since the copy's cursor (a copy without one is fetched whole once)
+        val got: Pair<CatalogData, String>? = when {
+            !api.srv.hasCatalogDelta -> api.catalog(old?.version)
+            old?.cursor == null -> api.catalog(null)
+            else -> api.catalogSince(old.cursor)?.let { d ->
+                if (!d.optBoolean("delta")) parseCatalog(d) to d.toString()
+                else runCatching { applyCatalogDelta(JSONObject(f.readText()), d) }.getOrNull()
+                    ?.let { parseCatalog(it) to it.toString() } ?: api.catalog(null)
+            }
+        }
         if (got == null) {
             synced[key] = System.currentTimeMillis()
             runCatching { f.setLastModified(synced[key]!!) }
             CoverStore.sync(ctx, api, old!!)
             runCatching { OfflineSync.verify(ctx, api) }
+            runCatching { OfflineSync.refreshSubs(ctx, api) }  // the server's newer subtitles for downloaded copies
             return old
         }
         val (fresh, raw) = got
@@ -290,6 +330,7 @@ object CatalogCache {
         version.value++
         CoverStore.sync(ctx, api, fresh)
         runCatching { OfflineSync.verify(ctx, api) }
+        runCatching { OfflineSync.refreshSubs(ctx, api) }  // the server's newer subtitles for downloaded copies
         return fresh
     }
 

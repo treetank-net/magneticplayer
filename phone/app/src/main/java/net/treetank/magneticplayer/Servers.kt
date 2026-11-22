@@ -57,6 +57,10 @@ data class Server(
      * the settings and the history of files sent from phones (`/api/uploads`).
      */
     val hasCatalog get() = features?.optBoolean("catalog", false) ?: false
+    /** Agent 1.18+: `/api/catalog?since=<cursor>` answers with what changed only (CatalogCache applies it). */
+    val hasCatalogDelta get() = features?.optBoolean("catalog_delta", false) ?: false
+    /** Agent 1.18+: POST /api/watch/sync takes positions, "watched" marks and subtitle choices made offline (Sync.kt). */
+    val hasWatchSync get() = features?.optBoolean("watch_sync", false) ?: false
     /** GET /api/library/moves: what moved between library folders (agent 1.14+), for [Settings.applyMove]. */
     val hasMoves get() = features?.optBoolean("library_moves", false) ?: false
     /** POST /api/media/convert takes the remembered audio choice (agent 1.14+). */

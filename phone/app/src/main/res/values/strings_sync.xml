@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- G1, sync points (docs/plan-ux-tasks.md): what the phone says about choices made without the server (Sync.kt). English. -->
+<resources>
+    <string name="sync_sub_picked_offline">Subtitles on: %1$s. The server gets this choice when the phone reaches it again.</string>
+</resources>

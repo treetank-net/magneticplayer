@@ -318,6 +318,8 @@ data class SubFile(
     val source: SubSource? = null,
     /** agent 1.12.1+: seconds the file was moved by hand (the sync buttons) */
     val manual: Double = 0.0,
+    /** agent 1.18+: when the file was last written on the server (epoch s, 0 = not said); a downloaded copy compares it */
+    val mtime: Long = 0,
 ) {
     /** "pl" of "pl", "pl-PL", "" when unknown */
     val langKey get() = lang.takeWhile { it.isLetter() }.lowercase()
@@ -842,7 +844,7 @@ class Api(val s: Settings, srv: Server) {
             SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"), o.optJSONObject("fit")?.optStr("verdict"),
                 o.optBoolean("default", '/' !in o.getString("name")),
                 o.optJSONObject("source")?.let { SubSource(it.optString("provider"), it.optString("id"), it.optString("release")) },
-                o.optJSONObject("fit")?.optDouble("manual", 0.0)?.takeIf { !it.isNaN() } ?: 0.0)
+                o.optJSONObject("fit")?.optDouble("manual", 0.0)?.takeIf { !it.isNaN() } ?: 0.0, o.optLong("mtime"))
         }
     }
 

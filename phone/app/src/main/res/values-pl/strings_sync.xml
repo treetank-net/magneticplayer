@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- G1, punkty synchronizacji (docs/plan-ux-tasks.md): wybory zrobione bez serwera (Sync.kt). Polski. -->
+<resources>
+    <string name="sync_sub_picked_offline">Napisy włączone: %1$s. Serwer dostanie ten wybór, gdy telefon znów się z nim połączy.</string>
+</resources>
