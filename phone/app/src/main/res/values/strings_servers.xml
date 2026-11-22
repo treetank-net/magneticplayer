@@ -228,4 +228,7 @@
     <string name="srv_all_servers">All servers</string>
     <string name="srv_all_servers_sub">Library, folders and downloads from all of them</string>
     <string name="srv_wake_all">Wake all</string>
+    <string name="srv_away_title">%1$s isn\'t on this network</string>
+    <string name="srv_away_note">Neither the computer nor anything that stands next to it (a Chromecast, a TV) answers here, so the app doesn\'t ask it until the phone joins another network.</string>
+    <string name="srv_check_again">Check again</string>
 </resources>

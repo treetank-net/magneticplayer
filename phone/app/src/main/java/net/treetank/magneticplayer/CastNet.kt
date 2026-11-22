@@ -46,6 +46,9 @@ object CastNet {
 
     /** id (as in TXT `id`, 32 hex chars) → device; Compose state so Remote refreshes the chips */
     val devices = mutableStateMapOf<String, Device>()
+    /** when each Chromecast last answered discovery: [devices] keeps the ones of other networks too ([Home]) */
+    private val seenAt = ConcurrentHashMap<String, Long>()
+    fun seenSince(t: Long): Set<String> = seenAt.filterValues { it >= t }.keys
     /** last state of each device (null = not queried yet or not responding) */
     val status = mutableStateMapOf<String, Status>()
 
@@ -89,6 +92,7 @@ object CastNet {
                 val host = si.host?.hostAddress
                 if (id != null && host != null && txt("md") != "Google Cast Group") {
                     devices[id] = Device(id, txt("fn") ?: si.serviceName, txt("md") ?: "", host, si.port)
+                    seenAt[id] = System.currentTimeMillis()
                 }
                 resolving = false; resolveNext()
             }

@@ -808,6 +808,16 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       After the fix: Remote tab with music on a Chromecast, then Home; a minute later the process uses almost no CPU
       (per-thread ticks in `/proc/<pid>/task`), no `castnet` threads, no route of ours in
       `dumpsys media_router`.
+- [ ] Away from home (`Home.kt`, next app): on mobile data only the header says "not on this network" at once, the
+      Library shows the catalog copy, no pings to the server (agent journal quiet) and no CPU use while the app sits
+      in the background; Wi-Fi back on at home: "on" within a few seconds, no restart needed.
+- [ ] At home with jmpc asleep: "asleep or off" with Wake (the Chromecast next to it is remembered), not "not on this
+      network". First run after the update: the neighbours are learned the first time jmpc answers.
+- [ ] Another Wi-Fi with the same address range (or a hotspot from the other phone): "not on this network", the token
+      isn't sent anywhere; "Check again" checks once; Wake still tries.
+- [ ] Two servers in two homes: each is "here" only in its own home; "All servers" keeps one library, titles of the
+      server that is away stay listed from the copy.
+- [ ] A laptop agent that travels: "here" wherever it answers, never "asleep here".
 - [ ] A paused player behind another app: no HEAD requests every 3 s once the buffer is full (or the server is
       away); a background download of the buffer still finishes; back in the player the buffer line updates again.
 - [ ] Server sheet, cover settings, Discover hero, covers waiting for an offline server, uploads list, subtitle

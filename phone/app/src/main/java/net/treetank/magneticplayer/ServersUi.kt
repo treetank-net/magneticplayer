@@ -467,7 +467,8 @@ fun ServerSheet(current: String?, onPick: (String) -> Unit, onWake: (String) -> 
 
 /** The selected server does not respond: instead of an "asleep" error, with a wake button. */
 @Composable
-fun AsleepPane(server: Server, waking: String?, wrongServer: Boolean, onWake: () -> Unit) {
+fun AsleepPane(server: Server, waking: String?, wrongServer: Boolean, away: Boolean = false, onCheck: () -> Unit = {},
+               onWake: () -> Unit) {
     val ctx = LocalContext.current
     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(if (waking != null) Icons.Filled.PowerSettingsNew else Icons.Filled.Bedtime, null, Modifier.size(48.dp),
@@ -478,6 +479,18 @@ fun AsleepPane(server: Server, waking: String?, wrongServer: Boolean, onWake: ()
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.srv_router_new_address, server.name),
                 textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@Column
+        }
+        // not on this network (Home.kt): say so instead of "asleep"; Wake stays as one manual try below
+        if (away && waking == null) {
+            Text(stringResource(R.string.srv_away_title, server.name), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(8.dp))
+            Text(stringResource(R.string.srv_away_note), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(onCheck) { Text(stringResource(R.string.srv_check_again)) }
+            Spacer(Modifier.height(8.dp))
+            if (server.mac.isNotBlank()) TextButton(onWake) { Text(stringResource(R.string.srv_wake)) }
             return@Column
         }
         Text(if (waking != null) stringResource(R.string.srv_waking, server.name) else stringResource(R.string.srv_is_asleep, server.name),

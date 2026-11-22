@@ -61,6 +61,17 @@ Plan and decisions: [plan-multi-server.md](plan-multi-server.md), mockups: `ux-w
   answer at all; after a longer pause the phone's Wi-Fi can be slow) and 5 s for a response. The agent doesn't call
   `stat()` through `DirEntry` from `os.scandir`, because in Python 3.10 it doesn't release the GIL: an old USB disk
   spinning up froze the whole agent for several seconds, `/api/ping` included.
+- Away from home (`Home.kt`): whether each server can be talked to on the network the phone is on now. Checked once
+  per network change (and when the app comes back after 10 min), not by every loop: a ping per server (its `id`
+  must match: another house often has the same 192.168.x.0/24), plus 4 s of Chromecast (mDNS) and DLNA TV (SSDP)
+  discovery. Verdict per server: *here* (it answers), *asleep here* (silent, but a Chromecast or TV remembered next to
+  it answers; they don't travel, phones and laptops do), *not on this network* (nothing of that). Neighbours are
+  learned while the server answers, only for a computer that can be woken where it stands (MAC known and wake not
+  "no": a laptop on Wi-Fi learns none). Mobile data only: every server is away at once. While a server is away the
+  header says "not on this network" and nothing polls it (one ping a minute while its screen is open, "Check again",
+  Wake as a manual try). This is only reachability: the library stays one across all servers, each title already
+  says which server it is on. No location permission (SSID needs it) and no outside service (public IP: CGNAT,
+  changing addresses).
 - Roles: file server (`features.torrent`/`library`) and screen (`features.player`). One computer can have both.
 - A video from server A on screen B: the app gets a ticket from A (`/api/media/ticket`) and sends B `player/open`
   with the URL. mpv on B pulls the video and subtitles over HTTP. The Remote in the app saves the position of such

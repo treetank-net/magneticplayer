@@ -108,6 +108,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableFloatStateOf
@@ -215,6 +216,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         TaskWatch.appVisible = true
         MainVisible.state.value = true
+        Home.start(this)  // which servers are on this network (Home.kt): checked per network change, not by every loop
         TaskWatch.ensure(this)  // a followed task still running: its progress notification (the service may have been stopped)
     }
 
@@ -269,6 +271,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     var screenKey by remember(ver) { mutableStateOf(Servers.screenKey(ctx)) }
     val screenApi = remember(ver, screenKey) { Api.of(ctx, screenKey) }
     var online by remember(ver) { mutableStateOf<Boolean?>(null) }
+    val here by Home.state.collectAsState()
     var wrong by remember(ver) { mutableStateOf(false) }
     var infoVer by remember { mutableIntStateOf(0) }
     var waking by remember { mutableStateOf<String?>(null) }
@@ -301,8 +304,11 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 // may be home again), so "…" until a fresh answer instead of the old "on" or "asleep"
                 if (System.currentTimeMillis() - awaySince > 30_000) { online = null; fails = 0; synced = false }
             }
+            // not on this network (Home.kt): no pinging every few seconds; one try a minute while the screen is open
+            if (Home.away(api.srv.key)) { online = false; fails = 2; Home.whileAway(api.srv.key) }
             // 3 s for connecting: after a longer break the phone's Wi-Fi and the first connection can be slow
             val ok = withContext(Dispatchers.IO) { api.ping(3000) }
+            if (ok && Home.of(api.srv.key).let { it == Home.Here.AWAY || it == Home.Here.ASLEEP }) Home.mark(api.srv.key, Home.Here.HERE)
             // "asleep" only after two failed attempts in a row, also right after opening the app (until then "…")
             fails = if (ok) 0 else fails + 1
             if (ok || fails >= 2) online = ok
@@ -333,7 +339,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         while (true) {
             lifecycle.currentStateFlow.first { it.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) }
             fileKeys.filter { it != api.srv.key }.forEach { k ->
-                launch(Dispatchers.IO) { Api.of(ctx, k)?.let { allUp[k] = it.ping(2000) } }
+                if (Home.away(k)) allUp[k] = false  // not on this network (Home.kt)
+                else launch(Dispatchers.IO) { Api.of(ctx, k)?.let { allUp[k] = it.ping(2000) } }
             }
             delay(10_000)
         }
@@ -349,6 +356,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
         val a = Api.of(ctx, key) ?: return@launch
         try {
             a.ensureAwake { waking = it }
+            Home.mark(key, Home.Here.HERE)  // it answers: no waiting for the next network change (Home.kt)
             if (key == api.srv.key) online = true
             withContext(Dispatchers.IO) { runCatching { a.info() } }
             infoVer++
@@ -376,6 +384,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                             waking != null -> waking!! to MaterialTheme.colorScheme.tertiary
                             wrong -> stringResource(R.string.main_status_wrong_server) to MaterialTheme.colorScheme.error
                             online == true -> stringResource(R.string.main_status_online, srv.rolesText(LocalContext.current)) to OK_GREEN
+                            online == false && here[srv.key] == Home.Here.AWAY ->
+                                stringResource(R.string.main_status_away) to MaterialTheme.colorScheme.onSurfaceVariant
                             online == false -> stringResource(R.string.main_status_asleep) to MaterialTheme.colorScheme.error
                             else -> "…" to MaterialTheme.colorScheme.onSurfaceVariant
                         }
@@ -471,7 +481,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
                 (t == TAB_TORRENTS || t == TAB_LIBRARY) && (online == false || waking != null) &&
                     !(t == TAB_LIBRARY && waking == null && srv.hasCatalog && CatalogCache.hasCopy(ctx, srv.key)) &&
                     !(t == TAB_LIBRARY && allMode && anyUp && waking == null) ->
-                    AsleepPane(srv, waking, wrong) { if (allMode && downSrv.isNotEmpty()) downSrv.forEach { wake(it.key) } else wake() }
+                    AsleepPane(srv, waking, wrong, away = !allMode && here[srv.key] == Home.Here.AWAY,
+                        onCheck = { Home.recheck(ctx) }) { if (allMode && downSrv.isNotEmpty()) downSrv.forEach { wake(it.key) } else wake() }
                 t == TAB_TORRENTS && !srv.hasTorrent && !srv.hasCatalog ->
                     Hint(stringResource(R.string.main_hint_no_torrent, srv.name))
                 t == TAB_LIBRARY && !srv.hasLibrary -> Hint(stringResource(R.string.main_hint_no_library, srv.name))
@@ -964,6 +975,7 @@ private fun ScreenRemote(api: Api, snack: SnackbarHostState, onWake: (String) ->
     LaunchedEffect(api) {
         while (true) {
             MainVisible.await()  // nothing while the app is off screen (a service may keep the process alive)
+            if (Home.away(api.srv.key)) { reachable = false; running = false; Home.whileAway(api.srv.key) }
             val r = runCatching { remote.status() }
             running = r.getOrNull() != null
             reachable = r.isSuccess || withContext(Dispatchers.IO) { api.ping() }

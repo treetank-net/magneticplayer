@@ -177,4 +177,5 @@
         <item quantity="one">%1$d cover kept, %2$s</item>
         <item quantity="other">%1$d covers kept, %2$s</item>
     </plurals>
+    <string name="main_status_away">● not on this network</string>
 </resources>

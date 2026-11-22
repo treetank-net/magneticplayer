@@ -232,4 +232,7 @@
     <string name="srv_all_servers">Wszystkie serwery</string>
     <string name="srv_all_servers_sub">Biblioteka, foldery i pobierania ze wszystkich</string>
     <string name="srv_wake_all">Obudź wszystkie</string>
+    <string name="srv_away_title">%1$s nie ma w tej sieci</string>
+    <string name="srv_away_note">Nie odpowiada tu ani ten komputer, ani nic, co stoi obok niego (Chromecast, telewizor), więc aplikacja go nie odpytuje, dopóki telefon nie zmieni sieci.</string>
+    <string name="srv_check_again">Sprawdź ponownie</string>
 </resources>
