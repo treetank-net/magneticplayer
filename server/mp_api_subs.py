@@ -26,6 +26,10 @@ def subs_list(req, a, qd, **_):
         src = a.subsources.get(sp)
         if src:  # downloaded by the agent (1.12+): search results it matches are marked "you have it"
             x["source"] = {"provider": src["provider"], "id": src["id"], "release": src.get("release", "")}
+        try:  # agent 1.18+: when the file was last written (a shift, a fit), so a phone's copy knows it is stale
+            x["mtime"] = int(os.stat(sp).st_mtime)
+        except OSError:
+            pass
         out.append(x)
     return req.send_json(out)
 
@@ -87,6 +91,7 @@ def subs_default(req, a, **_):
         raise ApiError(str(e), e.status)
     except OSError as e:
         raise ApiError(e.strerror or str(e), 500)
+    a.watchstate.note_subs(full)  # a phone's older choice made offline doesn't undo this one (agent 1.18+)
     if a.mpv.running() and a.mpv.prop("path") == full:  # the Remote: this video plays in mpv, turn it on
         try:
             a.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), name), "select")

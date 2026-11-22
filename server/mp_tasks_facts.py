@@ -245,10 +245,12 @@ class FactsMixin:
 
     # ---- played videos (streamed from this server): "watched" for free up, "being watched" for subtitles
 
-    def note_played(self, path):
+    def note_played(self, path, at=None):
+        """`at`: when (epoch s), for a phone's offline watching reported at a sync (agent 1.18+); default now."""
         now = time.time()
         with self.flock:
-            self.played[os.path.realpath(path)] = now
+            rp = os.path.realpath(path)
+            self.played[rp] = max(self.played.get(rp, 0), min(at or now, now))
             if now - self._played_saved < 300:
                 return
             self._played_saved = now

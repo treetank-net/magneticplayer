@@ -17,7 +17,14 @@ topic): the app shows the latter greyed out, with the shared "want to watch" lis
 user configures (no search sites are built in).
 
 State: catalog.json in the config directory (items, Wikidata details, labels).
+
+Incremental answers (agent 1.18+, `features.catalog_delta`): every change of an item (walk, file hash, Wikidata) bumps
+`version` and stamps the item with it (`cv`); a removed item leaves a tombstone with the version it went at. A phone
+sends the cursor of its last answer (`<epoch>.<version>`) and gets only the items changed and removed since. The epoch
+covers what changes answers without touching items (the catalog file's generation, names relabelled, the IMDb index
+rebuilt, the asking device's folders, tags and exclusions, the language): another epoch means a whole catalog again.
 """
+import hashlib
 import json
 import os
 import re
@@ -25,6 +32,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
 import mp_arrange
 import mp_ident
@@ -37,6 +45,8 @@ SPARQL = "https://query.wikidata.org/sparql"
 CAST_MAX = 12
 ITEM_V = 9             # bump when the rules for an item change (languages, identification): items are redone (no ffprobe)
 SKIP_TAGS = {"muzyka", "inne"}
+GONE_MAX = 5000        # tombstones of removed items kept for incremental answers (older cursors get the whole catalog)
+DELTA_MIN = 100        # a catalog this small always goes whole
 LANG2 = {"pol": "pl", "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es",
          "ita": "it", "rus": "ru", "por": "pt", "dut": "nl", "nld": "nl", "cze": "cs", "ces": "cs", "chi": "zh",
          "zho": "zh", "kor": "ko", "swe": "sv", "nor": "no", "dan": "da", "fin": "fi", "hun": "hu", "ukr": "uk"}
@@ -117,6 +127,12 @@ class Catalog:
         self.labels = d.get("labels") or {}   # Wikidata id → {"en", "pl"}
         self._relabelled = False              # names left empty retried once per start (enrich)
         self.version = d.get("version") or 0
+        # incremental answers: the generation of this file (a catalog rebuilt from nothing starts a new one), names
+        # relabelled, tombstones {key: version removed at} and the oldest version they still cover
+        self.gen = d.get("gen") or uuid.uuid4().hex[:8]
+        self.lgen = d.get("lgen") or 0
+        self.gone = d.get("gone") or {}
+        self.gone_floor = d.get("gone_floor") if d.get("gen") else self.version
         self.state = {"scanning": False, "done": 0, "total": 0, "last": d.get("last")}
         self._ext = {}                         # (kind, key) → (time, result): on-demand Wikidata queries
         self.hash_ids = None                   # full path → [(imdb, n)] from OpenSubtitles by file hash (set by the agent)
@@ -126,11 +142,30 @@ class Catalog:
     def _save(self):
         with self.lock:
             data = json.dumps({"items": self.items, "wd": self.wd, "labels": self.labels, "version": self.version,
-                               "last": self.state.get("last")}, ensure_ascii=False)
+                               "last": self.state.get("last"), "gen": self.gen, "lgen": self.lgen, "gone": self.gone,
+                               "gone_floor": self.gone_floor}, ensure_ascii=False)
         tmp = self.path + ".tmp"
         with open(tmp, "w") as f:
             f.write(data)
         os.replace(tmp, self.path)
+
+    def _touch(self, key, it):
+        """Call with self.lock held: the item `key` changed (or is new): it gets the next version."""
+        self.version += 1
+        it["cv"] = self.version
+        self.gone.pop(key, None)
+
+    def _bury(self, key):
+        """Call with self.lock held: the item `key` is gone; its tombstone tells phones holding it to drop it."""
+        if self.items.pop(key, None) is None:
+            return
+        self.version += 1
+        self.gone[key] = self.version
+        if len(self.gone) > GONE_MAX:
+            drop = sorted(self.gone.items(), key=lambda kv: kv[1])[:len(self.gone) - GONE_MAX]
+            for k, v in drop:
+                self.gone.pop(k, None)
+                self.gone_floor = max(self.gone_floor or 0, v)
 
     def start(self):
         threading.Thread(target=self._loop, daemon=True, name="catalog").start()
@@ -273,6 +308,7 @@ class Catalog:
                     continue
                 with self.lock:
                     self.items[key] = it
+                    self._touch(key, it)
                 changed = True
                 if k % 25 == 24:
                     self.version += 1
@@ -282,7 +318,7 @@ class Catalog:
             if gone:
                 with self.lock:
                     for k in set(gone):
-                        self.items.pop(k, None)
+                        self._bury(k)
                 changed = True
         finally:
             self.state.update(scanning=False, done=self.state["total"], last=time.time())
@@ -332,10 +368,13 @@ class Catalog:
             if ids is None:
                 time.sleep(5)
                 continue
-            before = it.get("imdb")
+            before = (it.get("imdb"), it.get("title"), it.get("year"), it.get("sure"))
             with self.lock:
                 it["hc"] = {"sig": it.get("probe", {}).get("sig"), "ids": ids[:3]}
                 self._apply_hash(it)
+                if (it.get("imdb"), it.get("title"), it.get("year"), it.get("sure")) != before and self.items.get(k) is it:
+                    self._touch(k, it)
+            before = before[0]
             if it.get("imdb") != before:
                 self.log(f"catalog: {it['rel'][:60]}: the file's hash says {it['imdb']}, not {before}")
             done += 1
@@ -454,7 +493,9 @@ class Catalog:
             with self.lock:
                 empty = [q for q, v in self.labels.items() if not v]
             if empty and self._labels(empty):
-                self.version += 1
+                with self.lock:
+                    self.version += 1
+                    self.lgen += 1  # names of unchanged items changed: phones fetch the whole catalog once
                 self._save()
 
     def _fetch(self, ids):
@@ -464,7 +505,7 @@ class Catalog:
         for b in rows:
             qid.setdefault(_val(b, "imdb"), _val(b, "film"))
         now = time.time()
-        ents = {}
+        ents, changed = {}, set()
         qs = list(qid.values())
         for k in range(0, len(qs), 50):
             ents.update(mp_ident._wd({"action": "wbgetentities", "ids": "|".join(qs[k:k + 50]),
@@ -500,8 +541,16 @@ class Catalog:
             need.update(p for p, _ in cast)
             need.update(d["dir"] + d["topics"] + d["series"])
             with self.lock:
+                old = self.wd.get(imdb) or {}
                 self.wd[imdb] = d
+            if {k: v for k, v in old.items() if k != "at"} != {k: v for k, v in d.items() if k != "at"}:
+                changed.add(imdb)
         self._labels(need)
+        if changed:  # after the names: a phone gets the changed items with their people named
+            with self.lock:
+                for key, it in self.items.items():
+                    if it.get("imdb") in changed:
+                        self._touch(key, it)
 
     def _labels(self, ids):
         """Names of Wikidata items not known yet (or known without one); "mul" counts as English. The number named."""
@@ -530,12 +579,13 @@ class Catalog:
     # ---- API
 
     def _visible(self):
-        """Items the asking device may see, with the index of their library folder."""
+        """Items the asking device may see, with their library folder; and the version they are as of."""
         v = current_viewer()
         roots = {r["id"]: r for r in self.library.roots()}
         out = []
         with self.lock:
             items = list(self.items.items())
+            version = self.version
         for key, it in items:
             r = roots.get(it["root_id"])
             if not r or not r["exists"] or not can_see(r, v) or set(r["tags"]) & HIDDEN_TAGS:
@@ -543,43 +593,81 @@ class Catalog:
             if v is not None and excluded(r, it["file"]):
                 continue
             out.append((key, it, r))
-        return out
+        return out, version
 
-    def public(self, lang="en"):
-        """Everything the app needs to browse, in one response (a few hundred KB for a thousand titles)."""
+    def epoch(self, lang="en"):
+        """What answers depend on besides the items (see the module's docstring), as a short hash."""
+        v = current_viewer()
+        try:
+            idx = int(os.path.getmtime(self.ident.index.path)) if self.ident.index.db else 0
+        except (OSError, AttributeError):
+            idx = 0
+        roots = [(r["id"], r["index"], r["name"], r["exists"], sorted(r["tags"]), can_see(r, v), sorted(r["exclude"]) if v else [])
+                 for r in self.library.roots()]
+        raw = json.dumps([self.gen, self.lgen, idx, lang, roots], ensure_ascii=False)
+        return hashlib.sha1(raw.encode()).hexdigest()[:10]
+
+    def _pub(self, key, it, r, rows, lang, people, topics):
+        d = self.wd.get(it.get("imdb") or "") or {}
+        p = it.get("probe") or {}
+        row = rows.get(it.get("imdb")) or {}
+        title = row.get("title") or it["title"]
+        if not row and d.get("en") and d.get("pl") and title == d["pl"]:
+            title = d["en"]  # found only through Wikidata: its Polish label is not the original title
+        x = {"id": key, "root": r["index"], "root_name": r["name"], "path": it["file"], "dir": it["rel"] if it["dir"] else None,
+             "title": title, "year": it.get("year"), "kind": it["kind"], "imdb": it.get("imdb"),
+             "genres": it.get("genres") or row.get("genres") or [], "rating": row.get("rating"), "votes": row.get("votes"),
+             "minutes": round(p["duration"] / 60) if p.get("duration") and it["kind"] == "movie" else row.get("minutes"),
+             "height": p.get("height"), "audio": it.get("audio") or [], "subs": it.get("subs") or [],
+             "size": it["size"], "added": it["added"], "kids": it.get("kids", False), "episodes": it.get("episodes", 0),
+             "age": d.get("age") if d.get("age") is not None else (0 if it.get("kids") else None),
+             "cast": [c[0] for c in d.get("cast") or []], "roles": [self._role(c[1], lang) for c in d.get("cast") or []],
+             "directors": d.get("dir") or [], "topics": self._topics(d)}
+        if it.get("group"):
+            x["group"] = it["group"]  # the grouping folder it sits in ("Anime"), agent 1.15.0+
+        if d.get("pl") and ("pl" in x["audio"] or "pl" in x["subs"]) and d["pl"] != title:
+            x["title_pl"] = d["pl"]
+        for q in x["cast"] + x["directors"]:
+            people[q] = self.label(q, "en")
+        for q in x["topics"]:
+            topics[q] = self.label(q, lang)
+        return x
+
+    def public(self, lang="en", since=None):
+        """Everything the app needs to browse, in one response (a few hundred KB for a thousand titles). `since`: the
+        `cursor` of an earlier answer; when it still holds, only what changed after it (`delta`: true, `items` changed
+        or new, `removed` ids, `people` and `topics` only for those items). A cursor of another epoch, older than the
+        tombstones or newer than this catalog, and a small catalog, get the whole catalog."""
         people, topics, out = {}, {}, []
-        vis = self._visible()
+        vis, version = self._visible()
+        epoch = self.epoch(lang)
+        base = None
+        if since and "." in str(since):
+            e, _, n = str(since).partition(".")
+            try:
+                n = int(n)
+            except ValueError:
+                n = -1
+            if e == epoch and (self.gone_floor or 0) <= n <= version and len(vis) > DELTA_MIN:
+                base = n
+        if base is not None:
+            with self.lock:
+                removed = [k for k, at in self.gone.items() if at > base]
+            changed = [(k, it, r) for k, it, r in vis if (it.get("cv") or 0) > base]
+            if len(changed) * 2 > len(vis):
+                base = None  # most of it changed: the whole catalog is about the same size and simpler to apply
+        work = vis if base is None else changed
         # IMDb data (original title, rating, runtime) read live: the index is rebuilt weekly, the catalog isn't
-        rows = self.ident.index.many([it["imdb"] for _, it, _ in vis if it.get("imdb")]) if self.ident.index.db else {}
-        for key, it, r in vis:
-            d = self.wd.get(it.get("imdb") or "") or {}
-            p = it.get("probe") or {}
-            row = rows.get(it.get("imdb")) or {}
-            title = row.get("title") or it["title"]
-            if not row and d.get("en") and d.get("pl") and title == d["pl"]:
-                title = d["en"]  # found only through Wikidata: its Polish label is not the original title
-            x = {"id": key, "root": r["index"], "root_name": r["name"], "path": it["file"], "dir": it["rel"] if it["dir"] else None,
-                 "title": title, "year": it.get("year"), "kind": it["kind"], "imdb": it.get("imdb"),
-                 "genres": it.get("genres") or row.get("genres") or [], "rating": row.get("rating"), "votes": row.get("votes"),
-                 "minutes": round(p["duration"] / 60) if p.get("duration") and it["kind"] == "movie" else row.get("minutes"),
-                 "height": p.get("height"), "audio": it.get("audio") or [], "subs": it.get("subs") or [],
-                 "size": it["size"], "added": it["added"], "kids": it.get("kids", False), "episodes": it.get("episodes", 0),
-                 "age": d.get("age") if d.get("age") is not None else (0 if it.get("kids") else None),
-                 "cast": [c[0] for c in d.get("cast") or []], "roles": [self._role(c[1], lang) for c in d.get("cast") or []],
-                 "directors": d.get("dir") or [], "topics": self._topics(d)}
-            if it.get("group"):
-                x["group"] = it["group"]  # the grouping folder it sits in ("Anime"), agent 1.15.0+
-            if d.get("pl") and ("pl" in x["audio"] or "pl" in x["subs"]) and d["pl"] != title:
-                x["title_pl"] = d["pl"]
-            for q in x["cast"] + x["directors"]:
-                people[q] = self.label(q, "en")
-            for q in x["topics"]:
-                topics[q] = self.label(q, lang)
-            out.append(x)
+        rows = self.ident.index.many([it["imdb"] for _, it, _ in work if it.get("imdb")]) if self.ident.index.db else {}
+        for key, it, r in work:
+            out.append(self._pub(key, it, r, rows, lang, people, topics))
         out.sort(key=lambda x: -x["added"])
-        return {"version": self.version, "scanning": self.state["scanning"], "done": self.state["done"],
-                "total": self.state["total"], "last": self.state.get("last"), "items": out, "people": people,
-                "topics": topics}
+        res = {"version": version, "cursor": f"{epoch}.{version}", "scanning": self.state["scanning"],
+               "done": self.state["done"], "total": self.state["total"], "last": self.state.get("last"), "items": out,
+               "people": people, "topics": topics}
+        if base is not None:
+            res.update(delta=True, since=base, removed=removed)
+        return res
 
     def _role(self, role, lang):
         if not role:
@@ -690,7 +778,7 @@ class Catalog:
         except (TypeError, ValueError):
             limit = 20
         mine = {}
-        for key, it, _ in self._visible():
+        for key, it, _ in self._visible()[0]:
             if it.get("imdb"):
                 mine.setdefault(it["imdb"], key)
         out = []

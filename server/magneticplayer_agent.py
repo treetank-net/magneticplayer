@@ -59,6 +59,7 @@ from mp_subs import Subtitles, SubsError, readable_srt, rank_key as subs_rank_ke
 import mp_subsync
 import mp_segments
 import mp_subfiles
+import mp_watch
 
 VERSION = "1.17.6"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
@@ -121,6 +122,7 @@ class App:
         self.episodes = mp_episodes.Episodes(os.path.join(os.path.dirname(mp_ident.cache_dir()), "episodes"), log)
         mp_library.ON_CHANGE.append(self.catalog.refresh)
         self.wishlist = mp_catalog.Wishlist(os.path.join(CONFIG_DIR, "wishlist.json"))
+        self.watchstate = mp_watch.WatchState(os.path.join(CONFIG_DIR, "watch.json"), log)  # phones' positions (1.18+)
         self.installs = mp_install.Installs(log)  # installation on another computer (join code)
         self.access = mp_access.AccessRequests(log)  # access requests from the home network (mp_access.py)
         # app for phones from GitHub releases (mp_appupdate.py); the phone sets the mode
@@ -405,6 +407,9 @@ class App:
                 "episode_lists": True,  # GET /api/catalog/episodes (agent 1.16+)
                 # GET /api/catalog/search (titles you don't have) and "about" in /api/catalog/title (agent 1.17+)
                 "catalog_search": True,
+                # agent 1.18+: GET /api/catalog?since=<cursor> answers with changes only; POST /api/watch/sync takes
+                # positions, "watched" marks and subtitle choices made on a phone without the server
+                "catalog_delta": True, "watch_sync": True,
                 "jobs": ["free", "dupes", "audio_fix", "modernize", "downscale", "compress", "subs_get", "subs", "tags", "trash",
                          "layout", "balance", "cast_ready"],  # agent 1.17+: folder layout, balance, ready for Chromecast
                 # pause/resume, queue order and retry of tasks: /api/tasks/<id>/pause|resume|move|retry, /api/tasks/order

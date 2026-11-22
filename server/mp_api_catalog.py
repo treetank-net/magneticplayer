@@ -8,8 +8,15 @@ from mp_i18n import T
 
 # ---- catalog: films and series instead of folders (mp_catalog.py)
 def catalog(req, a, qd, **_):
-    if qd.get("since") and qd["since"] == str(a.catalog.version):
+    since = qd.get("since") or ""
+    if since and since == str(a.catalog.version):  # apps before agent 1.18 send the bare version
         return req.send_json({"version": a.catalog.version, "same": True})
+    if "." in since:  # agent 1.18+ (features.catalog_delta): the cursor of the phone's last answer
+        lang = mp_i18n.lang()
+        cursor = f"{a.catalog.epoch(lang)}.{a.catalog.version}"
+        if since == cursor:
+            return req.send_json({"version": a.catalog.version, "cursor": cursor, "same": True})
+        return req.send_json(a.catalog.public(lang, since=since))
     return req.send_json(a.catalog.public(mp_i18n.lang()))
 
 

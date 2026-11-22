@@ -26,6 +26,7 @@ import mp_api_subs as subs
 import mp_api_system as system
 import mp_api_tasks as tasks
 import mp_api_torrents as torrents
+import mp_api_watch as watch
 
 TYPES = {"hex": "[0-9a-fA-F]+", "int": r"\d+", "id8": "[0-9a-f]{8}", "id16": "[0-9a-f]{16}",
          "code": "[A-Za-z0-9-]{4,12}", "path": ".+", "rest": ".*", "tail": "(?:/.*)?"}
@@ -147,6 +148,7 @@ ROUTES = [
     ("GET", "/api/catalog/episodes", catalog.episodes, {}),
     ("GET", "/api/catalog/person", catalog.person, {}),
     ("GET", "/api/catalog/next", catalog.next_titles, {}),
+    ("POST", "/api/watch/sync", watch.sync, {}),
     ("GET", "/api/wishlist", catalog.wishlist, {}),
     ("POST", "/api/wishlist", catalog.wishlist_add, {}),
     ("POST", "/api/wishlist/remove", catalog.wishlist_remove, {}),
