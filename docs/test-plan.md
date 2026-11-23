@@ -847,6 +847,15 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       again at HH:MM" instead of being asked (journal: "subs: bsplayer didn't answer"). Background subtitle tasks no
       longer wait minutes per file on it.
 
+## Subtitle fit verdict (agent 1.18.4)
+
+- [x] Read-only on jmpc (2026-11-23): 49 subtitle files next to films with speech already measured: 27 fit before and
+      after, 20 that read "unsure" or "bad" now fit (all within ±1 s at ratio 1, one at 25→23.976), 2 stay bad.
+- [ ] The subtitle sheet on the phone: badges of files assessed before show "fits" when they lined up as they were.
+- [ ] "Download missing subtitles" on a film with a weak-peak candidate keeps the first one (no second and third
+      download), and a file that needs another frame rate is rescaled without a shift.
+- [ ] "Fit to the film" with "set aside" sets aside only the really unfitting files.
+
 ## Suggestions you don't have (G4, agent 1.18.0)
 
 - [x] Discover: under "Because you watched" a row "Because you watched <title>: not on your disks" (PL "Podobne do

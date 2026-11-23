@@ -285,7 +285,12 @@ Agent 1.12.1+: when the video carries its own subtitle track (text, PGS or VobSu
 display times are the reference instead of the speech (ffprobe packets, ~7 s for an episode, cached next to the
 speech). They are exact to the frame, while the speech of an action film is buried under music: on one episode the same
 correction (×1.001, −3 s) came out at z 5.7 against the speech and 9.8 against the embedded track. When the embedded
-track doesn't give "fits" (another cut, or other subtitles), the speech decides. By hand: `POST /api/subs/shift` moves
+track doesn't give "fits" (another cut, or other subtitles), the speech decides. "Fits" is a peak of z 6 or more, or
+(agent 1.18.4) z 3 or more with the subtitles lining up where they are (within 1.5 s, at one of the usual frame-rate
+ratios): then only the ratio is applied, not the shift, which a weak peak doesn't give exactly. Measured on 101
+NapiProjekt subtitles found by the file's hash (made for that very file): z alone called 26 of them bad, with the rule
+89 of 101 fit; on the real library 20 of 22 files that read "unsure" or "bad" fit at no shift. Assessments remembered
+before 1.18.4 read "fits" when they lined up at ratio 1. By hand: `POST /api/subs/shift` moves
 the file (the "Timing" buttons on a language's page of the subtitle sheet: ±0.1 and ±0.5 s), saved in the file so mpv
 and TVs get it too; the player reloads it.
 

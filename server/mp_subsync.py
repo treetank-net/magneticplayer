@@ -41,6 +41,11 @@ SAMPLE = 100  # values a second
 RATIOS = (1.0, 25 / 23.976, 23.976 / 25, 24 / 23.976, 23.976 / 24, 25 / 24, 24 / 25)
 MAX_OFFSET = 300  # seconds
 GOOD_Z, BAD_Z = 6.0, 4.5
+# Subtitles that line up where they already are (no shift, one of RATIOS) fit even with a weak peak: an action film's
+# speech is buried under music. Measured 2026-11-22 on 101 NapiProjekt subtitles found by the file's hash (made for that
+# very file): z alone called 26 of them bad; with this rule 89 of 101 fit. A peak that lands within ±1.5 s of "as is"
+# by chance is a few per cent at most (±300 s searched).
+ASIS_Z, ASIS_S = 3.0, 1.5
 MIN_SHIFT = 0.4  # seconds: smaller corrections are within the jitter of speech detection, not worth a rewrite
 _vad_lock = threading.Semaphore(1)  # one sound analysis at a time (CPU)
 _rec_lock = threading.Lock()
@@ -193,6 +198,16 @@ def _sec(h, m, s, f):
     return int(h) * 3600 + int(m) * 60 + int(s) + int(f[:3].ljust(3, "0")) / 1000
 
 
+def _upgrade(r):
+    """An assessment remembered before the "weak" rule (agent 1.18.4): one that lines up where it is at ratio 1 fits
+    unchanged, so it reads "good" now; one that needs another ratio waits for the next assessment."""
+    if "weak" in r or r.get("verdict") == "good" or not isinstance(r.get("z"), (int, float)):
+        return r
+    if ASIS_Z <= r["z"] < GOOD_Z and abs(r.get("offset") or 0) <= ASIS_S and abs((r.get("ratio") or 1) - 1) <= 1e-4:
+        return dict(r, verdict="good", weak=True)
+    return r
+
+
 def cues(srt_text):
     return [(_sec(*g[:4]), _sec(*g[4:])) for g in _TIME.findall(srt_text)]
 
@@ -223,8 +238,11 @@ def align(ref, cs):
         if best is None or lags[k] > best[0]:
             best = (float(lags[k]), ratio, lagv[k] / SAMPLE, z)
     _, ratio, offset, z = best
-    return {"ratio": round(ratio, 5), "offset": round(float(offset), 2), "z": round(z, 1),
-            "verdict": "good" if z >= GOOD_Z else "bad" if z < BAD_Z else "unsure"}
+    # lines up where it is (at most a frame-rate change): it fits, but the weak peak doesn't say exactly how much to
+    # shift, so `fit()` applies only the ratio ("weak")
+    weak = ASIS_Z <= z < GOOD_Z and abs(offset) <= ASIS_S
+    return {"ratio": round(ratio, 5), "offset": round(float(offset), 2), "z": round(z, 1), "weak": weak,
+            "verdict": "good" if z >= GOOD_Z or weak else "bad" if z < BAD_Z else "unsure"}
 
 
 def _rewrite(srt_text, ratio, offset):
@@ -277,7 +295,7 @@ class Store:
             return None
         r = self.rec.get(os.path.realpath(sub_path))
         if r and r.get("size") == st.st_size and int(r.get("mtime", 0)) == int(st.st_mtime):
-            return r
+            return _upgrade(r)
         return None
 
     def move(self, old, new, copy=False):
@@ -328,7 +346,8 @@ class Store:
 
     def get_any(self, sub_path):
         """The last assessment of this file even when it changed since."""
-        return self.rec.get(os.path.realpath(sub_path))
+        r = self.rec.get(os.path.realpath(sub_path))
+        return _upgrade(r) if r else r
 
     def fit(self, video, sub_path, change=True, progress=None):
         """Assess `sub_path` against `video` and, when it fits and `change`, correct it in place (a text `.sub` becomes
@@ -350,6 +369,8 @@ class Store:
             res = align(speech(video, progress), cues(text))
             res["by"] = "speech"
         res.update(changed=False, name=os.path.basename(sub_path))
+        if res.get("weak"):
+            res["offset"] = 0.0  # the ratio only (see align)
         need = res["verdict"] == "good" and (abs(res["ratio"] - 1) > 1e-4 or abs(res["offset"]) >= MIN_SHIFT)
         convert = ext == ".sub"
         if change and (need or convert):  # a .sub becomes .srt even when it doesn't fit (it then at least shows)
