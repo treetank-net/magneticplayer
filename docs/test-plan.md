@@ -932,13 +932,15 @@ B6:
 - [ ] While the preview measures (up to 4 min) the line under the bar says "measuring sound and picture (up to N min
       more): <file>" instead of the last file of the walk with the bar stuck at 99 % (agent 1.18.2; seen on the
       Pixel 2026-11-22 with agent 1.18.2 hand-deployed, app v1.261122.1956)
-- [ ] Open question: "Series archive" with "Folders: all" also takes films (a 1080p AV1 film was scaled to 480p). The
-      task scope has no "series only" filter; folder tags are free-form. Default the preset to folders tagged like
-      series, add a kind filter to scopes, or leave it to the folder picker?
+- [x] Open question settled by the owner (2026-11-23): films may be archived too ("480p is enough for what I once
+      watched"). The set is now "Archive" with "Only what was watched" on (agent 1.18.5).
+- [ ] B6 "Files": "Only what was watched" (last played more than three days ago); on with "Archive", off with the other sets;
+      ticking it changes the summary count; a film watched yesterday or never isn't in the preview. EN and PL.
+- [ ] "For Chromecast" now makes MKV; the result plays on the Chromecast with Google TV and keeps PGS subtitles.
 - [ ] a real task to the end on jmpc (GPU), including an interlaced VHS-like file and one with subtitles; survives an
       agent restart; EN and PL
 - Decisions taken without the owner (2026-11-22): deleting a saved set is API-only for now (no place on the board);
-  "For Chromecast" uses MP4 (B5 makes MKV); the encoder is picked in the preview, as in the other tasks.
+  "For Chromecast" used MP4 (MKV since agent 1.18.5); the encoder is picked in the preview, as in the other tasks.
 
 ## Noted wishes
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
@@ -1036,7 +1038,7 @@ are fixed as they come and reported, not only noted.
   active server.
 - [approved fix 8] 2026-11-20, folder ⋮ "Move to…": the target list shows names and tags but not the free space of each disk, so
   picking where a big folder fits needs a trip to "Disks".
-- [approved fix 20: waits for the owner's yes] 2026-11-20, Downloads: "Odłożone w tym tygodniu" lists the test files `mp-test-*.avi/.mkv` ("left in downloads");
+- [done 2026-11-23: no `mp-test-*` file is left on the server's disks or downloads] 2026-11-20, Downloads: "Odłożone w tym tygodniu" lists the test files `mp-test-*.avi/.mkv` ("left in downloads");
   test leftovers from an earlier session, to be removed from the server's downloads with the user's yes.
 - [approved fix 18] 2026-11-20, Discover: the hero still says "Nowe na twoich dyskach" (new on your disks); item 7 added "Because you
   watched" as a row, the hero kept its old role. Unclear whether the hero should also change.

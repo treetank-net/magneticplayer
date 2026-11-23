@@ -105,7 +105,7 @@ and the app hides a task the agent can't do.
 One ffmpeg run per file built from the enabled steps, in a fixed order: sound fix and deinterlace first, then crop,
 scale, codec; audio additions; container last. A step the file doesn't need is skipped for that file; the preview says
 which steps apply to each file. Warnings for pointless combinations (denoise/crop at 360p). Saved step sets
-(`reencode_presets` in the config) with the built-in "Series archive", "For Chromecast", "Old VHS".
+(`reencode_presets` in the config) with the built-in "Archive" (was "Series archive"), "For Chromecast", "Old VHS".
 
 ### F4. Pause, resume and queue order (agent)
 
@@ -231,7 +231,7 @@ Each item lists the elements of its board; the acceptance check is "every listed
 ### B6. Re-encode (advanced)
 
 - description: several changes in one pass, the file is encoded once;
-- "START FROM" preset chips: Series archive / For Chromecast / Old VHS / Empty;
+- "START FROM" preset chips: Archive / For Chromecast / Old VHS / Empty;
 - files scope row (folder picker, or the scope bar);
 - six steps, each a switch + name + one-line summary of the chosen option; only one expanded at a time; options:
   resolution (720/480/360), video codec (H.265 saving / H.265 quality / H.264 compatible), old picture (deinterlace /

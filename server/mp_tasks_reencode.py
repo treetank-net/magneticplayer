@@ -24,7 +24,7 @@ earlier previews found and count the rest as "to check".
 Items are ordinary shrink items (`op: shrink`) with a `reencode` dict, so the encode runs detached, survives restarts,
 is paused and governed while somebody watches, verified and swapped exactly like the other encodes (mp_tasks_shrink).
 
-Saved step sets: `reencode_presets` in the config, next to the built-in "Series archive", "For Chromecast" and
+Saved step sets: `reencode_presets` in the config, next to the built-in "Archive", "For Chromecast" and
 "Old VHS" (GET/POST /api/config/jobs).
 """
 import os
@@ -61,6 +61,9 @@ DENOISE = "hqdn3d=3:2:4:3"  # moderate: tape noise goes, detail mostly stays
 LOUDNORM = "aresample=async=1:first_pts=0,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000"
 DETECT_BUDGET = 240  # seconds a preview spends measuring interlacing and black bars
 DETECT_V = 1
+# "Only what was watched": last played at least this long ago (an episode or a film watched in one go is done by then;
+# a file in use right now is skipped anyway)
+ARCHIVE_REST_DAYS = 3
 MAX_PRESETS = 20
 
 
@@ -72,12 +75,16 @@ def _builtins():
             out[k] = dict(out[k], on=True, **v)
         return out
     return [
-        {"id": "series_archive", "name": T("Series archive", "Archiwum seriali"), "builtin": True,
-         "steps": s(resolution={"height": 480}, codec={"mode": "hevc_saving"}, sound={"mode": "fix"},
-                    container={"format": "mkv"})},
+        # films and series watched some time ago, kept small (the owner, 2026-11-23: "480p is enough for what I once
+        # watched"); the id stays for saved choices on the phones
+        {"id": "series_archive", "name": T("Archive", "Archiwum"), "builtin": True,
+         "steps": dict(s(resolution={"height": 480}, codec={"mode": "hevc_saving"}, sound={"mode": "fix"},
+                         container={"format": "mkv"}), watched_only=True)},
+        # MKV: a Chromecast with Google TV plays it (tested) and it keeps picture subtitles (PGS, DVD), which MP4
+        # drops; a 1st-3rd generation Chromecast wants MP4 (the container step)
         {"id": "chromecast", "name": T("For Chromecast", "Pod Chromecasta"), "builtin": True,
          "steps": s(codec={"mode": "h264"}, sound={"mode": "fix"}, cast={"add_aac": True, "subs_to_srt": True},
-                    container={"format": "mp4"})},
+                    container={"format": "mkv"})},
         {"id": "old_vhs", "name": T("Old VHS", "Stare VHS"), "builtin": True,
          "steps": s(picture={"deinterlace": True, "denoise": True, "crop": True}, codec={"mode": "hevc_quality"},
                     sound={"mode": "loudness"}, container={"format": "mkv"})},
@@ -114,6 +121,8 @@ def norm_steps(d):
     for k in ("picture", "cast"):
         for opt in out[k]:
             out[k][opt] = bool(out[k][opt])
+    # agent 1.18.5: only files watched before (streamed, or marked watched by a phone), not in the last ARCHIVE_REST_DAYS
+    out["watched_only"] = bool(d.get("watched_only"))
     return out
 
 
@@ -275,6 +284,10 @@ class ReencodeMixin:
         v, dur, size = info.get("video") or {}, info.get("duration") or 0, f["size"]
         if not v or not dur or size < MIN_SIZE:
             return None
+        if steps.get("watched_only"):
+            last = self._last_played(os.path.realpath(full))
+            if not last or last > time.time() - ARCHIVE_REST_DAYS * 86400:
+                return None  # never watched (since agent 1.16 kept track), or being watched now
         a = ctx["active"]
         W, H = v.get("width") or 0, v.get("height") or 0
         ids, labels, unknown = [], [], False

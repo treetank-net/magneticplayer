@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.material3.Checkbox
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -208,8 +209,20 @@ internal fun ReencodeJob(c: JobCtx) {
             else if (modified) Note(stringResource(R.string.re_modified))
         }
         // the files: a folder picker on the whole computer; in a scope, JobFrame's scope bar stands instead
-        if (c.scope == null) Section(stringResource(R.string.re_files)) {
-            FoldersPicker(c.api, folders, names) { f, nm -> folders = f; names = nm }
+        Section(stringResource(R.string.re_files)) {
+            if (c.scope == null) FoldersPicker(c.api, folders, names) { f, nm -> folders = f; names = nm }
+            // agent 1.18.4: only what was watched more than two weeks ago (the "Archive" set has it on)
+            Row(Modifier.fillMaxWidth().clickable {
+                steps = JSONObject(steps.ifEmpty { emptySteps().toString() }).put("watched_only", !cur.optBoolean("watched_only")).toString()
+                modified = true
+            }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(cur.optBoolean("watched_only"), null)
+                Column(Modifier.padding(start = 8.dp)) {
+                    Text(stringResource(R.string.re_watched_only), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.re_watched_only_note), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
         Section(stringResource(R.string.re_steps)) {
             RE_STEPS.forEach { k ->

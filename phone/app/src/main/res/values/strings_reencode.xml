@@ -9,6 +9,8 @@
     <string name="re_empty">Empty</string>
     <string name="re_modified">Changed from the set: Save set keeps it under a name.</string>
     <string name="re_files">Files</string>
+    <string name="re_watched_only">Only what was watched</string>
+    <string name="re_watched_only_note">Films and episodes last played more than three days ago; anything watched lately or never stays as it is</string>
     <string name="re_steps">Steps</string>
     <string name="re_step_resolution">Resolution</string>
     <string name="re_step_codec">Video codec</string>

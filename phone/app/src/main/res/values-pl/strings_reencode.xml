@@ -9,6 +9,8 @@
     <string name="re_empty">Pusty</string>
     <string name="re_modified">Zmienione względem zestawu: Zapisz zestaw zachowa je pod nazwą.</string>
     <string name="re_files">Pliki</string>
+    <string name="re_watched_only">Tylko obejrzane</string>
+    <string name="re_watched_only_note">Filmy i odcinki ostatnio odtwarzane ponad trzy dni temu; oglądane niedawno albo nigdy zostają bez zmian</string>
     <string name="re_steps">Kroki</string>
     <string name="re_step_resolution">Rozdzielczość</string>
     <string name="re_step_codec">Kodek wideo</string>
