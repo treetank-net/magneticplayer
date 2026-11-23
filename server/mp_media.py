@@ -21,8 +21,12 @@ CAST_DIR = ".mp-cast"
 
 # encoder → (human-readable label, arguments before -i, video filter, encoder arguments)
 _SCALE = "scale=-2:'min(1080,ih)'"
+# NVIDIA: the card also decodes (NVDEC), so the processor only moves frames: at 1080p ~2.5x less processor time
+# (GTX 970, 2026-11-23), which leaves it free for streaming and playback. A codec the card can't decode (10-bit HEVC on
+# Maxwell, DivX 3) falls back to the processor by itself, with the same result.
+NV_DECODE = ["-hwaccel", "cuda"]
 ENCODERS = [
-    ("h264_nvenc", "NVIDIA NVENC", [], f"{_SCALE},format=yuv420p",
+    ("h264_nvenc", "NVIDIA NVENC", NV_DECODE, f"{_SCALE},format=yuv420p",
      ["-preset", "slow", "-rc:v", "vbr", "-cq:v", "23", "-b:v", "0", "-maxrate", "20M", "-bufsize", "40M",
       "-profile:v", "high"]),
     ("h264_videotoolbox", "Apple VideoToolbox", [], f"{_SCALE},format=yuv420p",
@@ -92,7 +96,7 @@ def encoder_info():
 # Old NVENC (Maxwell, e.g. GTX 970) can't do B-frames in HEVC, so the files come out larger at the same quality;
 # Turing (RTX 20xx) and newer can. Each option is tried with a trial encode, from the full set of options down.
 HW_HEVC = {
-    "h264_nvenc": ("hevc_nvenc", "NVIDIA NVENC (HEVC)", [], "format=yuv420p", [
+    "h264_nvenc": ("hevc_nvenc", "NVIDIA NVENC (HEVC)", NV_DECODE, "format=yuv420p", [
         (True, ["-bf", "3", "-b_ref_mode", "middle", "-spatial_aq", "1", "-temporal_aq", "1", "-rc-lookahead", "32"]),
         (True, ["-bf", "3", "-spatial_aq", "1", "-rc-lookahead", "32"]),
         (False, ["-bf", "0", "-spatial_aq", "1", "-rc-lookahead", "32"]),

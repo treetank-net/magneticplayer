@@ -332,6 +332,8 @@ allows downloading with just a key. That's why `_oscom_anonymous` calls `downloa
    shrink also re-encodes a damaged track it would otherwise copy (1.14.5+). Odd frame sizes are rounded to even ones. The encoder is chosen per task (agent 1.7+): `cpu` = x265 `-preset fast` at `nice 19` and `ionice -c3`,
    `gpu` = the card's HEVC encoder (NVENC or VAAPI) found by `mp_media.detect_hevc` with trial encodes: the full
    set of options first (B-frames, AQ, lookahead), then fewer, so an old card (GTX 970: no HEVC B-frames) still works
+   and is marked as making larger files. With NVIDIA the card also decodes (`-hwaccel cuda`, agent 1.18.6+; ~2.5x less
+   processor time at 1080p, a codec the card can't decode falls back to the processor), also for the Chromecast version.
    and is marked as making larger files. `auto` (the default `shrink_encoder`) takes the card only when it can do
    B-frames. The trial also gives a first speed (two encodes of 2 and 8 s of 1080p, the difference leaves out
    ffmpeg's start); real encodes refine it in `shrink_speed`, and the preview shows saving and hours of work for

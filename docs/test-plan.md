@@ -943,6 +943,22 @@ B6:
   "For Chromecast" used MP4 (MKV since agent 1.18.5); the encoder is picked in the preview, as in the other tasks.
 
 ## Noted wishes
+- [todo] Encoder speed as a choice with known effects (the owner, 2026-11-23): a re-encode/archive job lets one pick
+  faster/slower (x265 preset, SVT-AV1 preset, VVenC preset) and shows, before starting, what each costs: size vs the
+  source, hours of encoding, and quality (VMAF) per source kind, from a measured table shipped with the agent (codec
+  benchmark on the server, 2026-11-23: 6 source kinds × NVENC/x265/SVT-AV1/VVenC presets and qualities) plus a short
+  trial encode of a few samples of the user's own files. Reason: an archive made in a fast preset that turns out bad
+  leaves nothing to go back to, so the quality has to be known (and checked on the result) before the original goes.
+  Approved safeguard: every encoded file is checked with VMAF at a few places against its original before the
+  original goes to the trash; below the threshold the original stays and the item ends as "skipped: quality". The
+  trash (`trash_days`) stays the second line of defence, not the first.
+- [todo] Encode on the graphics card to keep the processor free (the owner, 2026-11-23): the point is not speed but
+  smooth streaming and playback while a job runs. Agent 1.18.6: NVIDIA encodes (shrink, re-encode, Chromecast version)
+  also decode on the card (`-hwaccel cuda`). Checked on the server with the agent's own commands on 30 s clips
+  (2026-11-23, GTX 970): H.264 1080p 6.4 → 2.4 s of processor per 30 s, all frames kept; XviD on the card too; 10-bit
+  HEVC falls back to the processor (the GTX 970 can't decode it) and still finishes. Not yet seen in a real task.
+  Next: NVENC "best" settings for archives (p7, multipass, lookahead; measured in the night benchmark), threads/time
+  windows for processor encoders.
 - [todo] Load balancing as a job (the user, 2026-11-20): spreading series and films over the disks with the same
   tags so they fill evenly, as a task on the disks screen (a preview like "Free up", optional, maybe suggested when a
   disk passes ~90%). First run done by hand 2026-11-20: 14 folders (~320 GiB) moved from the full disk to the other

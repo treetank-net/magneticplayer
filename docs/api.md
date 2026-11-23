@@ -339,6 +339,7 @@ decade) are looked into: their subfolders are titles, as at the top of a library
   only subtitles to write (`remux: false`) leaves the video untouched. A result bigger than `max_growth` × the
   original (1.0 for H.265 saving or a lower resolution, else 1.25) keeps the original (item `skipped`). The title is
   "Re-encode" or "Re-encode: <name>".
+  Agent 1.18.6: NVIDIA encodes decode on the card too (no API change).
   Agent 1.18.5: `steps.watched_only` (true) keeps only files last played more than three days ago (streamed, or marked watched by
   a phone; tracked since agent 1.16); the built-in "Archive" set (id `series_archive`, was "Series archive") has it on and
   now takes films too. "For Chromecast" makes MKV (a Chromecast with Google TV plays it and it keeps picture subtitles;
