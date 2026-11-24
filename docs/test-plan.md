@@ -942,6 +942,16 @@ B6:
 - Decisions taken without the owner (2026-11-22): deleting a saved set is API-only for now (no place on the board);
   "For Chromecast" used MP4 (MKV since agent 1.18.5); the encoder is picked in the preview, as in the other tasks.
 
+## Library cards: the title as interface text on posters (next app)
+
+The owner (2026-11-24): don't rely on the title printed on the poster (small, decorative, blurred, foreign); show the
+name as clear interface text on a dark bar at the bottom of the card.
+- [ ] library home rows (`CoverCard`) and the three-column grid (results, genre, person): a card with a real poster
+      shows the title in white bold on a dark bar at the bottom, up to 3 lines; long titles end with "…"
+- [ ] cards without a picture and with a film frame look as before; search rows, the title page and "Similar" keep a
+      clean poster (the title is printed next to or under it there)
+- [ ] the "PL audio" badge and the "on this phone" mark stay visible; light and dark theme
+
 ## Noted wishes
 - [todo] Encoder speed as a choice with known effects (the owner, 2026-11-23): a re-encode/archive job lets one pick
   faster/slower (x265 preset, SVT-AV1 preset, VVenC preset) and shows, before starting, what each costs: size vs the

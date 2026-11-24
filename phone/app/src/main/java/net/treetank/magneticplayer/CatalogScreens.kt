@@ -757,7 +757,7 @@ private fun CoverGrid(c: CatCtx, list: List<CatItem>) {
             val x = list[i]
             Column(Modifier.clickable { c.open(x) }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 SyntheticCover(x.title, null, x.genres, Modifier.fillMaxWidth().aspectRatio(2f / 3f), badge = plBadge(x.audio, x.subs), art = x.art(), onPhone = onPhone(x), artSrv = x.srv,
-                    titleSize = 13.sp, padding = 7.dp)
+                    titleSize = 13.sp, padding = 7.dp, labelPoster = true)
                 Text(listOfNotNull(yearMinutes(x.year, x.minutes).ifEmpty { null }, x.rating?.let { ratingText(it) }).joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                     overflow = TextOverflow.Ellipsis)

@@ -91,11 +91,14 @@ fun CatItem.art(): Pair<Int, String> = root to (dir ?: path)
  * soft circle and the title in a heavy font at the bottom.
  * [art]: root + path for the agent's cover (needs [LocalCoverApi]); [wide]: the bigger frame, for full-width pictures.
  * [missing] = the title is not on the disks (greyscale). [badge] in the top left corner (e.g. "PL audio").
+ * [labelPoster]: also on a real poster, the title as interface text on a dark bar at the bottom (library cards): the
+ * title printed on a poster is often small, decorative, blurred or in another language.
  */
 @Composable
 fun SyntheticCover(title: String, year: Int?, genres: List<String>, modifier: Modifier, missing: Boolean = false,
                    badge: String? = null, titleSize: TextUnit = 14.sp, corner: Dp = 10.dp, padding: Dp = 8.dp,
-                   art: Pair<Int, String>? = null, wide: Boolean = false, onPhone: Boolean = false, artSrv: String = "") {
+                   art: Pair<Int, String>? = null, wide: Boolean = false, onPhone: Boolean = false, artSrv: String = "",
+                   labelPoster: Boolean = false) {
     val (a0, b0) = genreColors(genres)
     val a = if (missing) grey(a0) else a0
     val b = if (missing) grey(b0) else b0
@@ -141,9 +144,12 @@ fun SyntheticCover(title: String, year: Int?, genres: List<String>, modifier: Mo
         if (onPhone) androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.DownloadDone,
             stringResource(R.string.cat_on_phone), Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp).clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.55f)).padding(3.dp), tint = Color.White)
-        if (pic == null || frame) Column(Modifier.align(Alignment.BottomStart).padding(padding)) {
+        val poster = pic != null && !frame
+        if (!poster || (labelPoster && title.isNotEmpty())) Column(Modifier.align(Alignment.BottomStart).fillMaxWidth()
+            .then(if (poster) Modifier.background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Black.copy(alpha = 0.9f))))
+                else Modifier).padding(padding)) {
             Text(title, color = Color.White, fontSize = titleSize, fontWeight = FontWeight.Black, lineHeight = titleSize * 1.1f,
-                maxLines = 4, overflow = TextOverflow.Ellipsis)
+                maxLines = if (poster) 3 else 4, overflow = TextOverflow.Ellipsis)
             if (year != null) Text(year.toString(), color = Color.White.copy(alpha = 0.75f), fontSize = (titleSize.value * 0.7f).sp)
         }
     }
@@ -197,7 +203,7 @@ fun plBadge(audio: List<String>, subs: List<String>): String? = when {
 fun CoverCard(item: CatItem, meta: String?, width: Dp = 112.dp, progress: Float? = null, onClick: () -> Unit) {
     Column(Modifier.width(width).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SyntheticCover(item.title, item.year, item.genres, Modifier.width(width).height(width * 1.5f),
-            badge = plBadge(item.audio, item.subs), art = item.art(), onPhone = onPhone(item), artSrv = item.srv)
+            badge = plBadge(item.audio, item.subs), art = item.art(), onPhone = onPhone(item), artSrv = item.srv, labelPoster = true)
         if (progress != null) LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(4.dp))
         // "All": which server it is on ("jmpc", "jmpc +1" when another server has it too), after the card's own line:
         // the line is cut at the end, and "Next: S1 E3" matters more than the server ("jmpc · Next: S1 …" before)
