@@ -154,22 +154,119 @@ suspend fun fetchSubtitles(
         val results = found?.results.orEmpty().filter { it.key !in have }
             .sortedWith(compareBy<SubResult> { it.machine }.thenByDescending { it.provider == preferProvider }.then(SUB_RANK))
         var got: SubsDownloaded? = null
+        var failed: ApiException? = null  // every try failed: say why, not "nothing found"
         for ((k, r) in results.take(3).withIndex()) {
             val trying = ctx.getString(R.string.media_psubs_trying, k + 1, minOf(3, results.size),
                 r.release.ifEmpty { PROVIDER_NAMES[r.provider] ?: r.provider })
             onStatus(trying)
             val d = withContext(Dispatchers.IO) {
-                runCatching {
+                try {
                     api.subsDownload(ref, r, langs = lang) { ph -> phaseText(ctx, ph)?.let { onStatus("$trying\n$it") } }
-                }.getOrNull()
+                } catch (e: ApiException) {
+                    failed = e
+                    null
+                }
             } ?: continue
             got = d
             if (d.fit != "bad") break
         }
+        if (got == null) failed?.let { throw it }
         return got
     } finally {
         onStatus(null)
         job?.let { j -> Thread { runCatching { api.subsStop(j) } }.start() }
+    }
+}
+
+/**
+ * A subtitle download that outlives the sheet (the player's): closing the sheet doesn't stop it, the player switches the
+ * new file on when it is done and says what is happening over the picture. One at a time.
+ */
+class SubsDownloads(
+    private val scope: kotlinx.coroutines.CoroutineScope,
+    private val onDone: (SubsDownloaded, String) -> Unit,
+    private val onFail: (ApiException) -> Unit,
+) {
+    /** the language being downloaded, null when idle */
+    var lang: String? by mutableStateOf(null)
+        private set
+    /** the search result being downloaded ("provider:id"), null for "Download: <language>" */
+    var key: String? by mutableStateOf(null)
+        private set
+    /** what it is doing now, for the user */
+    var status: String? by mutableStateOf(null)
+        private set
+    /** the last one done (an open sheet marks it as the file in use) */
+    var last: SubsDownloaded? by mutableStateOf(null)
+        private set
+    /** bumped after each download, done or failed: an open sheet reads its list again */
+    var finished by mutableIntStateOf(0)
+        private set
+    /** the last failure and where: the result's key, or "auto:<language>" */
+    var failed: Pair<String, ApiException>? by mutableStateOf(null)
+    val running get() = lang != null
+
+    fun start(lang: String, key: String?, work: suspend (onStatus: (String?) -> Unit) -> SubsDownloaded) {
+        if (running) return
+        this.lang = lang; this.key = key; status = null; failed = null
+        scope.launch {
+            try {
+                val d = work { status = it }
+                last = d
+                onDone(d, lang)
+            } catch (e: ApiException) {
+                failed = (key ?: "auto:$lang") to e
+                onFail(e)
+            } finally {
+                this@SubsDownloads.lang = null; this@SubsDownloads.key = null; status = null
+                finished++
+            }
+        }
+    }
+}
+
+/** What a download's fit means, for a toast or the line over the picture (agent 1.9+; weak/incomplete 1.18.8+). */
+fun subsFitMessage(ctx: android.content.Context, d: SubsDownloaded): String = when {
+    d.fit == "good" && d.weak -> ctx.getString(R.string.subsux_on_weak, d.name)
+    d.fit == "good" -> ctx.getString(R.string.media_psubs_on_good, d.name)
+    d.fit == "bad" -> ctx.getString(R.string.media_psubs_on_bad, d.name)
+    d.fit == "unsure" -> ctx.getString(R.string.subsux_on_unsure, d.name)
+    d.fitReason == "incomplete" -> ctx.getString(R.string.subsux_on_incomplete, d.name)
+    d.fit == "error" -> ctx.getString(R.string.subsux_on_error, d.name, d.fitError ?: "?")
+    else -> ctx.getString(R.string.media_psubs_on, d.name)
+}
+
+/** An error where it happened: plain words, the agent's details folded, and "Retry". */
+@Composable
+internal fun ErrorBox(text: String, detail: String?, onRetry: (() -> Unit)?) {
+    var open by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        if (onRetry != null || detail != null) Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onRetry != null) TextButton(onRetry) { Text(stringResource(R.string.media_retry)) }
+            if (detail != null) TextButton({ open = !open }) { Text(stringResource(R.string.subsux_details)) }
+        }
+        if (open && detail != null) Text(detail, style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** A short line over the picture (a download in progress, its result, a failed list), the look of [SubsOfferBar]. */
+@Composable
+fun SubsStatusChip(text: String, busy: Boolean, action: String? = null, onAction: () -> Unit = {}) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+        Surface(shape = RoundedCornerShape(20.dp), color = Color.Black.copy(alpha = 0.72f), contentColor = Color.White) {
+            Row(Modifier.padding(start = 16.dp, end = if (action != null) 4.dp else 16.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                if (busy) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
+                if (action != null) TextButton(onAction) { Text(action) }
+            }
+        }
     }
 }
 
@@ -208,7 +305,10 @@ sealed class SubPick {
 fun SubtitlesSheet(
     api: Api, ref: MediaRef, onDismiss: () -> Unit,
     embedded: List<EmbeddedSub>? = null, selectedFile: String? = null, offSelected: Boolean = false,
-    closeOnPick: Boolean = embedded != null, onPick: (SubPick, String?) -> Unit = { _, _ -> },
+    closeOnPick: Boolean = embedded != null,
+    /** the player's: downloads go on after the sheet closes (null elsewhere: they belong to the sheet) */
+    downloads: SubsDownloads? = null,
+    onPick: (SubPick, String?) -> Unit = { _, _ -> },
 ) {
     val ctx = LocalContext.current
     val ui = LocalConfiguration.current.locales[0]
@@ -220,20 +320,37 @@ fun SubtitlesSheet(
     var error by remember { mutableStateOf<String?>(null) }
     var fetchJob by remember { mutableStateOf<Job?>(null) }
     val versions = api.srv.hasSubsVersions
+    /** the list failed although the server answered (it used to look like "no subtitles") */
+    var listError by remember { mutableStateOf<ApiException?>(null) }
+    /** a failure on a row: the search result's key, "auto:<language>" or "shift:<name>" */
+    var rowError by remember { mutableStateOf<Pair<String, ApiException>?>(null) }
+    var selected by remember { mutableStateOf(selectedFile) }
+    /** a download of the sheet itself (no player): the result's key, the phase */
+    var localBusy by remember { mutableStateOf<String?>(null) }
+    var localPhase by remember { mutableStateOf<String?>(null) }
 
     suspend fun reload() {
         files = withContext(Dispatchers.IO) {
-            runCatching { api.subsList(ref) }.getOrElse {
+            try {
+                api.subsList(ref).also { listError = null }
+            } catch (e: Exception) {
+                if (!(e is ApiException && e.code == 0)) listError = e as? ApiException ?: ApiException(e.toString())
                 // the server out of reach: a downloaded copy's own subtitles, so a version can be picked offline (G1)
                 files ?: OfflineStore.get(ctx, ref.key())?.subs.orEmpty().filter { java.io.File(it.file).exists() }.map { it.toSubFile() }
             }
         }
     }
     LaunchedEffect(ref) { reload() }
-
-    fun fitMessage(fit: String?, name: String) = ctx.getString(when (fit) {
-        "bad" -> R.string.media_psubs_on_bad; "good" -> R.string.media_psubs_on_good; else -> R.string.media_psubs_on
-    }, name)
+    // the player's download ended (the sheet may have been closed and opened again meanwhile): the new file is in use
+    val finished = downloads?.finished ?: 0
+    LaunchedEffect(finished) {
+        if (finished == 0) return@LaunchedEffect
+        downloads?.last?.let { selected = it.name }
+        reload()
+    }
+    val failure = rowError ?: downloads?.failed
+    /** the language whose download runs: its versions and timing wait */
+    val busyLang = downloads?.lang ?: (if (localBusy != null || fetching != null) page else null)
 
     fun picked(p: SubPick, msg: String?) {
         onPick(p, msg)
@@ -243,13 +360,13 @@ fun SubtitlesSheet(
     var shifting by remember { mutableStateOf(false) }
     /** Sync buttons: the agent rewrites the file, the player loads it again; the sheet stays open for the next step. */
     fun shift(f: SubFile, by: Double) = scope.launch {
-        error = null; shifting = true
+        error = null; rowError = null; shifting = true
         try {
             withContext(Dispatchers.IO) { api.subsShift(ref, f.name, by) }
             reload()
             onPick(SubPick.Shifted(f.name, f.langKey), null)
         } catch (e: ApiException) {
-            error = e.message
+            rowError = "shift:${f.name}" to e
         } finally {
             shifting = false
         }
@@ -274,29 +391,70 @@ fun SubtitlesSheet(
 
     /** "Download: <language>": search that language, try the best results until one fits this copy (at most 3). */
     fun autoFetch(lang: String) {
+        error = null; message = null; rowError = null
+        val have = files.orEmpty().mapNotNull { it.source?.key }.toSet()
+        downloads?.let { dl ->  // the player's: goes on when the sheet closes
+            dl.start(lang, null) { onStatus ->
+                fetchSubtitles(ctx, api, ref, lang, have) { onStatus(it) }
+                    ?: throw ApiException(ctx.getString(R.string.media_psubs_none, langName(lang, ui)))
+            }
+            return
+        }
         fetchJob = scope.launch {
-            error = null; message = null
             try {
-                val have = files.orEmpty().mapNotNull { it.source?.key }.toSet()
                 val d = fetchSubtitles(ctx, api, ref, lang, have) { fetching = it }
                 fetching = null
-                if (d == null) { error = ctx.getString(R.string.media_psubs_none, langName(lang, ui)); return@launch }
+                if (d == null) {
+                    rowError = "auto:$lang" to ApiException(ctx.getString(R.string.media_psubs_none, langName(lang, ui)))
+                    return@launch
+                }
                 reload()
-                picked(SubPick.File(d.name, lang), fitMessage(d.fit, d.name))
+                picked(SubPick.File(d.name, lang), subsFitMessage(ctx, d))
             } catch (e: ApiException) {
                 fetching = null
-                error = e.message
+                rowError = "auto:$lang" to e
             }
         }
     }
 
+    /** One search result: downloaded and fitted (a job on the agent), then it becomes the language's default and is on. */
+    fun download(r: SubResult, override: Pair<String?, Int?>, lang: String) {
+        error = null; rowError = null
+        downloads?.let { dl ->
+            dl.start(lang, r.key) { onStatus ->
+                withContext(Dispatchers.IO) {
+                    api.subsDownload(ref, r, override.first, override.second, langs = lang) { onStatus(phaseText(ctx, it)) }
+                }
+            }
+            return
+        }
+        localBusy = r.key; localPhase = null
+        scope.launch {
+            try {
+                val d = withContext(Dispatchers.IO) {
+                    api.subsDownload(ref, r, override.first, override.second, langs = lang) { localPhase = phaseText(ctx, it) }
+                }
+                reload()
+                picked(SubPick.File(d.name, lang), subsFitMessage(ctx, d))
+            } catch (e: ApiException) {
+                rowError = r.key to e
+            } finally {
+                localBusy = null; localPhase = null
+            }
+        }
+    }
+
+    // the auto download's progress line: the sheet's own, or the player's still running
+    val autoLine = fetching ?: downloads?.takeIf { it.running && it.key == null }?.let {
+        it.status ?: ctx.getString(R.string.media_psubs_searching, langName(it.lang ?: "", ui))
+    }
     Dialog(onDismissRequest = { fetchJob?.cancel(); onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.widthIn(max = 560.dp).fillMaxWidth(0.94f).padding(vertical = 16.dp), shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.padding(horizontal = 8.dp, vertical = 12.dp)) {
                 // header: title or "← language"
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
-                    if (page != null && fetching == null) IconButton({ page = null; error = null }) {
+                    if (page != null && autoLine == null) IconButton({ page = null; error = null }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_psubs_back))
                     }
                     Text(when (page) {
@@ -312,18 +470,22 @@ fun SubtitlesSheet(
                 Spacer(Modifier.height(8.dp))
                 message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = GREEN, modifier = Modifier.padding(horizontal = 16.dp)) }
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
+                listError?.let { e ->
+                    ErrorBox(ctx.getString(R.string.subsux_list_failed, e.message ?: ""), e.detail) { scope.launch { reload() } }
+                }
                 Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
                     val list = files
                     when {
-                        fetching != null -> Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        autoLine != null -> Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(12.dp))
-                            Text(fetching!!, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Text(autoLine, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         }
                         list == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(24.dp))
                         }
-                        page == null -> Languages(api, list, embedded, selectedFile, offSelected, ui,
+                        page == null -> Languages(api, list, embedded, selected, offSelected, ui, busyLang,
+                            failure = failure?.takeIf { it.first.startsWith("auto:") },
                             onOff = { picked(SubPick.Off, null) },
                             onLang = { lang ->
                                 val def = list.filter { it.langKey == lang }.let { l -> l.firstOrNull { it.default } ?: l.firstOrNull() }
@@ -341,17 +503,18 @@ fun SubtitlesSheet(
                                 Icon(Icons.Filled.Language, null, Modifier.size(20.dp))
                             })
                         }
-                        else -> LanguagePage(api, ref, page!!, list, embedded, selectedFile, ui,
+                        else -> LanguagePage(api, ref, page!!, list, embedded, selected, ui,
                             onChoose = ::choose,
                             onShift = if (api.srv.hasSubsShift) { f, by -> shift(f, by) } else null, shifting = shifting,
                             onLiveSync = if (api.srv.hasSubsShift && embedded != null) { f -> picked(SubPick.Sync(f.name, f.langKey), null) } else null,
                             onTrack = { picked(SubPick.Track(it), null) },
-                            onDownloaded = { d, lang -> scope.launch { reload(); picked(SubPick.File(d.name, lang), fitMessage(d.fit, d.name)) } },
-                            onError = { error = it })
+                            busyLang = busyLang, busyKey = downloads?.key ?: localBusy,
+                            phase = if (downloads?.key != null) downloads?.status else localPhase,
+                            failure = failure, onDownload = { r, o -> download(r, o, page!!) })
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
-                    TextButton({ fetchJob?.cancel(); onDismiss() }) {
+                    TextButton({ fetchJob?.cancel(); onDismiss() }) {  // the player's download goes on: only "Close"
                         Text(stringResource(if (fetching != null) R.string.media_next_cancel else R.string.media_close))
                     }
                 }
@@ -362,8 +525,8 @@ fun SubtitlesSheet(
 
 @Composable
 private fun SheetRow(title: String, subtitle: String? = null, onClick: () -> Unit, leading: @Composable () -> Unit = {},
-                     trailing: @Composable () -> Unit = {}, subtitleColor: Color? = null) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+                     trailing: @Composable () -> Unit = {}, subtitleColor: Color? = null, enabled: Boolean = true) {
+    Row(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) { leading() }
         Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
@@ -377,16 +540,28 @@ private fun SheetRow(title: String, subtitle: String? = null, onClick: () -> Uni
     }
 }
 
+/** A version's fit and its shift by hand, e.g. "fit your copy · shifted by hand -1.0 s" (null: nothing known). */
 @Composable
-private fun fitText(fit: String?) = when (fit) {
-    "good" -> stringResource(R.string.media_psubs_fit_good)
-    "bad" -> stringResource(R.string.media_psubs_fit_bad)
-    else -> null
+private fun fitText(f: SubFile?): String? {
+    if (f == null) return null
+    val fit = when {
+        f.fitReason == "incomplete" -> stringResource(R.string.subsux_fit_pending)
+        f.fit == "good" && f.weak -> stringResource(R.string.subsux_fit_weak)
+        f.fit == "good" -> stringResource(R.string.media_psubs_fit_good)
+        f.fit == "bad" -> stringResource(R.string.media_psubs_fit_bad)
+        f.fit == "unsure" -> stringResource(R.string.subsux_fit_unsure)
+        f.fit == "error" -> stringResource(R.string.subsux_fit_error)
+        else -> null
+    }
+    val manual = if (f.manual != 0.0) stringResource(R.string.subsux_manual,
+        String.format(java.util.Locale.getDefault(), "%+.1f", f.manual)) else null
+    return listOfNotNull(fit, manual).joinToString(" · ").ifEmpty { null }
 }
 
 @Composable
 private fun Languages(
     api: Api, files: List<SubFile>, embedded: List<EmbeddedSub>?, selectedFile: String?, offSelected: Boolean, ui: java.util.Locale,
+    busyLang: String?, failure: Pair<String, ApiException>?,
     onOff: () -> Unit, onLang: (String) -> Unit, onVersions: (String) -> Unit, onDownload: (String) -> Unit, onOther: () -> Unit,
 ) {
     if (embedded != null) SheetRow(stringResource(R.string.media_psubs_off), onClick = onOff,
@@ -401,12 +576,13 @@ private fun Languages(
         val on = fs.any { it.name == selectedFile } || emb.any { it.selected }
         val count = fs.size + emb.size
         val sub = listOfNotNull(
-            fitText(def?.fit),
+            fitText(def),
             if (def == null && emb.isNotEmpty()) stringResource(R.string.media_psubs_embedded).trim('(', ')') else null,
             if (count > 1) pluralStringResource(R.plurals.media_psubs_versions, count, count) else null,
         ).joinToString(" · ").ifEmpty { null }
-        SheetRow(if (lang.isEmpty()) stringResource(R.string.media_psubs_unknown_lang) else langName(lang, ui), sub,
-            onClick = { onLang(lang) },
+        SheetRow(if (lang.isEmpty()) stringResource(R.string.media_psubs_unknown_lang) else langName(lang, ui),
+            if (lang == busyLang) stringResource(R.string.subsux_wait_download) else sub,
+            onClick = { onLang(lang) }, enabled = lang != busyLang,
             leading = { if (embedded != null) RadioButton(on, { onLang(lang) }) else Icon(Icons.Filled.Language, null, Modifier.size(20.dp)) },
             trailing = {
                 IconButton({ onVersions(lang) }) {
@@ -414,7 +590,8 @@ private fun Languages(
                 }
             }, subtitleColor = if (def?.fit == "bad") MaterialTheme.colorScheme.error else null)
     }
-    for (lang in mine.filter { it !in present }) {
+    val missing = mine.filter { it !in present }
+    for (lang in missing) {
         SheetRow(stringResource(R.string.media_psubs_download, langName(lang, ui)), onClick = { onDownload(lang) },
             leading = { Icon(Icons.Filled.Download, null, Modifier.size(20.dp)) },
             trailing = {
@@ -422,9 +599,14 @@ private fun Languages(
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.media_psubs_versions_cd))
                 }
             })
+        failure?.takeIf { it.first == "auto:$lang" }?.let { (_, e) -> ErrorBox(e.message ?: "", e.detail) { onDownload(lang) } }
     }
     SheetRow(stringResource(R.string.media_psubs_download_other), onClick = onOther,
         leading = { Icon(Icons.Filled.Search, null, Modifier.size(20.dp)) })
+    // another language's download failed (or one already present): its error under "another language"
+    failure?.takeIf { it.first.removePrefix("auto:") !in missing }?.let { (k, e) ->
+        ErrorBox(e.message ?: "", e.detail) { onDownload(k.removePrefix("auto:")) }
+    }
 }
 
 /** A file's label: the release it came from, else its name without the video's name and the language. */
@@ -530,7 +712,9 @@ private fun LanguagePage(
     api: Api, ref: MediaRef, lang: String, files: List<SubFile>, embedded: List<EmbeddedSub>?, selectedFile: String?,
     ui: java.util.Locale, onChoose: (SubFile) -> Unit, onTrack: (Int) -> Unit,
     onShift: ((SubFile, Double) -> Unit)?, shifting: Boolean, onLiveSync: ((SubFile) -> Unit)?,
-    onDownloaded: (SubsDownloaded, String) -> Unit, onError: (String?) -> Unit,
+    /** a download runs for this language: the versions and the timing wait (it changes the file in use) */
+    busyLang: String?, busyKey: String?, phase: String?,
+    failure: Pair<String, ApiException>?, onDownload: (SubResult, Pair<String?, Int?>) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val fs = files.filter { it.langKey == lang }.sortedByDescending { it.default }
@@ -538,28 +722,36 @@ private fun LanguagePage(
         n.substringBeforeLast('.').let { s -> if (langTail(s).isNotEmpty()) s.substringBeforeLast('.') else s }
     }
     val haveByKey = files.mapNotNull { f -> f.source?.let { it.key to f } }.toMap()
+    val waiting = busyLang == lang
     // the disk
     if (fs.isNotEmpty() || embedded.orEmpty().isNotEmpty()) SectionTitle(stringResource(R.string.media_psubs_on_disk))
+    if (waiting && fs.isNotEmpty()) Text(stringResource(R.string.subsux_wait_download), style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 16.dp))
     for (f in fs) {
         val on = if (embedded != null) f.name == selectedFile else f.default
         val sub = listOfNotNull(
             if (f.default) stringResource(R.string.media_psubs_default) else null,
             f.source?.provider?.let { PROVIDER_NAMES[it] ?: it },
-            fitText(f.fit),
+            fitText(f),
         ).joinToString(" · ").ifEmpty { null }
-        SheetRow(versionLabel(f, stem), sub, onClick = { onChoose(f) },
-            leading = { RadioButton(on, { onChoose(f) }) },
-            subtitleColor = if (f.fit == "bad") MaterialTheme.colorScheme.error else if (f.fit == "good") GREEN else null)
+        SheetRow(versionLabel(f, stem), sub, onClick = { onChoose(f) }, enabled = !waiting,
+            leading = { RadioButton(on, if (waiting) null else ({ onChoose(f) }), enabled = !waiting) },
+            subtitleColor = if (f.fit == "bad") MaterialTheme.colorScheme.error
+                else if (f.fit == "good" && f.fitReason == null) GREEN else null)
     }
     // timing of the version in use: too early / too late, saved in the file (works in mpv and on the TV too)
     val inUse = fs.firstOrNull { if (embedded != null) it.name == selectedFile else it.default }
     if (inUse != null && inUse.ext == "srt") {
         // in the player: a timing bar over the film, the subtitles move as you tap; elsewhere: buttons here
         if (onLiveSync != null) SheetRow(stringResource(R.string.media_psubs_sync_live),
-            stringResource(R.string.media_psubs_sync_live_hint) + if (inUse.manual != 0.0) " · " + stringResource(R.string.media_psubs_sync_total,
+            if (waiting) stringResource(R.string.subsux_wait_download)
+            else stringResource(R.string.media_psubs_sync_live_hint) + if (inUse.manual != 0.0) " · " + stringResource(R.string.media_psubs_sync_total,
                 String.format(java.util.Locale.getDefault(), "%+.1f", inUse.manual)) else "",
-            onClick = { onLiveSync(inUse) }, leading = { Icon(Icons.Filled.Tune, null, Modifier.size(20.dp)) })
-        else if (onShift != null) SyncRow(inUse, shifting) { onShift(inUse, it) }
+            onClick = { onLiveSync(inUse) }, enabled = !waiting, leading = { Icon(Icons.Filled.Tune, null, Modifier.size(20.dp)) })
+        else if (onShift != null) SyncRow(inUse, shifting || waiting) { onShift(inUse, it) }
+        failure?.takeIf { it.first == "shift:${inUse.name}" }?.let { (_, e) ->
+            ErrorBox(stringResource(R.string.subsux_shift_failed, e.message ?: ""), e.detail, null)
+        }
     }
     embedded.orEmpty().filter { it.langKey == lang }.forEachIndexed { n, e ->
         val (title, flags) = embeddedLabel(e, ui)
@@ -575,9 +767,6 @@ private fun LanguagePage(
     SectionTitle(stringResource(R.string.media_psubs_online))
     var progress by remember { mutableStateOf<SubsProgress?>(null) }
     var found by remember { mutableStateOf<SubsFound?>(null) }
-    var busy by remember { mutableStateOf<String?>(null) }
-    var phase by remember { mutableStateOf<String?>(null) }  // "downloading…" / "fitting…" of the download in progress
-    val ctx = LocalContext.current
     var title by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
     var override by remember { mutableStateOf<Pair<String?, Int?>>(null to null) }
@@ -629,28 +818,17 @@ private fun LanguagePage(
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (f.results.isEmpty()) Text(stringResource(R.string.media_subs_nothing, f.query, langName(lang, ui)),
                     style = MaterialTheme.typography.bodyMedium)
-                if (busy != null && api.srv.hasSubsFit) Text(phase ?: stringResource(R.string.media_subs_fitting),
+                if (busyKey != null && api.srv.hasSubsFit) Text(phase ?: stringResource(R.string.media_subs_fitting),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 f.results.sortedWith(SUB_RANK).forEach { r ->
                     val mine = haveByKey[r.key]
-                    SubRow(r, busy, have = mine != null, status = phase) {
-                        if (mine != null) { onChoose(mine); return@SubRow }  // already on disk: switch, no download
-                        busy = r.key
-                        phase = null
-                        onError(null)
-                        scope.launch {
-                            try {
-                                val d = withContext(Dispatchers.IO) {
-                                    api.subsDownload(ref, r, override.first, override.second, langs = lang) { phase = phaseText(ctx, it) }
-                                }
-                                onDownloaded(d, lang)
-                            } catch (e: ApiException) {
-                                onError(e.message)
-                            } finally {
-                                busy = null
-                                phase = null
-                            }
-                        }
+                    val go = {
+                        if (mine != null) onChoose(mine)  // already on disk: switch, no download
+                        else onDownload(r, override)
+                    }
+                    SubRow(r, busyKey ?: if (waiting) "" else null, have = mine != null, status = phase) { go() }
+                    failure?.takeIf { it.first == r.key }?.let { (_, e) ->
+                        ErrorBox(stringResource(R.string.subsux_dl_failed, e.message ?: ""), e.detail) { go() }
                     }
                     HorizontalDivider()
                 }

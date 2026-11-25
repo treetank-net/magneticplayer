@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Napisy: błędy przy wierszu, który zawiódł, pobieranie trwające po zamknięciu arkusza, oceny dopasowania (agent 1.18.8+) -->
+<resources>
+    <string name="subsux_details">Szczegóły</string>
+    <string name="subsux_list_failed">Nie udało się odczytać listy napisów: %1$s</string>
+    <string name="subsux_dl_failed">Nie udało się pobrać tych napisów: %1$s</string>
+    <string name="subsux_shift_failed">Nie udało się przesunąć napisów: %1$s</string>
+    <string name="subsux_fit_weak">zgadzają się z Twoją kopią</string>
+    <string name="subsux_fit_unsure">mogą nie pasować do Twojej kopii</string>
+    <string name="subsux_fit_pending">dopasuję, gdy film się pobierze</string>
+    <string name="subsux_fit_error">niedopasowane</string>
+    <string name="subsux_manual">przesunięte ręcznie o %1$s s</string>
+    <string name="subsux_on_weak">Napisy włączone, zgadzają się z Twoją kopią: %1$s</string>
+    <string name="subsux_on_unsure">Napisy włączone, ale mogą nie pasować do Twojej kopii: %1$s</string>
+    <string name="subsux_on_incomplete">Napisy włączone: %1$s. Jeszcze niedopasowane: film się pobiera; dopasuję je, gdy będzie cały.</string>
+    <string name="subsux_on_error">Napisy włączone, niedopasowane (%2$s): %1$s</string>
+    <string name="subsux_wait_download">Poczekaj, aż pobieranie się skończy</string>
+    <string name="subsux_chip_downloading">Pobieram napisy…</string>
+</resources>

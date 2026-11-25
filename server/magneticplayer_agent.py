@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -62,7 +63,7 @@ import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.18.7"
+VERSION = "1.18.8"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -100,6 +101,13 @@ class App:
         self.subs = Subtitles(cfg, lambda: save_config(cfg))
         self.subsync = mp_subsync.Store(CONFIG_DIR, log)
         self.subsources = mp_subfiles.Sources(CONFIG_DIR)  # where each subtitle file came from (agent 1.12+)
+        # subtitles waiting for their film to finish downloading: {real video path: [names]} (agent 1.18.8+)
+        self.refit_path, self.refit_lock, self.refit_busy = os.path.join(CONFIG_DIR, "subs-refit.json"), threading.Lock(), False
+        try:
+            with open(self.refit_path) as f:
+                self.refit = json.load(f)
+        except (OSError, ValueError):
+            self.refit = {}
         self.segments = mp_segments.Segments(log)
         self.jobs = Jobs(os.path.join(CONFIG_DIR, "jobs.json"), log)
         self.devices = Devices(os.path.join(CONFIG_DIR, "devices.json"), cfg["token"])
@@ -186,6 +194,15 @@ class App:
         elsewhere = path is not None
         path = path or os.path.join(os.path.dirname(full), name)
         locked = not elsewhere and self.tasks.torrent_owned(path)
+        if self.downloading_part(full):
+            # the film is still downloading: its sound isn't all there (a torrent's missing pieces are zeros), so the
+            # fit would fail or lie. Fitted once the torrent is complete (refit_due); a fresh download registers its
+            # final name itself (download_subs)
+            if not elsewhere:
+                self.refit_later(full, name)
+            return {"verdict": "pending", "reason": "incomplete", "name": name, "locked": locked,
+                    "error": T("the film is still downloading: the subtitles will be fitted when it is complete",
+                               "film jeszcze się pobiera: napisy zostaną dopasowane, gdy będzie cały")}
         try:
             res = self.subsync.fit(full, path, change=not locked)
         except (mp_subsync.SyncError, OSError, ValueError) as e:
@@ -241,7 +258,57 @@ class App:
         if fit and not wait:
             threading.Thread(target=bind(self.fit_subs), args=(full, res["name"]), daemon=True).start()
             res["fit"] = {"verdict": "pending"}
+        elif (res.get("fit") or {}).get("reason") == "incomplete" and res.get("name"):
+            self.refit_later(full, res["name"])  # fitted in a temporary folder: wait under the name it got here
         return res
+
+    # ---- subtitles downloaded while their film was still downloading: fitted once it is complete (agent 1.18.8+)
+
+    def refit_later(self, full, name):
+        with self.refit_lock:
+            names = self.refit.setdefault(os.path.realpath(full), [])
+            if name not in names:
+                names.append(name)
+                self._refit_save()
+
+    def refit_waiting(self, full):
+        """Names of subtitle files next to `full` that wait for the film to finish downloading."""
+        with self.refit_lock:
+            return set(self.refit.get(os.path.realpath(full), ()))
+
+    def _refit_save(self):
+        tmp = self.refit_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(self.refit, f, ensure_ascii=False)
+        os.replace(tmp, self.refit_path)
+
+    def refit_due(self):
+        """Every ~20 s (SleepGuard): the waiting subtitles of films that are complete now are fitted, in a thread (the
+        first fit of a film reads its whole sound)."""
+        if not self.refit or self.refit_busy:
+            return
+        ready = []
+        with self.refit_lock:
+            for full in list(self.refit):
+                if not os.path.exists(full):
+                    self.refit.pop(full)
+                elif self.downloading_part(full) is None:
+                    ready.append((full, self.refit.pop(full)))
+            self._refit_save()
+        if not ready:
+            return
+
+        def run():
+            try:
+                for full, names in ready:
+                    for name in names:
+                        if os.path.exists(os.path.join(os.path.dirname(full), name)):
+                            res = self.fit_subs(full, name)
+                            log("subtitles fitted now that the film is complete:", name, res.get("verdict"))
+            finally:
+                self.refit_busy = False
+        self.refit_busy = True
+        threading.Thread(target=run, daemon=True).start()
 
     def fetch_best_subs(self, full, lang, prefer=None):
         """As the app's "Download: <language>": search one language, try the best results (no machine translation,
@@ -816,9 +883,11 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:  # noqa: BLE001
-            log("error:", repr(e))
-            try:
-                self.send_json({"error": repr(e)}, 500)
+            log("error:", self.path.split("?")[0], repr(e))
+            log(traceback.format_exc().rstrip())
+            try:  # plain words for the user, the exception for details (agent 1.18.8+: was the exception alone)
+                self.send_json({"error": T("Something went wrong on the computer (an error in the agent).",
+                                           "Coś poszło nie tak na komputerze (błąd w agencie)."), "detail": repr(e)}, 500)
             except OSError:
                 pass
 

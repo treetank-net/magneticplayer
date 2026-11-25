@@ -15,7 +15,8 @@ import java.net.InetAddress
 import java.net.URL
 import java.net.URLDecoder
 
-class ApiException(msg: String, val code: Int = 0) : Exception(msg)
+/** `detail`: agent 1.18.8+, the exception behind a plain "something went wrong" (shown folded). */
+class ApiException(msg: String, val code: Int = 0, val detail: String? = null) : Exception(msg)
 
 class Settings(ctx: Context) {
     val ctx: Context = ctx.applicationContext
@@ -330,6 +331,10 @@ data class SubFile(
     val manual: Double = 0.0,
     /** agent 1.18+: when the file was last written on the server (epoch s, 0 = not said); a downloaded copy compares it */
     val mtime: Long = 0,
+    /** agent 1.18.8+: "fits" only because it lined up as it was (frame rate corrected at most) */
+    val weak: Boolean = false,
+    /** agent 1.18.8+: why the fit is "pending": "incomplete" = the film is still downloading, fitted when complete */
+    val fitReason: String? = null,
 ) {
     /** "pl" of "pl", "pl-PL", "" when unknown */
     val langKey get() = lang.takeWhile { it.isLetter() }.lowercase()
@@ -338,7 +343,13 @@ data class SubSource(val provider: String, val id: String, val release: String) 
     val key get() = "$provider:$id"
 }
 /** A downloaded subtitle file and, with agent 1.9+, how it fits the film (`fit` as in [SubFile]; `changed` = shifted to fit). */
-data class SubsDownloaded(val name: String, val fit: String?, val changed: Boolean, val provider: String = "")
+data class SubsDownloaded(
+    val name: String, val fit: String?, val changed: Boolean, val provider: String = "",
+    /** agent 1.18.8+: as in [SubFile] */
+    val weak: Boolean = false, val fitReason: String? = null,
+    /** why it couldn't be fitted (`fit` = "error"), the agent's words */
+    val fitError: String? = null,
+)
 
 /** Labels of after-download actions in the phone's language (resources media_after_*). */
 fun afterLabels(ctx: Context): Map<String, String> = linkedMapOf(
@@ -474,8 +485,9 @@ class Api(val s: Settings, srv: Server) {
             val code = c.responseCode
             val text = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
             if (code >= 400) {
-                val msg = runCatching { JSONObject(text).getString("error") }.getOrDefault("HTTP $code")
-                throw ApiException(msg, code)
+                val j = runCatching { JSONObject(text) }.getOrNull()
+                val msg = j?.optStr("error") ?: "HTTP $code"
+                throw ApiException(msg, code, j?.optStr("detail"))
             }
             return text
         } catch (e: IOException) {
@@ -859,7 +871,8 @@ class Api(val s: Settings, srv: Server) {
             SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"), o.optJSONObject("fit")?.optStr("verdict"),
                 o.optBoolean("default", '/' !in o.getString("name")),
                 o.optJSONObject("source")?.let { SubSource(it.optString("provider"), it.optString("id"), it.optString("release")) },
-                o.optJSONObject("fit")?.optDouble("manual", 0.0)?.takeIf { !it.isNaN() } ?: 0.0, o.optLong("mtime"))
+                o.optJSONObject("fit")?.optDouble("manual", 0.0)?.takeIf { !it.isNaN() } ?: 0.0, o.optLong("mtime"),
+                o.optJSONObject("fit")?.optBoolean("weak") ?: false, o.optJSONObject("fit")?.optStr("reason"))
         }
     }
 
@@ -922,7 +935,7 @@ class Api(val s: Settings, srv: Server) {
             val until = System.currentTimeMillis() + 300_000
             while (res == null) {
                 val j = JSONObject(call("GET", "/api/subs/job?id=$id"))
-                j.optStr("error")?.let { throw ApiException(it) }
+                j.optStr("error")?.let { throw ApiException(it, 500, j.optStr("detail")) }
                 if (j.optBoolean("done")) res = j.optJSONObject("result") ?: throw ApiException("no result")
                 else {
                     onPhase(j.optString("phase"))
@@ -933,7 +946,8 @@ class Api(val s: Settings, srv: Server) {
             res
         } else JSONObject(call("POST", "/api/subs/download", body, if (fit) 240000 else 90000))
         val f = o.optJSONObject("fit")
-        return SubsDownloaded(o.optString("name"), f?.optStr("verdict"), f?.optBoolean("changed") ?: false, o.optString("provider"))
+        return SubsDownloaded(o.optString("name"), f?.optStr("verdict"), f?.optBoolean("changed") ?: false, o.optString("provider"),
+            f?.optBoolean("weak") ?: false, f?.optStr("reason"), f?.optStr("error"))
     }
 
     fun openSubsConfig(): JSONObject = JSONObject(call("GET", "/api/config/opensubtitles"))

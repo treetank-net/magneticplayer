@@ -59,6 +59,7 @@ class SleepGuard(threading.Thread):
                 playing = self.app.mpv.running() and self.app.mpv.prop("pause") is False
                 self.app.jobs.tick(self.app.backend.list(), playing, self.app.machine_action)
                 self.app.place_unnamed()
+                self.app.refit_due()
             except Exception as e:  # noqa: BLE001 — a background thread must not die
                 log("SleepGuard:", e)
             time.sleep(20)

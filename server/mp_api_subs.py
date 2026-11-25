@@ -16,6 +16,7 @@ from mp_subs import readable_srt
 def subs_list(req, a, qd, **_):
     full = a.resolve_ref(qd)
     out = []
+    waiting = a.refit_waiting(full)
     for x in sidecar_subs(full):
         sp = os.path.join(os.path.dirname(full), x["name"])
         if x["ext"] == "sub" and mp_subsync.is_text_sub(sp):
@@ -24,7 +25,11 @@ def subs_list(req, a, qd, **_):
         # fitted or assessed before (agent 1.9+): good / unsure / bad for this copy of the film; `manual`: the total
         # shift by hand (1.12.1+). A file only shifted by hand (its fit failed, e.g. the film was still downloading)
         # has no verdict: that broke the whole list (500)
-        fit = {k: r[k] for k in ("verdict", "z", "manual") if k in r} if r else None
+        # 1.18.8+: `weak` (lines up as it was, only the frame rate applied) and "pending" + `reason: "incomplete"` while
+        # the film is still downloading (fitted when it is complete)
+        fit = {k: r[k] for k in ("verdict", "z", "manual", "weak") if k in r} if r else {}
+        if x["name"] in waiting:
+            fit.update(verdict="pending", reason="incomplete")
         if fit:
             x["fit"] = fit
         src = a.subsources.get(sp)

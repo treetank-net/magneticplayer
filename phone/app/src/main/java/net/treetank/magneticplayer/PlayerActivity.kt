@@ -64,6 +64,7 @@ class PlayerActivity : ComponentActivity() {
         /** the timing bar saves the shift after this long without a tap */
         private const val SYNC_IDLE_MS = 8_000L
         private const val OFFER_MS = 12_000L
+        private const val CHIP_MS = 6_000L
         /** the end of the file kept with every buffer (the container's index lives there) */
         private const val TAIL_BYTES = 4L shl 20
 
@@ -349,7 +350,10 @@ class PlayerActivity : ComponentActivity() {
                 subs = emptyList()
                 local = emptyMap()
             } else {
-                subs = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrDefault(emptyList()) }
+                val got = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) } }
+                subs = got.getOrDefault(emptyList())
+                // the server answered but the list failed: say so (the film used to play without subtitles, silently)
+                got.exceptionOrNull()?.let { e -> if (!(e is ApiException && e.code == 0)) showSubsListError(e) }
                 local = withContext(Dispatchers.IO) { localSubs(subs) }
             }
             localSubUris = local
@@ -970,7 +974,7 @@ class PlayerActivity : ComponentActivity() {
         host.setContent {
             AppTheme {
                 SubtitlesSheet(api, ref, onDismiss = ::close, embedded = embedded, selectedFile = selectedFile,
-                    offSelected = groups.none { it.isSelected }) { pick, msg ->
+                    offSelected = groups.none { it.isSelected }, downloads = subsDownloads) { pick, msg ->
                     when (pick) {
                         SubPick.Off -> {
                             rememberSubChoice("off")
@@ -996,6 +1000,71 @@ class PlayerActivity : ComponentActivity() {
             }
         }
         root.addView(host, FrameLayout.LayoutParams(-1, -1))
+        ensureSubsChip()
+    }
+
+    // ---- a subtitle download started in the sheet goes on when the sheet closes; a line over the picture says what it
+    // is doing and how it ended; the new file is switched on when it is done
+
+    private class Chip(val text: String, val action: String? = null, val onAction: () -> Unit = {})
+    private val subsChip = androidx.compose.runtime.mutableStateOf<Chip?>(null)
+    private var subsChipHost: androidx.compose.ui.platform.ComposeView? = null
+    private val hideChip = Runnable { subsChip.value = null }
+
+    private val subsDownloads by lazy {
+        SubsDownloads(lifecycleScope, onDone = { d, lang ->
+            if (lang.isNotEmpty()) rememberSubChoice(lang)
+            applySubFile(d.name, lang)
+            showChip(Chip(subsFitMessage(this, d)), CHIP_MS)
+        }, onFail = { e ->
+            showChip(Chip(getString(R.string.subsux_dl_failed, e.message ?: "")), CHIP_MS)
+        })
+    }
+
+    private fun showChip(c: Chip?, ms: Long = 0) {
+        ensureSubsChip()
+        ui.removeCallbacks(hideChip)
+        subsChip.value = c
+        if (c != null && ms > 0) ui.postDelayed(hideChip, ms)
+    }
+
+    private fun ensureSubsChip() {
+        val root = root ?: return
+        if (subsChipHost != null) return
+        val host = androidx.compose.ui.platform.ComposeView(this)
+        host.setContent {
+            AppTheme {
+                val dl = subsDownloads
+                val c = subsChip.value
+                when {
+                    dl.running -> SubsStatusChip(dl.status ?: getString(R.string.subsux_chip_downloading), busy = true)
+                    c != null -> SubsStatusChip(c.text, busy = false, action = c.action, onAction = c.onAction)
+                }
+            }
+        }
+        subsChipHost = host
+        root.addView(host, FrameLayout.LayoutParams(-1, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = (resources.displayMetrics.density * 48).toInt()
+        })
+    }
+
+    /** "Couldn't read the subtitle list: …" with "Retry" over the picture; playback goes on. */
+    private fun showSubsListError(e: Throwable) {
+        showChip(Chip(getString(R.string.subsux_list_failed, e.message ?: e.toString()), getString(R.string.media_retry)) {
+            showChip(null)
+            val p = player ?: return@Chip
+            lifecycleScope.launch {
+                val got = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) } }
+                val list = got.getOrElse { showSubsListError(it); return@launch }
+                subs = list
+                localSubUris = withContext(Dispatchers.IO) { localSubs(subs) }
+                val pos = p.currentPosition
+                val playing = p.playWhenReady
+                p.setMediaItem(buildItem(), pos)  // the subtitle files as tracks now
+                p.prepare()
+                p.playWhenReady = playing
+            }
+        })
     }
 
     /** A subtitle file (just picked or downloaded) on: the list again, local copies, the video reloaded where it was. */

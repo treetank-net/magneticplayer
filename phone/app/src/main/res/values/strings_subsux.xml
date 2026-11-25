@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Subtitles: errors on the row that failed, a download that outlives the sheet, fit badges (agent 1.18.8+) -->
+<resources>
+    <string name="subsux_details">Details</string>
+    <string name="subsux_list_failed">Couldn\'t read the subtitle list: %1$s</string>
+    <string name="subsux_dl_failed">Couldn\'t download these subtitles: %1$s</string>
+    <string name="subsux_shift_failed">Couldn\'t move the subtitles: %1$s</string>
+    <string name="subsux_fit_weak">line up with your copy</string>
+    <string name="subsux_fit_unsure">may not fit your copy</string>
+    <string name="subsux_fit_pending">fitted once the film finishes downloading</string>
+    <string name="subsux_fit_error">not fitted</string>
+    <string name="subsux_manual">shifted by hand %1$s s</string>
+    <string name="subsux_on_weak">Subtitles on, they line up with your copy: %1$s</string>
+    <string name="subsux_on_unsure">Subtitles on, but they may not fit your copy: %1$s</string>
+    <string name="subsux_on_incomplete">Subtitles on: %1$s. Not fitted yet: the film is still downloading; they will be fitted when it is complete.</string>
+    <string name="subsux_on_error">Subtitles on, not fitted (%2$s): %1$s</string>
+    <string name="subsux_wait_download">Wait for the download to finish</string>
+    <string name="subsux_chip_downloading">Downloading subtitles…</string>
+</resources>

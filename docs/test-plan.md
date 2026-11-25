@@ -883,7 +883,7 @@ downloading). Two bugs in a row:
       The journal shows no race: the download (and its failed fit) ended at 18:17, the shift by hand came at 18:21,
       and the "missing" subtitles were bug 1 above. See "Subtitles UX review" below.
 
-## Subtitles UX review (from the code, 2026-11-25; not tried on the phone yet, nothing built)
+## Subtitles UX review (from the code, 2026-11-25; what the owner approved is built: next section)
 
 Read: `SubsSheet.kt`, the subtitle parts of `PlayerActivity.kt`, `server/web/index.html` (search, download, player),
 `mp_api_subs.py`. For the owner to decide; a hands-on pass on the phone comes later.
@@ -935,6 +935,43 @@ State shown
 - [idea] Web page: the download is synchronous (no `async`, no `fit: "wait"`), so the toast says "Downloaded" before
   the fit runs, and the fit result never appears; there are no sync controls and no fit badges in the browser.
   Proposal: use the download job (phases), show the fit result, and at least the ±0.5/±0.1 buttons from the sheet.
+
+
+## Subtitles UX, built (agent 1.18.8 + the next app; compiled, not tried on the phone)
+
+The owner's order of 2026-11-25 (items 1–7 of the review above). Verified so far: py_compile, an offline test of the
+agent's refit queue and job errors, the Kotlin compile check, the string checks, the web page's JS syntax.
+
+- [ ] 1. A failed subtitle list says so. Player: a line over the picture "Couldn't read the subtitle list: …" with
+      "Retry" (the film plays on; Retry reloads the video at the same position with the files as tracks). Sheet: the
+      same message at the top with Retry and "Details". Web page: under the dialog's title and in the browser player,
+      with "Try again". Agent: an unexpected error is a 500 with `error` in plain words + `detail`, and the traceback
+      in the journal; subtitle jobs the same (a failed download job used to log nothing).
+- [ ] 2. Errors on the row that failed: a search result's download (under the result), "Download: <language>" (under
+      that row; another language under "Download in another language…"), a shift (under the timing row). Plain words,
+      "Details" folds the agent's `detail`, "Retry" repeats it. "Download: <language>" whose every try failed says
+      why instead of "No subtitles found".
+- [ ] 3. In the player, a download started in the sheet goes on after the sheet closes: a line over the picture
+      with a spinner ("Searching…", "Checking 1 of 3…", "Downloading…", "Fitting…"), then for 6 s how it ended
+      ("Subtitles on, they fit your copy", "… they line up with your copy", "… may not fit", "Not fitted yet: the
+      film is still downloading…", or "Couldn't download these subtitles: …"); the new file is switched on and its
+      language remembered. Opening the sheet again meanwhile shows the progress; when it ends there, the new file is
+      "in use". The title card and the Remote keep the old behaviour (the download belongs to the sheet there).
+- [ ] 4. While a download runs for a language: its versions, "Timing while watching" (or the ± buttons) and its row on
+      the first page are disabled with "Wait for the download to finish"; the other search results can't be tapped.
+- [ ] 5. A download (or "Fit") while the film is still downloading: nothing is fitted, the result says "Not fitted
+      yet: the film is still downloading…", the version reads "fitted once the film finishes downloading", and within
+      ~20 s of the torrent finishing the agent fits it (journal: "subtitles fitted now that the film is complete").
+      Survives an agent restart (`subs-refit.json`).
+- [ ] 6. Badges per version: "fit your copy", "line up with your copy" (weak), "may not fit your copy" (unsure),
+      "don't fit your copy", "fitted once the film finishes downloading", plus "shifted by hand -1.0 s".
+- [ ] 7. Web page: a download shows "Downloading…" / "Fitting…" on the result, then "Downloaded: <name> · <fit in
+      words>", or the error with "Details" and "Try again".
+- [idea] Not built, for the owner to decide: "Cancel" for a download (a row's cancel and stopping the agent's job);
+  carrying a shift by hand to a newly downloaded version of the same film (only "clearly right" when it is the same
+  subtitles, which the agent already reuses; for other subtitles the old shift may be wrong, so nothing is carried:
+  the old version keeps its shift in `Subtitles/` and its badge shows it); the live sync bar keeping "Not saved,
+  Retry" after a failed save.
 
 ## Suggestions you don't have (G4, agent 1.18.0)
 

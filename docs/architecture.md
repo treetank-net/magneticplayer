@@ -280,6 +280,11 @@ ratio), < 4.5 = doesn't fit this copy, in between = unsure (left alone). A text 
 being seeded). It runs after every download (the app waits with `"fit": "wait"`, older clients get it in the
 background), on `POST /api/subs/fit`, and for the whole library as the "Subtitles" task (`kind: subs`). The player
 labels tracks (✓ / "don't fit") and picks the best-fitting file of each language as the default.
+Agent 1.18.8+: while the film is still downloading (a torrent's missing pieces are zeros), nothing is fitted: the
+subtitle file waits in `<config>/subs-refit.json` and is fitted once the torrent is complete (checked every ~20 s with
+the sleep guard), and `/api/subs/list` shows it as `pending` / `incomplete`. In the phone's player a download started
+in the subtitle sheet belongs to the player (`SubsDownloads`): closing the sheet doesn't stop it, a line over the
+picture says what it is doing and how it ended, and the new file is switched on when it is done.
 
 Agent 1.12.1+: when the video carries its own subtitle track (text, PGS or VobSub, the one with the most lines), its
 display times are the reference instead of the speech (ffprobe packets, ~7 s for an episode, cached next to the

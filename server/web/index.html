@@ -181,6 +181,13 @@ const T = {
     cantPlay: "The browser can't play this file (usually HEVC/x265, AV1 or E-AC3/DTS audio). Use “On computer” or “VLC link”.",
     playingFrom: t => "Playing on the computer from " + t, toComputerHere: "▶ On computer from here",
     subsCount: n => `subtitles: ${n} (player menu)`, noSubs: "no subtitles next to the file",
+    retry: "Try again", details: "Details", subsListFailed: e => "Couldn't read the subtitle list: " + e,
+    dlPhase: "Downloading the subtitles…", fitPhase: "Downloaded. Fitting them to your copy of the film…",
+    dlFailed: e => "Couldn't download these subtitles: " + e,
+    fitGood: "they fit your copy", fitWeak: "they line up with your copy (frame rate corrected only)",
+    fitUnsure: "not sure they fit your copy", fitBad: "they don't fit your copy",
+    fitIncomplete: "not fitted yet: the film is still downloading (fitted when it is complete)",
+    fitError: e => "not fitted: " + e,
   },
   pl: {
     sleep: "Uśpij", sleepTitle: "Uśpij komputer", screen: "Ekran", screenTitle: "Włącz i odblokuj ekran komputera",
@@ -253,9 +260,31 @@ const T = {
     cantPlay: "Przeglądarka nie umie odtworzyć tego pliku (zwykle HEVC/x265, AV1 albo dźwięk E-AC3/DTS). Użyj „Na komputerze” albo „Link do VLC”.",
     playingFrom: t => "Gra na komputerze od " + t, toComputerHere: "▶ Na komputer od tego miejsca",
     subsCount: n => `napisy: ${n} (menu odtwarzacza)`, noSubs: "bez napisów obok pliku",
+    retry: "Spróbuj ponownie", details: "Szczegóły", subsListFailed: e => "Nie udało się odczytać listy napisów: " + e,
+    dlPhase: "Pobieram napisy…", fitPhase: "Pobrane. Dopasowuję je do Twojej kopii filmu…",
+    dlFailed: e => "Nie udało się pobrać tych napisów: " + e,
+    fitGood: "pasują do Twojej kopii", fitWeak: "zgadzają się z Twoją kopią (poprawiona tylko liczba klatek)",
+    fitUnsure: "nie wiadomo, czy pasują do Twojej kopii", fitBad: "nie pasują do Twojej kopii",
+    fitIncomplete: "jeszcze niedopasowane: film się pobiera (dopasuję, gdy będzie cały)",
+    fitError: e => "niedopasowane: " + e,
   },
 };
 /** UI text in the current language. */
+/** An error in plain words, the agent's `detail` folded, and "Try again" when `retry` is given. */
+function errBox(e, retry) {
+  return h("div", { class: "err" }, h("span", {}, e.message || String(e)), " ",
+    e.detail ? h("details", { style: "display:inline" }, h("summary", { style: "display:inline;cursor:pointer" }, tr("details")),
+      h("code", { style: "font-size:12px;overflow-wrap:anywhere" }, e.detail)) : null,
+    retry ? h("button", { class: "btn", style: "margin-left:8px", onclick: retry }, tr("retry")) : null);
+}
+/** A fit result (download / subtitle list) in words. */
+function fitWords(f) {
+  if (!f || !f.verdict) return "";
+  if (f.reason === "incomplete") return tr("fitIncomplete");
+  return { good: f.weak ? tr("fitWeak") : tr("fitGood"), unsure: tr("fitUnsure"), bad: tr("fitBad"),
+    error: tr("fitError", f.error || "") }[f.verdict] || "";
+}
+
 function tr(key, ...args) {
   const v = T[LANG][key] ?? T.en[key];
   return typeof v === "function" ? v(...args) : v ?? key;
@@ -315,7 +344,9 @@ async function api(path, body, opts = {}) {
   let j = null; try { j = JSON.parse(txt); } catch {}
   if (!r.ok) {
     if (r.status === 401) showLogin();
-    throw new ApiError((j && j.error) || "HTTP " + r.status, r.status);
+    const err = new ApiError((j && j.error) || "HTTP " + r.status, r.status);
+    err.detail = j && j.detail;  // agent 1.18.8+: the exception behind "something went wrong"
+    throw err;
   }
   return j;
 }
@@ -758,7 +789,8 @@ const Subs = (() => {
     const fix = h("div", { class: "row", style: "margin-top:12px", hidden: true }, h("span", { class: "grow" }, title), year, langs, again);
     openDialog(tr("subsFor", ref.title || ref.path?.split("/").pop() || tr("whatsPlaying")),
       h("div", {}, have, status, results, fix), () => ctl?.abort());
-    const listHave = () => api("/api/subs/list?" + refQuery(ref)).then(l => have.textContent = l.length ? tr("already", l.map(s => s.name.slice(-34)).join(", ")) : "").catch(() => {});
+    const listHave = () => api("/api/subs/list?" + refQuery(ref)).then(l => put(have, l.length ? tr("already", l.map(s => s.name.slice(-34)).join(", ")) : ""))
+      .catch(e => put(have, errBox({ message: tr("subsListFailed", e.message), detail: e.detail }, listHave)));
     listHave();
     let override = [null, null];
     async function run(t, y) {
@@ -798,16 +830,32 @@ const Subs = (() => {
         f.hidden ? h("p", { class: "muted" }, tr("hidden", f.hidden)) : null,
         f.results.length ? null : h("p", {}, tr("nothing", f.query, subLangs())),
         f.results.map(r => {
-          const row = h("div", { class: "sub", onclick: async () => {
+          const note = h("div", { style: "font-size:13px" });
+          const download = async () => {
             if (row._busy) return; row._busy = true; row.style.opacity = .6;
-            const b = { ...refBody(ref), id: r.id, provider: r.provider, languages: subLangs() };
+            const b = { ...refBody(ref), id: r.id, provider: r.provider, languages: subLangs(), fit: "wait", async: true };
             if (override[0]) b.title = override[0]; if (override[1]) b.year = override[1];
-            try { const res = await api("/api/subs/download", b); toast(tr("downloaded", res.name)); listHave(); }
-            catch (e) { toast(e.message); } finally { row._busy = false; row.style.opacity = 1; }
-          } },
+            try {  // a job: "downloading" → "fitting" → the result with the fit (agent 1.12.1+)
+              const job = (await api("/api/subs/download", b)).job;
+              let j;
+              for (;;) {
+                j = await api("/api/subs/job?id=" + job);
+                if (j.done) break;
+                put(note, h("span", { class: "muted" }, "⏳ " + (j.phase === "fit" ? tr("fitPhase") : tr("dlPhase"))));
+                await new Promise(res => setTimeout(res, 700));
+              }
+              if (j.error) throw Object.assign(new Error(j.error), { detail: j.detail });
+              const fw = fitWords(j.result.fit);
+              put(note, h("span", { class: j.result.fit?.verdict === "bad" ? "err" : "ok" }, tr("downloaded", j.result.name) + (fw ? " · " + fw : "")));
+              listHave();
+            } catch (e) {
+              put(note, errBox({ message: tr("dlFailed", e.message), detail: e.detail }, ev => { ev.stopPropagation(); download(); }));
+            } finally { row._busy = false; row.style.opacity = 1; }
+          };
+          const row = h("div", { class: "sub", onclick: download },
             h("div", { class: "row" }, h("b", {}, r.lang.toUpperCase()), r.hash_match ? h("span", { class: "ok" }, tr("matches")) : null,
               h("span", { class: "grow" }), h("span", { class: "muted" }, PROVIDERS[r.provider] || r.provider)),
-            h("div", { style: "font-size:13px;overflow-wrap:anywhere" }, r.release), r.hi ? h("div", { class: "muted" }, tr("hi")) : null);
+            h("div", { style: "font-size:13px;overflow-wrap:anywhere" }, r.release), r.hi ? h("div", { class: "muted" }, tr("hi")) : null, note);
           return row;
         }));
     }
@@ -831,10 +879,17 @@ const Player = (() => {
     const v = h("video", { controls: true, autoplay: true, preload: "auto", crossorigin: "anonymous" });
     v.src = mediaUrl(ref);
     let subs = [];
-    try { subs = await api("/api/subs/list?" + refQuery(ref)); } catch {}
-    const pref = subLangs().split(",");
-    subs.sort((a, b) => (pref.indexOf(a.lang) + 1 || 99) - (pref.indexOf(b.lang) + 1 || 99));
-    subs.forEach((s, i) => v.append(h("track", { kind: "subtitles", src: subUrl(ref, s.name, true), srclang: s.lang || "und", label: s.name.slice(-30), default: i === 0 })));
+    const subsNote = h("span", { class: "muted" });
+    async function loadSubs() {  // a failed list said nothing before: the film just played without subtitles
+      try { subs = await api("/api/subs/list?" + refQuery(ref)); }
+      catch (e) { put(subsNote, errBox({ message: tr("subsListFailed", e.message), detail: e.detail }, loadSubs)); return; }
+      v.querySelectorAll("track").forEach(t => t.remove());
+      const pref = subLangs().split(",");
+      subs.sort((a, b) => (pref.indexOf(a.lang) + 1 || 99) - (pref.indexOf(b.lang) + 1 || 99));
+      subs.forEach((s, i) => v.append(h("track", { kind: "subtitles", src: subUrl(ref, s.name, true), srclang: s.lang || "und", label: s.name.slice(-30), default: i === 0 })));
+      put(subsNote, subs.length ? tr("subsCount", subs.length) : tr("noSubs"));
+    }
+    await loadSubs();
     const key = "mp_pos_" + (ref.torrent_id ? ref.torrent_id + "/" + ref.file_index : ref.root + "/" + ref.path);
     const saved = +store.get(key) || 0;
     v.addEventListener("loadedmetadata", () => { if (saved > 10 && saved < v.duration - 30) v.currentTime = saved; });
@@ -846,7 +901,7 @@ const Player = (() => {
       h("div", { class: "row", style: "margin-top:10px" },
         h("button", { class: "btn", onclick: () => { const t = v.currentTime; $("#dlg").close();
           act(async () => { await api("/api/player/open", { ...ref, start: t }); setTab("remote"); }, tr("playingFrom", clock(t))); } }, tr("toComputerHere")),
-        h("span", { class: "muted" }, subs.length ? tr("subsCount", subs.length) : tr("noSubs")))),
+        subsNote)),
       () => { store.set(key, String(Math.floor(v.currentTime || 0))); v.pause(); v.removeAttribute("src"); v.load(); });
   }
   return { open };

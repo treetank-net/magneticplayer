@@ -8,9 +8,11 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor, wait
 
+from mp_core import log
 from mp_i18n import T, bind
 
 VENV = os.path.expanduser("~/.local/share/magneticplayer/venv")
@@ -203,6 +205,19 @@ def to_srt(raw, video=None):
             out.append("%d\n%s --> %s\n%s\n" % (len(out) + 1, _ts(a), _ts(b), t))
     return "\n".join(out)
 
+
+
+def _unexpected(job, e):
+    """A bug, not a provider's answer: plain words for the user, the exception in `detail` (agent 1.18.8+) and the
+    traceback in the log (a failed download job used to leave nothing there)."""
+    if hasattr(e, "status"):  # the agent's own errors (ApiError, LibError…) already speak to the user
+        job["error"] = str(e)
+        return
+    log("subtitles: job", job.get("id"), "failed:", repr(e))
+    log(traceback.format_exc().rstrip())
+    job["error"] = T("Something went wrong on the computer (an error in the agent).",
+                     "Coś poszło nie tak na komputerze (błąd w agencie).")
+    job["detail"] = repr(e)
 
 class Subtitles:
     def __init__(self, cfg, save_cfg):
@@ -403,7 +418,7 @@ class Subtitles:
             except SubsError as e:
                 job["error"] = str(e)
             except Exception as e:  # noqa: BLE001
-                job["error"] = repr(e)
+                _unexpected(job, e)
             job["phase"] = "done"
             job["done"] = True
         threading.Thread(target=bind(run), daemon=True).start()
@@ -423,7 +438,7 @@ class Subtitles:
             except SubsError as e:
                 job["error"] = str(e)
             except Exception as e:  # noqa: BLE001 — the app shows it
-                job["error"] = str(e) or repr(e)
+                _unexpected(job, e)
             job["phase"] = "done"
             job["done"] = True
         threading.Thread(target=bind(run), daemon=True).start()
