@@ -4,6 +4,7 @@ magnet's folder. Each function is a route of mp_routes.ROUTES: (req = the Handle
 import os
 import time
 
+import mp_archive
 import mp_media
 from mp_core import ApiError, log
 from mp_i18n import T
@@ -29,6 +30,7 @@ def torrent_jobs(req, a, **_):
         out.append({"id": j["id"], "name": j.get("name") or (t or {}).get("name") or j["id"][:12],
                     "added": j.get("added"), "after": j.get("after", "none"),
                     "after_done": j.get("after_done", False), "magnet": j.get("magnet"),
+                    "torrent_url": j.get("torrent_url"),  # agent 1.19+: added from the Internet Archive search
                     "in_client": t is not None, "progress": t["progress"] if t else None,
                     "state": t["state"] if t else None})
     return req.send_json(out)
@@ -44,6 +46,8 @@ def torrent_after(req, a, tid, **_):
 
 def torrent_add(req, a, **_):
     b = req.body()
+    if b.get("torrent_url"):
+        return req.send_json(add_archive(a, b))
     uri = (b.get("magnet") or "").strip()
     if not uri.startswith("magnet:?"):
         raise ApiError(T("this isn't a magnet link", "to nie jest magnet link"), 400)
@@ -58,6 +62,46 @@ def torrent_add(req, a, **_):
             a.jobs.set_meta(tid.lower(), place_when_named=time.time())
     log("magnet added:", tid, "→", dest or "(client default folder)")
     return req.send_json({"id": tid, "path": dest})
+
+
+def add_archive(a, b):
+    """An Internet Archive item (agent 1.19+): its .torrent (web seeds are listed only there, a magnet never starts),
+    only the best video file wanted, renamed to "Title (Year)/Title (Year).ext" from the title and year the user saw.
+    Folder: `root`/`sub` from the app (its own recognition, as for a magnet), else recognised here from that name and
+    used when sure (the web page). The guess is kept with the job, so "Change" can teach the folder memory."""
+    url = str(b.get("torrent_url") or "").strip()
+    ident = mp_archive.check_url(url)
+    name = mp_archive.clean_name(b.get("title") or "", b.get("year")) or ident
+    data = mp_archive.fetch_torrent(url)
+    meta = mp_archive.parse(data)
+    pick = mp_archive.pick_video(meta["files"], mp_archive.file_formats(ident))
+    if pick is None:
+        raise ApiError(T("this item has no video file to download", "ta pozycja nie ma pliku wideo do pobrania"), 422)
+    chosen = meta["files"][pick]
+    new_path = mp_archive.placed_name(name, chosen["path"])
+    guess, dest = b.get("guess"), None
+    if b.get("root") is not None:
+        dest = a.library.dest(int(b["root"]), str(b.get("sub") or ""))
+    elif a.library.roots():
+        guess = a.ident.guess(name, [(new_path, chosen["size"])])
+        kind = guess.get("kind") if guess.get("tag") in ("seriale", "bajki") else None
+        tg = a.library.targets(guess.get("tag"), guess.get("title"), kind)
+        if tg["pick"] is not None and guess.get("confidence") == "high":
+            t = tg["targets"][tg["pick"]]
+            dest = a.library.dest(t["root"], t["sub"])
+    tid = a.backend.add_torrent(data, ident + ".torrent", b.get("sequential", True), dest,
+                                mp_archive.priorities(meta["files"], pick), [(pick, chosen["path"], new_path)],
+                                name, meta["hash"])
+    tid = (tid or meta["hash"]).lower()
+    a.jobs.add(tid, None, b.get("after", "none"), name=name, torrent_url=url)
+    a.jobs.set_meta(tid, **{k: v for k, v in (("dest", dest), ("guess", guess)) if v})
+    log("archive.org item added:", tid, ident, "→", dest or "(client default folder)", "file:", chosen["path"])
+    return {"id": tid, "path": dest, "name": name, "file": new_path, "size": chosen["size"]}
+
+
+def archive_search(req, a, qd, **_):
+    """GET /api/archive/search?q=Title+Year[&any=1][&rows=30] (agent 1.19+)."""
+    return req.send_json(mp_archive.search(qd.get("q", ""), qd.get("rows") or 30, qd.get("any") in ("1", "true")))
 
 
 # changing the folder after identification: the client moves it (keeps seeding)

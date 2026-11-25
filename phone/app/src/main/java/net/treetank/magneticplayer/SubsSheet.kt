@@ -65,6 +65,7 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -774,6 +775,8 @@ private fun LanguagePage(
     var jobId by remember { mutableStateOf<String?>(null) }
     var stopping by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
+    // the screen this sheet is on (the player or the main window): MainVisible stays false inside the player
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lang, nonce) {
         found = null; progress = null; stopping = false; searchError = null
         try {
@@ -781,7 +784,7 @@ private fun LanguagePage(
             val job = withContext(Dispatchers.IO) { api.subsSearchStart(ref, t, y, langs = lang) }
             jobId = job
             while (true) {
-                MainVisible.await()
+                lifecycle.currentStateFlow.first { it.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) }
                 val p = withContext(Dispatchers.IO) { api.subsJob(job) }
                 progress = p
                 if (p.done) {

@@ -97,6 +97,7 @@ ROUTES = [
     ("POST", "/api/torrents", torrents.torrent_add, {}),
     ("POST", "/api/torrents/<tid:hex>/move", torrents.torrent_move, {}),
     ("POST", "/api/library/guess", torrents.guess, {}),
+    ("GET", "/api/archive/search", torrents.archive_search, {}),
     ("GET", "/api/torrents/<tid:hex>/files", torrents.torrent_files, {}),
     ("POST", "/api/torrents/<tid:hex>/action", torrents.torrent_action, {}),
     (("GET", "HEAD"), "/media/<tid:hex>/<idx:int><rest:tail>", media.torrent_stream, {}),

@@ -100,6 +100,8 @@ data class Server(
     val hasSubsGetTask get() = features?.optBoolean("subs_get_task", false) ?: false
     /** How many search engines the user set on the server (`/api/config/search`); 0 = no "Search" button. */
     val searchEngines get() = features?.optInt("search_engines", 0) ?: 0
+    /** The built-in "Internet Archive" search site: `/api/archive/search`, `torrent_url` in POST /api/torrents (agent 1.19+). */
+    val archiveSearch get() = features?.optBoolean("archive_search", false) ?: false
     /** Can install the agent on another computer (`/api/install/code`, agent 1.3+). */
     val canInstall get() = features?.optBoolean("install", false) ?: false
     val canAccessRequests get() = features?.optBoolean("access_requests", false) ?: false

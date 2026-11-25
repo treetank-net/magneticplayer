@@ -16,6 +16,8 @@ docs/     documentation (in Polish for now)
 
 - **Magnets:** tap a `magnet:` link or “Share” it from any app and it goes to Deluge (or Transmission) on the
   computer. A sleeping computer is woken up first. Sequential download by default, so you can start watching early.
+- **Public-domain films:** a built-in Internet Archive search (public domain and Creative Commons) on a missing
+  film's page, in Settings and on the web page; a result downloads only the film file, named with its title and year.
 - **How much is watchable:** for each video, the part downloaded contiguously from the start, in percent and minutes.
 - **After download:** nothing, stop the torrent, or put the computer to sleep. History of requests sent from the phone,
   with “Download again”.

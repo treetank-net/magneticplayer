@@ -232,12 +232,16 @@ private fun MissingRow(c: CatCtx, m: DbTitle) {
 /**
  * D2 "SEARCH": one button per household search site (every kind, subtitles too) with [phrase], opened in the app or
  * the browser as the site is set, and "Set up search sites ›" in the same row; with no site only the link.
+ * [onArchive]: the built-in "Internet Archive (public domain)" site first (agent 1.19+), null on older agents.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun EngineRow(engines: List<SearchEngine>, phrase: String, imdb: String?, onSetUp: () -> Unit) {
+fun EngineRow(engines: List<SearchEngine>, phrase: String, imdb: String?, onSetUp: () -> Unit, onArchive: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (onArchive != null) OutlinedButton(onArchive, Modifier.height(44.dp)) {
+            Icon(Icons.Filled.Search, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.ia_name))
+        }
         engines.forEach { e ->
             OutlinedButton({ openEngine(ctx, e, phrase, imdb) }, Modifier.height(44.dp)) {
                 Icon(Icons.Filled.Search, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(e.name)

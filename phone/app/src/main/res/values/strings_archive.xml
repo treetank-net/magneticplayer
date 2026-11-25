@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The built-in "Internet Archive" search site (agent 1.19+, features.archive_search): ArchiveSearch.kt -->
+<resources>
+    <string name="ia_name">Internet Archive (public domain)</string>
+    <string name="ia_title">Internet Archive: public-domain films</string>
+    <string name="ia_intro">Films you may freely share: public domain or Creative Commons. Only the film itself is downloaded, not the whole item, and it is named with the title and year.</string>
+    <string name="ia_query">Title</string>
+    <string name="ia_any">Also without a stated licence</string>
+    <string name="ia_searching">Searching Internet Archive…</string>
+    <string name="ia_none">Nothing found. Try the original (English) title.</string>
+    <string name="ia_pd">public domain</string>
+    <string name="ia_cc">Creative Commons %1$s</string>
+    <string name="ia_no_licence">no licence stated: check the item page</string>
+    <string name="ia_item_size">whole item %1$s</string>
+    <plurals name="ia_downloads">
+        <item quantity="one">%1$s download</item>
+        <item quantity="other">%1$s downloads</item>
+    </plurals>
+    <string name="ia_page">Item page</string>
+    <string name="ia_download">Download</string>
+    <string name="ia_builtin">Built in · torrents · on every server with agent 1.19+</string>
+    <string name="ia_builtin_hint">Searches archive.org from the server. A result is downloaded like a magnet: only the film file, into the recognised folder.</string>
+    <string name="ia_search">Search</string>
+</resources>

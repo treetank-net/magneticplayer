@@ -166,6 +166,19 @@ fun SearchEnginesScreen(api: Api, onBack: () -> Unit) {
             Text(stringResource(R.string.st4_engines_intro), style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(R.string.st4_engines_where, api.srv.name), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // the built-in Internet Archive site (agent 1.19+): not editable, searched right here too
+            val srv = Servers.get(ctx, api.srv.key) ?: api.srv
+            if (srv.archiveSearch && !srv.isGuest) Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.ia_name), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.ia_builtin), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.ia_builtin_hint), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton({ ArchiveSearch.open(srv.key, "") }) { Text(stringResource(R.string.ia_search)) }
+                }
+            }
             val l = list
             if (l == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             else if (l.isEmpty()) Text(stringResource(R.string.cat_searches_empty), style = MaterialTheme.typography.bodyMedium)

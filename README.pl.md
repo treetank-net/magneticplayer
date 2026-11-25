@@ -16,6 +16,8 @@ docs/     dokumentacja
 
 - **Magnety:** kliknięty `magnet:` albo „Udostępnij” z dowolnej apki trafia do Deluge (albo Transmission) na
   komputerze. Śpiący komputer jest najpierw budzony. Domyślnie pobieranie sekwencyjne, żeby dało się oglądać w trakcie.
+- **Filmy z domeny publicznej:** wbudowane wyszukiwanie w Internet Archive (domena publiczna i Creative Commons) na
+  stronie brakującego filmu, w Ustawieniach i na stronie WWW; wynik pobiera tylko plik filmu, nazwany tytułem i rokiem.
 - **Ile da się już obejrzeć:** dla każdego filmu część pobrana ciągiem od początku, w procentach i minutach.
 - **Akcja po pobraniu** (przy zleceniu albo później): nic, zatrzymaj torrent albo uśpij komputer.
   Do tego historia zleceń wysłanych z telefonu z opcją „Pobierz znowu”.

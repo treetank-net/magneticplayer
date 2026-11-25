@@ -54,10 +54,13 @@ class MagnetActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val magnet = extractMagnet(intent)
+        val archive = ArchivePick.from(intent)  // the Internet Archive search: a .torrent address instead of a magnet
+        val archiveSrv = intent.getStringExtra(ArchivePick.EXTRA_SERVER)
         setContent {
             AppTheme {
                 MagnetDialog(
-                    magnet = magnet,
+                    magnet = if (archive != null) null else magnet,
+                    archive = archive, archiveSrv = archiveSrv,
                     onOpenApp = { tab ->
                         startActivity(Intent(this, MainActivity::class.java).putExtra("tab", tab)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
@@ -80,15 +83,19 @@ private enum class Phase { Working, Done, Error }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () -> Unit) {
+private fun MagnetDialog(magnet: String?, archive: ArchivePick? = null, archiveSrv: String? = null,
+                         onOpenApp: (Int) -> Unit, onClose: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val targets = remember { Servers.all(ctx).filter { it.hasTorrent && !it.isGuest } }
-    // remembered choice, the only torrent server, or null = ask
+    // an Internet Archive item needs an agent that takes a .torrent address (1.19+)
+    val targets = remember { Servers.all(ctx).filter { it.hasTorrent && !it.isGuest && (archive == null || it.archiveSearch) } }
+    // the server that found the archive item, the remembered choice, the only torrent server, or null = ask
     var target by remember {
-        mutableStateOf(Servers.magnetKey(ctx)?.takeIf { k -> targets.any { it.key == k } } ?: targets.singleOrNull()?.key)
+        mutableStateOf(archiveSrv?.takeIf { k -> targets.any { it.key == k } }
+            ?: Servers.magnetKey(ctx)?.takeIf { k -> targets.any { it.key == k } } ?: targets.singleOrNull()?.key)
     }
-    if (target == null && targets.size > 1 && magnet != null) {
-        return MagnetTargetDialog(targets, magnetName(magnet) ?: "torrent", onClose) { k, keep ->
+    val linkName = archive?.label ?: magnet?.let { magnetName(it) }
+    if (target == null && targets.size > 1 && (magnet != null || archive != null)) {
+        return MagnetTargetDialog(targets, linkName ?: "torrent", onClose) { k, keep ->
             if (keep) Servers.setMagnetKey(ctx, k)
             target = k
         }
@@ -106,10 +113,10 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
     var dest by remember { mutableStateOf<DlTarget?>(null) }
     var picking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val name = magnet?.let { magnetName(it) } ?: "torrent"
+    val name = linkName ?: "torrent"
 
     LaunchedEffect(attempt) {
-        if (magnet == null) {
+        if (magnet == null && archive == null) {
             phase = Phase.Error; status = ctx.getString(R.string.media_magnet_no_link); return@LaunchedEffect
         }
         if (!api.configured) {
@@ -121,20 +128,21 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
             // agent 1.5+: recognition and a tagged directory, so the download goes straight to the right place
             if (guess == null && (Servers.get(ctx, api.srv.key) ?: api.srv).libraryGuess) {
                 status = ctx.getString(R.string.media_magnet_guessing)
-                guess = withContext(Dispatchers.IO) { runCatching { api.guess(magnet) }.getOrNull() }
+                guess = withContext(Dispatchers.IO) { runCatching { api.guess(magnet, name = archive?.label) }.getOrNull() }
                 dest = guess?.let { g -> g.pick?.let { g.targets.getOrNull(it) } }
                 if (guess?.let { it.confidence == "low" || dest == null } == true) autoClose = false
             }
             // found from a series page (E1 search sheet): its folder, when the magnet carries the series' title
-            MagnetHint.target(ctx, api.srv.key, magnet, guess?.title)?.let { dest = it }
+            if (magnet != null) MagnetHint.target(ctx, api.srv.key, magnet, guess?.title)?.let { dest = it }
             status = ctx.getString(R.string.media_magnet_sending, api.srv.name)
-            tid = api.addMagnetRetrying(magnet, sequential, after, dest, guess?.raw) { status = it }
+            tid = if (archive != null) api.addTorrentUrlRetrying(archive, sequential, after, dest, guess?.raw) { status = it }
+                else api.addMagnetRetrying(magnet!!, sequential, after, dest, guess?.raw) { status = it }
             phase = Phase.Done
             status = ctx.getString(R.string.media_magnet_added, api.srv.name)
             // no name in the link: the agent recognizes it once the client has the metadata (and moves it when sure);
             // while this card is open it shows what came out
             val id = tid
-            if (id != null && magnetName(magnet) == null && (Servers.get(ctx, api.srv.key) ?: api.srv).libraryGuess) {
+            if (id != null && magnet != null && magnetName(magnet) == null && (Servers.get(ctx, api.srv.key) ?: api.srv).libraryGuess) {
                 autoClose = false
                 status = ctx.getString(R.string.media_magnet_waiting_name)
                 repeat(40) {
@@ -230,7 +238,7 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
                             }
                     }
                 }
-                if (phase == Phase.Error && magnet != null && api.configured) {
+                if (phase == Phase.Error && (magnet != null || archive != null) && api.configured) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(sequential, { sequential = it })
                         Text(stringResource(R.string.media_magnet_sequential), style = MaterialTheme.typography.bodySmall)
@@ -246,7 +254,7 @@ private fun MagnetDialog(magnet: String?, onOpenApp: (Int) -> Unit, onClose: () 
                         }
                         Phase.Error -> {
                             if (!api.configured) TextButton({ onOpenApp(TAB_SETTINGS) }) { Text(stringResource(R.string.media_settings)) }
-                            else if (magnet != null) TextButton({ attempt++ }) { Text(stringResource(R.string.media_retry)) }
+                            else if (magnet != null || archive != null) TextButton({ attempt++ }) { Text(stringResource(R.string.media_retry)) }
                             TextButton(onClose) { Text(stringResource(R.string.media_close)) }
                         }
                     }

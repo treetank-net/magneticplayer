@@ -63,7 +63,7 @@ import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.18.8"
+VERSION = "1.19.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -489,6 +489,8 @@ class App:
                 "task_queue": True,  # agent 1.17+
                 "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
+                # the built-in "Internet Archive" site: GET /api/archive/search, POST /api/torrents {"torrent_url"} (agent 1.19+)
+                "archive_search": True,
                 "library_profiles": list(mp_tasks.PROFILE_NAMES),
                 "player": self.is_screen(),
                 "subs_search": self.subs_available(wait=False),

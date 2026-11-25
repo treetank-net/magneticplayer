@@ -36,7 +36,8 @@ class Jobs:
     def _find(self, tid):
         return next((j for j in self.items if j["id"] == tid), None)
 
-    def add(self, tid, magnet, after):
+    def add(self, tid, magnet, after, name=None, torrent_url=None):
+        """magnet: the link, or None for a .torrent file fetched from `torrent_url` (the Internet Archive search)."""
         if after not in AFTER:
             after = "none"
         with self.lock:
@@ -44,8 +45,10 @@ class Jobs:
             if j is None:
                 j = {"id": tid, "added": time.time()}
                 self.items.insert(0, j)
-            j.update({"magnet": magnet, "name": j.get("name") or magnet_name(magnet), "after": after,
-                      "after_done": False, "finished": None})
+            j.update({"magnet": magnet, "name": name or j.get("name") or (magnet_name(magnet) if magnet else None),
+                      "after": after, "after_done": False, "finished": None})
+            if torrent_url:
+                j["torrent_url"] = torrent_url
             del self.items[300:]
             self._save()
 

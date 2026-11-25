@@ -155,6 +155,13 @@ const T = {
     readySec: (a, b, pct) => `ready to watch: about ${a} of ${b} (${pct}%)`, readyPct: pct => `ready to watch: ${pct}% from the start`,
     noTorrents: "No torrents.", earlier: n => `Earlier requests from the phone (${n})`,
     downloadingAgain: "Downloading again", downloadAgain: "Download again",
+    iaOpen: "Internet Archive (public domain)", iaTitle: "Internet Archive: public-domain films",
+    iaHelp: "Films you may freely share: public domain or Creative Commons. Only the film itself is downloaded, not the whole item.",
+    iaPh: "Title, e.g. Night of the Living Dead 1968", iaSearch: "Search", iaSearching: "Searching Internet Archive…",
+    iaNone: "Nothing found on Internet Archive.", iaAny: " also items without a stated licence",
+    iaPd: "public domain", iaCc: code => "Creative Commons " + (code || ""), iaNoLic: "no licence stated: check the item page",
+    iaItem: size => "whole item " + size, iaDownloads: n => n.toLocaleString(LANG) + " downloads", iaPage: "Item page",
+    iaAdded: name => "Added: " + name,
     libHelp: "Folders are added and removed in the phone app.", unavailable: " — unavailable", folders: "Folders",
     subsList: " · subtitles: ", noVideos: "No videos in this folder.",
     fullscreen: "Fullscreen", exitFullscreen: "Exit fullscreen",
@@ -234,6 +241,13 @@ const T = {
     readySec: (a, b, pct) => `do obejrzenia: ok. ${a} z ${b} (${pct}%)`, readyPct: pct => `do obejrzenia: ${pct}% od początku`,
     noTorrents: "Brak torrentów.", earlier: n => `Wcześniejsze zlecenia z telefonu (${n})`,
     downloadingAgain: "Pobieram znowu", downloadAgain: "Pobierz znowu",
+    iaOpen: "Internet Archive (domena publiczna)", iaTitle: "Internet Archive: filmy z domeny publicznej",
+    iaHelp: "Filmy, które wolno swobodnie udostępniać: domena publiczna albo Creative Commons. Pobiera się tylko sam film, nie cała pozycja.",
+    iaPh: "Tytuł, np. Night of the Living Dead 1968", iaSearch: "Szukaj", iaSearching: "Szukam w Internet Archive…",
+    iaNone: "Nic nie znaleziono w Internet Archive.", iaAny: " także pozycje bez podanej licencji",
+    iaPd: "domena publiczna", iaCc: code => "Creative Commons " + (code || ""), iaNoLic: "brak podanej licencji: sprawdź stronę pozycji",
+    iaItem: size => "cała pozycja " + size, iaDownloads: n => n.toLocaleString(LANG) + " pobrań", iaPage: "Strona pozycji",
+    iaAdded: name => "Dodano: " + name,
     libHelp: "Katalogi dodajesz i usuwasz w apce na telefonie.", unavailable: " — niedostępny", folders: "Katalogi",
     subsList: " · napisy: ", noVideos: "Brak filmów w tym katalogu.",
     fullscreen: "Pełny ekran", exitFullscreen: "Wyjdź z pełnego ekranu",
@@ -460,6 +474,7 @@ function applyInfo() {
   const tb = document.querySelector('nav button[data-tab="torrents"]');
   tb.hidden = !f.torrent;
   if (!f.torrent && tab === "torrents") setTab("library");
+  else if (tab === "torrents" && f.archive_search) Torrents.show();  // the form drawn before /api/info lacked the Internet Archive button
 }
 /** A new token (pairing, access request): role and capabilities right away, not at the next ping. */
 async function refreshInfo() { info = null; await ping(); }
@@ -555,7 +570,48 @@ const Torrents = (() => {
       h("div", { class: "row" }, inp, h("button", { class: "btn primary", onclick: add }, tr("download"))),
       h("div", { class: "row muted", style: "margin-top:8px" },
         h("label", {}, seq, tr("sequential")),
-        h("span", { style: "margin-left:auto" }, tr("afterLabel")), after));
+        h("span", { style: "margin-left:auto" }, tr("afterLabel")), after),
+      // agent 1.19+: the built-in "Internet Archive" search site
+      info?.features?.archive_search ? h("div", { class: "row", style: "margin-top:8px" },
+        h("button", { class: "btn", onclick: () => archive(seq.checked, after.value) }, "🔎 " + tr("iaOpen"))) : null);
+  }
+  /** Internet Archive search (GET /api/archive/search): one "Download" adds the item's .torrent; the agent keeps only
+   *  the film file and names it "Title (Year)". */
+  let iaQuery = "", iaAny = false;
+  function archive(sequential, afterVal) {
+    const inp = h("input", { type: "text", placeholder: tr("iaPh"), value: iaQuery });
+    const any = h("input", { type: "checkbox", checked: iaAny });
+    const out = h("div", {});
+    const search = async () => {
+      iaQuery = inp.value.trim(); iaAny = any.checked;
+      if (!iaQuery) return;
+      put(out, h("p", { class: "muted" }, tr("iaSearching")));
+      try {
+        const r = await api("/api/archive/search?" + new URLSearchParams({ q: iaQuery, ...(iaAny ? { any: 1 } : {}) }));
+        put(out, r.results.length ? r.results.map(x => {
+          const lic = x.licence === "public_domain" ? tr("iaPd") : x.licence === "cc" ? tr("iaCc", x.licence_code) : tr("iaNoLic");
+          const name = x.title + (x.year && !x.title.includes(String(x.year)) ? ` (${x.year})` : "");
+          const dl = h("button", { class: "btn primary", onclick: async () => {
+            dl.disabled = true;
+            const ok = await act(() => api("/api/torrents", { torrent_url: x.torrent_url, title: x.title, year: x.year, sequential, after: afterVal }));
+            if (ok) { toast(tr("iaAdded", ok.name || name)); refresh(); } else dl.disabled = false;
+          } }, tr("download"));
+          return h("div", { class: "list-item row" },
+            h("div", { class: "grow" }, h("div", { class: "name" }, name),
+              h("div", { class: "muted" }, h("span", { class: x.licence ? "ok" : "warn" }, lic),
+                " · " + tr("iaItem", bytes(x.size)) + " · " + tr("iaDownloads", x.downloads) + " · ",
+                h("a", { href: x.page, target: "_blank", rel: "noopener" }, tr("iaPage")))),
+            dl);
+        }) : h("p", { class: "muted" }, tr("iaNone")));
+      } catch (e) { put(out, errBox(e, search)); }
+    };
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+    any.addEventListener("change", search);
+    openDialog(tr("iaTitle"), [h("p", { class: "muted", style: "margin-top:0" }, tr("iaHelp")),
+      h("div", { class: "row" }, inp, h("button", { class: "btn primary", onclick: search }, tr("iaSearch"))),
+      h("label", { class: "muted" }, any, tr("iaAny")), out]);
+    inp.focus();
+    if (iaQuery) search();
   }
   function card(t) {
     const done = t.progress >= 100;
@@ -604,12 +660,13 @@ const Torrents = (() => {
   async function history(present) {
     let jobs = [];
     try { jobs = await api("/api/jobs"); } catch { return null; }
-    const gone = jobs.filter(j => !j.in_client && j.magnet);
+    const gone = jobs.filter(j => !j.in_client && (j.magnet || j.torrent_url));
     if (!gone.length) return null;
     return h("details", { class: "card owner-only" }, h("summary", {}, tr("earlier", gone.length)),
       gone.slice(0, 40).map(j => h("div", { class: "list-item row" },
         h("span", { class: "grow" }, j.name, h("span", { class: "muted" }, " · " + new Date(j.added * 1000).toLocaleDateString(LANG))),
-        h("button", { class: "btn", onclick: () => act(() => api("/api/torrents", { magnet: j.magnet, sequential: true, after: j.after }), tr("downloadingAgain")).then(refresh) }, tr("downloadAgain")))));
+        h("button", { class: "btn", onclick: () => act(() => api("/api/torrents", j.magnet ? { magnet: j.magnet, sequential: true, after: j.after }
+          : { torrent_url: j.torrent_url, title: j.name, sequential: true, after: j.after }), tr("downloadingAgain")).then(refresh) }, tr("downloadAgain")))));
   }
   return {
     show() {

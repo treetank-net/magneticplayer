@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ia_name">Internet Archive (domena publiczna)</string>
+    <string name="ia_title">Internet Archive: filmy z domeny publicznej</string>
+    <string name="ia_intro">Filmy, które wolno swobodnie udostępniać: domena publiczna albo Creative Commons. Pobiera się tylko sam film, nie cała pozycja, i dostaje nazwę z tytułem i rokiem.</string>
+    <string name="ia_query">Tytuł</string>
+    <string name="ia_any">Także bez podanej licencji</string>
+    <string name="ia_searching">Szukam w Internet Archive…</string>
+    <string name="ia_none">Nic nie znaleziono. Spróbuj tytułu oryginalnego (angielskiego).</string>
+    <string name="ia_pd">domena publiczna</string>
+    <string name="ia_cc">Creative Commons %1$s</string>
+    <string name="ia_no_licence">brak podanej licencji: sprawdź stronę pozycji</string>
+    <string name="ia_item_size">cała pozycja %1$s</string>
+    <plurals name="ia_downloads">
+        <item quantity="one">%1$s pobranie</item>
+        <item quantity="few">%1$s pobrania</item>
+        <item quantity="many">%1$s pobrań</item>
+        <item quantity="other">%1$s pobrania</item>
+    </plurals>
+    <string name="ia_page">Strona pozycji</string>
+    <string name="ia_download">Pobierz</string>
+    <string name="ia_builtin">Wbudowana · torrenty · na każdym serwerze z agentem 1.19+</string>
+    <string name="ia_builtin_hint">Szuka w archive.org z serwera. Wynik pobiera się jak magnet: tylko plik filmu, do rozpoznanego katalogu.</string>
+    <string name="ia_search">Szukaj</string>
+</resources>

@@ -646,6 +646,17 @@ class Api(val s: Settings, srv: Server) {
             .optString("id").takeIf { it.isNotEmpty() && it != "null" }
     }
 
+    /** Agent 1.19+: an Internet Archive item by its .torrent address (the agent fetches it, keeps only the film file
+     *  and names it "[title] ([year])"). Slower than a magnet: the agent downloads the .torrent first. */
+    fun addTorrentUrl(pick: ArchivePick, sequential: Boolean, after: String = s.afterDefault,
+                      dest: DlTarget? = null, guess: JSONObject? = null): String? {
+        val b = JSONObject().put("torrent_url", pick.torrentUrl).put("title", pick.title)
+            .put("year", pick.year ?: JSONObject.NULL).put("sequential", sequential).put("after", after)
+        if (dest != null) b.put("root", dest.root).put("sub", dest.sub).put("guess", guess)
+        return JSONObject(call("POST", "/api/torrents", b, 60000))
+            .optString("id").takeIf { it.isNotEmpty() && it != "null" }
+    }
+
     fun librarySearch(q: String): List<LibHit> {
         val a = JSONArray(call("GET", "/api/library/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"), timeout = 30000))
         return List(a.length()) { i ->
@@ -657,8 +668,12 @@ class Api(val s: Settings, srv: Server) {
 
     /** Agent 1.5+: recognition (IMDb index, Wikidata for uncertain ones) and a directory suggestion. */
     /** Recognition of a magnet from its name, or of a torrent already in the client ([torrent], once it has metadata). */
-    fun guess(magnet: String, torrent: String? = null): DlGuess {
-        val body = if (torrent != null) JSONObject().put("torrent", torrent) else JSONObject().put("magnet", magnet)
+    fun guess(magnet: String?, torrent: String? = null, name: String? = null): DlGuess {
+        val body = when {
+            torrent != null -> JSONObject().put("torrent", torrent)
+            magnet != null -> JSONObject().put("magnet", magnet)
+            else -> JSONObject().put("name", name.orEmpty())  // an Internet Archive result: "Title (Year)"
+        }
         val j = JSONObject(call("POST", "/api/library/guess", body, 30000))
         val g = j.optJSONObject("guess") ?: JSONObject()
         val a = j.optJSONArray("targets") ?: JSONArray()
@@ -1129,11 +1144,19 @@ class Api(val s: Settings, srv: Server) {
     /** Adding a magnet with retries: after waking, deluged/deluge-web need a moment. */
     suspend fun addMagnetRetrying(uri: String, sequential: Boolean, after: String, dest: DlTarget? = null,
                                   guess: JSONObject? = null, onStatus: (String) -> Unit): String? =
+        retrying502(12, onStatus) { addMagnet(uri, sequential, after, dest, guess) }
+
+    /** The same for an Internet Archive item; fewer tries, as a 502 may also be archive.org not answering. */
+    suspend fun addTorrentUrlRetrying(pick: ArchivePick, sequential: Boolean, after: String, dest: DlTarget? = null,
+                                      guess: JSONObject? = null, onStatus: (String) -> Unit): String? =
+        retrying502(4, onStatus) { addTorrentUrl(pick, sequential, after, dest, guess) }
+
+    private suspend fun retrying502(tries: Int, onStatus: (String) -> Unit, add: () -> String?): String? =
         withContext(Dispatchers.IO) {
             var last: ApiException? = null
-            repeat(12) { attempt ->
+            repeat(tries) { attempt ->
                 try {
-                    return@withContext addMagnet(uri, sequential, after, dest, guess)
+                    return@withContext add()
                 } catch (e: ApiException) {
                     if (e.code != 502 && e.code != 0) throw e
                     last = e

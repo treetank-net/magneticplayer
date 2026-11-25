@@ -157,6 +157,35 @@ class DelugeBackend:
             tid = m.group(1).lower() if m else None
         return tid
 
+    def add_torrent(self, data, filename, sequential, dest=None, priorities=None, renames=None, name=None, tid=None):
+        """A .torrent file (bytes). Added paused with `priorities` (Deluge file_priorities, 0 = skip) already in the add
+        options, so nothing unwanted starts downloading from a fast web seed; checked and set again if Deluge didn't
+        take them, the files renamed (`renames`: [(index, old path, new path)]), then resumed. `name`: the name shown in
+        the client. `tid`: the info hash, to return the torrent already in the client instead of an error."""
+        import base64
+        if tid and self.call("core.get_torrent_status", tid, ["name"]):
+            return tid
+        opts = {"sequential_download": bool(sequential), "prioritize_first_last_pieces": bool(sequential), "add_paused": True}
+        if dest:
+            opts["download_location"] = dest
+        if priorities:
+            opts["file_priorities"] = list(priorities)
+        if name:
+            opts["name"] = name
+        new = self.call("core.add_torrent_file", filename, base64.b64encode(data).decode(), opts) or tid
+        if not new:
+            raise ApiError(T("the torrent client didn't take the torrent", "klient torrentów nie przyjął torrenta"), 502)
+        try:
+            if priorities:
+                st = self.call("core.get_torrent_status", new, ["file_priorities"]) or {}
+                if list(st.get("file_priorities") or []) != list(priorities):
+                    self.call("core.set_torrent_options", [new], {"file_priorities": list(priorities)})
+            if renames:
+                self.call("core.rename_files", new, [[i, path] for i, _old, path in renames])
+        finally:
+            self.call("core.resume_torrent", [new])
+        return new
+
     def move(self, tid, dest):
         self.call("core.move_storage", [tid], dest)
 
@@ -254,6 +283,32 @@ class TransmissionBackend:
         t = r.get("torrent-added") or r.get("torrent-duplicate") or {}
         return t.get("hashString")
 
+    def add_torrent(self, data, filename, sequential, dest=None, priorities=None, renames=None, name=None, tid=None):
+        """A .torrent file (bytes): added paused with the skipped files unwanted, renamed, then started. Transmission
+        renames one path component at a time: the file's name, then its top folder."""
+        import base64
+        args = {"metainfo": base64.b64encode(data).decode(), "paused": True}
+        if dest:
+            args["download-dir"] = dest
+        if sequential:
+            args["sequential_download"] = True  # Transmission >= 4.1, older versions ignore it
+        if priorities:
+            args["files-unwanted"] = [i for i, p in enumerate(priorities) if not p]
+        r = self.call("torrent-add", args)
+        added = r.get("torrent-added")
+        new = (added or r.get("torrent-duplicate") or {}).get("hashString") or tid
+        if added and new:
+            try:
+                for _i, old, path in renames or []:
+                    old_parts, new_parts = old.split("/"), path.split("/")
+                    if new_parts[-1] != old_parts[-1]:
+                        self.call("torrent-rename-path", {"ids": [new], "path": old, "name": new_parts[-1]})
+                    if len(old_parts) == len(new_parts) == 2 and new_parts[0] != old_parts[0]:
+                        self.call("torrent-rename-path", {"ids": [new], "path": old_parts[0], "name": new_parts[0]})
+            finally:
+                self.call("torrent-start", {"ids": [new]})
+        return new
+
     def move(self, tid, dest):
         self.call("torrent-set-location", {"ids": [tid], "location": dest, "move": True})
 
@@ -318,6 +373,9 @@ class NoBackend:
         return []
 
     def add_magnet(self, uri, sequential, dest=None):
+        raise ApiError(T("this server doesn't download torrents", "ten serwer nie pobiera torrentów"), 409)
+
+    def add_torrent(self, data, filename, sequential, dest=None, priorities=None, renames=None, name=None, tid=None):
         raise ApiError(T("this server doesn't download torrents", "ten serwer nie pobiera torrentów"), 409)
 
     def move(self, tid, dest):

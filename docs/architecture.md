@@ -27,7 +27,8 @@ pipe instead of a unix socket.
 | `mp_core.py` | shared basics with no agent dependencies: config load/save, `log`, `ApiError`, `WEB_DIR`/`APK_DIR`, `apk_version`, `lan_ip` |
 | `mp_routes.py` | the route table: `(method, pattern, handler, options)` rows with typed `<name:type>` parameters, public rows (no token) first; `call("x.y", "param")` points a row straight at an `App` method and is resolved at startup, so a route pointing at nothing stops the agent from starting |
 | `mp_api_*.py` | route handlers by topic, `fn(req, app, *, method, p, q, qd, **params)`: `system` (ping, info, power, agent update), `access` (pairing, access requests, install scripts, OAuth/MCP), `media` (streams, tickets, variants), `player`, `torrents`, `library`, `tasks`, `subs`, `catalog`, `config`, `watch` (watch state from phones, 1.18+) |
-| `mp_torrents.py` | Deluge and Transmission backends (and `NoBackend`), computing "how much can be watched", video durations |
+| `mp_torrents.py` | Deluge and Transmission backends (and `NoBackend`): magnets, `.torrent` files with file priorities and renames (`add_torrent`), computing "how much can be watched", video durations |
+| `mp_archive.py` | the built-in "Internet Archive" search site (agent 1.19+): archive.org search, fetching an item's `.torrent` (archive.org only), a minimal bencode reader (file list, info hash), choosing the one video file, the "Title (Year)" name |
 | `mp_mpv.py` | mpv control over its IPC socket / named pipe, choosing the audio track |
 | `mp_power.py` | `SleepGuard` (keeps the computer awake while something plays or downloads), poweroff and suspend, the `POWER`/`AUTO_UNLOCK` settings set by `App` |
 | `mp_jobs.py` | history of jobs sent from the phone and the after-download action (`none` / `stop` / `suspend`) |
@@ -176,6 +177,28 @@ Plan for the next steps (magnet → folder by tag, tidying up, covers): `plan-li
 3. `POST /api/torrents` with `magnet`, `sequential` and `after`. The agent adds the torrent to Deluge with
    `sequential_download` and `prioritize_first_last_pieces` and records the job in `jobs.json`.
 4. The app shows the "When downloaded" chips and closes itself after a moment.
+
+### Internet Archive → download (agent 1.19+)
+A built-in search site next to the household's own (`features.archive_search`): the first button in a missing
+film's "SEARCH" row (D2), a card in Settings › Search sites (D4) and "Internet Archive (public domain)" in the web
+page's Downloading tab.
+1. `GET /api/archive/search?q=Title Year`: the agent asks archive.org's `advancedsearch.php` for `mediatype:movies`
+   items with those title words and (by default) a stated licence, keeps those with an archive torrent, puts the year
+   first, otherwise by downloads. The app shows title (year), licence (public domain / Creative Commons code / none),
+   the whole item's size, downloads and "Item page".
+2. "Download" opens the same `MagnetActivity` card as a magnet (`ArchivePick` in the intent instead of `magnet:`;
+   the server that searched is the target when it has a torrent client): wake, recognition from the name
+   "Title (Year)" (`/api/library/guess {"name"}`), folder, "Change", after-download chips.
+3. `POST /api/torrents {"torrent_url", "title", "year", …}`. A magnet is never used: archive.org serves through HTTP
+   web seeds that are listed only in the `.torrent` (a magnet built from one found no peers and never got the
+   metadata). The agent fetches the `.torrent`, picks the one video file (h.264 first by archive.org's file formats, then
+   the tallest picture and the largest; without them the largest `.mp4`, else the largest `.mkv`/`.avi`/`.ogv`; never the ISO, thumbnails or `_512kb` copies: a 5 GB item held a 0.6 GB film), adds it to
+   Deluge **paused** with `file_priorities` already in the add options (setting them 2 s after adding was too late
+   for a fast web seed), checks they took, renames the file to `Title (Year)/Title (Year).ext` (`core.rename_files`)
+   and only then resumes. Deluge shows the torrent under that name (`name` option). Transmission: `metainfo`,
+   `files-unwanted`, `torrent-rename-path`.
+4. The job keeps `torrent_url`, the name and the recognition (`guess`), so "Change" teaches the folder memory as
+   for a magnet, and the web page's "Download again" works.
 
 ### How much can be watched
 From `core.get_torrent_status` the agent takes `pieces`, `piece_length` and `files[].offset`. `contiguous_ready`
@@ -609,6 +632,8 @@ a token anyway.
   `data-i18n-placeholder`. `<html lang>` and the `Accept-Language` header in API requests are set to the same
   language.
 - The subtitle dialog works as in the app (asynchronous job, progress, "That's enough").
+- Downloading tab, agent 1.19+: "Internet Archive (public domain)" opens a search dialog; "Download" posts the
+  result's `torrent_url` with the sequential and after-download choices of the magnet form.
 - The player is a `<video>` with WebVTT subtitles (`/sub?…&vtt=1`).
 - The DOM is built with the helper `put(el, ...children)`, which flattens arrays and skips `null`. A bare
   `replaceChildren` with an array printed "null[object HTMLDivElement]".
@@ -651,7 +676,8 @@ agent errors come back in the same language.
 | `SubsSheet.kt` | the subtitle sheet, one for the player (CC), the title card and the Remote: languages (tap = the language's version in use on, › = its versions), "Download: <language>" for the user's languages that are missing (searches that language, downloads the best results until one fits, at most 3) and "another language…"; one language: the versions on the computer (tap = it becomes the one in use, `POST /api/subs/default`), built-in tracks, and a search in that language where results the user already has are marked "you have these" and picked without downloading |
 | `PlayerActivity.kt` | the player on the phone; a series played from the catalog carries the following episodes (ExoPlayer's ⏭ opens the next one: the ForwardingPlayer reports "next" as available and turns it into `playNext()`; our actions are icons in ExoPlayer's style in its bottom bar before CC: computer screen, open in VLC, with a tooltip on a long press; the top bar holds only the title and the reserve; in the last 90 s a card bottom right, independent of the controls, checked every second by position, not only by the "ended" event; a 10 s countdown with Play now / Cancel from the end of the file, or from the credits when known, standing while paused; seeking back hides the card; each episode opens a new player; an episodes button in the bottom bar (series, or a numbered episode, in a library folder: `Api.episodes` of the catalog series folder or the video's folder, the copy kept on the phone offline) opens `EpisodeSheet`, the video paused while it is open); the title is the recognised name, from the phone's catalog copy (`libraryTitle`) and then from the agent (`GET /api/media/title`, agent 1.18+), as on mpv and the Remote; the CC button is ours (ExoPlayer's is hidden, because it is disabled when a video has no subtitles) and opens `SubtitlesSheet` over the player with Off and the video's own tracks added; the film pauses while the sheet is open, and also while ExoPlayer's gear menu (audio track, speed) is open: that popup takes the window focus, so playback resumes when the focus comes back; a picked file reloads the video at the same position with that file as the default track; a new file is not added to a downloaded copy's saved subtitles); the subtitles picked last are remembered (a language or Off) and the next video starts with them; when that language is missing (no file, no embedded track) the player gets it (`fetchSubtitles`, the same as "Download: <language>") on its own in the folder where it was picked (a series, also after skipped episodes), and elsewhere shows a bar over the picture "No subtitles in <language> — Download / No" for 12 s without pausing; from halfway through an episode the next one's subtitles in that language are fetched ahead, the same provider first; "Sync while watching" in the sheet puts ±0.1/±0.5 s, Reset and Done buttons over the picture, the cues are drawn by the app from the file with the pending shift so the effect is visible at once, and 8 s without a tap saves it (`POST /api/subs/shift`); that shift is remembered per folder and provider and applied to subtitles downloaded without the user there) |
 | `AudioSheet.kt` | the audio sheet (a button next to CC in the player, "Audio" in the mpv Remote): tracks grouped by language with their kind read from the title (lector, dubbing, original, audio description, commentary), channels and codec; a pick is remembered as a kind and a language (`AudioPref`), per folder (a series) and in general, and the next video picks the matching track (`pickAudio`); a video sent to mpv carries it as `audio` in `/api/player/open` (agent 1.13.3+, `pick_audio` in the agent), and a Chromecast version is prepared with it (`audio` in `/api/media/convert`, agent 1.14+); the cast card names the version's track by language and kind and offers preparing it again for the track the choice picks (agent 1.18+ `audio_want` / `variant.audio_match`, older agents: by language only). A Chromecast given the original file, and DLNA, play the file's default track |
-| `MagnetActivity.kt` | handling magnets |
+| `MagnetActivity.kt` | handling magnets, and Internet Archive results (`ArchivePick`) with the same card |
+| `ArchiveSearch.kt` | the built-in "Internet Archive" search site (agent 1.19+): `Api.archiveSearch`, the full-screen search (`ArchiveSearchHost` in `MainActivity`), `ArchivePick` handed to `MagnetActivity` |
 | `Updater.kt` | updates from the computer, sharing its own APK |
 | `Access.kt` | access requests: checking on connect (loop in `MainActivity`), a notification with Guest/Member/Decline buttons, `AccessReceiver` |
 | `InstallShare.kt` | the phone as the installer source: an HTTP server for the duration of the install dialog with the agent bundled in the APK (same routes as `mp_install.py`) |

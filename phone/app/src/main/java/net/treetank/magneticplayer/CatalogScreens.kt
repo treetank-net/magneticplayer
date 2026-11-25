@@ -1152,8 +1152,11 @@ private fun MissingScreen(c: CatCtx, imdb: String, why: String?) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.cat_search).uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    EngineRow(engines, phrase, t.imdb, onSetUp = { c.push(Nav.engines()) })
-                    if (engines.isNotEmpty()) Text(stringResource(R.string.d2_phrase, phrase), style = MaterialTheme.typography.bodySmall,
+                    // the built-in Internet Archive site (agent 1.19+): films only, searched by this server
+                    val srv = Servers.get(ctx, c.api.srv.key) ?: c.api.srv
+                    EngineRow(engines, phrase, t.imdb, onSetUp = { c.push(Nav.engines()) },
+                        onArchive = if (srv.archiveSearch && !srv.isGuest && t.kind != "series") { { ArchiveSearch.open(srv.key, phrase) } } else null)
+                    if (engines.isNotEmpty() || (srv.archiveSearch && !srv.isGuest)) Text(stringResource(R.string.d2_phrase, phrase), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -951,7 +951,8 @@ agent's refit queue and job errors, the Kotlin compile check, the string checks,
       that row; another language under "Download in another language…"), a shift (under the timing row). Plain words,
       "Details" folds the agent's `detail`, "Retry" repeats it. "Download: <language>" whose every try failed says
       why instead of "No subtitles found".
-- [ ] 3. In the player, a download started in the sheet goes on after the sheet closes: a line over the picture
+- [x] 3. (2026-11-25, Pixel, v1.261125.1933: "Checking 1 of 3…", "Downloading…", "Downloaded. Fitting…", then "none of
+      the subtitles found fit well… on anyway", in Polish) In the player, a download started in the sheet goes on after the sheet closes: a line over the picture
       with a spinner ("Searching…", "Checking 1 of 3…", "Downloading…", "Fitting…"), then for 6 s how it ended
       ("Subtitles on, they fit your copy", "… they line up with your copy", "… may not fit", "Not fitted yet: the
       film is still downloading…", or "Couldn't download these subtitles: …"); the new file is switched on and its
@@ -967,6 +968,11 @@ agent's refit queue and job errors, the Kotlin compile check, the string checks,
       "don't fit your copy", "fitted once the film finishes downloading", plus "shifted by hand -1.0 s".
 - [ ] 7. Web page: a download shows "Downloading…" / "Fitting…" on the result, then "Downloaded: <name> · <fit in
       words>", or the error with "Details" and "Try again".
+- [ ] 8. Bug found 2026-11-26 (Pixel, v1.261125.1933): in the player, "Search online" stayed on "Connecting to the
+      computer…" for ever. The agent got the search (POST /api/subs/search) but the sheet's progress loop waited for the
+      main window to be visible (`MainVisible`, false while the player is in front), so it never asked for the job.
+      Now it waits for its own screen (player or main window). Check: in the player, open subtitles, search online:
+      progress and results appear; the same from the main window.
 - [idea] Not built, for the owner to decide: "Cancel" for a download (a row's cancel and stopping the agent's job);
   carrying a shift by hand to a newly downloaded version of the same film (only "clearly right" when it is the same
   subtitles, which the agent already reuses; for other subtitles the old shift may be wrong, so nothing is carried:
@@ -1069,7 +1075,79 @@ name as clear interface text on a dark bar at the bottom of the card.
       clean poster (the title is printed next to or under it there)
 - [ ] the "PL audio" badge and the "on this phone" mark stay visible; light and dark theme
 
+## Internet Archive: built-in public-domain search (agent 1.19.0 + the next app)
+
+A built-in search site for legal films (public domain / Creative Commons) from archive.org, added by the item's
+`.torrent` (web seeds), never a magnet. Checked so far: the search endpoint on a throwaway agent against the real
+archive.org (Night of the Living Dead, Sintel, Big Buck Bunny), the file choice on four real `.torrent` files, the
+add sequence against a stub Deluge, Kotlin compile, string checks and the web page's JS syntax. Not yet on a real
+Deluge, phone or browser:
+- [ ] missing film's page (D2, e.g. Night of the Living Dead 1968 from the library search): "Internet Archive (public
+      domain)" is the first button in SEARCH (also with no own search sites; not on a series); it opens the search
+      with "Title Year" filled in and results already listed
+- [ ] results: title (year), licence line (public domain / Creative Commons BY 3.0 / "no licence stated" in red with
+      "Also without a stated licence" on), "whole item X GB · N downloads", "Item page" opens archive.org; "Nothing
+      found" with a Polish-only title; Polish UI texts and plural forms of downloads
+- [ ] Settings › Search sites: the built-in card (not editable) with "Search" opening an empty search
+- [ ] "Download": the usual magnet card on the server that searched (wake, recognised folder, "Change", after
+      download); the search stays open behind it
+- [ ] on Deluge: the torrent appears as "Night of the Living Dead (1968)", **only one file wanted** from the start
+      (Deluge file list: the ISO, OGV, MP3 and thumbnails "Skip"; the network graph doesn't show the ISO downloading
+      in the first seconds), download speed from the archive.org web seeds without any peers
+- [ ] on disk: `<library folder>/Night of the Living Dead (1968)/Night of the Living Dead (1968).mp4`, no leftover
+      `night_of_the_living_dead_dvd/` folder (only Deluge's hidden `.parts` file may appear); the catalog shows the
+      film with the year 1968, and the subtitle search finds the 1968 film, not the 1990 / 2006 ones
+- [ ] watching while downloading works (sequential download with a web seed)
+- [x] real Deluge, through the API (2026-11-26, jmpc, agent 1.19.0 hand-deployed; not yet from the app or the web
+      page): Duck and Cover (1951), 23 files in the item, only the chosen one downloaded, renamed to
+      `Duck and Cover (1951)/Duck and Cover (1951).mp4`, from the archive.org web seeds in about a minute. Not sure
+      of the folder, so it went to the client's default folder. Leftovers: an old-name folder with two empty
+      (0-byte) files, and a few small files sharing pieces with the film (a few hundred KB)
+- [x] the codec decides, not the extension (2026-11-26, jmpc): the first pick of Duck and Cover was the largest
+      `.mp4`, an old MPEG-4 Part 2 upload ("HiRes MPEG4", 320x240) that phones play badly; with the item's file
+      formats it now takes the h.264 copy (368x480, Main, 53 MB). Night of the Living Dead and Sintel pick as before
+- [ ] "Change" moves it and the folder memory learns the choice; the job history shows the name; adding the same
+      item twice returns the same torrent without an error
+- [ ] web page, Downloading tab: "Internet Archive (public domain)" dialog, search, "Download" with the sequential
+      and after-download choices of the magnet form; the download lands in the recognised folder when the agent is
+      sure; "Download again" in the history for an archive item; English and Polish
+- [ ] errors in plain words: no torrent client (409), item without a video file (422), archive.org down (502)
+- [ ] Transmission backend (if any server uses it): `files-unwanted` and the rename work
+
 ## Noted wishes
+- [todo] Internet Archive: the owner picks the file (2026-11-26). An item often has no good copy: Duck and Cover's
+  h.264 copies are 368x480 without the aspect ratio (shown narrow, should be 4:3), the 4:3 ones are old MPEG-4 Part 2
+  or Ogg. So "Download" lists the item's video files (format, codec class, resolution, size; the automatic choice
+  preselected; a note on a portrait picture or an old codec) and the owner chooses; a wrong aspect is then fixed by a
+  re-encode, which needs a "display as 4:3 / 16:9" option (and re-encoding a seeding torrent's file must leave the
+  original for the client).
+- [todo] Subtitle timing with cuts, from Whisper (the owner, 2026-11-25/26; tried by hand on Night of the Living Dead
+  1968, archive.org's DVD copy). Every subtitle found for it was off by steps, not by a steady drift: the copy is cut
+  differently (steps of 1-9 s at about 20, 24, 39, 59, 77 min). The speech-detection fit (`mp_subsync`) can't see
+  that, and on an old mono film it confuses music and radio with dialogue. What worked, checked against five lines
+  the owner timed by ear (+-1 s): all within 1.4 s except one quiet line (-2.4 s), "ideal, good enough":
+  - faster-whisper `small.en` word timestamps; the first words of each subtitle line matched to the heard words
+    (within -60..+10 s); a piecewise-constant offset over the matched lines (Viterbi, a penalty per change), a change
+    placed in the largest gap between two matched lines, overlaps trimmed (no two lines on screen at once);
+  - pitfalls met: faster-whisper's `vad_filter` put words 5-6 s early where speech was sparse (use
+    `vad_filter=False`); decoding the whole audio track at once lost ~15 s spread over the film (AAC frames that
+    decode to nothing), so times drifted: decode with `-af aresample=async=1:first_pts=0` (or cut short pieces with
+    `-ss`); PyAV in faster-whisper 1.2.1 fails (`metadata_errors`): pass a numpy array;
+  - speed: laptop CPU (4 threads, int8) ~6x real time; jmpc GTX 970 (float32) 12-18x: the whole film in 7 min, a
+    dozen one-minute pieces in under a minute. CTranslate2 4.x no longer runs on Maxwell ("invalid device ordinal");
+    3.24 (CUDA 11, faster-whisper 0.10) does;
+  - plan: run it when the normal fit is unsure and the film is identified (title + year), on pieces where the
+    subtitles have speech; the owner's own sync points (+-1 s) decide where a cut goes when Whisper heard nothing.
+- [todo] Subtitles when none exist anywhere (2026-11-26, Duck and Cover 1951 from archive.org): OpenSubtitles had
+  150 results for the words "duck" and "cover" (The Mighty Ducks, Duck Amuck, Cover-Up…), none for this film, so
+  "no subtitles" was right. Two sources then: Whisper transcribing the film itself (English films; a 9-min film is
+  ~30 s on jmpc's GPU), and for archive.org items their own speech-recognition subtitles in the item
+  (`<id>.asr.srt`), which the archive.org add could fetch along with the film.
+- [todo] Identify the film from the library catalog before searching subtitles (the owner, 2026-11-25): the search
+  mixed several films of the same title (1968, 1990, 2006 3D, a RiffTrax edition) because the year was lost (the
+  folder name came from the .torrent). Keep title/year from the add, filter by IMDb id, ask "which film?" when
+  unsure ("Recognised as … · Change"), rank commentary/3D/other editions last, and when nothing fits offer another
+  search instead of switching on a bad file.
 - [todo] Encoder speed as a choice with known effects (the owner, 2026-11-23): a re-encode/archive job lets one pick
   faster/slower (x265 preset, SVT-AV1 preset, VVenC preset) and shows, before starting, what each costs: size vs the
   source, hours of encoding, and quality (VMAF) per source kind, from a measured table shipped with the agent (codec

@@ -529,6 +529,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     ) { sheet = false }
 
     InAppBrowserHost()  // search engines opened "in the app" (D4)
+    ArchiveSearchHost()  // the built-in "Internet Archive" search site (agent 1.19+)
 
     suspendSrv?.let { s ->
         SuspendDialog(s, onConfirm = {
