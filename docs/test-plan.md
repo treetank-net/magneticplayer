@@ -856,6 +856,86 @@ the scope bar shows the agent's label; nothing appears on an agent without `jobs
       download), and a file that needs another frame rate is rescaled without a shift.
 - [ ] "Fit to the film" with "set aside" sets aside only the really unfitting files.
 
+## Subtitle download fails with "Object of type bool_ is not JSON serializable" (next agent)
+
+Reported 2026-11-25 on a film from the library, downloaded while it was being played (the torrent was still
+downloading). Two bugs in a row:
+
+1. The first download's fit failed ("no speech found": the video was not complete yet), so the file had no assessment.
+   A shift by hand in the player then stored only `{"manual": …}`, and `GET /api/subs/list` read `r["verdict"]`:
+   KeyError, 500 for every list of that film's subtitles from then on (the player lost its subtitles). Fixed in
+   `mp_api_subs.subs_list`: `fit` carries whichever of `verdict`, `z`, `manual` the assessment has (`manual` was
+   documented in `api.md` but never sent; the app already reads it).
+2. A later download fitted "weak" (agent 1.18.4: lines up where it is, z 3–6): `align()` compared a numpy offset,
+   so `weak` was `numpy.bool_`; `Store._remember` failed in `json.dump` (the job error the app showed), left the bad
+   entry in memory, and every later save of `subsync.json` (any fit or shift, on any film) failed until a restart.
+   Fixed in `mp_subsync.align` (plain `bool`/`float`), with `mp_core.json_default` as a safety net in
+   `Handler.send_json` and `Store._save` (numpy scalars become plain values).
+
+- [x] Offline on jmpc (2026-11-25, the agent's own python and numpy 1.26): the old expression reproduces the exact
+      error; the fixed `align()` on that film's subtitles returns `weak: True` as a plain bool and `json.dumps` works.
+- [x] Via the API on jmpc after deploy (2026-11-25, agent restarted): `subs/list` of that film is 200 with
+      `fit.manual`; a download of English subtitles (first hash-matched result) finished with fit `weak`, verdict
+      "good", the previous default (shifted by hand) moved to `Subtitles/` keeping its `manual`; `subsync.json` saved.
+- [ ] Phone: the subtitle sheet of a film shifted by hand shows the shift; a download that fits "weak" shows "fits".
+- [idea] Owner, 2026-11-25: the first download happened during playback; while it was still downloading/fitting he
+      tried to adjust the subtitles in the player and it felt bad; afterwards the subtitles were missing or late.
+      The journal shows no race: the download (and its failed fit) ended at 18:17, the shift by hand came at 18:21,
+      and the "missing" subtitles were bug 1 above. See "Subtitles UX review" below.
+
+## Subtitles UX review (from the code, 2026-11-25; not tried on the phone yet, nothing built)
+
+Read: `SubsSheet.kt`, the subtitle parts of `PlayerActivity.kt`, `server/web/index.html` (search, download, player),
+`mp_api_subs.py`. For the owner to decide; a hands-on pass on the phone comes later.
+
+Errors and silent failures
+
+- [idea] A failed subtitle list is invisible. The player starts with `subsList(...).getOrDefault(emptyList())`, the
+  sheet falls back to the previous list or the downloaded copy's files, `applySubFile` keeps the old list, and the web
+  player has `catch {}`. With the KeyError above the film simply played without subtitles, with no message. Proposal:
+  when the server answers but the list fails, say so ("Couldn't read the subtitle list: …") with "Try again".
+- [idea] Errors are shown raw ("Object of type bool_ is not JSON serializable") in one red line at the top of the
+  sheet, which can be scrolled out of view on the language page, with no way to retry except tapping the row again.
+  Proposal: the error on the row that failed, in plain words ("The server couldn't save the subtitles", details
+  folded), with "Try again"; the agent should return a translated message for unexpected errors and log the traceback
+  (today the journal had only `error: KeyError('verdict')` and nothing at all for the download job).
+- [idea] A fit that could not run (verdict `error`, e.g. "no speech found" because the film was still downloading)
+  shows the same toast as a normal "Subtitles on" and no badge. Proposal: "Not fitted: the film isn't complete yet"
+  (or the agent's reason), and the agent fits them again once the torrent finishes (today nobody does; only "Fit to
+  the film" by hand or the task).
+
+A download while the film plays
+
+- [idea] The download lives in the sheet: closing the sheet (Close, tapping outside, the back arrow on the language
+  page, or "Sync while watching", which closes the sheet) cancels the app's polling. The agent finishes the download
+  and makes it the default, but the player is never told: the film keeps the old (or no) subtitles and there is no
+  message. Proposal: the download continues in the player's scope after the sheet closes, with a small status chip
+  over the picture ("Downloading English subtitles… / Fitting… / On, fits"), and the new file is switched on when done.
+- [idea] While a download runs, the language page still offers "Sync while watching" and the other versions for the
+  file that is about to stop being the default (the new one becomes the default and the old one moves to
+  `Subtitles/`, keeping its shift by hand). A shift made then applies to the old file, which then disappears from
+  use: that is what "felt bad". Proposal: while downloading, the sync row and the other rows are disabled with
+  "Wait for the download" (or the sync row says which file it will move), and after the download the sheet stays on
+  the language page showing the new file as "in use" so the next step (sync) is on the right file.
+- [idea] Only the "Download: <language>" path (`fetchSubtitles`) shows a cancel; a download picked from the search
+  results has no "Cancel", only a spinner on the row and the phase text. Proposal: a cancel on the row, and the other
+  results greyed but visible (today they are just not clickable, with no hint why).
+- [idea] A manual shift is not carried to a newly downloaded version of the same film (`carryShift` is used only for
+  automatic downloads: the next episode and the remembered language, same provider). After "these were 1 s late,
+  try another version" the new one starts from the fit. Fine when it fits; when its fit is `error` or `unsure`, offer "Apply the same shift (-1.0 s)?".
+
+State shown
+
+- [idea] Live sync bar: the shift is saved after a pause in tapping (`SYNC_IDLE_MS`); a failed save shows a generic
+  "couldn't" toast and the bar is gone, so the change is lost. Proposal: keep the bar with "Not saved, Try again".
+- [idea] The sheet shows the fit only as "fits" / "doesn't fit"; `unsure`, `weak` (fitted by frame rate only) and
+  `error` show nothing, and a file only shifted by hand shows its shift only on the "Sync while watching" row.
+  Proposal: one status line per version: "fits", "fits (timing not checked exactly)", "not checked yet",
+  "shifted by hand -1.0 s".
+- [idea] Web page: the download is synchronous (no `async`, no `fit: "wait"`), so the toast says "Downloaded" before
+  the fit runs, and the fit result never appears; there are no sync controls and no fit badges in the browser.
+  Proposal: use the download job (phases), show the fit result, and at least the ±0.5/±0.1 buttons from the sheet.
+
 ## Suggestions you don't have (G4, agent 1.18.0)
 
 - [x] Discover: under "Because you watched" a row "Because you watched <title>: not on your disks" (PL "Podobne do

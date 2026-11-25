@@ -36,6 +36,7 @@ import threading
 import time
 
 import mp_subs
+from mp_core import json_default
 
 SAMPLE = 100  # values a second
 RATIOS = (1.0, 25 / 23.976, 23.976 / 25, 24 / 23.976, 23.976 / 24, 25 / 24, 24 / 25)
@@ -236,12 +237,14 @@ def align(ref, cs):
         k = int(np.argmax(lags))
         z = float((lags[k] - np.median(lags)) / (lags.std() or 1))
         if best is None or lags[k] > best[0]:
-            best = (float(lags[k]), ratio, lagv[k] / SAMPLE, z)
+            best = (float(lags[k]), ratio, float(lagv[k]) / SAMPLE, z)
     _, ratio, offset, z = best
     # lines up where it is (at most a frame-rate change): it fits, but the weak peak doesn't say exactly how much to
     # shift, so `fit()` applies only the ratio ("weak")
-    weak = ASIS_Z <= z < GOOD_Z and abs(offset) <= ASIS_S
-    return {"ratio": round(ratio, 5), "offset": round(float(offset), 2), "z": round(z, 1), "weak": weak,
+    # plain Python values only: this dict goes into JSON (API, subsync.json), and a numpy scalar there (np.bool_ from
+    # comparing a numpy offset) failed every download whose subtitles came out "weak"
+    weak = bool(ASIS_Z <= z < GOOD_Z and abs(offset) <= ASIS_S)
+    return {"ratio": round(ratio, 5), "offset": round(offset, 2), "z": round(z, 1), "weak": weak,
             "verdict": "good" if z >= GOOD_Z or weak else "bad" if z < BAD_Z else "unsure"}
 
 
@@ -284,7 +287,7 @@ class Store:
     def _save(self):
         tmp = self.path + ".tmp"
         with open(tmp, "w") as f:
-            json.dump(self.rec, f, ensure_ascii=False)
+            json.dump(self.rec, f, ensure_ascii=False, default=json_default)
         os.replace(tmp, self.path)
 
     def get(self, sub_path):

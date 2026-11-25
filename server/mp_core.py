@@ -54,6 +54,14 @@ def log(*a):
     print(time.strftime("%H:%M:%S"), *a, file=sys.stderr, flush=True)
 
 
+def json_default(o):
+    """`default=` for json.dump(s): a numpy scalar (np.bool_, np.float64, … from the speech and fingerprint maths)
+    becomes the plain Python value; anything else is still an error."""
+    if type(o).__module__ == "numpy" and hasattr(o, "item"):
+        return o.item()
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
     if os.path.exists(CONFIG_PATH):

@@ -21,8 +21,12 @@ def subs_list(req, a, qd, **_):
         if x["ext"] == "sub" and mp_subsync.is_text_sub(sp):
             x["ext"] = "srt"  # served converted (/sub): MicroDVD/MPL2/TMPlayer as SubRip
         r = a.subsync.get(sp)
-        if r:  # fitted or assessed before (agent 1.9+): good / unsure / bad for this copy of the film
-            x["fit"] = {"verdict": r["verdict"], "z": r["z"]}
+        # fitted or assessed before (agent 1.9+): good / unsure / bad for this copy of the film; `manual`: the total
+        # shift by hand (1.12.1+). A file only shifted by hand (its fit failed, e.g. the film was still downloading)
+        # has no verdict: that broke the whole list (500)
+        fit = {k: r[k] for k in ("verdict", "z", "manual") if k in r} if r else None
+        if fit:
+            x["fit"] = fit
         src = a.subsources.get(sp)
         if src:  # downloaded by the agent (1.12+): search results it matches are marked "you have it"
             x["source"] = {"provider": src["provider"], "id": src["id"], "release": src.get("release", "")}

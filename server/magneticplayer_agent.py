@@ -41,7 +41,8 @@ import mp_routes
 import mp_i18n
 from mp_i18n import T, bind
 import mp_power
-from mp_core import APK_DIR, CONFIG_DIR, CONFIG_PATH, WINDOWS, ApiError, apk_version, lan_ip, load_config, log, save_config
+from mp_core import (APK_DIR, CONFIG_DIR, CONFIG_PATH, WINDOWS, ApiError, apk_version, json_default, lan_ip, load_config,
+                     log, save_config)
 from mp_mpv import Mpv
 from mp_power import SleepGuard, poweroff, suspend
 from mp_torrents import DelugeBackend, NoBackend, TransmissionBackend, ready_end
@@ -61,7 +62,7 @@ import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.18.6"
+VERSION = "1.18.7"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -619,7 +620,7 @@ class Handler(BaseHTTPRequestHandler):
             log(self.client_address[0], re.sub(r"(token|ticket)=[^&\s\"]+", r"\1=…", fmt % args))
 
     def send_json(self, obj, status=200):
-        body = json.dumps(obj, ensure_ascii=False).encode()
+        body = json.dumps(obj, ensure_ascii=False, default=json_default).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
