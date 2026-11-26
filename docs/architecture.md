@@ -382,9 +382,12 @@ the title's tags, else `fallback`), from `sources` in order: a file next to the 
 kept), a text subtitle track of the file itself (its times are exact), a subtitle service from `providers` (only those
 without a daily limit by default; the `backup` ones, OpenSubtitles, only when none of theirs fits, at most
 `backup_max` = 1 download per language and film, the owner's rule: best files, but its daily limit is spent), each fitted (one shift, then the rhythm, then Whisper when `whisper` is "unsure"
-and the rhythm isn't sure, or "always"); (2) the `target` language ("last": the language the user last picked on
-purpose, by downloading subtitles, making a version the default, or a phone's choice synced later) fitted to that
-baseline. A subtitle file of another language added later (a download, a fit) goes to the baseline too
+and the rhythm isn't sure, or "always"); (2) the other languages fitted to that baseline (1.21.3+, the owner's rule: "the one who downloads
+decides which subtitles come, the one who plays decides most"): first those the player asked for (a phone's
+subtitle language with `GET /api/subs/list?want=`, `sub_lang` of `/api/player/open`, a choice synced from a phone;
+such a request puts the film at the front of the queue and prepares it at once when it's complete), then the
+downloader's (`sub_langs` sent with the torrent), then the `target` language ("last": the language the user last
+picked on purpose, by downloading subtitles, making a version the default, or a phone's choice synced later). A subtitle file of another language added later (a download, a fit) goes to the baseline too
 (`translate: "baseline"`; `"speech"` = the old one-shift fit). State in `subflow.json` (the baseline's starts and cut
 map per video, the last result). All settings: `GET/POST /api/config/subtitles` and the MCP tools
 `get_subtitle_settings` / `set_subtitle_settings`, `subtitle_status`, `prepare_subtitles`.

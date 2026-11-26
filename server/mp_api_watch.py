@@ -44,7 +44,9 @@ def sync(req, a, **_):
             new = mp_subfiles.promote(full, name, a.subsources, a.tasks.torrent_owned, a.subsync.move)
         except (mp_subfiles.FileError, OSError):
             return None
-        a.subflow.chosen(mp_retime.language_of(new or name))  # the language picked last (agent 1.21+)
+        lang = mp_retime.language_of(new or name)
+        a.subflow.chosen(lang)  # the language picked last (agent 1.21+)
+        a.subflow.asked(full, lang, player=True)  # and fitted to this film's baseline if it isn't yet (1.21.3+)
         return new
 
     return req.send_json(a.watchstate.sync(req.device, req.device_name(), b, a.library.roots(), resolve, choose_sub,

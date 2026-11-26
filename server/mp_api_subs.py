@@ -16,6 +16,8 @@ from mp_subs import readable_srt
 # ---- subtitles
 def subs_list(req, a, qd, **_):
     full = a.resolve_ref(qd)
+    if qd.get("want"):  # the player's subtitle language (agent 1.21.3+): prepared first if it isn't there yet
+        a.subflow.asked(full, qd["want"], player=True)
     out = []
     waiting = a.refit_waiting(full)
     for x in sidecar_subs(full):

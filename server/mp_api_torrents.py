@@ -55,6 +55,7 @@ def torrent_add(req, a, **_):
     tid = a.backend.add_magnet(uri, b.get("sequential", True), dest)
     if tid:
         a.jobs.add(tid.lower(), uri, b.get("after", "none"))
+        a.subflow.asked_torrent(tid, b.get("sub_langs"))  # the downloader's subtitle languages (agent 1.21.3+)
         if dest:
             a.jobs.set_meta(tid.lower(), dest=dest, guess=b.get("guess"))
         elif not magnet_name(uri) and a.library.roots():
@@ -94,6 +95,7 @@ def add_archive(a, b):
                                 name, meta["hash"])
     tid = (tid or meta["hash"]).lower()
     a.jobs.add(tid, None, b.get("after", "none"), name=name, torrent_url=url)
+    a.subflow.asked_torrent(tid, b.get("sub_langs"))
     a.jobs.set_meta(tid, **{k: v for k, v in (("dest", dest), ("guess", guess)) if v})
     log("archive.org item added:", tid, ident, "→", dest or "(client default folder)", "file:", chosen["path"])
     return {"id": tid, "path": dest, "name": name, "file": new_path, "size": chosen["size"]}

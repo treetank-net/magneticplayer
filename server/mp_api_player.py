@@ -43,6 +43,7 @@ def player_open(req, a, **_):
         except Exception:  # noqa: BLE001 (a title is a nicety, the film plays anyway)
             title = None
         a.mpv.open(full, title, start=b.get("start"), subs=extra, sub_lang=b.get("sub_lang"), audio=b.get("audio"))
+        a.subflow.asked(full, b.get("sub_lang"), player=True)  # the one who plays decides (agent 1.21.3+)
     return req.send_json({"ok": True})
 
 

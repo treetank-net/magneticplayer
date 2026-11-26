@@ -115,6 +115,7 @@ class SubFlow:
         self.st.setdefault("queue", [])
         self.st.setdefault("base", {})     # real video path → baseline
         self.st.setdefault("done", {})     # real video path → last result
+        self.st.setdefault("want", {})     # real video path → languages asked for it (who downloaded it, who plays it)
         self.busy = False
 
     def _save(self):
@@ -140,6 +141,52 @@ class SubFlow:
     def target(self):
         s = self.cfg
         return s.get("last") if s["target"] == "last" else (s["target"] or None)
+
+    def targets(self, full):
+        """The languages to prepare for this video besides its own: those asked for it (the player's first, then the
+        downloader's), then the setting ("last": a film added from the web page or the client has no downloader's)."""
+        want = [x for x in self.st["want"].get(os.path.realpath(full)) or [] if x]
+        t = self.target()
+        return list(dict.fromkeys(want + ([t] if t else [])))
+
+    @staticmethod
+    def _langs(langs):
+        out = []
+        for x in langs if isinstance(langs, (list, tuple)) else str(langs or "").split(","):
+            x = str(x).strip().lower()
+            if 2 <= len(x) <= 3 and x.isalpha() and x != "off" and x not in out:
+                out.append(x)
+        return out[:3]
+
+    def asked(self, full, langs, player=False):
+        """Someone wants this video with subtitles in `langs`: the one who downloads it (`sub_langs` with the torrent),
+        or, first of all, the one who plays it (`player`: ahead of the downloader's languages and of the queue). A
+        complete video is prepared now (in the background); one still downloading when it completes."""
+        langs = self._langs(langs)
+        if not langs or not self.cfg["auto"]:
+            return
+        real = os.path.realpath(full)
+        busy = self.app.downloading_part(real) if player else True
+        with self.lock:
+            cur = self.st["want"].get(real) or []
+            new = list(dict.fromkeys(langs + cur if player else cur + langs))[:4]
+            changed = new != cur
+            self.st["want"][real] = new
+            if len(self.st["want"]) > 3000:
+                for k in list(self.st["want"])[:500]:
+                    self.st["want"].pop(k)
+            if player and changed and not busy and os.path.isfile(real):
+                if real in self.st["queue"]:
+                    self.st["queue"].remove(real)
+                self.st["queue"].insert(0, real)
+            self._save()
+        self.kick()
+
+    def asked_torrent(self, tid, langs):
+        """`sub_langs` sent with a new torrent: remembered with the job until its files are complete (tick)."""
+        langs = self._langs(langs)
+        if langs:
+            self.app.jobs.set_meta(tid.lower(), sub_langs=langs)
 
     # ---- the baseline of a video
 
@@ -182,10 +229,14 @@ class SubFlow:
                 vids = [root] if os.path.isfile(root) else sorted(
                     os.path.join(d, n) for d, _, ns in os.walk(root) for n in ns
                     if os.path.splitext(n)[1].lower() in VIDEO_EXT)
+                langs = (self.app.jobs.get(t["id"]) or {}).get("sub_langs") or []
                 for v in vids:
                     try:
                         if os.path.getsize(v) >= MIN_SIZE and os.path.realpath(v) not in self.st["queue"]:
                             self.st["queue"].append(os.path.realpath(v))
+                            if langs:  # the downloader's languages, after any the player asked for meanwhile
+                                cur = self.st["want"].get(os.path.realpath(v)) or []
+                                self.st["want"][os.path.realpath(v)] = list(dict.fromkeys(cur + langs))[:4]
                     except OSError:
                         pass
             del self.st["seen"][:-2000]
@@ -332,9 +383,12 @@ class SubFlow:
             self.log("subtitles (auto):", os.path.basename(full), "no baseline:", res.get("baseline_error"))
             return res
         res["baseline"] = {k: base.get(k) for k in ("name", "by", "verdict")}
-        tgt = self.target()
-        if tgt and tgt != base["lang"] and s["translate"] == "baseline":
-            res["target"] = self._target(full, tgt, base)
+        if s["translate"] == "baseline":
+            for tgt in self.targets(full):
+                if tgt != base["lang"]:
+                    r = self._target(full, tgt, base)
+                    res.setdefault("targets", {})[tgt] = r
+                    res.setdefault("target", r)  # the first (most wanted) one, as before 1.21.3
         self._result(full, res)
         self.log("subtitles (auto):", os.path.basename(full), json.dumps(res, ensure_ascii=False, default=str)[:400])
         return res

@@ -1162,6 +1162,13 @@ Deluge, phone or browser:
     (up to the next one) when lines don't overlap: a setting (config / MCP agent), not fixed; (d) machines without a
     GPU keep working: the first analysis is the speech-detection fit, Whisper only where it is available and fast
     enough (measure CPU-only too).
+- [ ] Agent 1.21.3: subtitle languages by person (the owner: "the one who plays decides which subtitles come, the
+  one who downloads too, but the player most"): `sub_langs` with a torrent, `want=` on the subtitle list, `sub_lang` of
+  mpv, a synced choice; the player's languages go first and jump the queue. Verified on jmpc (2026-11-26, API):
+  `GET /api/subs/list?…&want=fr` on Plan 9 prepared French subtitles fitted to the English baseline in ~5 s (one
+  OpenSubtitles download), a second run kept French and Polish. Not exercised: `sub_langs` with a real torrent. App
+  (next release): send the phone's subtitle languages (last choice, then the order in Settings) with every magnet
+  and archive.org download, and `want=` with its subtitle language when it opens a film.
 - [ ] Agent 1.21.2: automatic subtitles take OpenSubtitles only as a backup (the owner: it has the best files, but
   its daily limit is spent; never the first choice): `subflow.backup` (`["opensubtitlescom"]`), at most `backup_max`
   (1) download per language and film, only when nothing from the free services fitted. Found on the way: for the
