@@ -199,6 +199,15 @@ page's Downloading tab.
    `files-unwanted`, `torrent-rename-path`.
 4. The job keeps `torrent_url`, the name and the recognition (`guess`), so "Change" teaches the folder memory as
    for a magnet, and the web page's "Download again" works.
+5. **The last piece (agent 1.21.1+, `mp_iafill.py`).** The pieces where the video touches a neighbouring file of the
+   item (thumbnails, automatic subtitles, derived `.ogv`/`.mp3`) also carry that file's bytes, and archive.org
+   regenerates such files: those pieces never match the torrent's hash, so every such download stopped at 99.7-99.9%
+   for good (3 of 3 tried, 2026-11-26). The agent serves only proved pieces, so a film whose MP4 index sits there
+   didn't open at all, and nothing waiting for a finished download ran. When a wanted file of such a torrent has
+   lacked only its first and/or last piece for 3 minutes, the agent fetches those bytes from the item over HTTPS
+   (Range requests), checks the whole file against the MD5 archive.org lists, and only then counts the file as
+   downloaded (`iafill.json`; the client wrapper reports it complete, and the torrent is paused, since it would keep
+   fetching and rejecting the same piece). Three tries per file; a file that fails stays as it was.
 
 ### How much can be watched
 From `core.get_torrent_status` the agent takes `pieces`, `piece_length` and `files[].offset`. `contiguous_ready`
@@ -343,7 +352,9 @@ its cost being how far its start lands from a speech onset (silence → speech),
 offset only where `jump` (6) lines' worth of evidence says so. Lines that are sound descriptions (`[door slams]`,
 `(laughs)`, `♪`), or begin with one, weigh `desc_weight` (0.3, not zero: such marks can be wrong both ways); the second
 speaker of a two-speaker line with the same start weighs nothing. Silero notices speech ~0.15 s late (`onset_lag`), and
-lines show `lead` early as with Whisper. **Confidence**: the pieces and the lines must agree (`max_disagree`: at most 6%
+lines show `lead` early as with Whisper. The film's language (`original: "auto"`) comes from the sound track's language tag, the title's tags,
+then (1.21.1+) the original language Wikidata gives for the film's IMDb id (P364 with a two-letter code, only when
+there's one) and an archive.org item's `language`, else `fallback`. **Confidence**: the pieces and the lines must agree (`max_disagree`: at most 6%
 of lines more than 1 s apart) and the cost must have a clear minimum (`min_sharp`); otherwise "unsure". A file whose
 whole-film fit is "bad" (another film's subtitles) isn't timed at all. Measured against full-film Whisper (2026-11-26):
 a fast comedy 0.14 s median, a noir 0.21 s, a thriller 0.20-0.24 s with no line over 1 s (also subtitles made for another

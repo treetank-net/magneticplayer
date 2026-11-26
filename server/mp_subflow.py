@@ -17,9 +17,13 @@ starts in the film, its original's cut map: what a translation needs) and the la
 """
 import json
 import os
+import re
 import threading
 import time
+import urllib.request
 
+import mp_archive
+import mp_catalog
 import mp_retime
 import mp_rhythm
 import mp_subs
@@ -164,8 +168,10 @@ class SubFlow:
                 self._save()
                 return
             new = [t for tid, t in complete.items() if tid not in self.st["seen"]]
-            if not new:
-                return
+        if not new:
+            self.kick()  # a queue left by a restart
+            return
+        with self.lock:
             for t in new:
                 self.st["seen"].append(t["id"])
                 root = os.path.join(t["save_path"], t["name"])
@@ -225,15 +231,61 @@ class SubFlow:
         info = self._audio_lang(full)
         if info:
             return info
+        imdb = None
         try:
             known = self.app.catalog.known_for(full) or {}
-            tags = (self.app.cfg.get("title_tags") or {}).get(known.get("imdb") or "", [])
+            imdb = known.get("imdb")
+            tags = (self.app.cfg.get("title_tags") or {}).get(imdb or "", [])
             for t in tags:
                 if isinstance(t, str) and len(t) == 2 and t.isalpha():
                     return t.lower()
         except Exception:  # noqa: BLE001
             pass
+        # untagged sound (most archive.org files, old AVIs): the film's original language, from Wikidata by its IMDb
+        # id (the catalog's, else the title recognised from the folder name), then the archive.org item's metadata
+        for how in (self._wikidata_lang, self._archive_lang):
+            try:
+                code = how(full, imdb)
+            except Exception as e:  # noqa: BLE001 — offline, a service down: the next source
+                self.log("subtitles (auto): film language:", e)
+                code = None
+            if code:
+                return code
         return s["fallback"]
+
+    def _wikidata_lang(self, full, imdb):
+        if not imdb:
+            name = os.path.basename(os.path.dirname(full)) or os.path.splitext(os.path.basename(full))[0]
+            g = self.app.ident.guess(name, [(os.path.basename(full), os.path.getsize(full))])
+            imdb = g.get("imdb") if g.get("confidence") == "high" else None
+        if not imdb or not re.fullmatch(r"tt\d+", imdb):
+            return None
+        cache = self.st.setdefault("olang", {})
+        if imdb not in cache:
+            rows = mp_catalog._sparql('SELECT ?code WHERE { ?film wdt:P345 "%s"; wdt:P364 ?l . ?l wdt:P218 ?code }'
+                                      % imdb, timeout=20)
+            codes = [r["code"]["value"] for r in rows if r.get("code")]
+            cache[imdb] = codes[0] if len(set(codes)) == 1 else None  # several original languages: not sure
+            with self.lock:
+                self._save()
+        return cache[imdb]
+
+    def _archive_lang(self, full, _imdb):
+        real = os.path.realpath(full)
+        for t in self.app.backend.list():
+            top = os.path.realpath(os.path.join(t.get("save_path") or "", t["name"]))
+            if real != top and not real.startswith(top + os.sep):
+                continue
+            url = (self.app.jobs.get(t["id"]) or {}).get("torrent_url")
+            if not url:
+                return None
+            ident = mp_archive.check_url(url)
+            with urllib.request.urlopen(urllib.request.Request(f"https://archive.org/metadata/{ident}/metadata",
+                                                               headers=mp_archive.UA), timeout=20) as r:
+                lang = json.loads(r.read(1 << 20)).get("result", {}).get("language")
+            langs = {mp_catalog.lang2(x) for x in (lang if isinstance(lang, list) else [lang]) if x} - {None}
+            return langs.pop() if len(langs) == 1 else None
+        return None
 
     @staticmethod
     def _audio_lang(full):

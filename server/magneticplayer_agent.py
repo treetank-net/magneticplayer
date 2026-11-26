@@ -60,13 +60,14 @@ from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt, rank_key as subs_rank_key
 import mp_subsync
 import mp_retime
+import mp_iafill
 import mp_rhythm
 import mp_subflow
 import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.21.0"
+VERSION = "1.21.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -98,6 +99,9 @@ class App:
         mp_power.POWER = bool(cfg.get("power", True))
         mp_power.AUTO_UNLOCK = bool(cfg.get("auto_unlock", True))
         self.backend = {"deluge": DelugeBackend, "transmission": TransmissionBackend}.get(cfg["backend"], NoBackend)(cfg)
+        # archive.org torrents stuck on a piece shared with a regenerated file: completed over HTTP (agent 1.21.1+)
+        self.iafill = mp_iafill.IAFill(self, CONFIG_DIR, log)
+        self.backend = mp_iafill.Wrap(self.backend, self.iafill)
         self.mpv = Mpv(cfg)
         self.guard = SleepGuard(self)
         self.library = Library(cfg, lambda: save_config(cfg), self._default_dirs)
@@ -523,7 +527,7 @@ class App:
 
     def _info(self, client_ip, device):
         net = platform.net_info(client_ip)
-        has_torrent = not isinstance(self.backend, NoBackend)
+        has_torrent = not isinstance(self.backend.raw, NoBackend)
         try:
             library = bool(self.library.roots())
         except LibError:

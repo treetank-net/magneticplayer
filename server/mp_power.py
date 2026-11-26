@@ -60,6 +60,7 @@ class SleepGuard(threading.Thread):
                 self.app.jobs.tick(self.app.backend.list(), playing, self.app.machine_action)
                 self.app.place_unnamed()
                 self.app.refit_due()
+                self.app.iafill.tick(self.app.backend.raw)
                 self.app.subflow.tick(self.app.backend.list())
             except Exception as e:  # noqa: BLE001 — a background thread must not die
                 log("SleepGuard:", e)

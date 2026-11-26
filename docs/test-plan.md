@@ -1162,6 +1162,15 @@ Deluge, phone or browser:
     (up to the next one) when lines don't overlap: a setting (config / MCP agent), not fixed; (d) machines without a
     GPU keep working: the first analysis is the speech-detection fit, Whisper only where it is available and fast
     enough (measure CPU-only too).
+- [ ] Agent 1.21.1: archive.org downloads no longer stop at 99.9% (`mp_iafill`): the edge pieces shared with a
+  regenerated file are fetched over HTTP and the file checked by archive.org's MD5. Verified on jmpc (2026-11-26,
+  through the agent's log and API): Bicycle Thieves (1 MB), Plan 9 from Outer Space (110 KB, its start was zeros and
+  the file didn't open) and The Little Shop of Horrors (380 KB, the owner's phone couldn't open it) all matched their
+  MD5, were reported complete and paused, and the automatic subtitles then ran by themselves for all three. Film
+  language from Wikidata / archive.org: Bicycle Thieves (no language tag) got an Italian baseline (rhythm, good) and
+  the Polish file fitted to it. The subtitle queue now resumes after an agent restart. To check: the films open on
+  the phone (The Little Shop of Horrors), by ear: its English subtitles and the Italian / Polish ones of Bicycle
+  Thieves.
 - [ ] Agent 1.21.0: subtitles timed by the rhythm of speech, translations fitted to a baseline, automatic subtitles
   after a download (`mp_rhythm`, `mp_subflow`, `/api/subs/auto`, `/api/config/subtitles`, MCP subtitle settings). The
   owner's rules (2026-11-26): Silero on the whole film when there's no Whisper, for any language; what counts is the
@@ -1175,8 +1184,9 @@ Deluge, phone or browser:
   within 0.4 s of the heard English lines: 69-95% (old fit 42-88%), Night 37% (24%); two wrong-film Polish files (a
   remake, a same-named film) left untouched as "unsure". `POST /api/subs/auto` on Charade: 9 s, English by rhythm
   (100% within 0.4 s), Polish by the "copy" hypothesis (74% within 0.4 s, 98% within 1 s). To check: the flow by
-  itself after a download finishes (a non-English film: language detection, audio track); Carnival of Souls, Shop
-  Around the Corner, Plan 9 (more descriptions, a remake's subtitles); the app reloading a newer subtitle file during
+  itself after a download finishes (done in 1.21.1, see above); Carnival of Souls checked offline (2026-11-26:
+  three English files incl. one for the hard of hearing, all "good", 0.18-0.24 s median against heard words, no line
+  over 1 s against the Whisper-built truth); the app reloading a newer subtitle file during
   playback; a Polish-language film; Windows.
 - [ ] Owner's wish (2026-11-26): a setting that hides sound descriptions (`[door slams]`, `(laughs)`) from the shown
   subtitles, off by default, in config/MCP.
