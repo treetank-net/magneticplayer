@@ -195,7 +195,7 @@ private fun JSONObject.adlWith(k: String, v: Any): JSONObject = JSONObject(toStr
 
 // ---------------------------------------------------------------- shared look
 
-private enum class AdlTone { PLAIN, OK, RUN, AUTO, WARN, ERR }
+private enum class AdlTone { PLAIN, OK, RUN, AUTO, WARN, ERR, SEED }
 
 @Composable
 private fun adlToneColors(t: AdlTone): Pair<Color, Color> {
@@ -208,6 +208,7 @@ private fun adlToneColors(t: AdlTone): Pair<Color, Color> {
         AdlTone.AUTO -> cs.tertiaryContainer to cs.onTertiaryContainer
         AdlTone.WARN -> if (dark) Color(0xFF3E3115) to Color(0xFFFFD580) else Color(0xFFFFF0CC) to Color(0xFF6D4C00)
         AdlTone.ERR -> cs.errorContainer to cs.onErrorContainer
+        AdlTone.SEED -> cs.secondaryContainer to cs.onSecondaryContainer
     }
 }
 
@@ -329,6 +330,7 @@ private fun adlStepTone(kind: String): AdlTone = when (kind) {
     "subs" -> AdlTone.RUN
     "cast_ready" -> AdlTone.OK
     "shrink" -> AdlTone.WARN
+    "seed_end" -> AdlTone.SEED // its own tile: a plain one vanished into the card
     else -> AdlTone.PLAIN
 }
 

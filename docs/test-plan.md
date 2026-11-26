@@ -1202,8 +1202,13 @@ Deluge, phone or browser:
   left the film in place (first run). Bugs found and fixed on the way: unwanted files of an archive.org torrent
   counted as videos, a partial `recipes` setting lost the other kind, step options missing from a hand-written
   recipe, `cast_ready` in place not ending seeding, texts stored only in English, seeding ended twice in one tick.
-- [ ] App: after download screens (stage 2 of `docs/plan-after-download.md`, `AfterDownload.kt`, shown with
-  `features.afterdl`, not for guests), compiled only: Settings → After download (on/off, sources, Films / Series
+- [x] App: after download screens (stage 2 of `docs/plan-after-download.md`, `AfterDownload.kt`, shown with
+  `features.afterdl`, not for guests), seen on the Pixel (2026-11-26, v1.261126.2206, agent 1.23.0, Polish): Settings
+  row and page, Films recipe with tags, shrink screen with the original option, a change saved to the server and
+  restored, a real archive.org run (Duck and Cover into a hidden test folder, test recipe "end seeding: pause") in
+  the Downloads tab and its history; then removed with data and the settings restored. The end-seeding tile had no
+  colour of its own (vanished into the card): fixed after the tag. Not seen: English, templates, warnings, a season
+  row, Retry/Skip/Cancel. Built: Settings → After download (on/off, sources, Films / Series
   episodes recipes), the recipe (template chips, step cards with effect tags, warning box with one-tap fixes,
   up/down, add/remove), one screen per step, the Downloads tab section (runs of the last 24 h, a season as one row
   with counts, refresh every 8 s) and a run's history (timeline, events, Retry / Skip / Cancel). To see on the Pixel:
