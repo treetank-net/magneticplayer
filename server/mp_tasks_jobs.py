@@ -964,3 +964,87 @@ class JobsMixin:
             if items:
                 self.log(f"jobs: downloading subtitles for {len(items)} new files by itself")
                 self._add_task({"kind": "subs_get", **_title("Download subtitles (new files)", "Pobierz napisy (nowe pliki)")}, items)
+
+    # ---- one file for another module (after download, mp_afterdl, agent 1.23+)
+
+    def fact_of(self, full):
+        """(library folder, fact) of one video by its path, probed now when the scan doesn't know it yet; None when the
+        file is gone or outside the library folders."""
+        real = os.path.realpath(full)
+        for r in self._job_roots():
+            base = os.path.realpath(r["path"])
+            if real.startswith(base + os.sep):
+                rel = os.path.relpath(real, base)
+                f = self._fresh_fact(r, rel, os.path.join(r["path"], rel), {}, upgrade=True)
+                return (r, f) if f else None
+        return None
+
+    def one_file_task(self, kind, full, o):
+        """A task of one item for `full`, queued like any other (it waits while somebody watches, survives a restart):
+        kind "compress" (o: quality, encoder, skip_hevc_av1) or "cast_ready" (o: add_aac, subs_to_srt, avi_to_mkv).
+        → {"task": id}, or {"none": reason} when there is nothing to do or it can't be done."""
+        rf = self.fact_of(full)
+        if not rf:
+            return {"none": T("not in a library folder", "poza folderami biblioteki")}
+        r, f = rf
+        base = {"root_id": r["id"], "root": r["index"], "root_name": r["name"], "path": f["rel"],
+                "name": os.path.basename(f["rel"]), "size": f["size"]}
+        torrents = self._torrents()
+        if kind == "cast_ready":
+            opts = {k: o.get(k, True) is not False for k in ("add_aac", "subs_to_srt", "avi_to_mkv")}
+            c = self._cast_need(f, opts, torrents)
+            if not c or c.get("pending"):
+                return {"none": T("nothing to prepare", "nie ma czego przygotować")}
+            if c.get("skip"):
+                return {"none": c["skip"]}
+            t = self._add_task({"kind": "cast_ready", **_title("Ready for Chromecast (after download)",
+                                                                "Pod Chromecasta (po pobraniu)")},
+                               [dict(base, op="cast_ready", **c)])
+            return {"task": t["id"]}
+        if kind != "compress":
+            raise TaskError(f"unknown kind {kind}")
+        mp_media.detect_hevc()
+        enc = self.resolve_encoder(o.get("encoder"))
+        po = {"quality": o.get("quality") or "balanced", "only_high_bitrate": False, "skip_seeding": False,
+              "skip_hevc_av1": o.get("skip_hevc_av1", True)}
+        c = self._pick("compress", f, full, po, {"torrents": torrents, "enc": enc, "check": None})
+        if not c or c.get("ok") or c.get("pending"):
+            return {"none": T("nothing to gain", "nic do zyskania")}
+        if c.get("skip"):
+            return {"none": c["skip"]}
+        info = f["info"]
+        est, work = c["cost"](enc)
+        item = dict(base, op="shrink", est=est, work=work, codec=info["video"].get("codec"),
+                    height=info["video"].get("height"), duration=info["duration"],
+                    bitrate=int(f["size"] * 8 / info["duration"] / 1000), **c["item"])
+        t = self._add_task({"kind": "compress", "encoder_id": enc,
+                            **_title("Compression (after download)", "Kompresja (po pobraniu)")}, [item])
+        return {"task": t["id"]}
+
+    def task_item(self, tid):
+        """The state of a one-item task: {"task", "item", "error", "saved", "est"}, None when it's gone."""
+        with self.lock:
+            t = next((t for t in self.items if t["id"] == tid), None)
+            if not t:
+                return None
+            i = t["items"][0]
+            return {"task": t["state"], "item": i.get("state"), "error": i.get("error"), "saved": i.get("saved", 0),
+                    "est": i.get("est")}
+
+    def one_move_task(self, top, to_root_id, to_sub="", torrent=None):
+        """A one-item move of `top` (a film's folder or a single video, with the files next to it) into a library
+        folder: by the torrent client when `torrent` is still in it (seeding goes on), else renamed or copied, and
+        journalled for the phones like every move. → {"task": id} or {"none": reason}."""
+        real = os.path.realpath(top)
+        r = next((r for r in self.library.roots() if r["exists"] and real.startswith(os.path.realpath(r["path"]) + os.sep)),
+                 None)  # any library folder, hidden ones too: the client's download folder may be one
+        if not r:
+            return {"none": T("not in a library folder", "poza folderami biblioteki")}
+        rel = os.path.relpath(real, os.path.realpath(r["path"]))
+        item = {"op": "move", "root_id": r["id"], "root": r["index"], "root_name": r["name"], "path": rel,
+                "name": os.path.basename(rel), "size": max(tree_size(real)[0], 1), "to_root_id": to_root_id,
+                "to_sub": to_sub, "extra": companions(real) if os.path.isfile(real) else []}
+        if torrent:
+            item["torrent"] = torrent
+        t = self._add_task({"kind": "layout", **_title("Move (after download)", "Przenieś (po pobraniu)")}, [item])
+        return {"task": t["id"]}

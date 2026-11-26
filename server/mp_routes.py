@@ -174,6 +174,10 @@ ROUTES = [
     ("POST", "/api/config/opensubtitles", config.opensubtitles_set, {}),
     ("GET", "/api/config/subtitles", config.subtitles, {}),
     ("POST", "/api/config/subtitles", config.subtitles_set, {}),
+    ("GET", "/api/config/afterdl", config.afterdl, {}),
+    ("POST", "/api/config/afterdl", config.afterdl_set, {}),
+    ("GET", "/api/afterdl", config.afterdl_runs, {}),
+    (("GET", "POST"), "/api/afterdl/<rid:id8>", config.afterdl_run, {}),
 ]
 
 

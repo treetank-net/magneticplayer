@@ -29,7 +29,6 @@ import mp_retime
 import mp_rhythm
 import mp_subs
 import mp_subsync
-from mp_i18n import T
 
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".webm", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".flv", ".ogv"}
 MIN_SIZE = 50 * 1024 * 1024  # samples and extras are left alone
@@ -215,7 +214,9 @@ class SubFlow:
 
     # ---- finished torrents (SleepGuard, every ~20 s)
 
-    def tick(self, torrents):
+    def tick(self, torrents, queue=True):
+        """`queue` False: after download (mp_afterdl) is on and queues videos by its "subs" step; torrents that complete
+        are only marked seen, so switching it off later doesn't treat them as new."""
         if not self.cfg["auto"]:
             return
         complete = {t["id"]: t for t in torrents if t["progress"] >= 100}
@@ -225,7 +226,12 @@ class SubFlow:
                 self._save()
                 return
             new = [t for tid, t in complete.items() if tid not in self.st["seen"]]
-        if not new:
+        if not new or not queue:
+            if new:
+                with self.lock:
+                    self.st["seen"].extend(t["id"] for t in new)
+                    del self.st["seen"][:-2000]
+                    self._save()
             self.kick()  # a queue left by a restart
             return
         with self.lock:
@@ -248,6 +254,41 @@ class SubFlow:
             del self.st["seen"][:-2000]
             self._save()
         self.kick()
+
+    def enqueue(self, full, langs=()):
+        """One video for the queue, with languages wanted besides the setting (after download's "subs" step)."""
+        real = os.path.realpath(full)
+        langs = self._langs(langs)
+        with self.lock:
+            if langs:
+                cur = self.st["want"].get(real) or []
+                self.st["want"][real] = list(dict.fromkeys(cur + langs))[:4]
+            if real not in self.st["queue"]:
+                self.st["queue"].append(real)
+            self._save()
+        self.kick()
+
+    def moved(self, old, new):
+        """A video moved (after download's "move" step): its baseline, result and wanted languages follow it."""
+        old, new = os.path.realpath(old), os.path.realpath(new)
+        with self.lock:
+            for k in ("base", "done", "want"):
+                if old in self.st[k]:
+                    self.st[k][new] = self.st[k].pop(old)
+            self.st["queue"] = [new if x == old else x for x in self.st["queue"]]
+            self._save()
+
+    def pending(self, full):
+        """Whether the video is still queued or being done."""
+        real = os.path.realpath(full)
+        with self.lock:
+            return real in self.st["queue"] or self.busy == real
+
+    def result(self, full):
+        """The last result for the video (with `at`), or None."""
+        with self.lock:
+            r = self.st["done"].get(os.path.realpath(full))
+            return dict(r) if r else None
 
     def kick(self):
         if self.busy or not self.st["queue"]:
@@ -407,7 +448,7 @@ class SubFlow:
         return None
 
     def _make_baseline(self, full, lang, res):
-        a, s = self.app, self.cfg
+        s = self.cfg
         for src in s["sources"]:
             try:
                 if src == "embedded":

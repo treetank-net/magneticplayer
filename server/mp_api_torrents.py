@@ -47,7 +47,9 @@ def torrent_after(req, a, tid, **_):
 def torrent_add(req, a, **_):
     b = req.body()
     if b.get("torrent_url"):
-        return req.send_json(add_archive(a, b))
+        res = add_archive(a, b)
+        a.jobs.set_meta(res["id"], by=req.device)
+        return req.send_json(res)
     uri = (b.get("magnet") or "").strip()
     if not uri.startswith("magnet:?"):
         raise ApiError(T("this isn't a magnet link", "to nie jest magnet link"), 400)
@@ -55,6 +57,7 @@ def torrent_add(req, a, **_):
     tid = a.backend.add_magnet(uri, b.get("sequential", True), dest)
     if tid:
         a.jobs.add(tid.lower(), uri, b.get("after", "none"))
+        a.jobs.set_meta(tid.lower(), by=req.device)  # who downloaded: after download asks only them (agent 1.23+)
         a.subflow.asked_torrent(tid, b.get("sub_langs"))  # the downloader's subtitle languages (agent 1.21.3+)
         if dest:
             a.jobs.set_meta(tid.lower(), dest=dest, guess=b.get("guess"))

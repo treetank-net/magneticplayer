@@ -27,6 +27,7 @@ import time
 import urllib.parse
 
 import mp_media
+import mp_afterdl
 import mp_subflow
 from mp_i18n import T
 
@@ -108,6 +109,16 @@ TOOLS = [
      "null restores the default. Tell the user what you changed.",
      _schema({"section": {"type": "string", "enum": ["subflow", "rhythm", "whisper", "osarchive"]}, "changes": {"type": "object"}},
              ["section", "changes"])),
+    # after download (agent 1.23+)
+    ("get_after_download", False, "The steps the server does by itself with every new video once its download "
+     "finished (also downloads added straight in the torrent client): enabled, sources (app, client, archive), recipes "
+     "(film, series: ordered steps; kinds move, subs {langs, downloader}, cast_ready {mode keep_seeding/in_place, "
+     "add_aac, subs_to_srt, avi_to_mkv}, shrink {min_gb, min_mbps, quality, encoder, skip_hevc_av1}, seed_end {ratio, "
+     "days, min_days, then pause/remove}), effects (what each step costs: ends_seeding, gpu, moves, no_effect), "
+     "templates, and the recent runs with their steps.", _schema()),
+    ("set_after_download", True, "Change after-download settings (see get_after_download): enabled, sources, "
+     "recipes ({film|series: [steps] or a template id}), answer_after_h; null restores a default. Tell the user what "
+     "you changed.", _schema({"changes": {"type": "object"}}, ["changes"])),
     ("subtitle_status", False, "For one video: its baseline subtitles (language, how timed, verdict) and the last "
      "automatic result.", _schema(S, ["root", "path"])),
     ("prepare_subtitles", True, "Run the automatic subtitles for one video now (baseline in the film's language, then "
@@ -343,6 +354,12 @@ poll();
 
     def t_set_subtitle_settings(self, section, changes):
         return mp_subflow.set_settings(self.app, section, changes)
+
+    def t_get_after_download(self):
+        return dict(mp_afterdl.public_settings(self.app.cfg), runs=self.app.afterdl.runs()["runs"][:20])
+
+    def t_set_after_download(self, changes):
+        return mp_afterdl.public_settings(self.app.cfg) if not changes else mp_afterdl.set_settings(self.app, changes)
 
     def t_subtitle_status(self, root, path):
         return self.app.subflow.status(self.app.library.resolve(int(root), path))

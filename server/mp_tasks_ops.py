@@ -76,6 +76,23 @@ def _copy(src, dst, tick):
         pass
 
 
+def _merge_into(src, dst):
+    """Moves what is left in folder `src` into folder `dst` (same relative paths, nothing overwritten), then removes
+    the folders left empty."""
+    for dp, _, names in os.walk(src):
+        for n in names:
+            a = os.path.join(dp, n)
+            b = os.path.join(dst, os.path.relpath(a, src))
+            if not os.path.exists(b):
+                os.makedirs(os.path.dirname(b), exist_ok=True)
+                shutil.move(a, b)
+    for dp, _, _ in sorted(os.walk(src), key=lambda x: -len(x[0])):
+        try:
+            os.rmdir(dp)
+        except OSError:
+            pass
+
+
 class OpsMixin:
 
     def _subs_get(self, i, t):
@@ -312,15 +329,29 @@ class OpsMixin:
             t = next((t for t in be.list() if t["id"] == i["torrent"]), None)
             if not t:
                 raise TaskError(T("the torrent disappeared from the client while moving", "torrent zniknął z klienta w trakcie przenoszenia"))
-            if os.path.realpath(t["save_path"]) == os.path.realpath(dst_dir) and not os.path.exists(src) \
-                    and "moving" not in str(t.get("state", "")).lower():
+            if os.path.realpath(t["save_path"]) == os.path.realpath(dst_dir) \
+                    and "moving" not in str(t.get("state", "")).lower() and not self._torrent_left(be, i["torrent"], src):
                 for e in i.get("extra") or []:  # files next to a single-file torrent that aren't part of it
                     a = os.path.join(os.path.dirname(src), e)
                     if os.path.exists(a):
                         shutil.move(a, os.path.join(dst_dir, e))
+                if os.path.isdir(src):  # a folder torrent moved to another disk: files added to it (subtitles) stay
+                    _merge_into(src, dst)
                 progress(i["size"])
                 return
         raise TaskError(T("the torrent client didn't finish moving in 12 hours", "klient torrentów nie skończył przenosić w 12 godzin"))
+
+    @staticmethod
+    def _torrent_left(be, tid, src):
+        """Whether any of the torrent's own files is still at the old place (`src` = its top entry there)."""
+        if not os.path.exists(src):
+            return False
+        try:
+            _, files = be.files(tid)
+        except Exception:  # noqa: BLE001 — not answering now: ask again on the next round
+            return True
+        old = os.path.dirname(src)
+        return any(os.path.exists(os.path.join(old, f["path"])) for f in files)
 
     def _trash(self, i):
         root = self._root_path(i["root_id"])

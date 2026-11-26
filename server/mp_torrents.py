@@ -86,7 +86,8 @@ class DelugeBackend:
     """deluge-web JSON-RPC (http://127.0.0.1:8112/json)."""
 
     FIELDS = ["name", "progress", "state", "download_payload_rate", "upload_payload_rate", "eta",
-              "total_wanted", "save_path", "sequential_download", "num_peers", "num_seeds", "time_added"]
+              "total_wanted", "save_path", "sequential_download", "num_peers", "num_seeds", "time_added",
+              "ratio", "seeding_time", "private"]
 
     def __init__(self, cfg):
         self.url = cfg["deluge_url"]
@@ -199,6 +200,9 @@ class DelugeBackend:
                 "eta": t["eta"], "size": t["total_wanted"], "save_path": t["save_path"],
                 "sequential": t.get("sequential_download", False),
                 "peers": t["num_peers"], "seeds": t["num_seeds"], "added": t["time_added"],
+                # agent 1.23+ (after download, "End seeding"): upload ratio, seconds seeding, a private tracker's torrent
+                "ratio": round(max(t.get("ratio") or 0, 0), 3), "seeding_time": int(t.get("seeding_time") or 0),
+                "private": bool(t.get("private")),
             })
         out.sort(key=lambda t: -t["added"])
         return out
@@ -314,7 +318,8 @@ class TransmissionBackend:
 
     def list(self):
         fields = ["hashString", "name", "percentDone", "status", "rateDownload", "rateUpload", "eta",
-                  "sizeWhenDone", "downloadDir", "peersConnected", "addedDate", "error", "errorString"]
+                  "sizeWhenDone", "downloadDir", "peersConnected", "addedDate", "error", "errorString",
+                  "uploadRatio", "secondsSeeding", "isPrivate"]
         r = self.call("torrent-get", {"fields": fields})
         out = [{
             "id": t["hashString"], "name": t["name"], "progress": round(100 * t["percentDone"], 1),
@@ -322,6 +327,8 @@ class TransmissionBackend:
             "down_rate": t["rateDownload"], "up_rate": t["rateUpload"], "eta": t["eta"],
             "size": t["sizeWhenDone"], "save_path": t["downloadDir"], "sequential": False,
             "peers": t["peersConnected"], "seeds": 0, "added": t["addedDate"],
+            "ratio": round(max(t.get("uploadRatio") or 0, 0), 3), "seeding_time": int(t.get("secondsSeeding") or 0),
+            "private": bool(t.get("isPrivate")),
         } for t in r.get("torrents", [])]
         out.sort(key=lambda t: -t["added"])
         return out

@@ -59,9 +59,37 @@ def set_from_env():
     return set_lang(DEFAULT)
 
 
+class Both(str):
+    """A text in English that also carries its Polish version (`.pl`): what `T` returns inside `both()`."""
+
+    def __new__(cls, en, pl):
+        s = super().__new__(cls, en)
+        s.pl = pl
+        return s
+
+
 def T(en, pl):
-    """Text in the current language."""
+    """Text in the current language (both, inside `both()`)."""
+    if getattr(_local, "both", False):
+        return Both(en, pl)
     return pl if lang() == "pl" else en
+
+
+class both:
+    """`with both():` texts made by `T` keep both languages (a background thread stores a result that phones in
+    either language read later). Text built from them by formatting is plain English again."""
+
+    def __enter__(self):
+        self.prev = getattr(_local, "both", False)
+        _local.both = True
+
+    def __exit__(self, *exc):
+        _local.both = self.prev
+
+
+def pair(text):
+    """{"en", "pl"} of a text from `T` inside `both()` (a plain string is used for both)."""
+    return {"en": str(text), "pl": getattr(text, "pl", str(text))}
 
 
 def bind(fn):

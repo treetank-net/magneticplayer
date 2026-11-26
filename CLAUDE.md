@@ -12,6 +12,8 @@ the phone as a remote. The human-facing description is in `README.md` and `docs/
 - `docs/plan-12-points.md`: the current goal (12 points) and the UX fixes the owner approved, in order; what is out of scope.
 - `docs/plan-ux-tasks.md`: the next goal: one screen per task, task scopes, missing episodes; every board element as an
   acceptance item, the order of work and the questions still open for the owner.
+- `docs/plan-after-download.md`: steps for every new video, any torrent client (move, subtitles, Chromecast, shrink,
+  end seeding); stage 1 (server, `mp_afterdl.py`) shipped, stage 2 (app screens) next.
 - `docs/test-plan.md`: what the next release must be checked for on hardware, and the user's wishes noted while
   testing. Add every change and every wish there as it comes; tick items only after seeing them work.
 
@@ -34,6 +36,7 @@ Answer the user in Polish.
 ```bash
 # agent: deploy after a change in server/
 python3 -m py_compile server/*.py
+python3 -m unittest discover -s server/tests      # stub-based tests (not in the agent bundle)
 rsync -a server/ jmpc:.local/src/MagneticPlayer/server/
 scp -q server/*.py server/*.sh jmpc:.local/share/magneticplayer/ && scp -q server/web/index.html jmpc:.local/share/magneticplayer/web/
 ssh jmpc systemctl --user restart magneticplayer

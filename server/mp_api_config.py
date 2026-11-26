@@ -3,6 +3,7 @@ mp_routes.ROUTES: (req = the Handler, a = the App, method, p = path, q = query l
 parameters)."""
 import re
 
+import mp_afterdl
 import mp_appupdate
 import mp_selfupdate
 import mp_subflow
@@ -60,6 +61,39 @@ def opensubtitles_set(req, a, **_):
     b = req.body()
     a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
     return req.send_json({"ok": True})
+
+
+# after download (agent 1.23+, mp_afterdl): the steps for every new video
+def afterdl(req, a, **_):
+    return req.send_json(mp_afterdl.public_settings(a.cfg))
+
+
+def afterdl_set(req, a, **_):
+    try:
+        return req.send_json(mp_afterdl.set_settings(a, req.body()))
+    except ValueError as e:
+        raise ApiError(str(e), 400)
+
+
+def afterdl_runs(req, a, qd, **_):
+    try:
+        since = float(qd.get("since") or 0)
+    except ValueError:
+        since = 0.0
+    return req.send_json(a.afterdl.runs(since))
+
+
+def afterdl_run(req, a, method, rid, **_):
+    if method == "POST":
+        try:
+            r = a.afterdl.action(rid, req.body().get("action"))
+        except ValueError as e:
+            raise ApiError(str(e), 400)
+    else:
+        r = a.afterdl.run(rid)
+    if r is None:
+        raise ApiError(T("no such run", "nie ma takiego przebiegu"), 404)
+    return req.send_json(r)
 
 
 # subtitle timing (agent 1.21+): {"subflow": {...}, "rhythm": {...}, "whisper": {...}}; POST one or more sections

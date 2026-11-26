@@ -1189,6 +1189,21 @@ Deluge, phone or browser:
   stays without subtitles, nothing breaks).
 - [ ] Owner's wish (2026-11-26): picking a subtitle language in the player shows the files already there (they're
   usually downloaded with the film now) and searches for new ones only after a "Search for more" button, not at once.
+- [ ] Agent 1.23.0: after download (`mp_afterdl`, `docs/plan-after-download.md`), off by default. Stub tests pass
+  (`server/tests/test_afterdl.py`: the old library left alone, the "right away" recipe step by step, shrink ending
+  seeding first, an unsure folder left in place, the sources filter, settings validation and effect labels). To see
+  on jmpc: a season gives one run per episode; a real shrink and a real cast_ready to the end; a client move to
+  another disk (subtitles added to a folder torrent follow it). Seen on jmpc (2026-11-26, a test instance on port
+  8799 with its own folders and the real Deluge, Duck and Cover from archive.org added straight in Deluge): source
+  "client", one run (the item's unwanted files ignored); move by Deluge while seeding (a one-item move task, 5 s),
+  the run's path and ref followed; subs (no English subtitles found: skipped), cast_ready (nothing to do), seed_end
+  (ratio 0 in the test recipe: removed from Deluge, files kept), shrink ("already small"); the test agent restarted
+  with shrink waiting and went on; history texts in Polish with `Accept-Language: pl`. A recognition that wasn't sure
+  left the film in place (first run). Bugs found and fixed on the way: unwanted files of an archive.org torrent
+  counted as videos, a partial `recipes` setting lost the other kind, step options missing from a hand-written
+  recipe, `cast_ready` in place not ending seeding, texts stored only in English, seeding ended twice in one tick.
+- [ ] The owner's wish (2026-11-26): collection folders (Bond, Anime inside Films) out of after download until
+  cataloguing by collection is designed.
 - [ ] Next app + agent 1.22.1 (built 2026-11-26, not seen on a phone yet):
   - the language page of the subtitle sheet searches the internet only after "Search for more" when files (or an
     embedded track) in that language are already there; with none it searches at once as before;

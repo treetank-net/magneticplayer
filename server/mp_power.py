@@ -61,7 +61,10 @@ class SleepGuard(threading.Thread):
                 self.app.place_unnamed()
                 self.app.refit_due()
                 self.app.iafill.tick(self.app.backend.raw)
-                self.app.subflow.tick(self.app.backend.list())
+                torrents = self.app.backend.list()
+                # after download (1.23+) queues subtitles by its own step; subflow then only marks torrents seen
+                self.app.subflow.tick(torrents, queue=not self.app.afterdl.enabled())
+                self.app.afterdl.tick(torrents)
             except Exception as e:  # noqa: BLE001 — a background thread must not die
                 log("SleepGuard:", e)
             time.sleep(20)
