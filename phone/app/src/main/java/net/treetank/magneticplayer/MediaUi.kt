@@ -3,6 +3,7 @@ package net.treetank.magneticplayer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,6 +33,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -148,9 +150,12 @@ fun MediaActions(api: Api, ref: MediaRef, snack: SnackbarHostState, onPlayingOnP
     }
     if (big) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.Button({ onPlay?.invoke() ?: ctx.startActivity(PlayerActivity.intent(ctx, ref, imdb)) },
-            Modifier.weight(1f).height(48.dp)) {
-            Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp))
-            Text(playLabel ?: stringResource(R.string.cat_play), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Modifier.weight(1f).height(48.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+            Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(4.dp))
+            // "Resume from 1:23:45" next to four icon buttons: two smaller lines instead of "Res…"
+            val label = playLabel ?: stringResource(R.string.cat_play)
+            Text(label, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                style = if (label.length > 8) MaterialTheme.typography.labelMedium else LocalTextStyle.current)
         }
         if (oneChooser) {
             androidx.compose.material3.OutlinedButton({ chooser = true }, Modifier.height(48.dp)) {

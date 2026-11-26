@@ -1207,13 +1207,17 @@ Deluge, phone or browser:
   row and page, Films recipe with tags, shrink screen with the original option, a change saved to the server and
   restored, a real archive.org run (Duck and Cover into a hidden test folder, test recipe "end seeding: pause") in
   the Downloads tab and its history; then removed with data and the settings restored. The end-seeding tile had no
-  colour of its own (vanished into the card): fixed after the tag. Not seen: English, templates, warnings, a season
-  row, Retry/Skip/Cancel. Built: Settings → After download (on/off, sources, Films / Series
+  colour of its own (vanished into the card): fixed after the tag. Then (same day, same build): English, a risky order with
+  both warnings and the one-tap "Move below seeding" (order changed on the server, warnings gone), templates and the
+  confirmation before replacing steps; every screen of the app in light mode (tabs, after download pages, history,
+  title page, browse, folders, Remote) looked right. Not seen: a season row, Retry/Skip/Cancel. Built: Settings → After download (on/off, sources, Films / Series
   episodes recipes), the recipe (template chips, step cards with effect tags, warning box with one-tap fixes,
   up/down, add/remove), one screen per step, the Downloads tab section (runs of the last 24 h, a season as one row
   with counts, refresh every 8 s) and a run's history (timeline, events, Retry / Skip / Cancel). To see on the Pixel:
   every screen in EN and PL, a save redraws effects, a template replaces steps after confirming, a real run's
   history. Not yet: history from a film's card, questions to the downloader's phone.
+- [ ] App: the title page's play button showed "Res…" next to four icon buttons ("Resume from 1:23:45"):
+  smaller text on up to two lines. Compiled only.
 - [ ] The owner's wish (2026-11-26): collection folders (Bond, Anime inside Films) out of after download until
   cataloguing by collection is designed.
 - [ ] Next app + agent 1.22.1 (built 2026-11-26, not seen on a phone yet):
