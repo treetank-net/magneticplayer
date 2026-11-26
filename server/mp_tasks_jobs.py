@@ -998,7 +998,8 @@ class JobsMixin:
         rf = self.fact_of(full)
         if not rf:
             return {"none": T("not in a library folder", "poza folderami biblioteki")}
-        c, enc = self._compress_pick(rf[1], full, o, self._torrents())
+        # as if seeding had ended: the step ends it before encoding (a seeding file would read "skip: seeding")
+        c, enc = self._compress_pick(rf[1], full, o, {})
         if "none" in c:
             return c
         est, work = c["cost"](enc)

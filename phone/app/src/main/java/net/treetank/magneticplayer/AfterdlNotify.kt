@@ -181,7 +181,8 @@ object AfterdlNotify {
         val nid = "${srv.key}/${r.id}".hashCode()
         val failed = r.state == "error"
         val text = if (failed) r.steps.getOrNull(r.step)?.note.orEmpty()
-            else r.steps.filter { it.state == "done" }.mapNotNull { it.note?.takeIf { n -> n.isNotBlank() } }.joinToString(" · ")
+            // what each step did, or why it didn't (a "no" answer, a file below the limits)
+            else r.steps.filter { it.state == "done" || it.state == "skipped" }.mapNotNull { it.note?.takeIf { n -> n.isNotBlank() } }.joinToString(" · ")
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(if (failed) android.R.drawable.stat_notify_error else android.R.drawable.stat_sys_download_done)
             .setContentTitle(ctx.getString(if (failed) R.string.adl_notif_failed else R.string.adl_notif_ready, r.name))

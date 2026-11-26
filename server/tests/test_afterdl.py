@@ -84,8 +84,10 @@ class Tasks:
     def one_file_task(self, kind, full, o):
         return self._new(op=kind, full=full, opts=o)
 
+    gain = True  # False: compress_estimate says there is nothing to gain
+
     def compress_estimate(self, full, o):
-        return {"est": 200 * MB, "secs": 1500, "encoder": "gpu"}
+        return {"est": 200 * MB, "secs": 1500, "encoder": "gpu"} if self.gain else {"none": "nothing to gain"}
 
     def fact_of(self, full):
         return ({}, {"info": {"duration": 3600}})
@@ -347,6 +349,21 @@ class AfterDownloadTest(unittest.TestCase):
         self.assertEqual([t["op"] for t in self.app.tasks.tasks.values()], ["compress"])
         with self.assertRaises(ValueError):
             self.ad.answer(run["id"], 0, "no")  # the step has started its work
+
+    def test_asks_when_work_appears_later(self):
+        # nothing to gain right after the download; by the shrink step's turn there is: it asks before encoding
+        mp_afterdl.set_settings(self.app, {"recipes": {"film": [{"kind": "subs"}, {"kind": "shrink", "min_gb": 0.0}]}})
+        self.tick()
+        self.app.jobs.items["t1"] = {"magnet": "magnet:?xt=urn:btih:x", "by": "dev1"}
+        self.app.tasks.gain = False
+        path = self.torrent()
+        self.tick()
+        self.assertEqual(self.ad.mine("dev1")["questions"], [])
+        self.app.tasks.gain = True
+        self.app.subflow.queue.remove(path)
+        self.tick()
+        self.assertEqual([q["step"] for q in self.ad.mine("dev1")["questions"]], [1])
+        self.assertEqual(self.app.tasks.tasks, {})
 
     def test_client_downloads_are_not_asked(self):
         mp_afterdl.set_settings(self.app, {"recipes": {"film": [{"kind": "shrink", "min_gb": 0.0}]}})

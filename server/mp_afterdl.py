@@ -605,6 +605,9 @@ class AfterDownload:
                 gb = _num(round(size / (1 << 30), 1))
                 return "skipped", _tx(f"{gb} GB, {_num(round(mbps, 1))} Mb/s: below the step's limits",
                                       f"{gb} GB, {_num(round(mbps, 1))} Mb/s: poniżej progów kroku")
+            # nothing to ask about right after the download, yet now there is work (the file changed since): ask first
+            if step.get("ask", False) is None and self._ask(run, run["step"]):
+                return None
             if not self._answered(run, step):
                 return None
             if (step.get("ask") or {}).get("answer") == "no":
@@ -621,20 +624,27 @@ class AfterDownload:
             return  # from the client on the computer: the steps decide by themselves
         for n in range(run["step"], len(run["steps"])):
             step = run["steps"][n]
-            if step["kind"] not in ASKS or step["state"] != "pending" or "ask" in step or not _opts(step).get("ask"):
-                continue
-            facts = getattr(self, "_facts_" + step["kind"])(run, _opts(step))
-            with self.lock:
-                if facts is None:
-                    step["ask"] = None
-                else:
-                    now = time.time()
-                    step["ask"] = {"at": now, "until": now + _opts(step)["answer_after_h"] * 3600, "default": "yes",
-                                   "facts": facts, "answer": None}
-                    name = STEP_NAMES[step["kind"]]
-                    self._event(run, _tx(f"Asked the downloader: \"{name[0]}\"?", f"Pytanie do pobierającego: „{name[1]}”?"),
-                                step=n)
-                self._save()
+            if step["kind"] in ASKS and step["state"] == "pending" and "ask" not in step:
+                self._ask(run, n)
+
+    def _ask(self, run, n):
+        """Step `n`'s question, when it asks and has something to do; → whether there is one now."""
+        step = run["steps"][n]
+        if not run.get("by") or not _opts(step).get("ask"):
+            return False
+        facts = getattr(self, "_facts_" + step["kind"])(run, _opts(step))
+        with self.lock:
+            if facts is None:
+                step["ask"] = None
+            else:
+                now = time.time()
+                step["ask"] = {"at": now, "until": now + _opts(step)["answer_after_h"] * 3600, "default": "yes",
+                               "facts": facts, "answer": None}
+                name = STEP_NAMES[step["kind"]]
+                self._event(run, _tx(f"Asked the downloader: \"{name[0]}\"?", f"Pytanie do pobierającego: „{name[1]}”?"),
+                            step=n)
+            self._save()
+        return facts is not None
 
     def _facts_shrink(self, run, o):
         """What the shrink question shows (size now, the estimate, time on the chosen encoder), None: nothing to ask."""
