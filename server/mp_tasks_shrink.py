@@ -323,8 +323,8 @@ class ShrinkMixin:
                 raise _Cancelled()
         t["hold"] = None
         # swap: the original to the trash (its own disk's: a rename, or another disk's when this one runs short),
-        # the result in its place
-        if self.trash_days() > 0:
+        # the result in its place; an item with "trash": False (after download, seeding over) deletes it right away
+        if self.trash_days() > 0 and i.get("trash", True):
             self._to_trash(full, root, i)
         else:
             os.remove(full)

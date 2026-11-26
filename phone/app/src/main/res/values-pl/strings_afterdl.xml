@@ -108,7 +108,11 @@
     <string name="adl_q_saving">oszczędna</string>
     <string name="adl_shrink_skip_hevc">Pomiń HEVC i AV1</string>
     <string name="adl_shrink_skip_hevc_desc">Pliki w tych kodekach są już oszczędne</string>
-    <string name="adl_shrink_hint">Zmniejszanie idzie przez kolejkę zadań serwera i czeka, gdy ktoś ogląda. Oryginał trafia do kosza, jak przy innych zadaniach.</string>
+    <string name="adl_shrink_original">Oryginał</string>
+    <string name="adl_shrink_original_desc">Seedowanie jest już wtedy zakończone, więc nic go nie potrzebuje</string>
+    <string name="adl_orig_delete">usuń od razu</string>
+    <string name="adl_orig_trash">do kosza</string>
+    <string name="adl_shrink_hint">Zmniejszanie idzie przez kolejkę zadań serwera i czeka, gdy ktoś ogląda.</string>
     <string name="adl_seed_boundary">Granica: kroki pod nim ruszają po zakończeniu seedowania.</string>
     <string name="adl_seed_when">Kiedy</string>
     <string name="adl_seed_ratio">Ratio co najmniej</string>

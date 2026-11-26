@@ -108,7 +108,11 @@
     <string name="adl_q_saving">saves space</string>
     <string name="adl_shrink_skip_hevc">Skip HEVC and AV1</string>
     <string name="adl_shrink_skip_hevc_desc">Videos in these codecs are already compact</string>
-    <string name="adl_shrink_hint">Shrinking goes through the server\'s task queue and waits while somebody watches. The original goes to the trash, as with other tasks.</string>
+    <string name="adl_shrink_original">The original</string>
+    <string name="adl_shrink_original_desc">Seeding has ended by then, so nothing else needs it</string>
+    <string name="adl_orig_delete">delete right away</string>
+    <string name="adl_orig_trash">to the trash</string>
+    <string name="adl_shrink_hint">Shrinking goes through the server\'s task queue and waits while somebody watches.</string>
     <string name="adl_seed_boundary">A boundary: the steps below it start once seeding ends.</string>
     <string name="adl_seed_when">When</string>
     <string name="adl_seed_ratio">Ratio at least</string>

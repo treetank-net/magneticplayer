@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Block
@@ -801,6 +802,10 @@ private fun AdlShrinkOptions(step: JSONObject, set: (String, Any) -> Unit) {
         }
         AdlSwitchRow(Icons.Filled.MovieFilter, stringResource(R.string.adl_shrink_skip_hevc), stringResource(R.string.adl_shrink_skip_hevc_desc),
             step.optBoolean("skip_hevc_av1", true)) { set("skip_hevc_av1", it) }
+        AdlChoiceRow(Icons.Filled.Delete, stringResource(R.string.adl_shrink_original), stringResource(R.string.adl_shrink_original_desc),
+            step.optString("original", "delete"), listOf("delete" to R.string.adl_orig_delete, "trash" to R.string.adl_orig_trash)) {
+            set("original", it)
+        }
     }
     AdlHint(stringResource(R.string.adl_shrink_hint))
 }

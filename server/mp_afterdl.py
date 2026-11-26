@@ -43,12 +43,14 @@ STEP_DEFAULTS = {
     "move": {},
     "subs": {"langs": [], "downloader": True},  # always these + the downloader's languages
     "cast_ready": {"mode": "keep_seeding", "add_aac": True, "subs_to_srt": True, "avi_to_mkv": True},
-    "shrink": {"min_gb": 8.0, "min_mbps": 6.0, "quality": "balanced", "encoder": "auto", "skip_hevc_av1": True},
+    "shrink": {"min_gb": 8.0, "min_mbps": 6.0, "quality": "balanced", "encoder": "auto", "skip_hevc_av1": True,
+               "original": "delete"},  # the replaced original: deleted right away (seeding has ended) or to the trash
     "seed_end": {"ratio": 2.0, "days": 7.0, "min_days": 1.0, "then": "remove"},
 }
 CHOICES = {("cast_ready", "mode"): ("keep_seeding", "in_place"),
            ("shrink", "quality"): ("transparent", "balanced", "saving"),
            ("shrink", "encoder"): ("auto", "cpu", "gpu"),
+           ("shrink", "original"): ("delete", "trash"),
            ("seed_end", "then"): ("pause", "remove")}
 
 

@@ -82,7 +82,7 @@ class Tasks:
         return self._new(op="move", top=top, to=to_root_id, torrent=torrent)
 
     def one_file_task(self, kind, full, o):
-        return self._new(op=kind, full=full)
+        return self._new(op=kind, full=full, opts=o)
 
     def fact_of(self, full):
         return ({}, {"info": {"duration": 3600}})
@@ -218,6 +218,7 @@ class AfterDownloadTest(unittest.TestCase):
         self.assertIn(("remove", "t1"), self.app.backend.calls)
         run = self.ad.runs()["runs"][0]
         self.assertEqual(run["steps"][0]["state"], "running")
+        self.assertEqual(self.app.tasks.tasks["00000001"]["opts"]["original"], "delete")  # seeding over: no trash
         self.app.tasks.finish("00000001", item="error")
         self.tick()
         run = self.ad.run(run["id"])

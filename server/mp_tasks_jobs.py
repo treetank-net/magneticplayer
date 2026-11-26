@@ -981,7 +981,7 @@ class JobsMixin:
 
     def one_file_task(self, kind, full, o):
         """A task of one item for `full`, queued like any other (it waits while somebody watches, survives a restart):
-        kind "compress" (o: quality, encoder, skip_hevc_av1) or "cast_ready" (o: add_aac, subs_to_srt, avi_to_mkv).
+        kind "compress" (o: quality, encoder, skip_hevc_av1, original "delete" skips the trash) or "cast_ready" (o: add_aac, subs_to_srt, avi_to_mkv).
         → {"task": id}, or {"none": reason} when there is nothing to do or it can't be done."""
         rf = self.fact_of(full)
         if not rf:
@@ -1017,6 +1017,8 @@ class JobsMixin:
         item = dict(base, op="shrink", est=est, work=work, codec=info["video"].get("codec"),
                     height=info["video"].get("height"), duration=info["duration"],
                     bitrate=int(f["size"] * 8 / info["duration"] / 1000), **c["item"])
+        if o.get("original") == "delete":
+            item["trash"] = False
         t = self._add_task({"kind": "compress", "encoder_id": enc,
                             **_title("Compression (after download)", "Kompresja (po pobraniu)")}, [item])
         return {"task": t["id"]}

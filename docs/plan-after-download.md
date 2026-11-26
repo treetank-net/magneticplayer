@@ -70,7 +70,9 @@ inside Films) are left out until cataloguing by collection is designed.
 - `backup`: a copy on another disk, optionally smaller (its own encode, at night), with its own steps.
 - Collection folders, once cataloguing by collection is designed.
 
-## Open questions for the owner
+## Owner's answers (2026-11-26)
 
-- One `answer_after_h` for all steps, or per step?
-- The original after shrinking: trash for 14 days (today's default for tasks)?
+- `answer_after_h` per step: each step that asks has its own time (when the answer matters differs by step).
+  Stage 1 doesn't ask yet; the global value stays until questions are built.
+- The original after shrinking is deleted right away by default (seeding has ended, nothing needs it): the shrink
+  step's `original` option, `delete` or `trash`.
