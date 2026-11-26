@@ -92,18 +92,53 @@ def _dir_missing():
     return True
 
 
+def _where_file():
+    return os.path.join(_state["dir"] or ".", "osdump-where.txt")
+
+
+def _remember_dir():
+    """The folder a ready index was last seen in (the next `dir` change moves it from there)."""
+    try:
+        with open(_where_file()) as f:
+            if f.read().strip() == _index_dir():
+                return
+    except OSError:
+        pass
+    try:
+        with open(_where_file(), "w") as f:
+            f.write(_index_dir())
+    except OSError:
+        pass
+
+
 def _move_old():
-    """After `dir` changed: move the index from the config folder instead of downloading the export again."""
-    old = os.path.join(_state["dir"] or ".", "osdump-index.db")
+    """After `dir` changed: move the index from where it was (the last folder it was ready in, or the config folder)
+    instead of downloading the export again."""
     new = _index_path()
-    if old == new or not os.path.exists(old) or os.path.exists(new):
+    if os.path.exists(new):
         return False
-    import shutil
-    _state["progress"] = "move"
-    shutil.move(old, new + ".tmp")
-    os.replace(new + ".tmp", new)
-    _state["log"](f"osarchive: index moved to {_index_dir()}")
-    return ready()
+    places = [_state["dir"] or "."]
+    try:
+        with open(_where_file()) as f:
+            places.insert(0, f.read().strip())
+    except OSError:
+        pass
+    for d in places:
+        old = os.path.join(d, "osdump-index.db")
+        if old == new or not os.path.exists(old):
+            continue
+        import shutil
+        _state["progress"] = "move"
+        shutil.move(old, new + ".tmp")
+        os.replace(new + ".tmp", new)
+        for junk in (new + ".src.gz", new + ".tmp-journal"):  # a download the move made unnecessary
+            try:
+                os.remove(junk)
+            except OSError:
+                pass
+        _state["log"](f"osarchive: index moved from {d} to {_index_dir()}")
+        return ready()
+    return False
 
 
 def _ver():
@@ -118,7 +153,10 @@ def ready():
         return False
     try:
         with sqlite3.connect(f"file:{p}?mode=ro", uri=True) as c:
-            return c.execute("SELECT v FROM meta WHERE k='version'").fetchone()[0] == _ver()
+            ok = c.execute("SELECT v FROM meta WHERE k='version'").fetchone()[0] == _ver()
+        if ok:
+            _remember_dir()
+        return ok
     except sqlite3.Error:
         return False
 
