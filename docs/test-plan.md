@@ -1192,6 +1192,10 @@ Deluge, phone or browser:
 - [ ] Next app + agent 1.22.1 (built 2026-11-26, not seen on a phone yet):
   - the language page of the subtitle sheet searches the internet only after "Search for more" when files (or an
     embedded track) in that language are already there; with none it searches at once as before;
+    seen on the emulator (2026-11-26, debug build of 34dafa3 + fix, agent 1.22.1 on jmpc): a film with a Polish file
+    showed it and "Search for more", no search request reached the server until the button, then it searched;
+  - the player's `want=pl` reached the server after Polish was picked once (emulator, same day); the wait for a
+    file the server prepares was not exercised (it would have written subtitles into the library);
   - the player sends its language as `want=` with the subtitle list; when it has none in that language it waits up
     to a minute for the server's prepared file and turns it on, the phone's own search only after that;
   - magnets and archive.org downloads send `sub_langs` (the last picked language, then the settings' order, up to 3);

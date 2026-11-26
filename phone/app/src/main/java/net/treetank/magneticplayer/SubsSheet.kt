@@ -778,9 +778,11 @@ private fun LanguagePage(
     // the screen this sheet is on (the player or the main window): MainVisible stays false inside the player
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     // files in this language already there (usually downloaded with the film): no search until "Search for more"
-    var searchOn by remember(lang) { mutableStateOf(fs.isEmpty() && embedded.orEmpty().none { it.langKey == lang }) }
+    // (decided on every composition: the list may still be loading when the page opens)
+    var asked by remember(lang) { mutableStateOf(false) }
+    val searchOn = asked || (fs.isEmpty() && embedded.orEmpty().none { it.langKey == lang })
     if (!searchOn) {
-        TextButton({ searchOn = true }, Modifier.padding(horizontal = 8.dp)) {
+        TextButton({ asked = true }, Modifier.padding(horizontal = 8.dp)) {
             Icon(Icons.Filled.Search, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
             Text(stringResource(R.string.media_psubs_search_more))
         }
