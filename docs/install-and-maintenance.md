@@ -104,7 +104,7 @@ through. Without another server: unpack the repository and run
 `install.ps1` (without an administrator):
 - Python 3.10+ from `py`/`python` (skipping the Store stub), and when it's missing,
   `winget install Python.Python.3.12 --scope user`;
-- the agent in `%LOCALAPPDATA%\MagneticPlayer`, a venv with `subliminal`, `pychromecast`, `qrcode`, `numpy` and `webrtcvad-wheels` (fitting subtitles to the film; needs `ffmpeg` on the PATH, which the Windows install doesn't bring);
+- the agent in `%LOCALAPPDATA%\MagneticPlayer`, a venv with `subliminal`, `pychromecast`, `qrcode`, `numpy`, `webrtcvad-wheels` and `onnxruntime` (optional, better speech detection) (fitting subtitles to the film; needs `ffmpeg` on the PATH, which the Windows install doesn't bring);
 - mpv (screen): the `mpv-*-x86_64-w64-mingw32-full.zip` release from GitHub into `…\MagneticPlayer\mpv` (the MSVC
   build without the VC++ runtime doesn't start, code 0xC0000135);
 - port: the first free one from 8765 (exclusive bind: a plain `SO_REUSEADDR` on Windows allows sharing the port with
@@ -138,7 +138,7 @@ What the scripts do:
 | script | what it does |
 |---|---|
 | `install-root.sh <user> [port] [backend]` | installs the packages `mpv ethtool qrencode python3-venv`, and with the Deluge backend also `deluged deluge-web`<br>disables the system Deluge services (they run as user services)<br>adds the polkit rule `/etc/polkit-1/rules.d/49-magneticplayer.rules`, so the background service can block sleep and suspend<br>enables Wake-on-LAN: NetworkManager `802-3-ethernet.wake-on-lan magic`, udev `81-magneticplayer-wol.rules`, ethtool<br>opens port 8765 and UDP 47700 ("what's playing", multicast) in ufw for private networks |
-| `install.sh` | copies the agent to `~/.local/share/magneticplayer/`<br>creates a venv with `subliminal` and `numpy` + `webrtcvad-wheels` (subtitles fitted to the film)<br>sets up `systemd --user` services: `deluged`, `deluge-web` (127.0.0.1:8112) and `magneticplayer` (:8765)<br>switches Deluge GTK to client mode, connecting to `deluged`<br>prints a pairing code with a QR code (`--pair`)<br>copies `uninstall.sh` next to the agent |
+| `install.sh` | copies the agent to `~/.local/share/magneticplayer/`<br>creates a venv with `subliminal` and `numpy` + `webrtcvad-wheels` + `onnxruntime` (optional; subtitles fitted to the film)<br>sets up `systemd --user` services: `deluged`, `deluge-web` (127.0.0.1:8112) and `magneticplayer` (:8765)<br>switches Deluge GTK to client mode, connecting to `deluged`<br>prints a pairing code with a QR code (`--pair`)<br>copies `uninstall.sh` next to the agent |
 
 Running `install.sh` again updates the agent and leaves the configuration and token alone.
 
@@ -190,7 +190,7 @@ update 1.6.0 → 1.6.1 in 4 s, an agent that fails at start (1.6.2) rolled back 
 | `~/.config/magneticplayer/config.json` | the server's `id` and `name`, the old shared token, port, backend (`deluge`/`transmission`/`none`), the deluge-web password, library folders, the OpenSubtitles key and optional login, `mpv_args`, `auto_unlock`, `upload_dir` (folder for videos uploaded from the phone; by default `Z telefonu` ("From phone") in the first library folder) |
 | `~/.config/magneticplayer/devices.json` | paired devices (token hashes), active pairing codes, the ticket key |
 | `~/.config/magneticplayer/jobs.json` | jobs from the phone: magnet, after-download action, whether it was done |
-| `~/.local/share/magneticplayer/` | the agent (`magneticplayer_agent.py`, `mp_*.py`) and `venv/` with subliminal, numpy, webrtcvad |
+| `~/.local/share/magneticplayer/` | the agent (`magneticplayer_agent.py`, `mp_*.py`) and `venv/` with subliminal, numpy, webrtcvad, onnxruntime |
 | `~/.local/share/magneticplayer/apk/` | the published app and `version.json`, used by phone updates |
 | `$XDG_RUNTIME_DIR/magneticplayer-mpv.sock` | mpv's JSON IPC socket |
 

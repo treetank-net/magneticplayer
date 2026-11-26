@@ -81,6 +81,10 @@ if [ -x "$DEST/venv/bin/pip" ]; then
   # subtitles fitted to the film's speech (mp_subsync): speech detection + FFT
   "$DEST/venv/bin/pip" install --isolated -q numpy webrtcvad-wheels ||
     say "WARNING: numpy/webrtcvad didn't install — subtitles won't be fitted to the films" "UWAGA: numpy/webrtcvad się nie zainstalowały — napisy nie będą dopasowywane do filmów"
+  # better speech detection for that fit (Silero VAD on onnxruntime; its model is fetched on first use). Optional:
+  # without it the fit uses webrtcvad. --no-deps: onnxruntime needs only numpy to run a model (sympy etc. are for tools)
+  "$DEST/venv/bin/pip" install --isolated -q $UPG --no-deps onnxruntime ||
+    say "NOTE: onnxruntime didn't install — subtitles are fitted with the simpler speech detection" "UWAGA: onnxruntime się nie zainstalował — napisy są dopasowywane prostszym wykrywaniem mowy"
   # pairing QR in the terminal when qrencode is missing (the lite install doesn't install packages)
   "$DEST/venv/bin/pip" install --isolated -q $UPG qrcode || true
 fi

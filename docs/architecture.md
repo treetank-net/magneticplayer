@@ -293,8 +293,14 @@ reads those itself, but the phone and browsers showed nothing. The file on disk 
 **Fitting to the film (agent 1.9+, `mp_subsync.py`, `features.subs_fit`).** Subtitles found online are often made for
 another release: shifted (another intro) or timed for another frame rate (23.976 vs 25 fps: seconds off at the start,
 minutes by the end), even with a hash match. The agent detects speech in the video's sound (ffmpeg → 16 kHz mono →
-webrtcvad, 10 ms frames, cached per video in `~/.cache/magneticplayer/speech/`, ~20–30 s for a film), turns the cues
-into the same kind of signal for each usual frame-rate ratio, and cross-correlates them (FFT, lags up to ±5 min). `z`
+a speech detector, 10 ms frames, cached per video in `~/.cache/magneticplayer/speech/`, ~20–30 s for a film), turns the
+cues into the same kind of signal for each usual frame-rate ratio, and cross-correlates them (FFT, lags up to ±5 min).
+Agent 1.19.1+: the speech detector is Silero VAD (`onnxruntime`, its 1.2 MB model fetched once to
+`~/.cache/magneticplayer/`, checked by SHA-256) when the venv has it, else webrtcvad, which takes music and noise for
+speech; gaps in the sound are filled while decoding (`aresample=async=1`: a copy lost ~15 s over a film without it and
+the speech drifted from the subtitles). After the whole-film fit, the cues are fitted again in 10-minute pieces: a
+piece that clearly fits elsewhere (> 1 s off, its own clear peak) means the copy is cut differently from the
+subtitles, so the verdict is "unsure" with `cuts` (the pieces' offsets) instead of one wrong shift for all of it. `z`
 says how far the best match stands above all other lags: subtitles of the film come out at 7–9, subtitles of another
 film at 2–3.5 (measured on the library), so `z` ≥ 6 = fits (shifted/rescaled in place when it changes ≥ 0.4 s or the
 ratio), < 4.5 = doesn't fit this copy, in between = unsure (left alone). A text `.sub` becomes `.srt`. Originals go to

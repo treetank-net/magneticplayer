@@ -4,9 +4,15 @@ Subtitles found online are often made for another release of the same film: shif
 or timed for another frame rate (23.976 vs 25 fps: a few seconds off at the start, minutes by the end). Matching by
 file hash doesn't help, uploads with a hash match can be that too.
 
-How (no network, no model):
-- the video's sound → 16 kHz mono (ffmpeg) → webrtcvad, 10 ms frames → 100 values a second, speech 1 / other 0;
-  cached per video (size + mtime) in the cache directory, ~70 kB for a film; about half a minute for a film on jmpc;
+How (no network apart from fetching the speech model once):
+- the video's sound → 16 kHz mono (ffmpeg, with gaps in the sound filled: `aresample=async=1`; without it a copy whose
+  AAC frames decode to nothing lost ~15 s over a film and the speech drifted away from the subtitles) → speech 1 /
+  other 0 every 10 ms, cached per video (size + mtime + detector) in the cache directory, ~70 kB for a film;
+- the speech detector: Silero VAD (a 1.2 MB ONNX model, `onnxruntime` on the CPU, one thread: ~10 s for a film on a
+  2015 desktop processor) when the venv has `onnxruntime`, else webrtcvad. webrtcvad takes music, radio and noise for
+  speech (15 s of a film score marked as speech in one test); Silero marks only voices. Measured on two old films
+  against lines timed by full-film Whisper, 10-minute pieces fitted one by one: Silero within 1 s in 18 of 20 pieces,
+  webrtcvad in 15 (4 of them a minute or more off);
 - the cues of a subtitle file → the same kind of signal, for each usual frame-rate ratio (1, 25/23.976, 24/23.976,
   25/24 and back);
 - cross-correlation of the ±1 signals (FFT) for lags up to ±5 minutes; the best lag and ratio win;
@@ -57,6 +63,83 @@ class SyncError(Exception):
     pass
 
 
+SILERO_URL = "https://raw.githubusercontent.com/SYSTRAN/faster-whisper/v1.2.1/faster_whisper/assets/silero_vad_v6.onnx"
+SILERO_SHA256 = "4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2"
+_silero_fail = 0.0  # when fetching/loading the model last failed (retry after an hour)
+
+
+def _silero():
+    """An onnxruntime session of Silero VAD (the variant faster-whisper ships, MIT), or None: no onnxruntime in the
+    venv, or the model can't be fetched (it is downloaded once to the cache directory and checked by SHA-256)."""
+    global _silero_fail
+    if time.time() - _silero_fail < 3600:
+        return None
+    mp_subs.add_venv_path()
+    try:
+        import onnxruntime
+    except Exception:  # noqa: BLE001 - not installed, or a wheel that doesn't load here: webrtcvad then
+        _silero_fail = time.time()
+        return None
+    path = os.path.join(os.path.dirname(cache_dir()), "silero_vad_v6.onnx")
+    try:
+        if not os.path.exists(path):
+            import urllib.request
+            with urllib.request.urlopen(SILERO_URL, timeout=30) as r:
+                data = r.read(5 << 20)
+            if hashlib.sha256(data).hexdigest() != SILERO_SHA256:
+                raise ValueError("speech model checksum mismatch")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path + ".tmp", "wb") as f:
+                f.write(data)
+            os.replace(path + ".tmp", path)
+        o = onnxruntime.SessionOptions()
+        o.inter_op_num_threads = 1
+        o.intra_op_num_threads = 1
+        o.log_severity_level = 4
+        return onnxruntime.InferenceSession(path, providers=["CPUExecutionProvider"], sess_options=o)
+    except Exception as e:  # noqa: BLE001 - any failure here means "use webrtcvad"
+        print(f"[subsync] Silero VAD unavailable, using webrtcvad: {e}", flush=True)
+        _silero_fail = time.time()
+        return None
+
+
+class _SileroStream:
+    """Silero VAD over a stream of 16 kHz samples: a probability every 512 samples (32 ms), the 64-sample context and
+    the LSTM state carried between chunks (as faster-whisper's SileroVADModel does for a whole array at once), then
+    Silero's own hysteresis (speech from 0.5, silence below 0.35) → speech 1 / other 0 every 10 ms."""
+
+    def __init__(self, np, sess):
+        self.np, self.sess = np, sess
+        self.h = np.zeros((1, 1, 128), np.float32)
+        self.c = np.zeros((1, 1, 128), np.float32)
+        self.ctx = np.zeros(64, np.float32)
+        self.rest = np.zeros(0, np.float32)
+        self.flags = bytearray()
+        self.on = 0
+
+    def feed(self, pcm):
+        np = self.np
+        x = np.concatenate([self.rest, np.frombuffer(pcm, np.int16).astype(np.float32) / 32768])
+        n = len(x) // 512
+        self.rest = x[n * 512:]
+        if not n:
+            return
+        rows = x[:n * 512].reshape(n, 512)
+        ctx = np.concatenate([self.ctx[None, :], rows[:-1, -64:]])
+        self.ctx = rows[-1, -64:].copy()
+        out, self.h, self.c = self.sess.run(None, {"input": np.concatenate([ctx, rows], 1), "h": self.h, "c": self.c})
+        for p in out.reshape(-1):
+            self.on = 1 if p >= 0.5 else 0 if p < 0.35 else self.on
+            self.flags.append(self.on)
+
+    def frames(self, seconds):
+        np = self.np
+        f = np.frombuffer(bytes(self.flags), np.uint8)
+        if not len(f):
+            return f
+        return f[np.minimum((np.arange(int(seconds * SAMPLE)) * (1 / SAMPLE) / 0.032).astype(int), len(f) - 1)]
+
+
 def _libs():
     mp_subs.add_venv_path()
     try:
@@ -80,9 +163,13 @@ def cache_dir():
     return os.path.join(base, "speech")
 
 
-def _key(video):
+def _key(video, detector):
     st = os.stat(video)
-    return hashlib.sha1(f"{os.path.realpath(video)}|{st.st_size}|{int(st.st_mtime)}".encode()).hexdigest()[:20]
+    # "a2": decoded with the gaps in the sound filled (agent 1.19.1); older entries are computed again
+    key = f"{os.path.realpath(video)}|{st.st_size}|{int(st.st_mtime)}"
+    if detector != "webrtc-old":
+        key += f"|a2|{detector}"
+    return hashlib.sha1(key.encode()).hexdigest()[:20]
 
 
 def speech(video, progress=None):
@@ -90,7 +177,8 @@ def speech(video, progress=None):
     np, webrtcvad = _libs()
     if np is None:
         raise SyncError("numpy/webrtcvad missing")
-    path = os.path.join(cache_dir(), _key(video) + ".npz")
+    sess = _silero()
+    path = os.path.join(cache_dir(), _key(video, "silero" if sess is not None else "webrtc") + ".npz")
     try:
         with np.load(path) as z:
             return np.unpackbits(z["bits"])[: int(z["n"])]
@@ -98,28 +186,34 @@ def speech(video, progress=None):
         pass
     with _vad_lock:
         cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-i", video, "-map", "0:a:0", "-vn", "-sn",
-               "-ac", "1", "-ar", "16000", "-f", "s16le", "-"]
+               "-af", "aresample=async=1:first_pts=0", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"]
         if sys.platform != "win32" and shutil.which("nice"):
             cmd = ["nice", "-n", "15", *cmd]
         extra = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, **extra)
         vad = webrtcvad.Vad(3)
+        sil = _SileroStream(np, sess) if sess is not None else None
         frame = 320  # 10 ms of 16 kHz 16-bit mono
         out = bytearray()
         buf = b""
+        total = 0
         while True:
-            chunk = p.stdout.read(frame * 500)
+            chunk = p.stdout.read(frame * 500 * (8 if sil else 1))
             if not chunk:
                 break
-            buf += chunk
-            n = len(buf) // frame
-            for i in range(n):
-                out.append(1 if vad.is_speech(buf[i * frame:(i + 1) * frame], 16000) else 0)
-            buf = buf[n * frame:]
+            total += len(chunk)
+            if sil is not None:
+                sil.feed(chunk)
+            else:
+                buf += chunk
+                n = len(buf) // frame
+                for i in range(n):
+                    out.append(1 if vad.is_speech(buf[i * frame:(i + 1) * frame], 16000) else 0)
+                buf = buf[n * frame:]
             if progress is not None:
-                progress["seconds"] = len(out) / SAMPLE
+                progress["seconds"] = total / 32000
         p.wait()
-    arr = np.frombuffer(bytes(out), dtype=np.uint8)
+    arr = sil.frames(total / 32000) if sil is not None else np.frombuffer(bytes(out), dtype=np.uint8)
     if len(arr) < 60 * SAMPLE or arr.mean() < 0.02:
         raise SyncError("no speech found in the sound")
     os.makedirs(cache_dir(), exist_ok=True)
@@ -132,7 +226,7 @@ def speech(video, progress=None):
 def embedded(video):
     """[(start, end)] display times of the video's own subtitle track with the most lines (a forced track has only a
     few), or [] when there is none with enough lines. Cached per video."""
-    path = os.path.join(cache_dir(), _key(video) + ".subs.json")
+    path = os.path.join(cache_dir(), _key(video, "webrtc-old") + ".subs.json")
     with _emb_lock:  # the warm-up at a search and a fit right after it: one ffprobe, the other waits for its cache
         try:
             with open(path) as f:
@@ -213,6 +307,36 @@ def cues(srt_text):
     return [(_sec(*g[:4]), _sec(*g[4:])) for g in _TIME.findall(srt_text)]
 
 
+def _pieces(np, r, cs, ratio, offset):
+    """[(minute, offset s, z, z of the whole-film offset ±0.5 s)] of the cues fitted again in 10-minute pieces, each within ±30 s of the whole-film fit.
+    A copy cut differently from the subtitles' release fits as a whole only on average: Silero gave subtitles with a
+    6 s cut and a slow drift (-12 s at the start, -23 s at the end) one -18 s offset with z 7, "good"."""
+    W, L = 600, 30 * SAMPLE
+    pad = (MAX_OFFSET + 90) * SAMPLE  # pieces near the start or the end of the film reach past the sound
+    r = np.concatenate([-np.ones(pad, np.float32), r, -np.ones(pad, np.float32)])
+    n, out = len(r), []
+    for w0 in range(0, int(max(b for _, b in cs)), W):
+        sel = [(a, b) for a, b in cs if w0 <= a < w0 + W]
+        if len(sel) < 15:
+            continue
+        s0 = int((w0 * ratio + offset) * SAMPLE) - L + pad
+        if s0 < 0 or s0 + int((W * ratio + 60) * SAMPLE) > n:
+            continue
+        seg = r[s0:s0 + int((W * ratio + 60) * SAMPLE)]
+        sig = -np.ones(int(W * ratio * SAMPLE), np.float32)
+        for a, b in sel:
+            i, j = int(((a - w0) * ratio) * SAMPLE), int(((b - w0) * ratio) * SAMPLE)
+            sig[max(0, i):max(0, min(j, len(sig)))] = 1
+        size = 1 << int(np.ceil(np.log2(len(seg) + len(sig))))
+        conv = np.fft.irfft(np.fft.rfft(seg, size) * np.conj(np.fft.rfft(sig, size)), size)[:2 * L + 1]
+        k = int(np.argmax(conv))
+        sd = conv.std() or 1
+        # z of the best lag and of the whole-film offset itself, within this piece
+        out.append((w0 / 60, offset + (k - L) / SAMPLE, float((conv[k] - np.median(conv)) / sd),
+                    float((conv[L - SAMPLE // 2:L + SAMPLE // 2 + 1].max() - np.median(conv)) / sd)))
+    return out
+
+
 def align(ref, cs):
     """Best (ratio, offset s, z) of cues `cs` against the speech signal `ref`."""
     np, _ = _libs()
@@ -244,8 +368,21 @@ def align(ref, cs):
     # plain Python values only: this dict goes into JSON (API, subsync.json), and a numpy scalar there (np.bool_ from
     # comparing a numpy offset) failed every download whose subtitles came out "weak"
     weak = bool(ASIS_Z <= z < GOOD_Z and abs(offset) <= ASIS_S)
-    return {"ratio": round(ratio, 5), "offset": round(offset, 2), "z": round(z, 1), "weak": weak,
-            "verdict": "good" if z >= GOOD_Z or weak else "bad" if z < BAD_Z else "unsure"}
+    verdict = "good" if z >= GOOD_Z or weak else "bad" if z < BAD_Z else "unsure"
+    out = {"ratio": round(ratio, 5), "offset": round(offset, 2), "z": round(z, 1), "weak": weak}
+    if verdict != "bad":
+        # one offset for the whole film, or cuts? A piece that clearly fits elsewhere: > 1 s away, its own peak
+        # (z >= 2.5) well above the whole-film offset there (+1.5), not at the edge of the ±30 s searched (no real peak).
+        # Measured on two old films (Silero and webrtcvad): subtitles with cuts had such pieces, the same subtitles
+        # re-timed by Whisper none.
+        pieces = _pieces(np, r, cs, ratio, offset)
+        off_pieces = [p for p in pieces if abs(p[1] - offset) > 1.0 and abs(p[1] - offset) < 28 and p[2] >= 2.5
+                      and p[2] - p[3] >= 1.5]
+        if off_pieces:
+            verdict = "unsure"
+            out["cuts"] = [[round(m), round(o, 1)] for m, o, _, _ in pieces]
+    out["verdict"] = verdict
+    return out
 
 
 def _rewrite(srt_text, ratio, offset):

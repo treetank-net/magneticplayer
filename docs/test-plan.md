@@ -1138,6 +1138,31 @@ Deluge, phone or browser:
     3.24 (CUDA 11, faster-whisper 0.10) does;
   - plan: run it when the normal fit is unsure and the film is identified (title + year), on pieces where the
     subtitles have speech; the owner's own sync points (+-1 s) decide where a cut goes when Whisper heard nothing.
+  - second film, His Girl Friday 1940 (archive.org copy, two Criterion DVD subtitles, both "very off" for the owner;
+    the normal fit found one offset of -18 s and marked it unsure): a 6.4 s cut at 9:37, smaller steps of 0.3-1.1 s
+    later, from -12.3 s at the start to -23.3 s at the end; median error 0.14 s over 1006 matched lines, 26 over
+    1 s. Overlapping dialogue is common: DVD subtitles split a two-speaker line into two cues with the same times, so
+    (a) only the first cue of such a pair is a timing sample (the second speaker talks later: using it pulled every
+    offset ~0.4 s late) and (b) overlaps present in the original must stay (trimming them cut the first speaker to
+    0.3 s). Whole film on jmpc's GPU: 92 min in 8.3 min. Not yet checked by ear.
+  - model and sampling (the owner's idea): film time = sub time x (1 + tempo) + offset per stretch, one tempo for the
+    film; listen only to 1-min pieces where the subtitles are dense (10 spread over the film), fit, then bisect
+    between two pieces in different stretches (densest unheard piece in the middle third) until the two lines around
+    the cut are < 2 min apart. Results against the full-film Whisper, jmpc GPU:
+    His Girl Friday: 13 of 92 min heard, 82 s in all (vs 8.3 min), tempo -0.10%, one cut of -6.3 s at 9:56, median
+    error 0.29 s (full film 0.14), 90% of lines within 0.85 s;
+    Night of the Living Dead: 26 of 95 min heard, 155 s, 4 cuts, median 0.40 s (full 0.29), 90% within 1.4 s, but
+    one cut falls in a 4.6-min stretch without dialogue and lands 8 s off (the full film needed the owner's ear there
+    too). Next: place such a cut by the audio itself (silence, `silencedetect`) or a scene change (`scdet`), since
+    an edit is usually made at a scene change.
+- [ ] Agent 1.19.1: subtitle fit with Silero VAD and a cut check (the owner: "use silence at the first analysis",
+  keep machines without a GPU working). Verified on jmpc through `POST /api/subs/fit` (2026-11-26, API only): His Girl
+  Friday re-timed subtitles "good" (z 8.2, offset -0.05), the original DVD subtitles "unsure" with `cuts` (the first
+  10 minutes at -12 s, the rest at -18 s) instead of the "good" -18 s for all that Silero alone gave; 18 s for the
+  first fit of a 92-min film on the CPU (sound decode + Silero, model fetched), 1.6 s from the cache. Measured before:
+  webrtcvad took a film score for speech; decoding without `aresample=async=1` lost ~15 s over Night of the Living
+  Dead, so every fit of that copy drifted (fixed for both detectors). To check: a fresh download on the phone shows
+  the fit badge; a Windows agent gets `onnxruntime` (or falls back to webrtcvad without errors).
 - [todo] Subtitles when none exist anywhere (2026-11-26, Duck and Cover 1951 from archive.org): OpenSubtitles had
   150 results for the words "duck" and "cover" (The Mighty Ducks, Duck Amuck, Cover-Up…), none for this film, so
   "no subtitles" was right. Two sources then: Whisper transcribing the film itself (English films; a 9-min film is

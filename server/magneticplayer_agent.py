@@ -63,7 +63,7 @@ import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.19.0"
+VERSION = "1.19.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
