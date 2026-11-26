@@ -163,29 +163,63 @@ def cache_dir():
     return os.path.join(base, "speech")
 
 
-def _key(video, detector):
+def _key(video, detector, track=0):
     st = os.stat(video)
     # "a2": decoded with the gaps in the sound filled (agent 1.19.1); older entries are computed again
     key = f"{os.path.realpath(video)}|{st.st_size}|{int(st.st_mtime)}"
     if detector != "webrtc-old":
         key += f"|a2|{detector}"
+    if track:
+        key += f"|t{track}"
     return hashlib.sha1(key.encode()).hexdigest()[:20]
 
 
-def speech(video, progress=None):
-    """Speech (1) / no speech (0) every 10 ms of the video's sound, as a numpy uint8 array; cached."""
+_SKIP_AUDIO = re.compile(r"descri|audiodeskryp|commentary|komentarz|\bAD\b|\bnarrat", re.I)
+
+
+def audio_track(video, lang=None):
+    """Which audio track (0-based among the audio tracks) carries the film's own sound: not an audio-description or a
+    commentary track (by the file's flags or the track's title), the original first, then one in `lang` (2/3-letter
+    code), then the default one. 0 when ffprobe can't tell."""
+    extra = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+                              "stream=index:stream_tags=language,title:stream_disposition", "-of", "json", video],
+                             capture_output=True, text=True, timeout=30, **extra).stdout
+        streams = json.loads(out or "{}").get("streams") or []
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0
+    if len(streams) < 2:
+        return 0
+
+    def rank(i):
+        st = streams[i]
+        d, tags = st.get("disposition") or {}, st.get("tags") or {}
+        bad = d.get("visual_impaired") or d.get("descriptions") or d.get("comment") \
+            or _SKIP_AUDIO.search(tags.get("title") or "")
+        tl = (tags.get("language") or "").lower()
+        same = bool(lang) and (tl == lang.lower() or tl[:2] == lang.lower()[:2])
+        return (bool(bad), not d.get("original"), not same, not d.get("default"), i)
+    return min(range(len(streams)), key=rank)
+
+
+def speech(video, progress=None, track=None):
+    """Speech (1) / no speech (0) every 10 ms of the video's sound, as a numpy uint8 array; cached. `track`: the audio
+    track (0-based among audio tracks); by default `audio_track()` (not audio description, agent 1.21+)."""
     np, webrtcvad = _libs()
     if np is None:
         raise SyncError("numpy/webrtcvad missing")
     sess = _silero()
-    path = os.path.join(cache_dir(), _key(video, "silero" if sess is not None else "webrtc") + ".npz")
+    if track is None:
+        track = audio_track(video)
+    path = os.path.join(cache_dir(), _key(video, "silero" if sess is not None else "webrtc", track) + ".npz")
     try:
         with np.load(path) as z:
             return np.unpackbits(z["bits"])[: int(z["n"])]
     except (OSError, ValueError, KeyError):
         pass
     with _vad_lock:
-        cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-i", video, "-map", "0:a:0", "-vn", "-sn",
+        cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-i", video, "-map", f"0:a:{track}", "-vn", "-sn",
                "-af", "aresample=async=1:first_pts=0", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"]
         if sys.platform != "win32" and shutil.which("nice"):
             cmd = ["nice", "-n", "15", *cmd]
@@ -485,15 +519,17 @@ class Store:
         return r["manual"]
 
     def replace(self, sub_path, text, res):
-        """Writes re-timed subtitles in place (mp_retime), keeping the original, and remembers `res`."""
+        """Writes re-timed subtitles in place (mp_retime, mp_rhythm), keeping the original, and remembers `res` (without
+        the bulky line maps)."""
+        res = {k: v for k, v in res.items() if k not in ("map", "onsets")}
         self._keep_original(sub_path)
         tmp = sub_path + ".mp-tmp"
         with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         os.replace(tmp, sub_path)
         self._remember(sub_path, dict(res, ratio=1.0, offset=0.0, changed=True, name=os.path.basename(sub_path)))
-        self.log(f"subtitles re-timed by Whisper: {os.path.basename(sub_path)} tempo {res.get('tempo')}% "
-                 f"cuts {len(res.get('cuts') or [])} error {res.get('error')} s")
+        self.log(f"subtitles re-timed ({res.get('by')}): {os.path.basename(sub_path)} tempo {res.get('tempo')}% "
+                 f"cuts {len(res.get('cuts') or [])} {res.get('hypothesis') or ''} error {res.get('error')} s")
 
     def get_any(self, sub_path):
         """The last assessment of this file even when it changed since."""

@@ -334,6 +334,49 @@ of the heard lines agree with the result. The original goes to `subs-originals/`
 Measured on jmpc (GTX 970): a 68-minute film with 6 cuts against Criterion subtitles 75 s off, 19.5 minutes heard in
 94 s, median error 0.17 s.
 
+**Timing by the rhythm of speech (agent 1.21+, `mp_rhythm.py`).** Whisper needs a model, a GPU for speed and a language
+it knows; speech detection (Silero, already cached by the fit, ~10 s per film on a processor) works for any language.
+The owner's rule: what matters is that a line appears when its speech starts, how long it stays is the subtitles' own
+quality. Same model as Whisper's (one tempo, an offset per stretch): 2-minute pieces of the subtitles cross-correlated
+with the speech give the tempo and the offsets the film has, then every line may take any offset within ±3 s of those,
+its cost being how far its start lands from a speech onset (silence → speech), and a Viterbi over all lines changes the
+offset only where `jump` (6) lines' worth of evidence says so. Lines that are sound descriptions (`[door slams]`,
+`(laughs)`, `♪`), or begin with one, weigh `desc_weight` (0.3, not zero: such marks can be wrong both ways); the second
+speaker of a two-speaker line with the same start weighs nothing. Silero notices speech ~0.15 s late (`onset_lag`), and
+lines show `lead` early as with Whisper. **Confidence**: the pieces and the lines must agree (`max_disagree`: at most 6%
+of lines more than 1 s apart) and the cost must have a clear minimum (`min_sharp`); otherwise "unsure". A file whose
+whole-film fit is "bad" (another film's subtitles) isn't timed at all. Measured against full-film Whisper (2026-11-26):
+a fast comedy 0.14 s median, a noir 0.21 s, a thriller 0.20-0.24 s with no line over 1 s (also subtitles made for another
+frame rate); a horror with noisy sound and screams 0.49 s with 23% over 1 s, marked "unsure": there the speech detector
+itself prefers a wrong fit (more line starts on speech onsets than the true times), so only Whisper helps. The sound
+track is chosen first (`mp_subsync.audio_track`): not an audio-description or commentary track (the file's flags or the
+track's title), the original first.
+
+**Translations fitted to a baseline (agent 1.21+, `mp_rhythm.translate`).** Subtitles in another language than the
+film's are fitted to the film's own subtitles once those are timed (the baseline): the baseline's line starts are exact
+speech onsets, and a translation follows the same lines. Three hypotheses, the simplest that fits wins: written for this
+copy (one ratio/tempo/offset onto the baseline's starts), written for the same release as the baseline's original (one
+fit onto the original's starts, then the baseline's cuts), another copy (line by line, as above, with the baseline's
+starts as the onsets; chosen only when clearly better). A translated line within `snap` (0.35 s) of a baseline line
+takes its time. Whether these are this film's subtitles at all: the share of lines landing on a baseline line, minus
+the same with the lines moved 7-41 s off (chance, high in dense dialogue), by the simple hypotheses only (line by line
+fits noise too): this film's translations came out 0.15-0.72 above chance, another film's (a remake, a same-named
+film) 0.07-0.08; below `min_lift` (0.10) the file is left as it came, "unsure". Measured: Polish subtitles within 0.4 s
+of the Whisper-timed English lines 69-95% (the old one-shift fit 42-88%), 37% on the noisy horror (24%).
+
+**Automatic subtitles after a download (agent 1.21+, `mp_subflow.py`, config `"subflow"`).** When a torrent finishes
+(checked every ~20 s with the other background duties; torrents already complete when the agent first runs this are
+left alone), every video of it gets: (1) a baseline in the film's language (`original`: the sound track's language tag,
+the title's tags, else `fallback`), from `sources` in order: a file next to the video (re-timed in place, the original
+kept), a text subtitle track of the file itself (its times are exact), a subtitle service from `providers` (only those
+without a daily limit by default), each fitted (one shift, then the rhythm, then Whisper when `whisper` is "unsure"
+and the rhythm isn't sure, or "always"); (2) the `target` language ("last": the language the user last picked on
+purpose, by downloading subtitles, making a version the default, or a phone's choice synced later) fitted to that
+baseline. A subtitle file of another language added later (a download, a fit) goes to the baseline too
+(`translate: "baseline"`; `"speech"` = the old one-shift fit). State in `subflow.json` (the baseline's starts and cut
+map per video, the last result). All settings: `GET/POST /api/config/subtitles` and the MCP tools
+`get_subtitle_settings` / `set_subtitle_settings`, `subtitle_status`, `prepare_subtitles`.
+
 Agent 1.12.1+: when the video carries its own subtitle track (text, PGS or VobSub, the one with the most lines), its
 display times are the reference instead of the speech (ffprobe packets, ~7 s for an episode, cached next to the
 speech). They are exact to the frame, while the speech of an action film is buried under music: on one episode the same

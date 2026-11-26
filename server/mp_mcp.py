@@ -27,6 +27,7 @@ import time
 import urllib.parse
 
 import mp_media
+import mp_subflow
 from mp_i18n import T
 
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
@@ -91,6 +92,23 @@ TOOLS = [
      _schema({"plan": {"type": "string"}, "pick": {"type": "array", "items": {"type": "integer"}}}, ["plan"])),
     ("cancel_task", True, "Stop a running or queued task (the current item is left as it was).",
      _schema({"task": {"type": "string"}}, ["task"])),
+    # subtitles (agent 1.21+)
+    ("get_subtitle_settings", False, "How subtitles are timed and fetched by themselves after a download. Sections: "
+     "subflow (auto: run after a download; original: the film's language, 'auto' or a code; fallback; sources: "
+     "file/embedded/search in order; providers: services for automatic downloads, only ones without daily limits by "
+     "default; whisper: never/unsure/always; target: 'last' = the language the user picked last (last), a code, or '' "
+     "for none; translate: baseline/speech; snap: s; min_lift), rhythm (speech-rhythm timing: jump, desc_weight, "
+     "onset_lag, max_disagree, min_sharp), whisper (python, device, model, model_en, auto, lead: s a line shows before "
+     "its speech, extend: s a line may stay longer).", _schema()),
+    ("set_subtitle_settings", True, "Change subtitle settings of one section (see get_subtitle_settings); a value of "
+     "null restores the default. Tell the user what you changed.",
+     _schema({"section": {"type": "string", "enum": ["subflow", "rhythm", "whisper"]}, "changes": {"type": "object"}},
+             ["section", "changes"])),
+    ("subtitle_status", False, "For one video: its baseline subtitles (language, how timed, verdict) and the last "
+     "automatic result.", _schema(S, ["root", "path"])),
+    ("prepare_subtitles", True, "Run the automatic subtitles for one video now (baseline in the film's language, then "
+     "the target language fitted to it); force=true makes a new baseline. Can take minutes with Whisper.",
+     _schema({**S, "force": {"type": "boolean"}}, ["root", "path"])),
 ]
 
 
@@ -315,6 +333,18 @@ poll();
     def t_set_profile(self, root, profile, path=""):
         self.app.tasks.set_profile(int(root), path, profile)
         return {"ok": True}
+
+    def t_get_subtitle_settings(self):
+        return mp_subflow.all_settings(self.app.cfg)
+
+    def t_set_subtitle_settings(self, section, changes):
+        return mp_subflow.set_settings(self.app, section, changes)
+
+    def t_subtitle_status(self, root, path):
+        return self.app.subflow.status(self.app.library.resolve(int(root), path))
+
+    def t_prepare_subtitles(self, root, path, force=False):
+        return self.app.subflow.run(self.app.library.resolve(int(root), path), bool(force))
 
     def _wait(self, p):
         end = time.time() + PLAN_WAIT

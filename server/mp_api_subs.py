@@ -5,6 +5,7 @@ import os
 import threading
 
 import mp_subfiles
+import mp_retime
 import mp_subsync
 from mp_core import ApiError
 from mp_i18n import T, bind
@@ -101,6 +102,7 @@ def subs_default(req, a, **_):
     except OSError as e:
         raise ApiError(e.strerror or str(e), 500)
     a.watchstate.note_subs(full)  # a phone's older choice made offline doesn't undo this one (agent 1.18+)
+    a.subflow.chosen(mp_retime.language_of(name))  # the language picked last (agent 1.21+, mp_subflow)
     if a.mpv.running() and a.mpv.prop("path") == full:  # the Remote: this video plays in mpv, turn it on
         try:
             a.mpv.cmd("sub-add", os.path.join(os.path.dirname(full), name), "select")
@@ -142,3 +144,16 @@ def subs_shift(req, a, **_):
     if not -600 < by < 600 or not by:
         raise ApiError(T("by: seconds", "by: sekundy"), 400)
     return req.send_json(a.shift_subs(full, b["name"], by))
+
+
+# prepared by themselves after a download (agent 1.21+, mp_subflow): the state for one video, or run it now
+def subs_auto(req, a, qd, **_):
+    return req.send_json(a.subflow.status(a.resolve_ref(qd)))
+
+
+def subs_auto_run(req, a, **_):
+    b = req.body()
+    full = a.resolve_ref(b)
+    if b.get("async"):
+        return req.send_json({"job": a.subs.start_job(lambda job: a.subflow.run(full, bool(b.get("force"))), "auto")})
+    return req.send_json(a.subflow.run(full, bool(b.get("force"))))

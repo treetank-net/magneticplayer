@@ -1162,6 +1162,24 @@ Deluge, phone or browser:
     (up to the next one) when lines don't overlap: a setting (config / MCP agent), not fixed; (d) machines without a
     GPU keep working: the first analysis is the speech-detection fit, Whisper only where it is available and fast
     enough (measure CPU-only too).
+- [ ] Agent 1.21.0: subtitles timed by the rhythm of speech, translations fitted to a baseline, automatic subtitles
+  after a download (`mp_rhythm`, `mp_subflow`, `/api/subs/auto`, `/api/config/subtitles`, MCP subtitle settings). The
+  owner's rules (2026-11-26): Silero on the whole film when there's no Whisper, for any language; what counts is the
+  line appearing at the start of its speech, not its length; subtitles written as sound descriptions are left out of
+  timing with an allowance for wrong marks; a translation follows the film's own subtitles (their cut map), not cut
+  again when it already fits this copy, only tempo and a shift; the baseline from an attached file, the film's own
+  track or a service without a daily limit; the target = the language last picked on purpose; every choice set via
+  config/MCP. Verified on jmpc (2026-11-26, offline scripts against full-film Whisper, and once through the API):
+  rhythm alone: His Girl Friday 0.14 s median (1.9% over 1 s), Detour 0.21 s (1.7%), Charade 0.20-0.24 s with no line
+  over 1 s (also a file for another frame rate), Night of the Living Dead 0.49 s, rightly "unsure". Polish files
+  within 0.4 s of the heard English lines: 69-95% (old fit 42-88%), Night 37% (24%); two wrong-film Polish files (a
+  remake, a same-named film) left untouched as "unsure". `POST /api/subs/auto` on Charade: 9 s, English by rhythm
+  (100% within 0.4 s), Polish by the "copy" hypothesis (74% within 0.4 s, 98% within 1 s). To check: the flow by
+  itself after a download finishes (a non-English film: language detection, audio track); Carnival of Souls, Shop
+  Around the Corner, Plan 9 (more descriptions, a remake's subtitles); the app reloading a newer subtitle file during
+  playback; a Polish-language film; Windows.
+- [ ] Owner's wish (2026-11-26): a setting that hides sound descriptions (`[door slams]`, `(laughs)`) from the shown
+  subtitles, off by default, in config/MCP.
 - [ ] Agent 1.20.0: subtitles re-timed by Whisper cut by cut (`mp_retime`, `POST /api/subs/retime`, automatic after an
   "unsure" fit). Verified on jmpc through the API (2026-11-26), not in the app: a fresh film, Detour 1945 from
   archive.org (68 min), with Criterion Blu-ray subtitles downloaded through `/api/subs/download`: the fit said

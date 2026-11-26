@@ -1,7 +1,7 @@
 """Whisper worker for mp_retime: runs under the Python of a separate venv with faster-whisper (not the agent's: the
 model and its CUDA libraries are large, and a crash or a stuck GPU must not take the agent down).
 
-usage: mp_whisper_worker.py VIDEO MODEL DEVICE [LANGUAGE]
+usage: mp_whisper_worker.py VIDEO MODEL DEVICE [LANGUAGE [AUDIO_TRACK]]
 DEVICE: cuda, cpu or auto (cuda when it loads, else cpu). Then one JSON request per line on stdin:
 {"a": seconds, "b": seconds} → one JSON line on stdout: {"words": [[start s in the film, "word"], ...], "secs": took}.
 The first line out is {"ready": device, "compute": type, "model": name} (or {"error": ...}).
@@ -18,6 +18,7 @@ import time
 def main():
     video, model_name, device = sys.argv[1:4]
     language = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
+    track = int(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else 0  # not audio description (agent 1.21+)
     try:
         import numpy as np
         from faster_whisper import WhisperModel
@@ -46,7 +47,7 @@ def main():
             a, b = float(req["a"]), float(req["b"])
             t = time.time()
             pcm = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{a:.2f}", "-i", video, "-t", f"{b - a:.2f}",
-                                  "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+                                  "-map", f"0:a:{track}", "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
                                  capture_output=True, check=True).stdout
             audio = np.frombuffer(pcm, np.int16).astype(np.float32) / 32768
             segs, _ = model.transcribe(audio, word_timestamps=True, vad_filter=False, condition_on_previous_text=False,

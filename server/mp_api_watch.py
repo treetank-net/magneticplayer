@@ -4,6 +4,7 @@ path parameters)."""
 import json
 import os
 
+import mp_retime
 import mp_subfiles
 from mp_core import ApiError
 from mp_i18n import T
@@ -40,9 +41,11 @@ def sync(req, a, **_):
         if name not in {x["name"] for x in subs} or at <= a.watchstate.subs_changed_at(full, subs):
             return None  # gone or changed here after the phone's choice: the server's subtitles win
         try:
-            return mp_subfiles.promote(full, name, a.subsources, a.tasks.torrent_owned, a.subsync.move)
+            new = mp_subfiles.promote(full, name, a.subsources, a.tasks.torrent_owned, a.subsync.move)
         except (mp_subfiles.FileError, OSError):
             return None
+        a.subflow.chosen(mp_retime.language_of(new or name))  # the language picked last (agent 1.21+)
+        return new
 
     return req.send_json(a.watchstate.sync(req.device, req.device_name(), b, a.library.roots(), resolve, choose_sub,
                                       a.tasks.note_played))

@@ -60,11 +60,13 @@ from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt, rank_key as subs_rank_key
 import mp_subsync
 import mp_retime
+import mp_rhythm
+import mp_subflow
 import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.20.0"
+VERSION = "1.21.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -156,6 +158,9 @@ class App:
         self.agent_updates.start()
         # MCP server for an AI assistant in the LAN, approved on the phone (mp_mcp.py)
         self.mcp = mp_mcp.Mcp(self, VERSION, CONFIG_DIR, log)
+        # subtitles prepared by themselves after a download: a baseline in the film's language, then the language
+        # picked last fitted to it (agent 1.21+, mp_subflow.py)
+        self.subflow = mp_subflow.SubFlow(self, CONFIG_DIR, log)
         # discover Chromecasts from startup: the renderer registry knows the model before anyone opens the device picker
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # which H.264 encoder works on this hardware (NVENC/VAAPI/...): a trial encode takes seconds, so in the background
@@ -167,6 +172,9 @@ class App:
 
     def name(self):
         return self.cfg.get("name") or socket.gethostname()
+
+    def save_cfg(self):
+        save_config(self.cfg)
 
     def watched(self):
         """Videos in use now, for shrink tasks: [{"path", "kind"}]. A GET in the last 30 s = stream; only HEADs in the
@@ -204,6 +212,28 @@ class App:
             return {"verdict": "pending", "reason": "incomplete", "name": name, "locked": locked,
                     "error": T("the film is still downloading: the subtitles will be fitted when it is complete",
                                "film jeszcze się pobiera: napisy zostaną dopasowane, gdy będzie cały")}
+        base = self.subflow.baseline(full)
+        lang = mp_retime.language_of(os.path.basename(path))
+        if base and lang and lang != base["lang"] and mp_subflow.settings(self.cfg)["translate"] == "baseline" \
+                and os.path.basename(path) != base.get("name"):
+            # agent 1.21+: another language fits to the film's own subtitles, timed already (mp_subflow)
+            try:
+                if locked:
+                    _, res = mp_rhythm.translate(readable_srt(path, full), base, self.cfg)
+                    res.update(changed=False, name=name, locked=True)
+                    return res
+                res = self.subflow.translate_file(full, path, in_place=True)
+                res.update(changed=True, locked=False)
+            except (mp_rhythm.RhythmError, OSError, ValueError) as e:
+                log("subtitle fitting to the baseline:", name, e)
+                return {"verdict": "error", "error": str(e), "name": name}
+            if res.get("changed") and not elsewhere:
+                try:
+                    if self.mpv.running() and self.mpv.prop("path") == full:
+                        self.mpv.cmd("sub-reload")
+                except ApiError:
+                    pass
+            return res
         try:
             res = self.subsync.fit(full, path, change=not locked)
         except (mp_subsync.SyncError, OSError, ValueError) as e:
@@ -261,7 +291,7 @@ class App:
             pass
         return res
 
-    def download_subs(self, full, b, job=None):
+    def download_subs(self, full, b, job=None, prepare=None):
         """POST /api/subs/download: one search result becomes the default subtitles of its language (the current default
         moves to Subtitles/). `job` (async): its "phase" goes "download" → "fit" → done."""
         langs = [l.strip().lower() for l in (b.get("languages") or "en,pl").split(",") if l.strip()]
@@ -269,12 +299,13 @@ class App:
         # returns the outcome in "fit"; otherwise it happens in the background. Agent 1.12.1+: waiting, the file is
         # fitted in a temporary folder and only then put next to the video, so a player that lists the subtitles
         # meanwhile doesn't load the unfitted file
-        wait = b.get("fit") == "wait" and mp_subsync.available()
+        wait = (b.get("fit") == "wait" or prepare is not None) and mp_subsync.available()
+        own_prepare = prepare
 
         def prepare(tmp):
             if job is not None:
                 job["phase"] = "fit"
-            return a_fit(tmp)
+            return own_prepare(tmp) if own_prepare is not None else a_fit(tmp)
 
         def a_fit(tmp):
             return self.fit_subs(full, os.path.basename(tmp), tmp)
@@ -289,6 +320,8 @@ class App:
                                      full, target, src, self.subsources, self.tasks.torrent_owned, self.subsync.move))[1],
                                  prepare=prepare if wait else None, moved=moved)
         res.pop("path", None)
+        if not b.get("auto") and res.get("name"):  # picked by the user: the next films get it too (agent 1.21+)
+            self.subflow.chosen(mp_retime.language_of(res["name"]))
         fit = res.get("name") and mp_subsync.available()
         prepared = res.pop("prepared", None)
         if wait and prepared is not None:
@@ -301,7 +334,8 @@ class App:
         if fit and not wait:
             threading.Thread(target=bind(self.fit_subs), args=(full, res["name"]), daemon=True).start()
             res["fit"] = {"verdict": "pending"}
-        elif res.get("name") and (res.get("fit") or {}).get("verdict") == "unsure" and not self.tasks.torrent_owned(
+        elif res.get("name") and (res.get("fit") or {}).get("verdict") == "unsure" and own_prepare is None \
+                and (res.get("fit") or {}).get("by") not in ("baseline", "rhythm") and not self.tasks.torrent_owned(
                 os.path.join(os.path.dirname(full), res["name"])):
             self.retime_later(full, res["name"], res["fit"])  # fitted in a temporary folder: re-timed in place now
         elif (res.get("fit") or {}).get("reason") == "incomplete" and res.get("name"):
@@ -535,6 +569,9 @@ class App:
                 "task_queue": True,  # agent 1.17+
                 "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)
                 "subs_retime": mp_retime.available(self.cfg),  # re-timed by Whisper, cut by cut (agent 1.20+)
+                # by the rhythm of speech (any language), translations fitted to a baseline, automatic after a download,
+                # /api/subs/auto, /api/config/subtitles (agent 1.21+)
+                "subs_auto": mp_subsync.available(),
                 "search_engines": len(self.cfg.get("search_engines") or []),
                 # the built-in "Internet Archive" site: GET /api/archive/search, POST /api/torrents {"torrent_url"} (agent 1.19+)
                 "archive_search": True,

@@ -140,6 +140,8 @@ ROUTES = [
     ("POST", "/api/subs/job/stop", subs.subs_job_stop, {}),
     ("POST", "/api/subs/download", subs.subs_download, {}),
     ("POST", "/api/subs/default", subs.subs_default, {}),
+    ("GET", "/api/subs/auto", subs.subs_auto, {}),
+    ("POST", "/api/subs/auto", subs.subs_auto_run, {}),
     ("POST", "/api/subs/fit", subs.subs_fit, {}),
     ("POST", "/api/subs/retime", subs.subs_retime, {}),
     ("POST", "/api/subs/shift", subs.subs_shift, {}),
@@ -170,6 +172,8 @@ ROUTES = [
     ("POST", "/api/agent/update", config.agent_update, {}),
     ("GET", "/api/config/opensubtitles", config.opensubtitles, {}),
     ("POST", "/api/config/opensubtitles", config.opensubtitles_set, {}),
+    ("GET", "/api/config/subtitles", config.subtitles, {}),
+    ("POST", "/api/config/subtitles", config.subtitles_set, {}),
 ]
 
 

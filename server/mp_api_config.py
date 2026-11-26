@@ -5,6 +5,7 @@ import re
 
 import mp_appupdate
 import mp_selfupdate
+import mp_subflow
 from mp_core import ApiError, save_config
 from mp_i18n import T
 
@@ -59,3 +60,19 @@ def opensubtitles_set(req, a, **_):
     b = req.body()
     a.subs.set_credentials(b.get("api_key"), b.get("username"), b.get("password"))
     return req.send_json({"ok": True})
+
+
+# subtitle timing (agent 1.21+): {"subflow": {...}, "rhythm": {...}, "whisper": {...}}; POST one or more sections
+def subtitles(req, a, **_):
+    return req.send_json(mp_subflow.all_settings(a.cfg))
+
+
+def subtitles_set(req, a, **_):
+    b = req.body()
+    out = None
+    try:
+        for section, changes in b.items():
+            out = mp_subflow.set_settings(a, section, changes)
+    except ValueError as e:
+        raise ApiError(str(e), 400)
+    return req.send_json(out or mp_subflow.all_settings(a.cfg))

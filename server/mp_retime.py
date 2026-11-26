@@ -89,7 +89,7 @@ class Worker:
     def __init__(self, w, video, language):
         model = w["model_en"] if (language or "en") == "en" else w["model"]
         script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mp_whisper_worker.py")
-        cmd = [w["python"], script, video, model, w["device"], language or ""]
+        cmd = [w["python"], script, video, model, w["device"], language or "", str(mp_subsync.audio_track(video, language))]
         if sys.platform != "win32":
             cmd = ["nice", "-n", "10", *cmd]
         extra = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
@@ -385,5 +385,9 @@ def retime(video, srt_text, w, language=None, guess=None, progress=None):
     summary = {"verdict": "good", "by": "whisper", "tempo": round(s * 100, 3), "offset": round(float(bb[0]), 2),
                "cuts": cuts, "alone": alone, "matched": len(idx), "lines": len(cues),
                "error": round(float(np.median(np.abs(res))), 2), "heard": progress.get("heard"),
-               "device": progress.get("device"), "secs": round(time.time() - t0, 1)}
+               "device": progress.get("device"), "secs": round(time.time() - t0, 1),
+               # the original's line starts and offsets (film = start + offset): a translation written for the same
+               # release as these subtitles gets the same cuts (mp_rhythm.translate, agent 1.21+)
+               "map": {"ratio": 1.0, "tempo": float(s), "starts": [round(float(c[0]), 3) for c in cues],
+                       "offsets": [round(float(o), 3) for o in off]}}
     return text, summary
