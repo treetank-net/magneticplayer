@@ -638,8 +638,17 @@ class AfterDownload:
     def runs(self, since=0.0):
         with self.lock:
             return {"enabled": self.cfg["enabled"],
-                    "runs": [self._public(r) for r in self.st["runs"]
+                    "runs": [self._public(r) for r in reversed(self.st["runs"])
                              if r["state"] == "running" or (r.get("finished") or r["created"]) > since][:200]}
+
+    def runs_of(self, root, path):
+        """Every run of one library file (a title page's history), newest first; [] when it had none."""
+        roots = self.app.library.roots()
+        if not 0 <= root < len(roots):
+            return []
+        real = os.path.realpath(os.path.join(roots[root]["path"], path))
+        with self.lock:
+            return [self._public(r) for r in reversed(self.st["runs"]) if os.path.realpath(r["file"]) == real]
 
     def run(self, rid):
         with self.lock:

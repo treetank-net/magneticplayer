@@ -276,6 +276,15 @@ class AfterDownloadTest(unittest.TestCase):
         self.assertEqual([(r["name"], r["kind"]) for r in runs], [("Sintel.mkv", "film")])
         self.assertEqual(mp_afterdl.settings(self.app.cfg)["recipes"]["series"], mp_afterdl.TEMPLATES["right_away"])
 
+    def test_runs_of_one_file(self):
+        mp_afterdl.set_settings(self.app, {"recipes": {"film": [{"kind": "subs"}]}})
+        self.tick()
+        self.torrent()
+        self.tick()
+        self.assertEqual(len(self.ad.runs_of(0, "Sintel/Sintel.mkv")), 1)  # root 0 = the downloads folder
+        self.assertEqual(self.ad.runs_of(1, "Sintel/Sintel.mkv"), [])
+        self.assertEqual(self.ad.runs_of(9, "Sintel/Sintel.mkv"), [])
+
     def test_sources_filter(self):
         mp_afterdl.set_settings(self.app, {"sources": ["app"]})
         self.tick()

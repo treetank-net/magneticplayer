@@ -898,6 +898,9 @@ private fun TitleScreen(c: CatCtx, x: CatItem, focusPath: String? = null, fromPh
                 }
                 // D6 "On this phone": shown whenever the phone holds copies of this title
                 OnThisPhoneCard(xs, px, list, cont, phoneTick + back) { phoneTick++ }
+                // what the server did with the file after it was downloaded (the episode the ▶ button plays for a series)
+                if (cont >= 0) AfterdlFileCard(xa, px.root, list[cont].path, c.snack)
+                else if (!x.series) AfterdlFileCard(xa, px.root, px.ref(xs).path, c.snack)
                 // "All": where the copies are; another copy plays from its server (it opens its own title screen)
                 // only with a choice to make: one copy says nothing ("Available" says where it is)
                 if (x.srv.isNotEmpty() && x.alsoOn.isNotEmpty()) CopiesOnServers(c, x, px)

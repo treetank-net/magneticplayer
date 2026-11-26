@@ -78,6 +78,8 @@ data class Server(
     val hasSubsWant get() = features?.optBoolean("subs_want", false) ?: false
     /** After download (agent 1.23+): the owner's steps for every new video, `/api/config/afterdl`, `/api/afterdl` */
     val hasAfterdl get() = features?.optBoolean("afterdl", false) ?: false
+    /** agent 1.24+: `/api/afterdl?root=&path=`, one file's runs (its title page) */
+    val hasAfterdlFile get() = features?.optBoolean("afterdl_file", false) ?: false
     /** agent 1.12.1+: POST /api/subs/shift (subtitles too early / too late, saved in the file) */
     val hasSubsShift get() = features?.optBoolean("subs_shift", false) ?: false
     /** agent 1.12.1+: POST /api/subs/download with "async" → a job with "download" / "fit" phases */

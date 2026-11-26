@@ -76,6 +76,12 @@ def afterdl_set(req, a, **_):
 
 
 def afterdl_runs(req, a, qd, **_):
+    if qd.get("path") is not None:  # one file's runs (its title page)
+        try:
+            root = int(qd.get("root"))
+        except (TypeError, ValueError):
+            raise ApiError(T("root (a number) and path are needed", "potrzebne root (liczba) i path"), 400)
+        return req.send_json({"enabled": a.afterdl.enabled(), "runs": a.afterdl.runs_of(root, qd["path"])})
     try:
         since = float(qd.get("since") or 0)
     except ValueError:

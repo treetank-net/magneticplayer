@@ -104,6 +104,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -121,6 +122,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -959,6 +962,29 @@ private fun AdlRunCard(r: AdlRun, onOpen: (String) -> Unit) {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
                     overflow = TextOverflow.Ellipsis)
             }
+        }
+    }
+}
+
+/**
+ * A title page's "After download": the newest run of this library file and its history on a tap. Nothing when the
+ * server is older (no `afterdl_file`), the viewer is a guest, or the file had no run (the library from before).
+ */
+@Composable
+fun AfterdlFileCard(api: Api?, root: Int, path: String, snack: SnackbarHostState) {
+    if (api == null || !api.srv.hasAfterdlFile || api.srv.isGuest) return
+    val runs by produceState<List<AdlRun>>(emptyList(), api.srv.key, root, path) {
+        value = try { withContext(Dispatchers.IO) { api.afterdlRunsOf(root, path) } } catch (_: Exception) { emptyList() }
+    }
+    var open by rememberSaveable(root, path) { mutableStateOf<String?>(null) }
+    val r = runs.firstOrNull() ?: return
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        AdlSection(Icons.Filled.DoneAll, stringResource(R.string.adl_title))
+        AdlRunCard(r) { open = it }
+    }
+    open?.let { id ->
+        Dialog({ open = null }, DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize()) { AfterdlRunScreen(api, id, snack) { open = null } }
         }
     }
 }

@@ -69,7 +69,7 @@ import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.23.0"
+VERSION = "1.24.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -582,6 +582,7 @@ class App:
                 # /api/subs/auto, /api/config/subtitles (agent 1.21+)
                 "subs_auto": mp_subsync.available(),
                 "afterdl": True,  # /api/config/afterdl, /api/afterdl (agent 1.23+)
+                "afterdl_file": True,  # /api/afterdl?root=&path=: one file's runs (agent 1.24+)
                 "subs_want": True,  # torrents take sub_langs, /api/subs/list takes want (agent 1.21.3+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
                 # the built-in "Internet Archive" site: GET /api/archive/search, POST /api/torrents {"torrent_url"} (agent 1.19+)

@@ -1218,6 +1218,9 @@ Deluge, phone or browser:
   history. Not yet: history from a film's card, questions to the downloader's phone.
 - [ ] App: the title page's play button showed "Res…" next to four icon buttons ("Resume from 1:23:45"):
   smaller text on up to two lines. Compiled only.
+- [ ] Agent 1.24.0 + app: a file's after-download history on its title page (`GET /api/afterdl?root=&path=`,
+  `features.afterdl_file`): an "After download" card with the newest run, a tap opens the full history; hidden for
+  guests and files with no runs. Server: unit test of `runs_of`; app compiled only.
 - [ ] The owner's wish (2026-11-26): collection folders (Bond, Anime inside Films) out of after download until
   cataloguing by collection is designed.
 - [ ] Next app + agent 1.22.1 (built 2026-11-26, not seen on a phone yet):

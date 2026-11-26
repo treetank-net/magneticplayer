@@ -603,6 +603,11 @@ class Api(val s: Settings, srv: Server) {
         val a = JSONObject(call("GET", "/api/afterdl?since=${since.toLong()}", null, 6000)).optJSONArray("runs") ?: JSONArray()
         return List(a.length()) { adlRun(a.getJSONObject(it)) }
     }
+    /** Every run of one library file, newest first (agent 1.24+, `features.afterdl_file`). */
+    fun afterdlRunsOf(root: Int, path: String): List<AdlRun> {
+        val a = JSONObject(call("GET", "/api/afterdl?root=$root&path=${Uri.encode(path)}", null, 6000)).optJSONArray("runs") ?: JSONArray()
+        return List(a.length()) { adlRun(a.getJSONObject(it)) }
+    }
     fun afterdlRun(id: String): AdlRun = adlRun(JSONObject(call("GET", "/api/afterdl/${Uri.encode(id)}")))
     /** `skip` (the current step), `retry` (the failed one), `cancel` (the rest) → the run. */
     fun afterdlAction(id: String, action: String): AdlRun =
