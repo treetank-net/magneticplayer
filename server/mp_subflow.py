@@ -49,6 +49,7 @@ DEFAULTS = {
     "target": "last",         # the second language: "last" (picked last in the app), a code, or "" for none
     "translate": "baseline",  # other languages: "baseline" (to the baseline's lines) or "speech" (one shift, as before)
     "snap": 0.35,             # a translated line within this many seconds of a baseline line takes its time
+    "hide_descriptions": False,  # served subtitles (phone, browser, TV) without "[door slams]", "(laughs)", "♪ …"
     "min_lift": 0.10,         # a translation is rewritten only when its lines fit the baseline's this much better
                               # than the same lines moved off by chance (the subtitles of another film don't)
 }

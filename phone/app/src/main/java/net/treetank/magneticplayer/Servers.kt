@@ -75,6 +75,8 @@ data class Server(
     val hasSubsFit get() = features?.optBoolean("subs_fit", false) ?: false
     val hasSubsVersions get() = features?.optBoolean("subs_versions", false) ?: false
     /** agent 1.12.1+: POST /api/subs/shift (subtitles too early / too late, saved in the file) */
+    /** torrents take `sub_langs`, `/api/subs/list` takes `want` (agent 1.21.3+): the server prepares that language */
+    val hasSubsWant get() = features?.optBoolean("subs_want", false) ?: false
     val hasSubsShift get() = features?.optBoolean("subs_shift", false) ?: false
     /** agent 1.12.1+: POST /api/subs/download with "async" → a job with "download" / "fit" phases */
     val hasSubsDownloadJob get() = features?.optBoolean("subs_download_job", false) ?: false

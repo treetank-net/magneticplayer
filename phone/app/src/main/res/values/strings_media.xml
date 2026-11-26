@@ -283,6 +283,7 @@
     <string name="media_psubs_fit_bad">don\'t fit your copy</string>
     <string name="media_psubs_on_disk">On the computer</string>
     <string name="media_psubs_online">On the internet</string>
+    <string name="media_psubs_search_more">Search for more</string>
     <string name="media_psubs_default">in use</string>
     <string name="media_psubs_have">you have these</string>
     <string name="media_psubs_sdh">for the hard of hearing</string>

@@ -149,6 +149,27 @@ def _cue_text(t):
     return "\n".join("<i>%s</i>" % x[1:].strip() if x.startswith("/") else x for x in lines if x)
 
 
+_DESC_PART = re.compile(r"\[[^\]\n]*\]|\([^)\n]*\)|♪[^♪\n]*♪?")
+_CUE = re.compile(r"(\d+:\d\d:\d\d[,.]\d+\s*-->[^\n]*\n)(.*?)(?:\n\s*\n|\Z)", re.S)
+
+
+def strip_descriptions(text):
+    """SubRip/WebVTT text without sound descriptions ("[door slams]", "(laughs)", "♪ la la ♪"): the parts go, a line
+    left with only a speaker's dash or name goes, a cue left empty goes (the numbering is redone for SubRip)."""
+    out, n = [], 0
+    for m in _CUE.finditer(text):
+        lines = []
+        for ln in m.group(2).split("\n"):
+            ln2 = re.sub(r"\s+([.,!?;:])", r"\1", re.sub(r"\s{2,}", " ", _DESC_PART.sub("", ln))).strip()
+            if re.fullmatch(r"[-–]?\s*([A-ZÀ-Ý][A-ZÀ-Ý .'-]{1,20}:)?\s*[-–]?", ln2):
+                continue  # nothing said on this line
+            lines.append(ln2 if ln2 != ln.strip() else ln.rstrip())
+        if lines:
+            n += 1
+            out.append(f"{n}\n{m.group(1)}" + "\n".join(lines) + "\n")
+    return "\n".join(out) if out else text
+
+
 def readable_srt(path, video=None):
     """Text of a sidecar ".srt" as real UTF-8 SubRip. Many files named .srt are something else: MicroDVD
     ({frame}{frame}text, from NapiProjekt and old OpenSubtitles uploads), MPL2 ([ds][ds]text) or TMPlayer (h:mm:ss:text),

@@ -10,7 +10,8 @@ import mp_subsync
 from mp_core import ApiError
 from mp_i18n import T, bind
 from mp_library import sidecar_subs
-from mp_subs import readable_srt
+import mp_subflow
+from mp_subs import readable_srt, strip_descriptions
 
 
 # ---- subtitles
@@ -56,8 +57,10 @@ def sub_file(req, a, method, qd, **_):
     sp = os.path.join(os.path.dirname(full), qd["name"])
     if qd["name"].lower().endswith(".srt") or (qd["name"].lower().endswith(".sub") and mp_subsync.is_text_sub(sp)):
         # MicroDVD/cp1250 named .srt, or a text .sub: the phone gets real UTF-8 SubRip
-        return req.send_text(readable_srt(os.path.join(os.path.dirname(full), qd["name"]), full),
-                              "application/x-subrip", method == "HEAD")
+        text = readable_srt(os.path.join(os.path.dirname(full), qd["name"]), full)
+        if mp_subflow.settings(a.cfg)["hide_descriptions"]:  # agent 1.22.1+: the owner's choice, off by default
+            text = strip_descriptions(text)
+        return req.send_text(text, "application/x-subrip", method == "HEAD")
     return req.stream(os.path.join(os.path.dirname(full), qd["name"]), method == "HEAD")
 
 

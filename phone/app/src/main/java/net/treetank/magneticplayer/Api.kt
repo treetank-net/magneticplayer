@@ -642,8 +642,18 @@ class Api(val s: Settings, srv: Server) {
                   dest: DlTarget? = null, guess: JSONObject? = null): String? {
         val b = JSONObject().put("magnet", uri).put("sequential", sequential).put("after", after)
         if (dest != null) b.put("root", dest.root).put("sub", dest.sub).put("guess", guess)
+        putSubLangs(b)
         return JSONObject(call("POST", "/api/torrents", b, 20000))
             .optString("id").takeIf { it.isNotEmpty() && it != "null" }
+    }
+
+    /** Agent 1.21.3+: the downloader's subtitle languages (the last picked one first, then the settings' order, up to
+     *  3), prepared by the server's automatic subtitles when the download finishes. */
+    private fun putSubLangs(b: JSONObject) {
+        if (!srv.hasSubsWant) return
+        val langs = (listOfNotNull(s.subChoice?.takeIf { it != "off" }) + s.subLanguages.split(','))
+            .map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct().take(3)
+        if (langs.isNotEmpty()) b.put("sub_langs", JSONArray(langs))
     }
 
     /** Agent 1.19+: an Internet Archive item by its .torrent address (the agent fetches it, keeps only the film file
@@ -653,6 +663,7 @@ class Api(val s: Settings, srv: Server) {
         val b = JSONObject().put("torrent_url", pick.torrentUrl).put("title", pick.title)
             .put("year", pick.year ?: JSONObject.NULL).put("sequential", sequential).put("after", after)
         if (dest != null) b.put("root", dest.root).put("sub", dest.sub).put("guess", guess)
+        putSubLangs(b)
         return JSONObject(call("POST", "/api/torrents", b, 60000))
             .optString("id").takeIf { it.isNotEmpty() && it != "null" }
     }
@@ -879,8 +890,10 @@ class Api(val s: Settings, srv: Server) {
     }
 
     // ---- subtitles
-    fun subsList(ref: MediaRef): List<SubFile> {
-        val a = JSONArray(call("GET", "/api/subs/list?${ref.query()}"))
+    /** `want` (agent 1.21.3+): the player's language; the server prepares fitted subtitles in it when missing. */
+    fun subsList(ref: MediaRef, want: String? = null): List<SubFile> {
+        val w = want?.takeIf { it.isNotEmpty() && it != "off" && srv.hasSubsWant }?.let { "&want=${Uri.encode(it)}" } ?: ""
+        val a = JSONArray(call("GET", "/api/subs/list?${ref.query()}$w"))
         return List(a.length()) { i ->
             val o = a.getJSONObject(i)
             SubFile(o.getString("name"), o.optString("lang"), o.optString("ext"), o.optJSONObject("fit")?.optStr("verdict"),

@@ -57,7 +57,7 @@ import mp_ident
 import mp_episodes
 import mp_library
 from mp_library import Library, LibError, sidecar_subs
-from mp_subs import Subtitles, SubsError, readable_srt, rank_key as subs_rank_key
+from mp_subs import Subtitles, SubsError, readable_srt, strip_descriptions, rank_key as subs_rank_key
 import mp_subsync
 import mp_retime
 import mp_iafill
@@ -68,7 +68,7 @@ import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.22.0"
+VERSION = "1.22.1"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -1010,6 +1010,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_vtt(self, path, video=None):
         text = readable_srt(path, video)
+        if mp_subflow.settings(self.app.cfg)["hide_descriptions"]:
+            text = strip_descriptions(text)
         if not path.lower().endswith(".vtt"):
             text = re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", text)
             text = "WEBVTT\n\n" + text

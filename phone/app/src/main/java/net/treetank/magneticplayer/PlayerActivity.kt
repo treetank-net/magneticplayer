@@ -350,7 +350,7 @@ class PlayerActivity : ComponentActivity() {
                 subs = emptyList()
                 local = emptyMap()
             } else {
-                val got = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) } }
+                val got = withContext(Dispatchers.IO) { runCatching { api.subsList(ref, want = settings.subChoice) } }
                 subs = got.getOrDefault(emptyList())
                 // the server answered but the list failed: say so (the film used to play without subtitles, silently)
                 got.exceptionOrNull()?.let { e -> if (!(e is ApiException && e.code == 0)) showSubsListError(e) }
@@ -1194,8 +1194,25 @@ class PlayerActivity : ComponentActivity() {
         // without the computer (outside, a downloaded copy) there is nothing to offer
         lifecycleScope.launch {
             if (!withContext(Dispatchers.IO) { api.configured && api.ping(1500) }) return@launch
+            // agent 1.21.3+: the server got `want` with the list and prepares them fitted to this copy (~10 s): wait
+            // for its file first, the phone's own search only when nothing comes
+            if (api.srv.hasSubsWant && awaitServerSubs(lang)) return@launch
             if (folderKey(r) == settings.subChoiceFolder) fetchChosenSubs(r, lang) else offerSubs(r, lang)
         }
+    }
+
+    /** Polls the list for up to a minute for subtitles in `lang` the server prepares; turns them on. */
+    private suspend fun awaitServerSubs(lang: String): Boolean {
+        repeat(12) {
+            delay(5000)
+            if (isFinishing) return true
+            val list = withContext(Dispatchers.IO) { runCatching { api.subsList(ref) }.getOrNull() } ?: return@repeat
+            val f = list.firstOrNull { it.langKey == lang && it.default } ?: return@repeat
+            Toast.makeText(this, getString(R.string.media_psubs_auto_on, langName(lang, java.util.Locale.getDefault())), Toast.LENGTH_SHORT).show()
+            applySubFile(f.name, lang)
+            return true
+        }
+        return false
     }
 
     /** "No Polish subtitles. Download?" over the picture for a while; playback is not paused. */

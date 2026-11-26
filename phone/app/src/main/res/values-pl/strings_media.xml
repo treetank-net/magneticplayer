@@ -293,6 +293,7 @@
     <string name="media_psubs_fit_bad">nie pasują do Twojej kopii</string>
     <string name="media_psubs_on_disk">Na komputerze</string>
     <string name="media_psubs_online">W internecie</string>
+    <string name="media_psubs_search_more">Szukaj więcej</string>
     <string name="media_psubs_default">używane</string>
     <string name="media_psubs_have">masz już</string>
     <string name="media_psubs_sdh">dla niesłyszących</string>

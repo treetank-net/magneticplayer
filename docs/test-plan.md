@@ -1189,6 +1189,14 @@ Deluge, phone or browser:
   stays without subtitles, nothing breaks).
 - [ ] Owner's wish (2026-11-26): picking a subtitle language in the player shows the files already there (they're
   usually downloaded with the film now) and searches for new ones only after a "Search for more" button, not at once.
+- [ ] Next app + agent 1.22.1 (built 2026-11-26, not seen on a phone yet):
+  - the language page of the subtitle sheet searches the internet only after "Search for more" when files (or an
+    embedded track) in that language are already there; with none it searches at once as before;
+  - the player sends its language as `want=` with the subtitle list; when it has none in that language it waits up
+    to a minute for the server's prepared file and turns it on, the phone's own search only after that;
+  - magnets and archive.org downloads send `sub_langs` (the last picked language, then the settings' order, up to 3);
+  - `subflow.hide_descriptions` (config/MCP, off by default): `/sub` serves subtitles without `[door slams]`,
+    `(laughs)`, `♪ …`; empty cues dropped. Not on mpv on the server (it reads the file).
 - [x] By ear (owner, 2026-11-26): The Little Shop of Horrors (English, rhythm) and Bicycle Thieves (Polish fitted to
   the Italian baseline) "both perfect".
 - [ ] Agent 1.21.1: archive.org downloads no longer stop at 99.9% (`mp_iafill`): the edge pieces shared with a
@@ -1217,7 +1225,7 @@ Deluge, phone or browser:
   three English files incl. one for the hard of hearing, all "good", 0.18-0.24 s median against heard words, no line
   over 1 s against the Whisper-built truth); the app reloading a newer subtitle file during
   playback; a Polish-language film; Windows.
-- [ ] Owner's wish (2026-11-26): a setting that hides sound descriptions (`[door slams]`, `(laughs)`) from the shown
+- [ ] Owner's wish (2026-11-26, built in agent 1.22.1, no switch in the app yet): a setting that hides sound descriptions (`[door slams]`, `(laughs)`) from the shown
   subtitles, off by default, in config/MCP.
 - [ ] Agent 1.20.0: subtitles re-timed by Whisper cut by cut (`mp_retime`, `POST /api/subs/retime`, automatic after an
   "unsure" fit). Verified on jmpc through the API (2026-11-26), not in the app: a fresh film, Detour 1945 from
