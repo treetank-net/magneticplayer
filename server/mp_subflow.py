@@ -24,6 +24,7 @@ import urllib.request
 
 import mp_archive
 import mp_catalog
+import mp_osdump
 import mp_retime
 import mp_rhythm
 import mp_subs
@@ -39,7 +40,7 @@ DEFAULTS = {
     "fallback": "en",         # when "auto" can't tell
     "sources": ["file", "embedded", "search"],  # where the baseline comes from, in this order
     # services for downloads nobody asked for: those without a daily limit first ...
-    "providers": ["bsplayer", "napiprojekt", "gestdown", "podnapisi"],
+    "providers": ["osarchive", "bsplayer", "napiprojekt", "gestdown", "podnapisi"],
     # ... and only when none of theirs fits, these (OpenSubtitles has the best files but few downloads a day without
     # an account): at most `backup_max` downloads per language and film
     "backup": ["opensubtitlescom"],
@@ -61,8 +62,10 @@ def settings(cfg):
 
 
 def all_settings(cfg):
-    """Every subtitle-timing setting: "subflow" (this module), "rhythm" (mp_rhythm), "whisper" (mp_retime)."""
-    return {"subflow": settings(cfg), "rhythm": mp_rhythm.settings(cfg), "whisper": mp_retime.settings(cfg)}
+    """Every subtitle-timing setting: "subflow" (this module), "rhythm" (mp_rhythm), "whisper" (mp_retime),
+    "osarchive" (mp_osdump: the OpenSubtitles.org archive on archive.org, 1.22+; `status` read-only)."""
+    return {"subflow": settings(cfg), "rhythm": mp_rhythm.settings(cfg), "whisper": mp_retime.settings(cfg),
+            "osarchive": dict(mp_osdump.settings(cfg), status=mp_osdump.status())}
 
 
 CHOICES = {("subflow", "whisper"): ("never", "unsure", "always"), ("subflow", "translate"): ("baseline", "speech"),
@@ -72,10 +75,10 @@ CHOICES = {("subflow", "whisper"): ("never", "unsure", "always"), ("subflow", "t
 def set_settings(app, section, changes):
     """Validated changes to one section (API and MCP); a value of the wrong type or an unknown key is refused.
     → all settings after the change."""
-    if section not in ("subflow", "rhythm", "whisper"):
-        raise ValueError("section: subflow, rhythm or whisper")
+    if section not in ("subflow", "rhythm", "whisper", "osarchive"):
+        raise ValueError("section: subflow, rhythm, whisper or osarchive")
     defaults = {"subflow": dict(DEFAULTS, last=""), "rhythm": mp_rhythm.settings({}),
-                "whisper": mp_retime.settings({})}[section]
+                "whisper": mp_retime.settings({}), "osarchive": mp_osdump.settings({})}[section]
     cur = dict(app.cfg.get(section) or {})
     for k, v in (changes or {}).items():
         if k not in defaults:

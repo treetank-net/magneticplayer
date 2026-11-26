@@ -1162,6 +1162,13 @@ Deluge, phone or browser:
     (up to the next one) when lines don't overlap: a setting (config / MCP agent), not fixed; (d) machines without a
     GPU keep working: the first analysis is the speech-detection fit, Whisper only where it is available and fast
     enough (measure CPU-only too).
+- [ ] Agent 1.22.0: the OpenSubtitles.org archive on archive.org as a provider without limits (`osarchive`, the owner:
+  "archive.org is an open source, so we build it in"), first in the automatic subtitles' providers; ads at the start
+  and end of downloaded files are removed. Verified on jmpc (2026-11-26, API): index of 5,587,429 subtitles, 725 MB
+  (first version 1.2 GB), built by itself after the agent started; search for Plan 9 (pl, en) gave 5 Polish and 11
+  English from the archive next to OpenSubtitles' own; a Polish one downloaded from the archive in 17 s, MPL2
+  converted to SRT, the ad line gone, fitted to the English baseline "good". Not exercised: a series episode, the
+  automatic subtitles taking it after a real download, the app showing the provider name, `languages`.
 - [ ] Agent 1.21.3: subtitle languages by person (the owner: "the one who plays decides which subtitles come, the
   one who downloads too, but the player most"): `sub_langs` with a torrent, `want=` on the subtitle list, `sub_lang` of
   mpv, a synced choice; the player's languages go first and jump the queue. Verified on jmpc (2026-11-26, API):

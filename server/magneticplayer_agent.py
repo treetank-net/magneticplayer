@@ -61,13 +61,14 @@ from mp_subs import Subtitles, SubsError, readable_srt, rank_key as subs_rank_ke
 import mp_subsync
 import mp_retime
 import mp_iafill
+import mp_osdump
 import mp_rhythm
 import mp_subflow
 import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.21.3"
+VERSION = "1.22.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -165,6 +166,7 @@ class App:
         # subtitles prepared by themselves after a download: a baseline in the film's language, then the language
         # picked last fitted to it (agent 1.21+, mp_subflow.py)
         self.subflow = mp_subflow.SubFlow(self, CONFIG_DIR, log)
+        mp_osdump.setup(cfg, CONFIG_DIR, log)  # the OpenSubtitles.org archive on archive.org (agent 1.22+)
         # discover Chromecasts from startup: the renderer registry knows the model before anyone opens the device picker
         threading.Thread(target=self._cast_warmup, daemon=True).start()
         # which H.264 encoder works on this hardware (NVENC/VAAPI/...): a trial encode takes seconds, so in the background

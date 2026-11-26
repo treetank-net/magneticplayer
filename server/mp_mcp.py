@@ -100,10 +100,12 @@ TOOLS = [
      "backup_max downloads per language and film; whisper: never/unsure/always; target: 'last' = the language the user picked last (last), a code, or '' "
      "for none; translate: baseline/speech; snap: s; min_lift), rhythm (speech-rhythm timing: jump, desc_weight, "
      "onset_lag, max_disagree, min_sharp), whisper (python, device, model, model_en, auto, lead: s a line shows before "
-     "its speech, extend: s a line may stay longer).", _schema()),
+     "its speech, extend: s a line may stay longer), osarchive (the OpenSubtitles.org archive on archive.org, provider "
+     "'osarchive': enabled, local: a local copy of its database, languages: keep only these in the local index, [] = "
+     "all; status read-only).", _schema()),
     ("set_subtitle_settings", True, "Change subtitle settings of one section (see get_subtitle_settings); a value of "
      "null restores the default. Tell the user what you changed.",
-     _schema({"section": {"type": "string", "enum": ["subflow", "rhythm", "whisper"]}, "changes": {"type": "object"}},
+     _schema({"section": {"type": "string", "enum": ["subflow", "rhythm", "whisper", "osarchive"]}, "changes": {"type": "object"}},
              ["section", "changes"])),
     ("subtitle_status", False, "For one video: its baseline subtitles (language, how timed, verdict) and the last "
      "automatic result.", _schema(S, ["root", "path"])),

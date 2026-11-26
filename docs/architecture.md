@@ -392,6 +392,22 @@ picked on purpose, by downloading subtitles, making a version the default, or a 
 map per video, the last result). All settings: `GET/POST /api/config/subtitles` and the MCP tools
 `get_subtitle_settings` / `set_subtitle_settings`, `subtitle_status`, `prepare_subtitles`.
 
+**The OpenSubtitles.org archive as a provider (agent 1.22+, `mp_osdump.py`, provider `osarchive`, config
+`"osarchive"`).** archive.org keeps a copy of OpenSubtitles.org as of July 2022 (5.6 million subtitles of one CD):
+one 130 GB SQLite file (`subz`: the subtitle's id → the zip OpenSubtitles served) and OpenSubtitles' own export of
+what each id is (308 MB gzip: IMDb id, language, release name, frame rate, series and episode). The owner's rule:
+archive.org is an open source, so this is built in and tried first, without a daily limit. On first use the agent
+downloads the export and builds a local index, `osdump-index.db` (~0.7 GB, ~2 min of work after a ~15 min download;
+`languages` keeps only some languages; a release name equal to the title and the title itself are not stored, a
+CRC32 of the normalised title is). A search looks the film up by IMDb id (the catalog's, put into subliminal's
+`external_ids` before the first round), series IMDb id + season + episode, or title + year (±1). A download reads
+one row straight out of the remote database with HTTP Range requests: page 1 → the table's root → the B-tree by rowid
+(interior pages cached) → the row's overflow pages, usually consecutive and fetched in one request (~6 requests,
+~40 KB, a few seconds); the largest file in the zip is the subtitle. `local` names a local copy of the database (its
+torrent) for when archive.org drops it. While the index is being built the provider answers "unavailable" and the
+others carry on. Every downloaded file loses the advertising lines OpenSubtitles added at the start or end
+(`mp_subs.strip_ads`: a site name or "sync/corrections by" in the first 3 or last 10 minutes).
+
 Agent 1.12.1+: when the video carries its own subtitle track (text, PGS or VobSub, the one with the most lines), its
 display times are the reference instead of the speech (ffprobe packets, ~7 s for an episode, cached next to the
 speech). They are exact to the frame, while the speech of an action film is buried under music: on one episode the same

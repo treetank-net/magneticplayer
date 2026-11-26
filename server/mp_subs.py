@@ -18,7 +18,7 @@ from mp_i18n import T, bind
 VENV = os.path.expanduser("~/.local/share/magneticplayer/venv")
 STOPPED = ("interrupted", "przerwane")  # (en, pl) — provider state after "Enough" (stop)
 BY_HASH_ONLY = {"bsplayer", "napiprojekt"}  # they search by file hash — changing the title won't help them
-FREE_PROVIDERS = ["podnapisi", "bsplayer", "gestdown", "napiprojekt"]  # tvsubtitles: 403
+FREE_PROVIDERS = ["osarchive", "podnapisi", "bsplayer", "gestdown", "napiprojekt"]  # osarchive: mp_osdump (1.22+)  # tvsubtitles: 403
 # A provider that doesn't answer (BSPlayer's servers stopped accepting connections and subliminal tried its five
 # addresses one after another, minutes per search) is skipped for a while, so background tasks don't wait on it per file.
 PROVIDER_DEADLINE, PROVIDER_PAUSE = 60, 1800
@@ -53,6 +53,8 @@ def _subliminal():
             raise SubsError(T("subliminal is missing — run server/install.sh again", "brak subliminal — uruchom ponownie server/install.sh"), 500)
         subliminal.region.configure("dogpile.cache.memory")
         _keep_oscom_attributes()
+        import mp_osdump
+        mp_osdump.register(subliminal)
         _sl = (subliminal, Language)
     return _sl
 
@@ -205,6 +207,31 @@ def to_srt(raw, video=None):
             out.append("%d\n%s --> %s\n%s\n" % (len(out) + 1, _ts(a), _ts(b), t))
     return "\n".join(out)
 
+
+
+_AD = re.compile(r"(?i)opensubtitles|subtitles downloaded by|zasysacz|advertise your product|become vip|"
+                 r"subtitles by .*www\.|napisy (pobrane|ze strony)|www\.[a-z0-9-]+\.(?:com|org|net|info|pl)\b")
+
+
+def strip_ads(text):
+    """SubRip text without the advertising lines services add at the start or end (\"Subtitles downloaded by …\",
+    \"Advertise your product or brand here\"): only cues in the first 3 or last 10 minutes are looked at, so a web
+    address said in the film stays."""
+    cues = list(_CUE.finditer(text))
+    if not cues:
+        return text
+    end = max(int(m.group(5)) * 3600 + int(m.group(6)) * 60 + int(m.group(7)) for m in cues)
+    keep, dropped = [], 0
+    for m in cues:
+        a = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+        if (a < 180 or a > end - 600) and _AD.search(m.group(9)):
+            dropped += 1
+            continue
+        keep.append(m)
+    if not dropped:
+        return text
+    return "\n".join("%d\n%s" % (k + 1, m.group(0).split("\n", 1)[0] + "\n" + m.group(9).strip() + "\n")
+                     for k, m in enumerate(keep))
 
 
 def _unexpected(job, e):
@@ -477,6 +504,10 @@ class Subtitles:
         progress["phase"] = "file"  # file hash + title recognition
         v = self._video(full)
         self._set_title(v, title, year)
+        if known and known.get("imdb") and not title:  # the catalog's IMDb id from the start (osarchive looks up by it)
+            key = "series_imdb_id" if self._is_episode(v) else "imdb_id"
+            if not (v.external_ids or {}).get(key) and (key == "imdb_id") == (known.get("kind") != "series"):
+                v.external_ids = dict(v.external_ids or {}, **{key: known["imdb"]})
         progress["query"] = v.series if self._is_episode(v) else v.title
         progress["phase"] = "search"
         progress["round"] = 1
@@ -580,6 +611,7 @@ class Subtitles:
             text = to_srt(s.content or s.text.encode("utf-8"), full)
             if re.search(r"\d+:\d\d:\d\d,\d+ -->", text):
                 target = os.path.splitext(target)[0] + ".srt"
+                text = strip_ads(text)
             else:
                 text = s.text
             release = release_name(s)
