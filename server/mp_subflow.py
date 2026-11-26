@@ -38,8 +38,12 @@ DEFAULTS = {
     "original": "auto",       # the film's language: "auto" (the sound track's tag, the title's tags) or a code
     "fallback": "en",         # when "auto" can't tell
     "sources": ["file", "embedded", "search"],  # where the baseline comes from, in this order
-    # services for downloads nobody asked for: those without a daily limit; add "opensubtitlescom" to spend its limit
+    # services for downloads nobody asked for: those without a daily limit first ...
     "providers": ["bsplayer", "napiprojekt", "gestdown", "podnapisi"],
+    # ... and only when none of theirs fits, these (OpenSubtitles has the best files but few downloads a day without
+    # an account): at most `backup_max` downloads per language and film
+    "backup": ["opensubtitlescom"],
+    "backup_max": 1,
     "whisper": "unsure",      # "never", "unsure" (when the rhythm isn't sure) or "always"
     "target": "last",         # the second language: "last" (picked last in the app), a code, or "" for none
     "translate": "baseline",  # other languages: "baseline" (to the baseline's lines) or "speech" (one shift, as before)
@@ -465,10 +469,13 @@ class SubFlow:
         except Exception as e:  # noqa: BLE001 — providers down, a title not recognised
             self.log("subtitles (auto): search failed", os.path.basename(full), e)
             return None
-        cands = [r for r in found.get("results") or [] if r.get("lang") == lang and r["provider"] in s["providers"]
-                 and not r.get("machine")]
-        cands.sort(key=mp_subs.rank_key)
-        for r in cands[:3]:
+        ok = [r for r in found.get("results") or [] if r.get("lang") == lang and not r.get("machine")]
+        first = sorted((r for r in ok if r["provider"] in s["providers"]), key=mp_subs.rank_key)[:3]
+        backup = sorted((r for r in ok if r["provider"] in s["backup"] and r["provider"] not in s["providers"]),
+                        key=mp_subs.rank_key)[:max(0, int(s["backup_max"]))]
+        for n, r in enumerate(first + backup):
+            if n == len(first) and backup:
+                self.log("subtitles (auto): nothing fitted from the free services, trying", r["provider"])
             try:
                 got = a.download_subs(full, {"id": r["id"], "provider": r["provider"], "languages": lang,
                                              "auto": True}, prepare=prepare)

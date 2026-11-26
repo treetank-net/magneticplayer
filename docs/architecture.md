@@ -380,7 +380,8 @@ of the Whisper-timed English lines 69-95% (the old one-shift fit 42-88%), 37% on
 left alone), every video of it gets: (1) a baseline in the film's language (`original`: the sound track's language tag,
 the title's tags, else `fallback`), from `sources` in order: a file next to the video (re-timed in place, the original
 kept), a text subtitle track of the file itself (its times are exact), a subtitle service from `providers` (only those
-without a daily limit by default), each fitted (one shift, then the rhythm, then Whisper when `whisper` is "unsure"
+without a daily limit by default; the `backup` ones, OpenSubtitles, only when none of theirs fits, at most
+`backup_max` = 1 download per language and film, the owner's rule: best files, but its daily limit is spent), each fitted (one shift, then the rhythm, then Whisper when `whisper` is "unsure"
 and the rhythm isn't sure, or "always"); (2) the `target` language ("last": the language the user last picked on
 purpose, by downloading subtitles, making a version the default, or a phone's choice synced later) fitted to that
 baseline. A subtitle file of another language added later (a download, a fit) goes to the baseline too

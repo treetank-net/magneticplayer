@@ -96,7 +96,8 @@ TOOLS = [
     ("get_subtitle_settings", False, "How subtitles are timed and fetched by themselves after a download. Sections: "
      "subflow (auto: run after a download; original: the film's language, 'auto' or a code; fallback; sources: "
      "file/embedded/search in order; providers: services for automatic downloads, only ones without daily limits by "
-     "default; whisper: never/unsure/always; target: 'last' = the language the user picked last (last), a code, or '' "
+     "default; backup: services tried only when nothing from providers fitted (OpenSubtitles: daily limit), at most "
+     "backup_max downloads per language and film; whisper: never/unsure/always; target: 'last' = the language the user picked last (last), a code, or '' "
      "for none; translate: baseline/speech; snap: s; min_lift), rhythm (speech-rhythm timing: jump, desc_weight, "
      "onset_lag, max_disagree, min_sharp), whisper (python, device, model, model_en, auto, lead: s a line shows before "
      "its speech, extend: s a line may stay longer).", _schema()),

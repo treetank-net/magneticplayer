@@ -1162,6 +1162,14 @@ Deluge, phone or browser:
     (up to the next one) when lines don't overlap: a setting (config / MCP agent), not fixed; (d) machines without a
     GPU keep working: the first analysis is the speech-detection fit, Whisper only where it is available and fast
     enough (measure CPU-only too).
+- [ ] Agent 1.21.2: automatic subtitles take OpenSubtitles only as a backup (the owner: it has the best files, but
+  its daily limit is spent; never the first choice): `subflow.backup` (`["opensubtitlescom"]`), at most `backup_max`
+  (1) download per language and film, only when nothing from the free services fitted. Found on the way: for the
+  archive.org films tested (Charade, Bicycle Thieves, Plan 9, The Little Shop of Horrors) the free services had
+  nothing at all, every file came from OpenSubtitles. Verified on jmpc (2026-11-26, API): Carnival of Souls with no
+  subtitle files: the free services found nothing, one OpenSubtitles download each for English (rhythm, good) and
+  Polish (fitted to it, good). To check: the limit message when OpenSubtitles' downloads are used up (the film
+  stays without subtitles, nothing breaks).
 - [ ] Owner's wish (2026-11-26): picking a subtitle language in the player shows the files already there (they're
   usually downloaded with the film now) and searches for new ones only after a "Search for more" button, not at once.
 - [x] By ear (owner, 2026-11-26): The Little Shop of Horrors (English, rhythm) and Bicycle Thieves (Polish fitted to
