@@ -101,7 +101,8 @@ TOOLS = [
      "for none; translate: baseline/speech; snap: s; min_lift), rhythm (speech-rhythm timing: jump, desc_weight, "
      "onset_lag, max_disagree, min_sharp), whisper (python, device, model, model_en, auto, lead: s a line shows before "
      "its speech, extend: s a line may stay longer), osarchive (the OpenSubtitles.org archive on archive.org, provider "
-     "'osarchive': enabled, local: a local copy of its database, languages: keep only these in the local index, [] = "
+     "'osarchive': enabled, local: a local copy of its database, dir: folder for the local index ('' = the config folder; a "
+     "change moves it), languages: keep only these in the local index, [] = "
      "all; status read-only).", _schema()),
     ("set_subtitle_settings", True, "Change subtitle settings of one section (see get_subtitle_settings); a value of "
      "null restores the default. Tell the user what you changed.",

@@ -398,7 +398,9 @@ one 130 GB SQLite file (`subz`: the subtitle's id → the zip OpenSubtitles serv
 what each id is (308 MB gzip: IMDb id, language, release name, frame rate, series and episode). The owner's rule:
 archive.org is an open source, so this is built in and tried first, without a daily limit. On first use the agent
 downloads the export and builds a local index, `osdump-index.db` (~0.7 GB, ~2 min of work after a ~15 min download;
-`languages` keeps only some languages; a release name equal to the title and the title itself are not stored, a
+`dir` puts it elsewhere, e.g. a hidden folder on a data disk when the system disk is full: a changed `dir` moves the
+existing index there, and while that disk is unplugged the provider is "unavailable" rather than building another
+copy; `languages` keeps only some languages; a release name equal to the title and the title itself are not stored, a
 CRC32 of the normalised title is). A search looks the film up by IMDb id (the catalog's, put into subliminal's
 `external_ids` before the first round), series IMDb id + season + episode, or title + year (±1). A download reads
 one row straight out of the remote database with HTTP Range requests: page 1 → the table's root → the B-tree by rowid

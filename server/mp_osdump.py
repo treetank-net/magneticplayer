@@ -36,6 +36,7 @@ DEFAULTS = {
     "db_url": ITEM + "opensubs.db",
     "index_url": ITEM + "subtitles_all.txt.gz",
     "local": "",  # a local copy of opensubs.db (optional)
+    "dir": "",  # where the index lives ("" = the config folder); e.g. a hidden folder on a big data disk
     "languages": [],  # only these languages in the index ([] = all, ~0.7 GB; ["en", "pl"] is about a fifth)
 }
 UA = {"User-Agent": "MagneticPlayer (home media agent; https://gitlab.com/treetank/magneticplayer)"}
@@ -61,8 +62,48 @@ def setup(cfg, config_dir, log):
         threading.Timer(90, build).start()  # after the agent's start-up work
 
 
+def changed():
+    """The settings changed: start the move or rebuild at once rather than at the next search."""
+    if _cfg()["enabled"] and not ready() and not _state["building"]:
+        threading.Thread(target=build, daemon=True).start()
+
+
+def _index_dir():
+    return os.path.expanduser(_cfg().get("dir") or "") or _state["dir"] or "."
+
+
 def _index_path():
-    return os.path.join(_state["dir"] or ".", "osdump-index.db")
+    return os.path.join(_index_dir(), "osdump-index.db")
+
+
+def _dir_missing():
+    """The chosen folder's disk isn't there (an unplugged or unmounted USB disk): the provider waits for it instead of
+    building a new index elsewhere. The folder itself is created when its parent exists."""
+    d = _index_dir()
+    if os.path.isdir(d):
+        return False
+    parent = os.path.dirname(d.rstrip("/\\"))
+    if parent and os.path.isdir(parent):
+        try:
+            os.makedirs(d, exist_ok=True)
+            return False
+        except OSError:
+            pass
+    return True
+
+
+def _move_old():
+    """After `dir` changed: move the index from the config folder instead of downloading the export again."""
+    old = os.path.join(_state["dir"] or ".", "osdump-index.db")
+    new = _index_path()
+    if old == new or not os.path.exists(old) or os.path.exists(new):
+        return False
+    import shutil
+    _state["progress"] = "move"
+    shutil.move(old, new + ".tmp")
+    os.replace(new + ".tmp", new)
+    _state["log"](f"osarchive: index moved to {_index_dir()}")
+    return ready()
 
 
 def _ver():
@@ -102,7 +143,17 @@ def build():
     """Downloads the export and writes the index (a few minutes; the old index stays until the new one is complete)."""
     if _state["building"]:
         return
+    if _dir_missing():
+        _state["error"] = f"the folder {_index_dir()} isn't available (disk not connected?)"
+        return
     _state.update(building=True, error=None, progress="download")
+    try:
+        if _move_old():
+            _state.update(building=False, progress=None)
+            return
+    except OSError as e:
+        _state["log"]("osarchive: moving the index failed, building it anew:", e)
+        _state["progress"] = "download"
     tmp = _index_path() + ".tmp"
     gz = _index_path() + ".src.gz"
     log = _state["log"]
@@ -465,6 +516,8 @@ def _classes():
             from subliminal.exceptions import ServiceUnavailable
             if not _cfg()["enabled"]:
                 return []
+            if _dir_missing():
+                raise ServiceUnavailable("the archive's index folder isn't available (disk not connected?)")
             if not ready():
                 if not _state["building"]:
                     threading.Thread(target=build, daemon=True).start()

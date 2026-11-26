@@ -96,6 +96,8 @@ def set_settings(app, section, changes):
         cur[k] = v
     app.cfg[section] = cur
     app.save_cfg()
+    if section == "osarchive":
+        mp_osdump.changed()  # a new folder or language list: move or rebuild the index now
     return all_settings(app.cfg)
 
 

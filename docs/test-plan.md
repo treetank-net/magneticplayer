@@ -1169,6 +1169,9 @@ Deluge, phone or browser:
   English from the archive next to OpenSubtitles' own; a Polish one downloaded from the archive in 17 s, MPL2
   converted to SRT, the ad line gone, fitted to the English baseline "good". Not exercised: a series episode, the
   automatic subtitles taking it after a real download, the app showing the provider name, `languages`.
+  Owner's wish (2026-11-26): keep the index off the full system disk: `osarchive.dir`. Verified on jmpc (API): set to
+  a hidden folder on a USB data disk, the index moved there by itself (no new download), Plan 9 search from it in
+  4.4 s. Not exercised: the disk unplugged (the provider should say "unavailable" and build nothing).
 - [ ] Agent 1.21.3: subtitle languages by person (the owner: "the one who plays decides which subtitles come, the
   one who downloads too, but the player most"): `sub_langs` with a torrent, `want=` on the subtitle list, `sub_lang` of
   mpv, a synced choice; the player's languages go first and jump the queue. Verified on jmpc (2026-11-26, API):
