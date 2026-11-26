@@ -141,6 +141,7 @@ ROUTES = [
     ("POST", "/api/subs/download", subs.subs_download, {}),
     ("POST", "/api/subs/default", subs.subs_default, {}),
     ("POST", "/api/subs/fit", subs.subs_fit, {}),
+    ("POST", "/api/subs/retime", subs.subs_retime, {}),
     ("POST", "/api/subs/shift", subs.subs_shift, {}),
     ("GET", "/api/config/app_updates", call("app_updates.status"), {}),
     ("POST", "/api/config/app_updates", config.app_updates_mode, {}),

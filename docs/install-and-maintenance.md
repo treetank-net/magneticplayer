@@ -149,6 +149,30 @@ encoder for "Prepare a Chromecast version" by itself at startup and the app show
 (GTX 970) it should be NVENC, as long as the NVIDIA driver with `libnvidia-encode` works. On Intel it's VAAPI, on a
 Mac VideoToolbox. The versions are stored in `.mp-cast/` next to the videos and can be deleted by hand.
 
+### Whisper for subtitle timing (optional, agent 1.20+)
+
+Subtitles of a release cut differently from the film on disk are re-timed by Whisper (see architecture.md). It lives
+in its own venv next to the agent, `~/.local/share/magneticplayer/whisper-venv` (or set `"whisper": {"python": …}` in
+`config.json`), so a model of ~0.5-1 GB and the CUDA libraries stay out of the agent's venv:
+
+```bash
+python3 -m venv ~/.local/share/magneticplayer/whisper-venv
+~/.local/share/magneticplayer/whisper-venv/bin/pip install faster-whisper     # recent NVIDIA cards and CPU
+```
+
+The model (`small.en`, `small`) downloads on first use. Old NVIDIA cards (Maxwell, e.g. GTX 970): CTranslate2 4.x fails
+with "invalid device ordinal"; 3.24 with CUDA 11 works:
+
+```bash
+V=~/.local/share/magneticplayer/whisper-venv
+$V/bin/pip install ctranslate2==3.24.0 nvidia-cublas-cu11 'nvidia-cudnn-cu11==8.9.*' nvidia-cuda-nvrtc-cu11 \
+  'av==12.3.0' 'numpy<2' 'huggingface_hub<1' tokenizers onnxruntime
+$V/bin/pip install --no-deps faster-whisper==0.10.1
+```
+
+The agent finds the CUDA libraries in the venv itself (`LD_LIBRARY_PATH` for the worker). Without a usable GPU it runs
+on the processor (`int8`). `features.subs_retime` in `/api/info` says whether the agent sees it.
+
 ### Quick update of just the agent (development)
 
 ```bash

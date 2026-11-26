@@ -59,11 +59,12 @@ import mp_library
 from mp_library import Library, LibError, sidecar_subs
 from mp_subs import Subtitles, SubsError, readable_srt, rank_key as subs_rank_key
 import mp_subsync
+import mp_retime
 import mp_segments
 import mp_subfiles
 import mp_watch
 
-VERSION = "1.19.1"
+VERSION = "1.20.0"
 API_LEVEL = 2  # /api/info: id, features, power; device tokens, tickets, player/open with a url
 
 
@@ -209,6 +210,8 @@ class App:
             log("subtitle fitting:", name, e)
             return {"verdict": "error", "error": str(e), "name": name}
         res["locked"] = locked
+        if not elsewhere and not locked:
+            self.retime_later(full, name, res)
         if res.get("changed") and not elsewhere:
             try:
                 if self.mpv.running() and self.mpv.prop("path") == full:
@@ -216,6 +219,46 @@ class App:
                     self.mpv.cmd("sub-add", new, "select")
             except ApiError:
                 pass
+        return res
+
+    def retime_later(self, full, name, fit):
+        """An "unsure" fit (often a copy cut differently: `cuts`) is re-timed by Whisper in the background when this
+        computer has it (agent 1.20+, mp_retime; config "whisper": {"auto": false} turns that off)."""
+        w = mp_retime.settings(self.cfg)
+        if fit.get("verdict") != "unsure" or not w["auto"] or not mp_retime.available(self.cfg):
+            return
+        fit["retime"] = "pending"
+        threading.Thread(target=bind(self.retime_subs), args=(full, name), daemon=True).start()
+
+    def retime_subs(self, full, name, job=None):
+        """Re-times a subtitle file next to `full` with Whisper (mp_retime) and rewrites it in place (the original is
+        kept). `job`: progress for /api/subs/job ("retime", heard minutes)."""
+        path = os.path.join(os.path.dirname(full), name)
+        if self.tasks.torrent_owned(path):
+            return {"verdict": "error", "error": T("these subtitles belong to a torrent being shared: not changed",
+                                                   "te napisy należą do udostępnianego torrenta: bez zmian"), "name": name}
+        if self.downloading_part(full):
+            return {"verdict": "error", "error": T("the film is still downloading", "film jeszcze się pobiera"), "name": name}
+        if not mp_retime.available(self.cfg):
+            return {"verdict": "error", "error": T("Whisper is not installed on this computer",
+                                                   "na tym komputerze nie ma Whispera"), "name": name}
+        progress = job if job is not None else {}
+        progress["phase"] = "retime"
+        with mp_retime._lock:
+            try:
+                text = readable_srt(path, full)
+                new, res = mp_retime.retime(full, text, mp_retime.settings(self.cfg), mp_retime.language_of(name),
+                                            self.subsync.get_any(path), progress)
+                self.subsync.replace(path, new, res)
+            except (mp_retime.RetimeError, mp_subsync.SyncError, OSError, ValueError) as e:
+                log("subtitle re-timing:", name, e)
+                return {"verdict": "error", "error": str(e), "name": name}
+        res["name"] = name
+        try:
+            if self.mpv.running() and self.mpv.prop("path") == full:
+                self.mpv.cmd("sub-add", path, "select")
+        except ApiError:
+            pass
         return res
 
     def download_subs(self, full, b, job=None):
@@ -258,6 +301,9 @@ class App:
         if fit and not wait:
             threading.Thread(target=bind(self.fit_subs), args=(full, res["name"]), daemon=True).start()
             res["fit"] = {"verdict": "pending"}
+        elif res.get("name") and (res.get("fit") or {}).get("verdict") == "unsure" and not self.tasks.torrent_owned(
+                os.path.join(os.path.dirname(full), res["name"])):
+            self.retime_later(full, res["name"], res["fit"])  # fitted in a temporary folder: re-timed in place now
         elif (res.get("fit") or {}).get("reason") == "incomplete" and res.get("name"):
             self.refit_later(full, res["name"])  # fitted in a temporary folder: wait under the name it got here
         return res
@@ -488,6 +534,7 @@ class App:
                 # pause/resume, queue order and retry of tasks: /api/tasks/<id>/pause|resume|move|retry, /api/tasks/order
                 "task_queue": True,  # agent 1.17+
                 "subs_fit": mp_subsync.available(),  # subtitles fitted to the film's speech (agent 1.9+)
+                "subs_retime": mp_retime.available(self.cfg),  # re-timed by Whisper, cut by cut (agent 1.20+)
                 "search_engines": len(self.cfg.get("search_engines") or []),
                 # the built-in "Internet Archive" site: GET /api/archive/search, POST /api/torrents {"torrent_url"} (agent 1.19+)
                 "archive_search": True,

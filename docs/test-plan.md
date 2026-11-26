@@ -1155,6 +1155,25 @@ Deluge, phone or browser:
     one cut falls in a 4.6-min stretch without dialogue and lands 8 s off (the full film needed the owner's ear there
     too). Next: place such a cut by the audio itself (silence, `silencedetect`) or a scene change (`scdet`), since
     an edit is usually made at a scene change.
+  - the owner's rules for the built-in version: (a) a lone line Whisper heard clearly in a long stretch without
+    dialogue keeps its own time when it fits neither neighbour (cuts on both sides), else the cut goes on the side
+    that keeps it where it was heard; (b) timing target: a line may show up to ~0.5 s before its speech (at the start
+    of the speech is ideal), never noticeably after it and never long before; (c) a line may stay on screen longer
+    (up to the next one) when lines don't overlap: a setting (config / MCP agent), not fixed; (d) machines without a
+    GPU keep working: the first analysis is the speech-detection fit, Whisper only where it is available and fast
+    enough (measure CPU-only too).
+- [ ] Agent 1.20.0: subtitles re-timed by Whisper cut by cut (`mp_retime`, `POST /api/subs/retime`, automatic after an
+  "unsure" fit). Verified on jmpc through the API (2026-11-26), not in the app: a fresh film, Detour 1945 from
+  archive.org (68 min), with Criterion Blu-ray subtitles downloaded through `/api/subs/download`: the fit said
+  "unsure" (-75 s, pieces from -75 to -84 s) and started the re-timing by itself; the first run recognised 0 lines (the
+  lines were looked for ±60 s from their own time, the file was 75 s off: now around the fit's offset), the retry: 6
+  cuts, tempo -0.05%, 19.5 min heard in 94-98 s on the GTX 970, CPU only (int8, ~4 cores) 22 min heard in 310 s.
+  Against full-film Whisper (653 lines): median 0.29 s (0.15 s of it the deliberate lead), 90% within 0.8 s; the
+  full-film re-timing 0.14 s. Same code on the earlier films, with the "third point" check (a heard piece off the line
+  → listen around it): Night of the Living Dead median 0.38 s, all five of the owner's lines within 1.5 s ("Don't look
+  at it" -0.9 s, the full-film version had -2.4 s), 191 s; His Girl Friday 0.29 s, 111 s. To check: by ear on the
+  phone (Detour), a download from the phone that triggers it, the subtitle list/badges after a re-timing (`by:
+  whisper`), what the app shows while it runs; a Whisper venv install on another computer (no installer yet).
 - [ ] Agent 1.19.1: subtitle fit with Silero VAD and a cut check (the owner: "use silence at the first analysis",
   keep machines without a GPU working). Verified on jmpc through `POST /api/subs/fit` (2026-11-26, API only): His Girl
   Friday re-timed subtitles "good" (z 8.2, offset -0.05), the original DVD subtitles "unsure" with `cuts` (the first

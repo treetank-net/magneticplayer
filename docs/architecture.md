@@ -315,6 +315,25 @@ the sleep guard), and `/api/subs/list` shows it as `pending` / `incomplete`. In 
 in the subtitle sheet belongs to the player (`SubsDownloads`): closing the sheet doesn't stop it, a line over the
 picture says what it is doing and how it ended, and the new file is switched on when it is done.
 
+**Re-timing by Whisper (agent 1.20+, `mp_retime.py`, `features.subs_retime`).** One shift for the whole file can't fix
+subtitles of a release cut differently from the copy on disk (another intro, scenes a few seconds shorter, a slightly
+different speed): the fit above then says "unsure" with `cuts`. When the computer has Whisper (a separate venv with
+faster-whisper, see install-and-maintenance.md), such a file is re-timed in the background right after the fit (or on
+`POST /api/subs/retime`): Whisper (`mp_whisper_worker.py`, its own process) listens to 1-minute pieces where the
+subtitles have many lines and Silero hears speech, the first words of each line are matched to the words heard (within
+±45 s of where the fit put the file), and the matched lines give a model of one tempo for the film plus an offset per
+stretch between cuts (Viterbi with a cost per new stretch, the tempo from a grid). Wherever two neighbouring matched
+lines fall in different stretches more than 2 minutes apart, the agent listens in between (bisection) until each cut
+lies between two heard lines; a cut that can't be narrowed further (no dialogue there) goes where the lines in between
+land on Silero's speech best. A line heard exactly (4+ words) that fits neither stretch keeps its own time. Lines show
+`lead` (0.15 s) before the speech: early by up to half a second reads well, late doesn't. Lines that overlapped in the
+original (two speakers split into two cues) still overlap, others never do; `extend` lets lines stay longer, up to the
+next one. Nothing is written when fewer than 15 lines are recognised (other language, other film) or fewer than 80%
+of the heard lines agree with the result. The original goes to `subs-originals/` as with a fit. The language model:
+`small.en` for English subtitles, `small` for others (it can only match subtitles in the film's spoken language).
+Measured on jmpc (GTX 970): a 68-minute film with 6 cuts against Criterion subtitles 75 s off, 19.5 minutes heard in
+94 s, median error 0.17 s.
+
 Agent 1.12.1+: when the video carries its own subtitle track (text, PGS or VobSub, the one with the most lines), its
 display times are the reference instead of the speech (ffprobe packets, ~7 s for an episode, cached next to the
 speech). They are exact to the frame, while the speech of an action film is buried under music: on one episode the same

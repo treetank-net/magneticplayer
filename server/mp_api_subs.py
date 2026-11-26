@@ -118,6 +118,17 @@ def subs_fit(req, a, **_):
     return req.send_json(a.fit_subs(full, b["name"]))
 
 
+# re-timed by Whisper, cut by cut (agent 1.20+): {ref, name, async?}; async → {"job"}, /api/subs/job shows "retime"
+def subs_retime(req, a, **_):
+    b = req.body()
+    full = a.resolve_ref(b)
+    if b.get("name") not in {x["name"] for x in sidecar_subs(full)}:
+        raise ApiError(T("no such subtitles", "nie ma takich napisów"), 404)
+    if b.get("async"):
+        return req.send_json({"job": a.subs.start_job(lambda job: a.retime_subs(full, b["name"], job), "retime")})
+    return req.send_json(a.retime_subs(full, b["name"]))
+
+
 # by hand: {ref, name, by: seconds} (agent 1.12.1+)
 def subs_shift(req, a, **_):
     b = req.body()

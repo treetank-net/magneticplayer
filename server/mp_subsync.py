@@ -484,6 +484,17 @@ class Store:
         self.log(f"subtitles shifted by hand: {os.path.basename(sub_path)} {by:+.2f} s (total {r['manual']:+.2f} s)")
         return r["manual"]
 
+    def replace(self, sub_path, text, res):
+        """Writes re-timed subtitles in place (mp_retime), keeping the original, and remembers `res`."""
+        self._keep_original(sub_path)
+        tmp = sub_path + ".mp-tmp"
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        os.replace(tmp, sub_path)
+        self._remember(sub_path, dict(res, ratio=1.0, offset=0.0, changed=True, name=os.path.basename(sub_path)))
+        self.log(f"subtitles re-timed by Whisper: {os.path.basename(sub_path)} tempo {res.get('tempo')}% "
+                 f"cuts {len(res.get('cuts') or [])} error {res.get('error')} s")
+
     def get_any(self, sub_path):
         """The last assessment of this file even when it changed since."""
         r = self.rec.get(os.path.realpath(sub_path))
