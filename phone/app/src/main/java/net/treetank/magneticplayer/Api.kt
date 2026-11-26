@@ -609,6 +609,13 @@ class Api(val s: Settings, srv: Server) {
         return List(a.length()) { adlRun(a.getJSONObject(it)) }
     }
     fun afterdlRun(id: String): AdlRun = adlRun(JSONObject(call("GET", "/api/afterdl/${Uri.encode(id)}")))
+    /** This device's open questions and finished runs (agent 1.25+, `features.afterdl_ask`); short timeout (background). */
+    fun afterdlMine(since: Double): AdlMine =
+        adlMine(JSONObject(call("GET", "/api/afterdl/mine?since=${since.toLong()}", null, 5000)))
+    /** The answer to step [step]'s question; 400 when it has no open question any more. */
+    fun afterdlAnswer(id: String, step: Int, yes: Boolean): AdlRun =
+        adlRun(JSONObject(call("POST", "/api/afterdl/${Uri.encode(id)}",
+            JSONObject().put("action", "answer").put("step", step).put("answer", if (yes) "yes" else "no"))))
     /** `skip` (the current step), `retry` (the failed one), `cancel` (the rest) → the run. */
     fun afterdlAction(id: String, action: String): AdlRun =
         adlRun(JSONObject(call("POST", "/api/afterdl/${Uri.encode(id)}", JSONObject().put("action", action))))
@@ -661,8 +668,9 @@ class Api(val s: Settings, srv: Server) {
         val b = JSONObject().put("magnet", uri).put("sequential", sequential).put("after", after)
         if (dest != null) b.put("root", dest.root).put("sub", dest.sub).put("guess", guess)
         putSubLangs(b)
-        return JSONObject(call("POST", "/api/torrents", b, 20000))
-            .optString("id").takeIf { it.isNotEmpty() && it != "null" }
+        val r = JSONObject(call("POST", "/api/torrents", b, 20000))
+        AfterdlNotify.added(ctx, srv)  // its after download steps may ask this phone: follow them in the background
+        return r.optString("id").takeIf { it.isNotEmpty() && it != "null" }
     }
 
     /** Agent 1.21.3+: the downloader's subtitle languages (the last picked one first, then the settings' order, up to
@@ -682,8 +690,9 @@ class Api(val s: Settings, srv: Server) {
             .put("year", pick.year ?: JSONObject.NULL).put("sequential", sequential).put("after", after)
         if (dest != null) b.put("root", dest.root).put("sub", dest.sub).put("guess", guess)
         putSubLangs(b)
-        return JSONObject(call("POST", "/api/torrents", b, 60000))
-            .optString("id").takeIf { it.isNotEmpty() && it != "null" }
+        val r = JSONObject(call("POST", "/api/torrents", b, 60000))
+        AfterdlNotify.added(ctx, srv)  // its after download steps may ask this phone: follow them in the background
+        return r.optString("id").takeIf { it.isNotEmpty() && it != "null" }
     }
 
     fun librarySearch(q: String): List<LibHit> {

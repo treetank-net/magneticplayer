@@ -173,4 +173,31 @@
         <item quantity="one">%d warning</item>
         <item quantity="other">%d warnings</item>
     </plurals>
+    <!-- after download questions to the downloader (agent 1.25+) -->
+    <string name="adl_ask_sec">Question</string>
+    <string name="adl_ask_switch">Ask the downloader</string>
+    <string name="adl_ask_switch_desc">Only the phone that added the download; downloads from the client on the computer decide at once</string>
+    <string name="adl_ask_after">No answer after</string>
+    <string name="adl_ask_after_desc">then yes, marked “auto” in the history</string>
+    <string name="adl_ask_hours">%s h</string>
+    <string name="adl_ask_title">Shrink “%s”?</string>
+    <string name="adl_ask_title_other">“%s”: a question</string>
+    <string name="adl_ask_facts_gpu">%1$s → about %2$s on the graphics card</string>
+    <string name="adl_ask_facts_cpu">%1$s → about %2$s on the processor</string>
+    <string name="adl_ask_minutes">, ~%d min</string>
+    <string name="adl_ask_default_yes">No answer: yes at %s.</string>
+    <string name="adl_ask_default_no">No answer: no at %s.</string>
+    <string name="adl_ask_yes">Shrink</string>
+    <string name="adl_ask_no">No</string>
+    <string name="adl_ask_waiting">asks you</string>
+    <string name="adl_ask_answered_yes">Answer: shrink</string>
+    <string name="adl_ask_answered_no">Answer: don\'t shrink</string>
+    <string name="adl_ask_answered_auto">No answer in time: shrink (auto)</string>
+    <string name="adl_ask_change">Change</string>
+    <string name="adl_notif_channel">After download</string>
+    <string name="adl_notif_ready">%s ready</string>
+    <string name="adl_notif_failed">%s: a step failed</string>
+    <string name="adl_notif_answered_yes">“%s” will be shrunk</string>
+    <string name="adl_notif_answered_no">“%s” stays as it is</string>
+    <string name="adl_notif_answer_error">Answer for “%1$s” not sent: %2$s</string>
 </resources>

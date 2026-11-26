@@ -33,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Delete
@@ -77,6 +78,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
@@ -148,7 +150,18 @@ data class AdlConfig(
     val enabled: Boolean, val sources: List<String>, val recipes: Map<String, List<JSONObject>>,
     val effects: Map<String, List<AdlEffect>>, val templates: List<AdlTemplate>,
 )
-data class AdlStep(val kind: String, val state: String, val note: String?, val auto: Boolean)
+/** A step's question to the downloader (agent 1.25+): until when, the default, the answer and the shrink facts. */
+data class AdlAsk(
+    val until: Double, val default: String, val answer: String?, val auto: Boolean,
+    val size: Long, val mbps: Double, val est: Long, val secs: Double?, val gpu: Boolean,
+)
+/** [open]: an answer to [ask] still changes the step (it hasn't started its work). */
+data class AdlStep(val kind: String, val state: String, val note: String?, val auto: Boolean,
+                   val ask: AdlAsk? = null, val open: Boolean = false)
+/** An open question of `GET /api/afterdl/mine`. */
+data class AdlQuestion(val run: String, val step: Int, val kind: String, val name: String, val ask: AdlAsk)
+/** `GET /api/afterdl/mine`: this device's open questions, its runs finished after `since`, how many still go on. */
+data class AdlMine(val now: Double, val running: Int, val questions: List<AdlQuestion>, val done: List<AdlRun>)
 data class AdlEvent(val at: Double, val text: String, val step: Int?, val auto: Boolean)
 data class AdlRun(
     val id: String, val torrent: String, val name: String, val source: String, val by: String?, val kind: String,
@@ -176,11 +189,30 @@ fun adlConfig(o: JSONObject): AdlConfig {
     )
 }
 
+/** [q] is a step's `ask` or a question of `/api/afterdl/mine` (the same fields, `facts` inside). */
+fun adlAsk(q: JSONObject): AdlAsk {
+    val f = q.optJSONObject("facts") ?: JSONObject()
+    return AdlAsk(q.optDouble("until", 0.0), q.optString("default", "yes"), q.optStr("answer"), q.optBoolean("auto"),
+        f.optLong("size"), f.optDouble("mbps", 0.0), f.optLong("est"),
+        f.optDouble("secs").takeIf { !it.isNaN() && !f.isNull("secs") }, f.optBoolean("gpu"))
+}
+
+fun adlMine(o: JSONObject) = AdlMine(
+    o.optDouble("now", System.currentTimeMillis() / 1000.0), o.optInt("running"),
+    adlObjects(o.optJSONArray("questions")).map {
+        AdlQuestion(it.optString("run"), it.optInt("step"), it.optString("kind"), it.optString("name"), adlAsk(it))
+    },
+    adlObjects(o.optJSONArray("done")).map { adlRun(it) },
+)
+
 fun adlRun(o: JSONObject) = AdlRun(
     o.optString("id"), o.optString("torrent"), o.optString("name"), o.optString("source"), o.optStr("by"),
     o.optString("kind", "film"), o.optString("state"), o.optDouble("created", 0.0),
     o.optDouble("finished").takeIf { !it.isNaN() && !o.isNull("finished") }, o.optInt("step"),
-    adlObjects(o.optJSONArray("steps")).map { AdlStep(it.optString("kind"), it.optString("state"), it.optStr("note"), it.optBoolean("auto")) },
+    adlObjects(o.optJSONArray("steps")).map {
+        AdlStep(it.optString("kind"), it.optString("state"), it.optStr("note"), it.optBoolean("auto"),
+            it.optJSONObject("ask")?.let { q -> adlAsk(q) }, it.optBoolean("open"))
+    },
     adlObjects(o.optJSONArray("events")).map {
         AdlEvent(it.optDouble("at", 0.0), it.optString("text"), if (it.has("step") && !it.isNull("step")) it.optInt("step") else null,
             it.optBoolean("auto"))
@@ -462,7 +494,7 @@ fun AfterDownloadSettings(api: Api, snack: SnackbarHostState, onBack: () -> Unit
             val i = parts.getOrNull(2)?.toIntOrNull() ?: -1
             val step = steps.getOrNull(i)
             if (step == null) LaunchedEffect(Unit) { page = "recipe/$kind" }
-            else AdlStepScreen(step, onBack = { page = "recipe/$kind" }) { n -> saveRecipe(kind, steps.toMutableList().also { it[i] = n }) }
+            else AdlStepScreen(step, api.srv.hasAfterdlAsk, onBack = { page = "recipe/$kind" }) { n -> saveRecipe(kind, steps.toMutableList().also { it[i] = n }) }
         }
         else -> AdlMain(api.srv.name, c, onBack, { save(it) }) { page = "recipe/$it" }
     }
@@ -692,7 +724,7 @@ private fun AdlTemplates(c: AdlConfig, kind: String, onBack: () -> Unit, onUse: 
 // ---------------------------------------------------------------- one step's screen (2b, 3, 4, 5)
 
 @Composable
-private fun AdlStepScreen(step: JSONObject, onBack: () -> Unit, onChange: (JSONObject) -> Unit) {
+private fun AdlStepScreen(step: JSONObject, canAsk: Boolean, onBack: () -> Unit, onChange: (JSONObject) -> Unit) {
     val kind = step.optString("kind")
     fun set(k: String, v: Any) = onChange(step.adlWith(k, v))
     AdlPage(adlStepName(kind), onBack) {
@@ -700,7 +732,7 @@ private fun AdlStepScreen(step: JSONObject, onBack: () -> Unit, onChange: (JSONO
             "move" -> AdlMoveOptions()
             "subs" -> AdlSubsOptions(step, ::set)
             "cast_ready" -> AdlCastOptions(step, ::set)
-            "shrink" -> AdlShrinkOptions(step, ::set)
+            "shrink" -> AdlShrinkOptions(step, canAsk, ::set)
             "seed_end" -> AdlSeedOptions(step, ::set)
         }
     }
@@ -787,7 +819,7 @@ private fun AdlCastOptions(step: JSONObject, set: (String, Any) -> Unit) {
 
 /** Screen 5: "Shrink": when (size, bitrate), with what (encoder, quality, skip HEVC/AV1). */
 @Composable
-private fun AdlShrinkOptions(step: JSONObject, set: (String, Any) -> Unit) {
+private fun AdlShrinkOptions(step: JSONObject, canAsk: Boolean, set: (String, Any) -> Unit) {
     AdlSection(Icons.Filled.Schedule, stringResource(R.string.adl_shrink_when))
     Card(Modifier.fillMaxWidth()) {
         AdlNumberRow(Icons.Filled.Straighten, stringResource(R.string.adl_shrink_gb), null, step.optDouble("min_gb", 8.0),
@@ -810,6 +842,28 @@ private fun AdlShrinkOptions(step: JSONObject, set: (String, Any) -> Unit) {
         AdlChoiceRow(Icons.Filled.Delete, stringResource(R.string.adl_shrink_original), stringResource(R.string.adl_shrink_original_desc),
             step.optString("original", "delete"), listOf("delete" to R.string.adl_orig_delete, "trash" to R.string.adl_orig_trash)) {
             set("original", it)
+        }
+    }
+    // agent 1.25+: the downloader's phone is asked first (a notification); no answer in time = yes
+    if (canAsk) {
+        val ask = step.optBoolean("ask", true)
+        val hours = step.optDouble("answer_after_h", 6.0)
+        AdlSection(Icons.AutoMirrored.Filled.Help, stringResource(R.string.adl_ask_sec))
+        Card(Modifier.fillMaxWidth()) {
+            AdlSwitchRow(Icons.Filled.Smartphone, stringResource(R.string.adl_ask_switch), stringResource(R.string.adl_ask_switch_desc),
+                ask) { set("ask", it) }
+            if (ask) {
+                AdlRow(Icons.Filled.Timer, stringResource(R.string.adl_ask_after), stringResource(R.string.adl_ask_after_desc)) {
+                    AdlValue(stringResource(R.string.adl_ask_hours, adlNum(hours, if (hours == Math.floor(hours)) 0 else 1)), more = false)
+                }
+                FlowRow(Modifier.padding(start = 56.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(1.0, 3.0, 6.0, 12.0, 24.0).forEach { h ->
+                        FilterChip(hours == h, { if (hours != h) set("answer_after_h", h) },
+                            { Text(stringResource(R.string.adl_ask_hours, adlNum(h))) })
+                    }
+                }
+            }
         }
     }
     AdlHint(stringResource(R.string.adl_shrink_hint))
@@ -928,6 +982,10 @@ private fun adlSourceIcon(src: String): ImageVector = when (src) {
 @Composable
 private fun AdlRunPill(s: AdlStep) {
     val name = adlShortName(s.kind)
+    if (s.open && s.ask != null && s.ask.answer == null) {
+        AdlTag(name, Icons.AutoMirrored.Filled.Help, AdlTone.WARN)  // waits for the downloader's answer
+        return
+    }
     when (s.state) {
         "done" -> if (s.auto) AdlTag(stringResource(R.string.adl_name_auto, name), Icons.Filled.SmartToy, AdlTone.AUTO)
                   else AdlTag(name, Icons.Filled.Check, AdlTone.OK)
@@ -1071,6 +1129,17 @@ fun AfterdlRunScreen(api: Api, id: String, snack: SnackbarHostState, onBack: () 
             }
         }
     }
+    fun answer(step: Int, yes: Boolean) {
+        scope.launch {
+            try {
+                run = withContext(Dispatchers.IO) { api.afterdlAnswer(id, step, yes) }
+                AfterdlNotify.answered(ctx, api.srv.key, id, step)  // its notification, if still up, is stale now
+            } catch (e: ApiException) {
+                snack.showSnackbar(e.message ?: ctx.getString(R.string.main_error))
+                run = runCatching { withContext(Dispatchers.IO) { api.afterdlRun(id) } }.getOrNull() ?: run
+            }
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.main_back)) }
@@ -1114,7 +1183,10 @@ fun AfterdlRunScreen(api: Api, id: String, snack: SnackbarHostState, onBack: () 
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
-                        r.steps.forEachIndexed { i, s -> AdlTimelineStep(s, last = i == r.steps.lastIndex) }
+                        r.steps.forEachIndexed { i, s ->
+                            AdlTimelineStep(s, last = i == r.steps.lastIndex, r.name,
+                                onAnswer = if (s.open && s.ask != null && r.state == "running") { yes -> answer(i, yes) } else null)
+                        }
                     }
                 }
             }
@@ -1146,7 +1218,7 @@ fun AfterdlRunScreen(api: Api, id: String, snack: SnackbarHostState, onBack: () 
 }
 
 @Composable
-private fun AdlTimelineStep(s: AdlStep, last: Boolean) {
+private fun AdlTimelineStep(s: AdlStep, last: Boolean, name: String = "", onAnswer: ((Boolean) -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     val (icon, tint) = when (s.state) {
         "done" -> if (s.auto) Icons.Filled.SmartToy to cs.tertiary else Icons.Filled.CheckCircle to adlToneColors(AdlTone.OK).second
@@ -1167,6 +1239,8 @@ private fun AdlTimelineStep(s: AdlStep, last: Boolean) {
                 Text(adlStepName(s.kind), style = MaterialTheme.typography.bodyLarge,
                     color = if (s.state == "skipped") cs.onSurfaceVariant else Color.Unspecified)
                 when {
+                    onAnswer != null && s.ask?.answer == null ->
+                        AdlTag(stringResource(R.string.adl_ask_waiting), Icons.AutoMirrored.Filled.Help, AdlTone.WARN)
                     s.state == "running" -> AdlTag(stringResource(R.string.adl_running), tone = AdlTone.RUN)
                     s.state == "done" && s.auto -> AdlTag(stringResource(R.string.adl_auto), tone = AdlTone.AUTO)
                     s.state == "error" -> AdlTag(stringResource(R.string.adl_state_error), tone = AdlTone.ERR)
@@ -1175,6 +1249,42 @@ private fun AdlTimelineStep(s: AdlStep, last: Boolean) {
             }
             val note = s.note ?: if (s.state == "pending") stringResource(R.string.adl_waiting) else null
             if (note != null) Text(note, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+            if (onAnswer != null && s.ask != null) AdlAskCard(s.kind, s.ask, name, onAnswer)
+        }
+    }
+}
+
+/** A step's open question in a run's history: the notification's text and its buttons; once answered, the answer and "Change". */
+@Composable
+private fun AdlAskCard(kind: String, a: AdlAsk, name: String, onAnswer: (Boolean) -> Unit) {
+    val ctx = LocalContext.current
+    val (bg, fg) = adlToneColors(AdlTone.WARN)
+    Surface(color = bg, contentColor = fg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (a.answer == null) {
+                Text(AfterdlNotify.questionTitle(ctx, kind, name), style = MaterialTheme.typography.titleSmall)
+                Text(AfterdlNotify.questionText(ctx, kind, a), style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton({ onAnswer(true) }) {
+                        Icon(Icons.Filled.Compress, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.adl_ask_yes))
+                    }
+                    OutlinedButton({ onAnswer(false) }) {
+                        Icon(Icons.Filled.Close, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.adl_ask_no))
+                    }
+                }
+            } else {
+                val yes = a.answer == "yes"
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(when {
+                        a.auto && yes -> R.string.adl_ask_answered_auto
+                        yes -> R.string.adl_ask_answered_yes
+                        else -> R.string.adl_ask_answered_no
+                    }), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    TextButton({ onAnswer(!yes) }) { Text(stringResource(R.string.adl_ask_change), color = fg) }
+                }
+            }
         }
     }
 }

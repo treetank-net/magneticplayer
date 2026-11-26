@@ -80,6 +80,8 @@ data class Server(
     val hasAfterdl get() = features?.optBoolean("afterdl", false) ?: false
     /** agent 1.24+: `/api/afterdl?root=&path=`, one file's runs (its title page) */
     val hasAfterdlFile get() = features?.optBoolean("afterdl_file", false) ?: false
+    /** agent 1.25+: the shrink step asks the downloader's phone first; `/api/afterdl/mine`, the "answer" action */
+    val hasAfterdlAsk get() = features?.optBoolean("afterdl_ask", false) ?: false
     /** agent 1.12.1+: POST /api/subs/shift (subtitles too early / too late, saved in the file) */
     val hasSubsShift get() = features?.optBoolean("subs_shift", false) ?: false
     /** agent 1.12.1+: POST /api/subs/download with "async" → a job with "download" / "fit" phases */

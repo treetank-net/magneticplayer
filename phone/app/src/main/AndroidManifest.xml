@@ -125,6 +125,7 @@
         <!-- upload to the server (Uploads.kt): notification buttons, delete confirmation, background WorkManager -->
         <receiver android:name=".UploadReceiver" android:exported="false" />
         <receiver android:name=".AccessReceiver" android:exported="false" />
+        <receiver android:name=".AfterdlReceiver" android:exported="false" />
         <activity
             android:name=".UploadDeleteActivity"
             android:exported="false"

@@ -185,4 +185,31 @@
         <item quantity="many">%d ostrzeżeń</item>
         <item quantity="other">%d ostrzeżenia</item>
     </plurals>
+    <!-- pytania do pobierającego po pobraniu (agent 1.25+) -->
+    <string name="adl_ask_sec">Pytanie</string>
+    <string name="adl_ask_switch">Pytaj pobierającego</string>
+    <string name="adl_ask_switch_desc">Tylko telefon, z którego dodano pobranie; pobrania z klienta na komputerze decydują od razu</string>
+    <string name="adl_ask_after">Bez odpowiedzi po</string>
+    <string name="adl_ask_after_desc">wtedy „tak”, w historii „auto”</string>
+    <string name="adl_ask_hours">%s godz.</string>
+    <string name="adl_ask_title">Zmniejszyć „%s”?</string>
+    <string name="adl_ask_title_other">„%s”: pytanie</string>
+    <string name="adl_ask_facts_gpu">%1$s → ok. %2$s na karcie graficznej</string>
+    <string name="adl_ask_facts_cpu">%1$s → ok. %2$s na procesorze</string>
+    <string name="adl_ask_minutes">, ~%d min</string>
+    <string name="adl_ask_default_yes">Bez odpowiedzi: tak o %s.</string>
+    <string name="adl_ask_default_no">Bez odpowiedzi: nie o %s.</string>
+    <string name="adl_ask_yes">Zmniejsz</string>
+    <string name="adl_ask_no">Nie</string>
+    <string name="adl_ask_waiting">pyta Ciebie</string>
+    <string name="adl_ask_answered_yes">Odpowiedź: zmniejszyć</string>
+    <string name="adl_ask_answered_no">Odpowiedź: nie zmniejszać</string>
+    <string name="adl_ask_answered_auto">Bez odpowiedzi w czasie: zmniejszyć (auto)</string>
+    <string name="adl_ask_change">Zmień</string>
+    <string name="adl_notif_channel">Po pobraniu</string>
+    <string name="adl_notif_ready">%s gotowy</string>
+    <string name="adl_notif_failed">%s: krok się nie udał</string>
+    <string name="adl_notif_answered_yes">„%s” zostanie zmniejszony</string>
+    <string name="adl_notif_answered_no">„%s” zostaje bez zmian</string>
+    <string name="adl_notif_answer_error">Nie wysłano odpowiedzi dla „%1$s”: %2$s</string>
 </resources>

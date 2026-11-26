@@ -292,6 +292,7 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
     LaunchedEffect(ver) {
         var first = true
         var pings = 0
+        var adlTicks = 0  // AfterdlNotify every 4th access check (~60 s)
         var fails = 0
         var synced = false
         while (true) {
@@ -327,6 +328,8 @@ private fun MainScreen(tab: MutableIntState, settingsVersion: MutableIntState) {
             // access requests from the home network (Access.kt): every ~15 s while the app is on screen and the server responds
             if (ok && pings++ % 3 == 0) withContext(Dispatchers.IO) {
                 Access.check(ctx, api); Tasks.check(ctx, api)
+                // after download questions and summaries for this phone's downloads (AfterdlNotify.kt)
+                if (adlTicks++ % 4 == 0) AfterdlNotify.check(ctx, api)
                 // files sent from phones waiting to be put away (badge on Downloads)
                 UploadsBadge.count.intValue = if (Servers.get(ctx, api.srv.key)?.hasCatalog == true)
                     runCatching { api.uploads().new }.getOrDefault(UploadsBadge.count.intValue) else 0
