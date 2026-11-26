@@ -979,6 +979,31 @@ class JobsMixin:
                 return (r, f) if f else None
         return None
 
+    def _compress_pick(self, f, full, o, torrents):
+        """(the _pick of a one-file compression, the encoder), or ({"none": reason}, None)."""
+        mp_media.detect_hevc()
+        enc = self.resolve_encoder(o.get("encoder"))
+        po = {"quality": o.get("quality") or "balanced", "only_high_bitrate": False, "skip_seeding": False,
+              "skip_hevc_av1": o.get("skip_hevc_av1", True)}
+        c = self._pick("compress", f, full, po, {"torrents": torrents, "enc": enc, "check": None})
+        if not c or c.get("ok") or c.get("pending"):
+            return {"none": T("nothing to gain", "nic do zyskania")}, None
+        if c.get("skip"):
+            return {"none": c["skip"]}, None
+        return c, enc
+
+    def compress_estimate(self, full, o):
+        """What one_file_task("compress", full, o) would do, without queuing it (the after-download question):
+        {"est": bytes after, "secs": encoding time or None, "encoder": "gpu"|"cpu"} or {"none": reason}."""
+        rf = self.fact_of(full)
+        if not rf:
+            return {"none": T("not in a library folder", "poza folderami biblioteki")}
+        c, enc = self._compress_pick(rf[1], full, o, self._torrents())
+        if "none" in c:
+            return c
+        est, work = c["cost"](enc)
+        return {"est": est, "secs": work, "encoder": enc}
+
     def one_file_task(self, kind, full, o):
         """A task of one item for `full`, queued like any other (it waits while somebody watches, survives a restart):
         kind "compress" (o: quality, encoder, skip_hevc_av1, original "delete" skips the trash) or "cast_ready" (o: add_aac, subs_to_srt, avi_to_mkv).
@@ -1003,15 +1028,9 @@ class JobsMixin:
             return {"task": t["id"]}
         if kind != "compress":
             raise TaskError(f"unknown kind {kind}")
-        mp_media.detect_hevc()
-        enc = self.resolve_encoder(o.get("encoder"))
-        po = {"quality": o.get("quality") or "balanced", "only_high_bitrate": False, "skip_seeding": False,
-              "skip_hevc_av1": o.get("skip_hevc_av1", True)}
-        c = self._pick("compress", f, full, po, {"torrents": torrents, "enc": enc, "check": None})
-        if not c or c.get("ok") or c.get("pending"):
-            return {"none": T("nothing to gain", "nic do zyskania")}
-        if c.get("skip"):
-            return {"none": c["skip"]}
+        c, enc = self._compress_pick(f, full, o, torrents)
+        if "none" in c:
+            return c
         info = f["info"]
         est, work = c["cost"](enc)
         item = dict(base, op="shrink", est=est, work=work, codec=info["video"].get("codec"),

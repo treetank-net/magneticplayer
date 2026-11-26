@@ -89,10 +89,23 @@ def afterdl_runs(req, a, qd, **_):
     return req.send_json(a.afterdl.runs(since))
 
 
+def afterdl_mine(req, a, qd, **_):
+    """agent 1.25+: this device's questions and finished runs (its notifications)."""
+    try:
+        since = float(qd.get("since") or 0)
+    except ValueError:
+        since = 0.0
+    return req.send_json(a.afterdl.mine(req.device, since))
+
+
 def afterdl_run(req, a, method, rid, **_):
     if method == "POST":
+        b = req.body()
         try:
-            r = a.afterdl.action(rid, req.body().get("action"))
+            if b.get("action") == "answer":  # agent 1.25+: a step's question, {"step": n, "answer": "yes"|"no"}
+                r = a.afterdl.answer(rid, b.get("step"), b.get("answer"))
+            else:
+                r = a.afterdl.action(rid, b.get("action"))
         except ValueError as e:
             raise ApiError(str(e), 400)
     else:

@@ -177,6 +177,7 @@ ROUTES = [
     ("GET", "/api/config/afterdl", config.afterdl, {}),
     ("POST", "/api/config/afterdl", config.afterdl_set, {}),
     ("GET", "/api/afterdl", config.afterdl_runs, {}),
+    ("GET", "/api/afterdl/mine", config.afterdl_mine, {}),
     (("GET", "POST"), "/api/afterdl/<rid:id8>", config.afterdl_run, {}),
 ]
 

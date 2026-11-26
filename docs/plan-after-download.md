@@ -46,7 +46,7 @@ inside Films) are left out until cataloguing by collection is designed.
 
 - Settings: `afterdl` in `config.json`, `GET/POST /api/config/afterdl`, MCP `get_settings`/`set_settings`.
   `enabled` (off by default), `sources` (`app`, `client`, `archive`), `recipes` (`film`, `series`: ordered steps with
-  options), `answer_after_h`.
+  options; a step that asks has its own `answer_after_h`).
 - State: `afterdl.json` in the config directory: torrents seen complete, runs (id, torrent, file, source, downloader,
   steps with state, history events). Old finished runs are pruned.
 - `GET /api/afterdl` (runs for the Downloads tab, brief), `GET /api/afterdl/<run>` (one run with its history),
@@ -63,7 +63,10 @@ inside Films) are left out until cataloguing by collection is designed.
   per step, templates).
 - Downloads tab: finished downloads stay while their steps run (dots = steps), a season grouped.
 - A file's history (from Downloads and from the film's card in the Library), with "Change…" for a decision.
-- The question notification for the downloader only, and the summary when done.
+- The question notification for the downloader only, and the summary when done. Agent 1.25.0: the shrink step asks
+  (`ask`, its own `answer_after_h`), right after the download rather than when its turn comes (it can be days later,
+  after seeding); the phone checks `GET /api/afterdl/mine` while the app is open and every 15 minutes in the
+  background while it has runs going on.
 
 ## Stage 3
 
@@ -73,6 +76,6 @@ inside Films) are left out until cataloguing by collection is designed.
 ## Owner's answers (2026-11-26)
 
 - `answer_after_h` per step: each step that asks has its own time (when the answer matters differs by step).
-  Stage 1 doesn't ask yet; the global value stays until questions are built.
+  Built in agent 1.25.0 as the step's `answer_after_h`; the global value is ignored.
 - The original after shrinking is deleted right away by default (seeding has ended, nothing needs it): the shrink
   step's `original` option, `delete` or `trash`.

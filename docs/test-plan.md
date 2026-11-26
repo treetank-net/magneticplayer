@@ -1221,6 +1221,11 @@ Deluge, phone or browser:
 - [ ] Agent 1.24.0 + app: a file's after-download history on its title page (`GET /api/afterdl?root=&path=`,
   `features.afterdl_file`): an "After download" card with the newest run, a tap opens the full history; hidden for
   guests and files with no runs. Server: unit test of `runs_of`; app compiled only.
+- [ ] Agent 1.25.0: the shrink step asks the downloader's phone (`ask`, its own `answer_after_h`, default 6 h → yes,
+  "auto"), right after the download; `GET /api/afterdl/mine`, action `answer`; downloads from the client are not
+  asked. Runs listed newest first with a season's episodes in order (1.24.0 had reversed the whole list). Unit tests
+  only (stubs); deployed on jmpc and the laptop (2026-11-26). To see on the Pixel with the app: the question
+  notification and its buttons, the answer in the history, no answer → yes after the step's time, the summary.
 - [ ] The owner's wish (2026-11-26): collection folders (Bond, Anime inside Films) out of after download until
   cataloguing by collection is designed.
 - [ ] Next app + agent 1.22.1 (built 2026-11-26, not seen on a phone yet):

@@ -84,6 +84,9 @@ class Tasks:
     def one_file_task(self, kind, full, o):
         return self._new(op=kind, full=full, opts=o)
 
+    def compress_estimate(self, full, o):
+        return {"est": 200 * MB, "secs": 1500, "encoder": "gpu"}
+
     def fact_of(self, full):
         return ({}, {"info": {"duration": 3600}})
 
@@ -303,6 +306,77 @@ class AfterDownloadTest(unittest.TestCase):
         eff = mp_afterdl.effects(mp_afterdl._recipe(("shrink", {}), ("seed_end", {})))
         self.assertIsNotNone(eff[0]["warning"])
         self.assertIn("no_effect", eff[1]["labels"])
+
+
+    def asked(self):
+        """A shrink-only recipe and a download from a phone ("dev1"): the run waits on the downloader's question."""
+        mp_afterdl.set_settings(self.app, {"recipes": {"film": [{"kind": "shrink", "min_gb": 0.0}]}})
+        self.tick()
+        self.app.jobs.items["t1"] = {"magnet": "magnet:?xt=urn:btih:x", "by": "dev1"}
+        self.torrent()
+        self.tick()
+
+    def test_question_goes_to_the_downloader_only(self):
+        self.asked()
+        mine = self.ad.mine("dev1")
+        self.assertEqual([(q["kind"], q["step"], q["facts"]["est"]) for q in mine["questions"]], [("shrink", 0, 200 * MB)])
+        self.assertEqual(mine["running"], 1)
+        self.assertEqual(self.ad.mine("dev2")["questions"], [])
+        self.assertEqual(self.app.tasks.tasks, {})  # nothing encodes before the answer
+        self.assertTrue(self.ad.runs()["runs"][0]["steps"][0]["open"])
+
+    def test_answer_no_skips_the_step(self):
+        self.asked()
+        rid = self.ad.runs()["runs"][0]["id"]
+        self.ad.answer(rid, 0, "no")
+        self.tick()
+        run = self.ad.run(rid)
+        self.assertEqual((run["state"], run["steps"][0]["state"], run["steps"][0]["auto"]), ("done", "skipped", False))
+        self.assertEqual(self.app.tasks.tasks, {})
+        self.assertEqual(self.ad.mine("dev1")["done"][0]["id"], rid)  # the summary
+        with self.assertRaises(ValueError):
+            self.ad.answer(rid, 0, "yes")  # the run is over
+
+    def test_no_answer_in_time_is_yes(self):
+        self.asked()
+        self.ad.st["runs"][0]["steps"][0]["ask"]["until"] = 0
+        self.tick()
+        run = self.ad.runs()["runs"][0]
+        self.assertEqual(run["steps"][0]["ask"]["answer"], "yes")
+        self.assertTrue(run["steps"][0]["ask"]["auto"])
+        self.assertEqual([t["op"] for t in self.app.tasks.tasks.values()], ["compress"])
+        with self.assertRaises(ValueError):
+            self.ad.answer(run["id"], 0, "no")  # the step has started its work
+
+    def test_client_downloads_are_not_asked(self):
+        mp_afterdl.set_settings(self.app, {"recipes": {"film": [{"kind": "shrink", "min_gb": 0.0}]}})
+        self.tick()
+        self.torrent()
+        self.tick()
+        self.assertNotIn("ask", self.ad.runs()["runs"][0]["steps"][0])
+        self.assertEqual(len(self.app.tasks.tasks), 1)
+
+    def test_newest_first_episodes_in_order(self):
+        mp_afterdl.set_settings(self.app, {"recipes": {"film": [{"kind": "subs"}], "series": [{"kind": "subs"}]}})
+        self.tick()
+        self.torrent()
+        self.tick()
+        for n in (1, 2):
+            path = os.path.join(self.app.down, "Show", f"Show.S01E0{n}.mkv")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.truncate(100 * MB)
+        self.app.backend.torrents["t2"] = dict(self.app.backend.torrents["t1"], id="t2", name="Show")
+        self.app.backend.files_of["t2"] = [{"index": i, "path": f"Show/Show.S01E0{i + 1}.mkv", "size": 100 * MB}
+                                           for i in range(2)]
+        self.tick()
+        self.assertEqual([r["name"] for r in self.ad.runs()["runs"]], ["Show.S01E01.mkv", "Show.S01E02.mkv", "Sintel.mkv"])
+
+    def test_old_global_answer_time_is_ignored(self):
+        mp_afterdl.set_settings(self.app, {"answer_after_h": 6})
+        self.assertNotIn("answer_after_h", self.app.cfg["afterdl"])
+        with self.assertRaises(ValueError):
+            mp_afterdl.set_settings(self.app, {"recipes": {"film": [{"kind": "shrink", "answer_after_h": 0}]}})
 
 
 if __name__ == "__main__":

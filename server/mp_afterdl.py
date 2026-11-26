@@ -16,7 +16,9 @@ Every video is its own run (an episode too), with its own history. Runs are pers
 after a restart; a step that waits (seeding, a queued task, subtitles in their queue) is checked every tick (~20 s).
 Torrents complete when the feature first runs are the existing library: they are marked seen and left alone.
 
-Decisions are made by the server ("auto" in the history). Questions to the downloader's phone are stage 2.
+Decisions are made by the server ("auto" in the history), except where a step asks (agent 1.25+, `ASKS`): a download
+from a phone asks that phone right away (`mine()` → its notification, `answer()`), and with no answer within the step's
+`answer_after_h` the default is taken, marked "auto". Downloads from the client on the computer are never asked.
 """
 import copy
 import json
@@ -44,7 +46,8 @@ STEP_DEFAULTS = {
     "subs": {"langs": [], "downloader": True},  # always these + the downloader's languages
     "cast_ready": {"mode": "keep_seeding", "add_aac": True, "subs_to_srt": True, "avi_to_mkv": True},
     "shrink": {"min_gb": 8.0, "min_mbps": 6.0, "quality": "balanced", "encoder": "auto", "skip_hevc_av1": True,
-               "original": "delete"},  # the replaced original: deleted right away (seeding has ended) or to the trash
+               "original": "delete",  # the replaced original: deleted right away (seeding has ended) or to the trash
+               "ask": True, "answer_after_h": 6.0},  # ask the downloader's phone first; no answer by then: yes
     "seed_end": {"ratio": 2.0, "days": 7.0, "min_days": 1.0, "then": "remove"},
 }
 CHOICES = {("cast_ready", "mode"): ("keep_seeding", "in_place"),
@@ -52,6 +55,12 @@ CHOICES = {("cast_ready", "mode"): ("keep_seeding", "in_place"),
            ("shrink", "encoder"): ("auto", "cpu", "gpu"),
            ("shrink", "original"): ("delete", "trash"),
            ("seed_end", "then"): ("pause", "remove")}
+
+
+# steps that ask the downloader (agent 1.25+): right after the download, answered from the phone or, after the step's
+# own `answer_after_h`, by the default; downloads from the client on the computer have nobody to ask
+ASKS = ("shrink",)
+OLD_SETTINGS = ("answer_after_h",)  # one time for every step until 1.25 (each asking step has its own now): ignored
 
 
 def _recipe(*steps):
@@ -73,8 +82,7 @@ TEMPLATE_TITLES = {"right_away": ("Right away on the phone or Chromecast", "Od r
                    "seeder": ("Seeder", "Seeder")}
 
 DEFAULTS = {"enabled": False, "sources": list(SOURCES),
-            "recipes": {"film": TEMPLATES["right_away"], "series": TEMPLATES["right_away"]},
-            "answer_after_h": 6.0}
+            "recipes": {"film": TEMPLATES["right_away"], "series": TEMPLATES["right_away"]}}
 
 
 def _tx(en, pl):
@@ -124,6 +132,8 @@ def _check_step(raw):
             raise ValueError(f"{kind}.{k}: expected {want.__name__}")
         if want is float and not 0 <= v <= 10000:
             raise ValueError(f"{kind}.{k}: out of range")
+        if k == "answer_after_h" and not 0 < v <= 168:
+            raise ValueError(f"{kind}.{k}: hours, 0-168")
         if (kind, k) in CHOICES and v not in CHOICES[(kind, k)]:
             raise ValueError(f"{kind}.{k}: one of {', '.join(CHOICES[(kind, k)])}")
         out[k] = [x.lower() for x in v][:3] if want is list else v
@@ -134,6 +144,8 @@ def set_settings(app, changes):
     """Validated changes (API, MCP); `recipes.<kind>` is a list of steps or a template's name. → the settings."""
     cur = dict(app.cfg.get("afterdl") or {})
     for k, v in (changes or {}).items():
+        if k in OLD_SETTINGS:
+            continue
         if k not in DEFAULTS:
             raise ValueError(f"unknown setting: afterdl.{k}")
         if v is None:
@@ -146,10 +158,6 @@ def set_settings(app, changes):
             if not isinstance(v, list) or any(x not in SOURCES for x in v):
                 raise ValueError("afterdl.sources: a list of " + ", ".join(SOURCES))
             cur[k] = list(dict.fromkeys(v))
-        elif k == "answer_after_h":
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 < v <= 168:
-                raise ValueError("afterdl.answer_after_h: hours, 0-168")
-            cur[k] = float(v)
         elif k == "recipes":
             if not isinstance(v, dict) or any(x not in ("film", "series") for x in v):
                 raise ValueError("afterdl.recipes: {film, series}")
@@ -166,6 +174,8 @@ def set_settings(app, changes):
                     raise ValueError(f"afterdl.recipes.{kind}: \"seed_end\" at most once")
                 rec[kind] = steps
             cur[k] = rec
+    for k in OLD_SETTINGS:
+        cur.pop(k, None)
     app.cfg["afterdl"] = cur
     app.save_cfg()
     return public_settings(app.cfg)
@@ -274,6 +284,7 @@ class AfterDownload:
         self._now = by_id  # the client's torrents this tick; ending seeding updates it for the steps after
         for run in [r for r in self.st["runs"] if r["state"] == "running"]:
             try:
+                self._ask_ahead(run)
                 self._advance(run)
             except Exception as e:  # noqa: BLE001 — the same step again next tick
                 step = run["steps"][min(run["step"], len(run["steps"]) - 1)]
@@ -306,6 +317,7 @@ class AfterDownload:
                                         # the videos' own top entry (an archive.org torrent also lists unwanted files)
                                         "top": vids[0]["path"].replace("\\", "/").split("/")[0],
                                         "dest": job.get("dest")}
+            new = []  # newest first in the state, a season's episodes in their order
             for f in sorted(vids, key=lambda f: f["path"]):
                 run = {"id": secrets.token_hex(4), "tid": tid, "torrent": t["name"],
                        "file": os.path.join(save_path, f["path"]), "size": f["size"], "source": source,
@@ -314,7 +326,8 @@ class AfterDownload:
                                   "state": "pending"} for x in s["recipes"][kind]],
                        "events": []}
                 self._event(run, _tx("Downloaded", "Pobrane"))
-                self.st["runs"].insert(0, run)
+                new.append(run)
+            self.st["runs"][:0] = new
             self._prune()
             self._save()
         self.log(f"after download: {t['name']}: {len(vids)} videos, {source}, {kind}")
@@ -576,18 +589,118 @@ class AfterDownload:
         # (Tasks._cast_need); "in_place" ends seeding first and does everything
         return self._file_step(run, step, t, "cast_ready", step["opts"])
 
+    def _shrink_below(self, run, o):
+        """(size, Mb/s) and whether the file is below the step's limits (left as it is)."""
+        rf = self.app.tasks.fact_of(run["file"])
+        info = (rf[1].get("info") or {}) if rf else {}
+        size, dur = os.path.getsize(run["file"]), info.get("duration") or 0
+        mbps = size * 8 / dur / 1e6 if dur else 0
+        return size, mbps, size < o["min_gb"] * (1 << 30) and mbps < o["min_mbps"]
+
     def _step_shrink(self, run, step, t):
         if not step.get("task"):
             o = _opts(step)
-            rf = self.app.tasks.fact_of(run["file"])
-            info = (rf[1].get("info") or {}) if rf else {}
-            size, dur = os.path.getsize(run["file"]), info.get("duration") or 0
-            mbps = size * 8 / dur / 1e6 if dur else 0
-            if size < o["min_gb"] * (1 << 30) and mbps < o["min_mbps"]:
+            size, mbps, below = self._shrink_below(run, o)
+            if below:
                 gb = _num(round(size / (1 << 30), 1))
                 return "skipped", _tx(f"{gb} GB, {_num(round(mbps, 1))} Mb/s: below the step's limits",
                                       f"{gb} GB, {_num(round(mbps, 1))} Mb/s: poniżej progów kroku")
+            if not self._answered(run, step):
+                return None
+            if (step.get("ask") or {}).get("answer") == "no":
+                return "skipped", _tx("Not shrunk: the downloader said no",
+                                      "Bez zmniejszania: pobierający odpowiedział „nie”"), False
         return self._file_step(run, step, t, "compress", step["opts"])
+
+    # ---- questions to the downloader (agent 1.25+)
+
+    def _ask_ahead(self, run):
+        """Asks the downloader about the run's asking steps right after the download (a step may come days later,
+        after seeding): one question per step. A step with nothing to do (a small file) isn't asked about."""
+        if not run.get("by"):
+            return  # from the client on the computer: the steps decide by themselves
+        for n in range(run["step"], len(run["steps"])):
+            step = run["steps"][n]
+            if step["kind"] not in ASKS or step["state"] != "pending" or "ask" in step or not _opts(step).get("ask"):
+                continue
+            facts = getattr(self, "_facts_" + step["kind"])(run, _opts(step))
+            with self.lock:
+                if facts is None:
+                    step["ask"] = None
+                else:
+                    now = time.time()
+                    step["ask"] = {"at": now, "until": now + _opts(step)["answer_after_h"] * 3600, "default": "yes",
+                                   "facts": facts, "answer": None}
+                    name = STEP_NAMES[step["kind"]]
+                    self._event(run, _tx(f"Asked the downloader: \"{name[0]}\"?", f"Pytanie do pobierającego: „{name[1]}”?"),
+                                step=n)
+                self._save()
+
+    def _facts_shrink(self, run, o):
+        """What the shrink question shows (size now, the estimate, time on the chosen encoder), None: nothing to ask."""
+        size, mbps, below = self._shrink_below(run, o)
+        if below:
+            return None
+        e = self.app.tasks.compress_estimate(run["file"], dict(STEP_DEFAULTS["shrink"], **o))
+        if e.get("none"):
+            return None
+        return {"size": size, "mbps": round(mbps, 1), "est": e["est"], "secs": e["secs"], "gpu": e["encoder"] == "gpu"}
+
+    def _answered(self, run, step):
+        """Whether the step's question (if any) has an answer; past its time the default, marked "auto"."""
+        q = step.get("ask")
+        if not q or q.get("answer"):
+            return True
+        if time.time() < q["until"]:
+            at = time.strftime("%H:%M", time.localtime(q["until"]))
+            self._wait_note(step, _tx(f"Waiting for the downloader's answer (until {at})",
+                                      f"Czeka na odpowiedź pobierającego (do {at})"))
+            return False
+        with self.lock:
+            q.update(answer=q["default"], auto=True, answered=time.time())
+            self._event(run, _tx("No answer in time: yes (the step's default)", "Bez odpowiedzi w czasie: tak (domyślnie)"),
+                        step=run["step"], auto=True)
+            self._save()
+        return True
+
+    @staticmethod
+    def _open_q(step):
+        """The step's question while an answer still changes something (the step hasn't started its work)."""
+        q = step.get("ask")
+        return q if q and step["state"] in ("pending", "running") and not step.get("task") else None
+
+    def answer(self, rid, n, ans):
+        """The downloader's (or another household member's) answer to step `n`'s question, "yes" or "no"; it can be
+        changed until the step starts its work. → the run, None when unknown."""
+        if ans not in ("yes", "no"):
+            raise ValueError("answer: yes or no")
+        with self.lock:
+            r = next((r for r in self.st["runs"] if r["id"] == rid), None)
+            if not r:
+                return None
+            step = r["steps"][n] if isinstance(n, int) and 0 <= n < len(r["steps"]) else {}
+            q = self._open_q(step) if r["state"] == "running" else None
+            if not q:
+                raise ValueError(T("no open question for this step", "ten krok nie ma otwartego pytania"))
+            q.update(answer=ans, auto=False, answered=time.time())
+            name = STEP_NAMES[step["kind"]]
+            self._event(r, _tx(f"Answer: {'yes' if ans == 'yes' else 'no'} (\"{name[0]}\")",
+                               f"Odpowiedź: {'tak' if ans == 'yes' else 'nie'} („{name[1]}”)"), step=n)
+            self._save()
+            return self._public(r, full=True)
+
+    def mine(self, device, since=0.0):
+        """For one phone's notifications: its open questions, its runs finished after `since` (the summaries) and how
+        many of its runs still go on (the phone checks in the background only while there are some)."""
+        with self.lock:
+            runs = [r for r in self.st["runs"] if r.get("by") and r["by"] == device]
+            qs = [{"run": r["id"], "step": n, "kind": s["kind"], "name": os.path.basename(r["file"]),
+                   "until": q["until"], "default": q["default"], "facts": q["facts"], "answer": q.get("answer")}
+                  for r in runs if r["state"] == "running" for n, s in enumerate(r["steps"]) for q in [self._open_q(s)]
+                  if q and not q.get("answer")]
+            done = [self._public(r) for r in runs if r["state"] != "running" and (r.get("finished") or 0) > since][:20]
+            return {"now": time.time(), "running": sum(r["state"] == "running" for r in runs), "questions": qs,
+                    "done": done}
 
     # ---- subtitles
 
@@ -630,6 +743,8 @@ class AfterDownload:
         out["name"] = os.path.basename(run["file"])
         out["ref"] = self._ref(run["file"])
         out["steps"] = [{"kind": s["kind"], "state": s["state"], "note": _say(s.get("note")), "auto": s.get("auto", False),
+                         **({"ask": {k: s["ask"].get(k) for k in ("until", "default", "answer", "auto", "facts")},
+                             "open": bool(self._open_q(s)) and run["state"] == "running"} if s.get("ask") else {}),
                          **({"opts": s["opts"]} if full else {})} for s in run["steps"]]
         if full:
             out["events"] = [dict(e, text=_say(e["text"])) for e in run["events"]]
@@ -638,7 +753,7 @@ class AfterDownload:
     def runs(self, since=0.0):
         with self.lock:
             return {"enabled": self.cfg["enabled"],
-                    "runs": [self._public(r) for r in reversed(self.st["runs"])
+                    "runs": [self._public(r) for r in self.st["runs"]
                              if r["state"] == "running" or (r.get("finished") or r["created"]) > since][:200]}
 
     def runs_of(self, root, path):
@@ -648,7 +763,7 @@ class AfterDownload:
             return []
         real = os.path.realpath(os.path.join(roots[root]["path"], path))
         with self.lock:
-            return [self._public(r) for r in reversed(self.st["runs"]) if os.path.realpath(r["file"]) == real]
+            return [self._public(r) for r in self.st["runs"] if os.path.realpath(r["file"]) == real]
 
     def run(self, rid):
         with self.lock:
