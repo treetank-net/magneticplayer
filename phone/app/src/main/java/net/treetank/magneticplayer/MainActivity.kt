@@ -568,6 +568,14 @@ private fun TorrentsTab(api: Api, srv: Server, online: Boolean, snack: SnackbarH
         }
     }
 
+    // after download (agent 1.23+): the runs of the last 24 h under the downloads, one video's history
+    val afterdl by rememberAfterdlRuns(api, online && srv.hasAfterdl && !srv.isGuest)
+    var afterdlOpen by rememberSaveable { mutableStateOf<String?>(null) }
+    if (afterdlOpen != null) {
+        AfterdlRunScreen(api, afterdlOpen!!, snack) { afterdlOpen = null }
+        return
+    }
+
     val sel = torrents.firstOrNull { it.id == selected }
     if (selected != null) {
         BackHandler { selected = null }
@@ -609,6 +617,7 @@ private fun TorrentsTab(api: Api, srv: Server, online: Boolean, snack: SnackbarH
                         scope.io(ctx, snack) { api.action(t.id, action); refresh++ }
                     }
                 }
+                if (!onlyMine) afterdlSection(afterdl, torrents.associate { it.id to it.name }) { afterdlOpen = it }
                 if (onlyMine) {
                     val gone = jobs.filter { !it.inClient }
                     if (gone.isNotEmpty()) item {
@@ -1243,6 +1252,7 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
         "space" -> return SettingsPage(R.string.st4_space, ::back) { SpaceSettings() }
         "player" -> return SettingsPage(R.string.st4_player, ::back) { PlayerSettings(s) }
         "downloads" -> return SettingsPage(R.string.st4_downloads, ::back) { DownloadSettings(s, ver, onSaved) }
+        "afterdl" -> if (api.configured && api.srv.hasAfterdl && !api.srv.isGuest) return AfterDownloadSettings(api, snack, ::back) else back()
         "updates" -> return SettingsPage(R.string.st4_updates, ::back) { UpdateSettings(snack) }
         "about" -> return SettingsPage(R.string.st4_about, ::back) {
             Text(stringResource(R.string.st4_app_version, remember { appVersion(ctx) }), style = MaterialTheme.typography.bodyLarge)
@@ -1286,6 +1296,8 @@ private fun SettingsTab(api: Api, ver: Int, snack: SnackbarHostState, openAdd: B
         SettingsHeading(R.string.st4_section_other)
         androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
             SettingsRow(stringResource(R.string.st4_downloads), stringResource(R.string.st4_downloads_summary)) { SettingsNav.page.value = "downloads" }
+            if (api.configured && api.srv.hasAfterdl && !api.srv.isGuest)
+                SettingsRow(stringResource(R.string.adl_title), stringResource(R.string.adl_row_summary)) { SettingsNav.page.value = "afterdl" }
             SettingsRow(stringResource(R.string.st4_updates), stringResource(R.string.st4_updates_summary)) { SettingsNav.page.value = "updates" }
             SettingsRow(stringResource(R.string.st4_about), null) { SettingsNav.page.value = "about" }
         }

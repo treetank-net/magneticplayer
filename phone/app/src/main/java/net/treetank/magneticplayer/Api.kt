@@ -594,6 +594,19 @@ class Api(val s: Settings, srv: Server) {
                 ShrinkEncoder(x.optString("id"), x.optString("label").ifEmpty { x.optString("id") }, x.optString("note"), x.optBoolean("bframes"))
             })
     }
+    // after download (agent 1.23+, features.afterdl): settings, runs and one run's history (AfterDownload.kt)
+    fun afterdlConfig(): AdlConfig = adlConfig(JSONObject(call("GET", "/api/config/afterdl")))
+    /** Changes (`enabled`, `sources`, `recipes`: {kind: [steps] | "<template id>"}) → the settings with new effects. */
+    fun setAfterdl(changes: JSONObject): AdlConfig = adlConfig(JSONObject(call("POST", "/api/config/afterdl", changes)))
+    /** Runs going on and those finished after [since] (epoch s), newest first. */
+    fun afterdlRuns(since: Double): List<AdlRun> {
+        val a = JSONObject(call("GET", "/api/afterdl?since=${since.toLong()}", null, 6000)).optJSONArray("runs") ?: JSONArray()
+        return List(a.length()) { adlRun(a.getJSONObject(it)) }
+    }
+    fun afterdlRun(id: String): AdlRun = adlRun(JSONObject(call("GET", "/api/afterdl/${Uri.encode(id)}")))
+    /** `skip` (the current step), `retry` (the failed one), `cancel` (the rest) → the run. */
+    fun afterdlAction(id: String, action: String): AdlRun =
+        adlRun(JSONObject(call("POST", "/api/afterdl/${Uri.encode(id)}", JSONObject().put("action", action))))
     fun updateAgent() { call("POST", "/api/agent/update", JSONObject()) }
     fun revoke(id: String) { call("POST", "/api/devices/revoke", JSONObject().put("id", id)) }
     fun wakeOther(mac: String, host: String) { call("POST", "/api/wake", JSONObject().put("mac", mac).put("ip", host), 4000) }

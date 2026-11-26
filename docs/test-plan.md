@@ -1202,6 +1202,13 @@ Deluge, phone or browser:
   left the film in place (first run). Bugs found and fixed on the way: unwanted files of an archive.org torrent
   counted as videos, a partial `recipes` setting lost the other kind, step options missing from a hand-written
   recipe, `cast_ready` in place not ending seeding, texts stored only in English, seeding ended twice in one tick.
+- [ ] App: after download screens (stage 2 of `docs/plan-after-download.md`, `AfterDownload.kt`, shown with
+  `features.afterdl`, not for guests), compiled only: Settings → After download (on/off, sources, Films / Series
+  episodes recipes), the recipe (template chips, step cards with effect tags, warning box with one-tap fixes,
+  up/down, add/remove), one screen per step, the Downloads tab section (runs of the last 24 h, a season as one row
+  with counts, refresh every 8 s) and a run's history (timeline, events, Retry / Skip / Cancel). To see on the Pixel:
+  every screen in EN and PL, a save redraws effects, a template replaces steps after confirming, a real run's
+  history. Not yet: history from a film's card, questions to the downloader's phone.
 - [ ] The owner's wish (2026-11-26): collection folders (Bond, Anime inside Films) out of after download until
   cataloguing by collection is designed.
 - [ ] Next app + agent 1.22.1 (built 2026-11-26, not seen on a phone yet):
