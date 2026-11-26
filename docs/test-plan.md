@@ -1162,6 +1162,10 @@ Deluge, phone or browser:
     (up to the next one) when lines don't overlap: a setting (config / MCP agent), not fixed; (d) machines without a
     GPU keep working: the first analysis is the speech-detection fit, Whisper only where it is available and fast
     enough (measure CPU-only too).
+- [ ] Owner's wish (2026-11-26): picking a subtitle language in the player shows the files already there (they're
+  usually downloaded with the film now) and searches for new ones only after a "Search for more" button, not at once.
+- [x] By ear (owner, 2026-11-26): The Little Shop of Horrors (English, rhythm) and Bicycle Thieves (Polish fitted to
+  the Italian baseline) "both perfect".
 - [ ] Agent 1.21.1: archive.org downloads no longer stop at 99.9% (`mp_iafill`): the edge pieces shared with a
   regenerated file are fetched over HTTP and the file checked by archive.org's MD5. Verified on jmpc (2026-11-26,
   through the agent's log and API): Bicycle Thieves (1 MB), Plan 9 from Outer Space (110 KB, its start was zeros and
